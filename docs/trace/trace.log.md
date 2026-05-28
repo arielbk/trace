@@ -68,3 +68,10 @@
 **Summary:** Replaced the starter web page with a read-only Trace app: `/` lists tasks from the shared core store and `/task/:id` renders the task timeline with sessions, docs, and token totals. Added a web data adapter test that seeds SQLite and verifies the web adapter matches the core timeline.
 **Deviations:** The sandbox rejects binding a local HTTP listener with `EPERM`, so the headless route smoke was covered by the adapter test plus Next typecheck, lint, and production build instead of a live fetch against `next dev`.
 **Handoff:** Both routes force dynamic rendering so they read the current local SQLite store at request time. `TRACE_DB` is declared in `turbo.json`; without it the web app falls back to `.trace/trace.sqlite` relative to the app process.
+
+## `drizzle-storage` — 2026-05-28 19:51:27
+
+**Status:** needs-review
+**Summary:** Added a core regression test asserting the store opens in WAL mode and that the current schema migration path is idempotent across fresh and reopened databases.
+**Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in this sandbox. `pnpm` registry fetches fail with `ENOTFOUND`, and the only cached Drizzle/`better-sqlite3` metadata is in a pnpm v10 store outside writable roots, so pnpm cannot relink this checkout from it. The store still uses Node 24's `node:sqlite`.
+**Handoff:** Verified the new storage regression with `node --test packages/core/src/task-store.test.ts`; verified the existing public behavior with `node --test packages/core/src/*.test.ts apps/cli/src/*.test.ts`; verified type structure with `tsc --noEmit -p packages/core/tsconfig.json` and `tsc --noEmit -p apps/cli/tsconfig.json`. Package-level `pnpm --filter ... test` still has the pre-existing cwd/path issue where test fixtures and CLI entrypoints are prefixed with the package path twice.

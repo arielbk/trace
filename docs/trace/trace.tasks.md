@@ -99,3 +99,51 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 **Human checkpoint:** no
 
 **Depends on:** timeline-rollup
+
+### `drizzle-storage` — Swap `node:sqlite` for Drizzle + `better-sqlite3`
+
+**Status:** needs-review
+
+**Outside-in:** The store in `packages/core` is backed by `better-sqlite3` (WAL mode) with Drizzle schemas/migrations, behind the existing swappable store interface. Public store API (task/session/doc/timeline) is unchanged; consumers (CLI, web, hooks) work identically. The interim `node:sqlite` implementation is removed.
+
+**Feedback loop:** All existing core/CLI tests still pass against the Drizzle-backed store unchanged. A new core unit test asserts the store opens in WAL mode (`journal_mode=wal`) and that Drizzle migrations apply cleanly to a fresh DB and are a no-op on an existing DB. `pnpm -r typecheck` and `pnpm -r test` pass.
+
+**Human checkpoint:** no
+
+**Depends on:** monorepo-task-crud, session-register-assign, doc-association, timeline-rollup
+
+### `vitest-migration` — Move tests from `node --test` to vitest
+
+**Status:** not-started
+
+**Outside-in:** All test files in `packages/core`, `apps/cli`, and `apps/web` run under `vitest` (the addendum-mandated runner). Each package exposes a `test` script that invokes `vitest run`; `pnpm -r test` runs the full suite green. `node --test` is no longer referenced by any script or doc.
+
+**Feedback loop:** `pnpm -r test` runs every previously-existing test under vitest and they all pass. Tests are converted, not deleted — `node:test`/`node:assert` imports become `vitest` (`describe`/`it`/`expect`). Repo grep for `node:test` and `node --test` returns nothing in source or scripts.
+
+**Human checkpoint:** no
+
+**Depends on:** monorepo-task-crud, session-register-assign, claude-code-adapter, codex-adapter, doc-association, timeline-rollup, skill-wrapper, web-view
+
+### `vite-web` — Replace Next.js web app with Vite + React
+
+**Status:** not-started
+
+**Outside-in:** `apps/web` is a **Vite + React** app (per PRD addendum) — not Next.js. `/` lists tasks; `/task/:id` shows the timeline. Reads the same `packages/core` store via a thin server-side data layer (e.g. a tiny `vite-plugin`-served endpoint or a small companion process) since the browser can't open SQLite directly. Read-only. Zero design budget. The Next.js app is deleted.
+
+**Feedback loop:** `pnpm --filter web build` produces a Vite production build. A headless adapter test (mirroring the existing web data adapter test) seeds the SQLite store and asserts the Vite app's data layer matches the core timeline output. No `next` dependency or config remains in `apps/web` or root.
+
+**Human checkpoint:** no
+
+**Depends on:** web-view
+
+### `ccusage-tokens` — Evaluate `ccusage` for Claude Code token extraction
+
+**Status:** not-started
+
+**Outside-in:** The Claude Code adapter uses `ccusage` (the Claude Code token-usage reader pmdr already depends on) for token totals where it can, falling back to the current hand-parsed JSONL only for fields `ccusage` does not cover. The decision (adopt / partial / reject) is recorded as a short ADR-style note appended to `trace.log.md` with the rationale.
+
+**Feedback loop:** Adapter unit tests over the existing Claude Code JSONL fixture still pass and assert the same token totals as before. If `ccusage` is adopted, the adapter imports it and the test demonstrates parity with the prior hand-parsed result; if rejected, the log entry explains why with concrete evidence (missing field, API shape mismatch, etc.).
+
+**Human checkpoint:** no
+
+**Depends on:** claude-code-adapter

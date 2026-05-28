@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import { openTraceStore } from "./index.ts";
 
 test("task entity persists and reads back through the store interface", () => {
@@ -18,6 +19,50 @@ test("task entity persists and reads back through the store interface", () => {
     assert.deepEqual(reopened.getTask(created.id), created);
     assert.deepEqual(reopened.listTasks(), [created]);
     reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("store opens in WAL mode and applies migrations idempotently", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.close();
+
+    const reopened = openTraceStore(databasePath);
+    reopened.close();
+
+    const database = new DatabaseSync(databasePath);
+
+    try {
+      const journalMode = database.prepare("PRAGMA journal_mode").get() as {
+        journal_mode: string;
+      };
+      assert.equal(journalMode.journal_mode, "wal");
+
+      assert.deepEqual(tableNames(database), [
+        "sessions",
+        "task_docs",
+        "tasks",
+      ]);
+      assert.deepEqual(sessionColumnNames(database), [
+        "id",
+        "transcript_path",
+        "tool",
+        "task_id",
+        "created_at",
+        "input_tokens",
+        "output_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "total_tokens",
+      ]);
+    } finally {
+      database.close();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -182,4 +227,20 @@ function waitForNextMillisecond(): void {
     // SQLite stores ISO timestamps with millisecond precision; the timeline
     // ordering assertion needs distinct timestamps without relying on timers.
   }
+}
+
+function tableNames(database: DatabaseSync): string[] {
+  return database
+    .prepare(
+      "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name ASC",
+    )
+    .all()
+    .map((row) => (row as { name: string }).name);
+}
+
+function sessionColumnNames(database: DatabaseSync): string[] {
+  return database
+    .prepare("PRAGMA table_info(sessions)")
+    .all()
+    .map((row) => (row as { name: string }).name);
 }
