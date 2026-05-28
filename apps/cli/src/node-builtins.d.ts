@@ -16,6 +16,7 @@ declare module "node:assert/strict" {
     deepEqual(actual: unknown, expected: unknown): void;
     equal(actual: unknown, expected: unknown): void;
     match(actual: string, expected: RegExp): void;
+    throws(fn: () => void, expected?: RegExp): void;
   };
   export default assert;
 }
@@ -30,8 +31,10 @@ declare module "node:child_process" {
 
 declare module "node:fs" {
   export function readFileSync(path: string | number, encoding: "utf8"): string;
+  export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function mkdtempSync(prefix: string): string;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
+  export function writeFileSync(path: string, data: string): void;
 }
 
 declare module "node:os" {

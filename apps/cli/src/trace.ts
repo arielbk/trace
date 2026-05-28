@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { openTraceStore, type Session, type SessionTool, type Task } from "../../../packages/core/src/index.ts";
+import {
+  openTraceStore,
+  scanCodexSessions,
+  type Session,
+  type SessionTool,
+  type Task,
+} from "../../../packages/core/src/index.ts";
 
 type CommandResult = {
   exitCode: number;
@@ -79,6 +85,19 @@ export function runTraceCli(argv: string[], env: Record<string, string | undefin
         return success(store.listUnassignedSessions().map(formatSessionSummary).join(""));
       }
 
+      if (action === "scan" && args[0] === "--codex") {
+        const codexHome = parseCodexScanArgs(args.slice(1), env);
+        const sessions = scanCodexSessions(codexHome).map((session) =>
+          store.registerSession({
+            id: session.id,
+            transcriptPath: session.transcriptPath,
+            tool: session.tool,
+          }),
+        );
+
+        return success(sessions.map(formatSessionSummary).join(""));
+      }
+
       return usage();
     }
 
@@ -153,6 +172,35 @@ function parseSessionRegisterArgs(args: string[]): { id: string; transcriptPath:
   }
 
   return { id, transcriptPath, tool };
+}
+
+function parseCodexScanArgs(args: string[], env: Record<string, string | undefined>): string {
+  let codexHome = env.CODEX_HOME;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+
+    if (!flag || !value) {
+      throw new Error("Codex scan accepts --codex-home <path>");
+    }
+
+    if (flag === "--codex-home") {
+      codexHome = value;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (codexHome) {
+    return codexHome;
+  }
+
+  if (!env.HOME) {
+    throw new Error("Codex scan requires --codex-home when HOME is not set");
+  }
+
+  return `${env.HOME}/.codex`;
 }
 
 const isDirectRun = import.meta.url === `file://${process.argv[1]}`;

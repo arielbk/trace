@@ -42,7 +42,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `codex-adapter` — Codex adapter (in-session bind + scan backfill)
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A Codex-side step runs `trace session register --id $CODEX_THREAD_ID` to bind in-session; `trace session scan --codex` backfills from `~/.codex/sessions/` + `session_index.jsonl` for sessions never bound live. Tokens come from the `turn.completed` usage field.
 

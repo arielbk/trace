@@ -5,6 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 
 export { parseClaudeCodeTranscript, parseClaudeCodeTranscriptFile } from "./claude-code-adapter.ts";
 export type { ClaudeCodeTokenTotals, ParsedClaudeCodeSession } from "./claude-code-adapter.ts";
+export { parseCodexTranscript, parseCodexTranscriptFile, scanCodexSessions } from "./codex-adapter.ts";
+export type { CodexTokenTotals, ParsedCodexSession } from "./codex-adapter.ts";
 
 export type Task = {
   id: string;
