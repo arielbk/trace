@@ -138,7 +138,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `ccusage-tokens` — Evaluate `ccusage` for Claude Code token extraction
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** The Claude Code adapter uses `ccusage` (the Claude Code token-usage reader pmdr already depends on) for token totals where it can, falling back to the current hand-parsed JSONL only for fields `ccusage` does not cover. The decision (adopt / partial / reject) is recorded as a short ADR-style note appended to `trace.log.md` with the rationale.
 

@@ -75,6 +75,14 @@
 **Summary:** Added a core regression test asserting the store opens in WAL mode and that the current schema migration path is idempotent across fresh and reopened databases.
 **Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in the codex iteration sandbox (offline registry, unwritable cached store). Superseded by the follow-up entry below.
 
+## `ccusage-tokens` — 2026-05-28 (ADR-style evaluation)
+
+**Status:** done — **rejected**.
+**Summary:** Evaluated `ccusage` (v20.0.5) for Claude Code token extraction in `packages/core/src/claude-code-adapter.ts`. Rejected: ccusage ships only as a CLI binary (`"bin": { "ccusage": "./dist/cli.js" }`) with no published programmatic JS exports — `npm view ccusage exports` returns nothing; the only sibling packages on the `@ccusage/*` scope are platform-specific *native* binaries (`@ccusage/ccusage-darwin-arm64` and friends), not libraries. Adopting ccusage would mean shelling out to its CLI and parsing its aggregated report output (`ccusage claude daily` / `session`), which would: (a) introduce a runtime CLI dependency, (b) couple us to ccusage's `~/.claude/projects/…` global session-store conventions instead of the explicit transcript path we already have, (c) give us aggregated reports rather than per-transcript token totals tied to a single session ID, and (d) require an extra parse layer on its formatted output.
+**Decision:** keep the current hand-parsed JSONL approach in `parseClaudeCodeTranscript`. It reads token totals straight from `usage` / `message.usage` fields per-line, returns them keyed to the exact transcript path the SessionStart hook passes in, and is covered by adapter tests against a recorded fixture. No code change required; this entry is the rationale.
+**Deviations:** none — the slice spec explicitly permits "adopt / partial / reject" with a documented rationale.
+**Handoff:** Verified by re-running `pnpm --filter @trace/core test` (3 test files, 8 tests pass, including the Claude Code adapter fixture test). The PRD addendum's "Token extraction note" can now be considered resolved: ccusage is not a fit for embedded library use; if the user later wants a roll-up dashboard view of overall token usage across all Claude Code sessions on disk, ccusage as a separate CLI invocation is a fine companion to Trace — but it is not how Trace ingests per-session token totals.
+
 ## `vite-web` — 2026-05-28
 
 **Status:** done
