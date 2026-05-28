@@ -2,6 +2,7 @@ export type Task = {
   id: string;
   title: string;
   createdAt: string;
+  projectRoot: string;
 };
 
 export type SessionTool = "claude" | "codex";
@@ -55,7 +56,7 @@ export type RegisterSessionInput = {
 };
 
 export type TaskStore = {
-  createTask(title: string): Task;
+  createTask(title: string, projectRoot?: string): Task;
   getTask(id: string): Task | null;
   listTasks(): Task[];
   registerSession(input: RegisterSessionInput): Session;

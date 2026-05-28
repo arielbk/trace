@@ -34,7 +34,7 @@ Move Trace from per-cwd / env-only DB paths to a global `~/.trace/trace.sqlite` 
 
 ### `task-project-stamp` — Schema + CLI stamps and surfaces project root
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace task create "..."` stamps the new row with the resolved project root; `trace task show <id>` prints it.
 

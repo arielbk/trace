@@ -3,7 +3,10 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import {
+  drizzle,
+  type BetterSQLite3Database,
+} from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { sessions, taskDocs, tasks } from "./schema.ts";
 import { migrationsDir } from "./migrations-path.ts";
@@ -36,8 +39,9 @@ class DrizzleTaskStore implements TaskStore {
     migrate(this.#db, { migrationsFolder: migrationsDir });
   }
 
-  createTask(title: string): Task {
+  createTask(title: string, projectRoot = ""): Task {
     const normalizedTitle = title.trim();
+    const normalizedProjectRoot = projectRoot.trim();
 
     if (normalizedTitle.length === 0) {
       throw new Error("Task title is required");
@@ -47,6 +51,7 @@ class DrizzleTaskStore implements TaskStore {
       id: randomUUID(),
       title: normalizedTitle,
       createdAt: new Date().toISOString(),
+      projectRoot: normalizedProjectRoot,
     };
 
     this.#db.insert(tasks).values(task).run();
@@ -274,7 +279,10 @@ function normalizeTokenTotals(input: Partial<TokenTotals> = {}): TokenTotals {
     cacheReadInputTokens,
     totalTokens:
       input.totalTokens ??
-      inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens,
+      inputTokens +
+        outputTokens +
+        cacheCreationInputTokens +
+        cacheReadInputTokens,
   };
 }
 

@@ -23,6 +23,24 @@ test("task entity persists and reads back through the store interface", () => {
   }
 });
 
+test("createTask persists the project root stamp", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const projectRoot = join(dir, "project");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("checkout", projectRoot);
+
+    expect(created.projectRoot).toBe(projectRoot);
+    expect(store.getTask(created.id)).toEqual(created);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("store opens in WAL mode and applies migrations idempotently", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -37,15 +55,22 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
     const database = new Database(databasePath);
 
     try {
-      const journalMode = database
-        .prepare("PRAGMA journal_mode")
-        .get() as { journal_mode: string };
+      const journalMode = database.prepare("PRAGMA journal_mode").get() as {
+        journal_mode: string;
+      };
       expect(journalMode.journal_mode).toBe("wal");
 
       const userTables = tableNames(database).filter(
         (name) => !name.startsWith("__drizzle"),
       );
       expect(userTables).toEqual(["sessions", "task_docs", "tasks"]);
+
+      expect(taskColumnNames(database)).toEqual([
+        "id",
+        "title",
+        "created_at",
+        "project_root",
+      ]);
 
       expect(sessionColumnNames(database)).toEqual([
         "id",
@@ -239,6 +264,13 @@ function tableNames(database: Database.Database): string[] {
 function sessionColumnNames(database: Database.Database): string[] {
   return database
     .prepare("PRAGMA table_info(sessions)")
+    .all()
+    .map((row) => (row as { name: string }).name);
+}
+
+function taskColumnNames(database: Database.Database): string[] {
+  return database
+    .prepare("PRAGMA table_info(tasks)")
     .all()
     .map((row) => (row as { name: string }).name);
 }

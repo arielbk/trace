@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   openTraceStore,
+  resolveProjectRoot,
   scanCodexSessions,
   type Session,
   type SessionTool,
@@ -19,6 +20,7 @@ type CommandResult = {
 export function runTraceCli(
   argv: string[],
   env: Record<string, string | undefined> = process.env,
+  cwd = process.cwd(),
 ): CommandResult {
   let databasePath: string;
   try {
@@ -35,7 +37,7 @@ export function runTraceCli(
     if (resource === "task") {
       if (action === "create") {
         const title = args.join(" ");
-        const task = store.createTask(title);
+        const task = store.createTask(title, resolveProjectRoot(cwd));
 
         return success(`${task.id}\n`);
       }
@@ -227,6 +229,7 @@ function formatTask(
     `id: ${task.id}`,
     `title: ${task.title}`,
     `createdAt: ${task.createdAt}`,
+    `projectRoot: ${task.projectRoot}`,
   ];
 
   if (sessions.length > 0) {
@@ -266,6 +269,7 @@ function formatTaskContext(
     `task: ${task.id}`,
     `title: ${task.title}`,
     `createdAt: ${task.createdAt}`,
+    `projectRoot: ${task.projectRoot}`,
   ];
 
   if (docs.length > 0) {
