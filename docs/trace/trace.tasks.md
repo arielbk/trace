@@ -30,7 +30,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `claude-code-adapter` — Claude Code adapter + SessionStart hook
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A `SessionStart` hook runs `trace session register` so a live Claude Code session lands in the unassigned pile the moment it starts; the adapter parses a transcript for token totals.
 

@@ -3,6 +3,9 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+export { parseClaudeCodeTranscript, parseClaudeCodeTranscriptFile } from "./claude-code-adapter.ts";
+export type { ClaudeCodeTokenTotals, ParsedClaudeCodeSession } from "./claude-code-adapter.ts";
+
 export type Task = {
   id: string;
   title: string;

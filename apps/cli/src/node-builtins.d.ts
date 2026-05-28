@@ -24,11 +24,12 @@ declare module "node:child_process" {
   export function execFileSync(
     file: string,
     args: string[],
-    options: { encoding: "utf8"; env: Record<string, string | undefined> },
+    options: { encoding: "utf8"; env: Record<string, string | undefined>; input?: string },
   ): string;
 }
 
 declare module "node:fs" {
+  export function readFileSync(path: string | number, encoding: "utf8"): string;
   export function mkdtempSync(prefix: string): string;
   export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
 }
