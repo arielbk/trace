@@ -153,6 +153,47 @@ export function runTraceCli(
       return usage();
     }
 
+    if (resource === "skill") {
+      if (action === "work-on-task") {
+        const taskId = args[0];
+
+        if (!taskId) {
+          return failure("Task id is required");
+        }
+
+        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
+        const session = store.registerSession(parsed);
+
+        return success(
+          formatSessionSummary(store.assignSession(session.id, taskId)),
+        );
+      }
+
+      if (action === "re-enter") {
+        const taskId = args[0];
+
+        if (!taskId) {
+          return failure("Task id is required");
+        }
+
+        const task = store.getTask(taskId);
+
+        if (!task) {
+          return failure(`Task not found: ${taskId}`, 1);
+        }
+
+        return success(
+          formatTaskContext(
+            task,
+            store.listDocsForTask(task.id),
+            store.listSessionsForTask(task.id),
+          ),
+        );
+      }
+
+      return usage();
+    }
+
     return usage();
   } catch (error) {
     return failure(error instanceof Error ? error.message : String(error));
@@ -171,7 +212,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace task <create|show|list|add-doc> ... | trace session <register|assign|list> ...",
+    "Usage: trace task <create|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
   );
 }
 
@@ -212,6 +253,33 @@ function formatSessionSummary(session: Session): string {
 
 function formatTaskDocSummary(doc: TaskDoc): string {
   return `${doc.taskId}\t${doc.path}\n`;
+}
+
+function formatTaskContext(
+  task: Task,
+  docs: TaskDoc[],
+  sessions: Session[],
+): string {
+  const lines = [
+    `task: ${task.id}`,
+    `title: ${task.title}`,
+    `createdAt: ${task.createdAt}`,
+  ];
+
+  if (docs.length > 0) {
+    lines.push("docs:", ...docs.map((doc) => `- ${doc.path}`));
+  }
+
+  if (sessions.length > 0) {
+    lines.push(
+      "sessions:",
+      ...sessions.map(
+        (session) => `- ${formatSessionSummary(session).trimEnd()}`,
+      ),
+    );
+  }
+
+  return [...lines, ""].join("\n");
 }
 
 function parseSessionRegisterArgs(args: string[]): {
@@ -310,6 +378,100 @@ function parseCodexScanArgs(
   }
 
   return `${env.HOME}/.codex`;
+}
+
+function parseSkillWorkOnTaskArgs(
+  args: string[],
+  env: Record<string, string | undefined>,
+): {
+  id: string;
+  transcriptPath: string;
+  tool: SessionTool;
+  tokenTotals: Partial<TokenTotals>;
+} {
+  let id: string | undefined;
+  let transcriptPath: string | undefined;
+  let tool: string | undefined;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+
+    if (!flag || !value) {
+      throw new Error(
+        "Skill work-on-task accepts --id, --transcript, and --tool",
+      );
+    }
+
+    if (flag === "--id") {
+      id = value;
+    } else if (flag === "--transcript") {
+      transcriptPath = value;
+    } else if (flag === "--tool") {
+      tool = value;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const inferredTool = tool ?? inferCurrentTool(env);
+
+  if (inferredTool !== "claude" && inferredTool !== "codex") {
+    throw new Error("Session tool must be claude or codex");
+  }
+
+  const inferredId = id ?? inferCurrentSessionId(inferredTool, env);
+
+  if (!inferredId) {
+    throw new Error(
+      "Skill work-on-task requires --id or a current session env var",
+    );
+  }
+
+  return {
+    id: inferredId,
+    transcriptPath:
+      transcriptPath ?? inferTranscriptPath(inferredId, inferredTool, env),
+    tool: inferredTool,
+    tokenTotals: {},
+  };
+}
+
+function inferCurrentTool(
+  env: Record<string, string | undefined>,
+): SessionTool {
+  if (env.CODEX_THREAD_ID) {
+    return "codex";
+  }
+
+  return "claude";
+}
+
+function inferCurrentSessionId(
+  tool: SessionTool,
+  env: Record<string, string | undefined>,
+): string | undefined {
+  if (tool === "codex") {
+    return env.CODEX_THREAD_ID;
+  }
+
+  return env.CLAUDE_SESSION_ID ?? env.session_id;
+}
+
+function inferTranscriptPath(
+  sessionId: string,
+  tool: SessionTool,
+  env: Record<string, string | undefined>,
+): string {
+  if (tool === "claude" && env.CLAUDE_TRANSCRIPT_PATH) {
+    return env.CLAUDE_TRANSCRIPT_PATH;
+  }
+
+  if (tool === "codex" && env.CODEX_TRANSCRIPT_PATH) {
+    return env.CODEX_TRANSCRIPT_PATH;
+  }
+
+  return `${tool}:${sessionId}`;
 }
 
 const isDirectRun = import.meta.url === `file://${process.argv[1]}`;

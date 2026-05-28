@@ -5,16 +5,19 @@
 **Status:** done
 
 **Changed:**
+
 - Added `packages/core` with a task store interface backed by a persistent SQLite database in WAL mode.
 - Added `apps/cli` with `trace task create`, `trace task show`, and `trace task list`.
 - Added outside-in tests for CLI create/show/list persistence and core store round-trip persistence.
 
 **Feedback loop:**
+
 - `node --test packages/core/src/task-store.test.ts apps/cli/src/task-crud.test.ts`
 - `./node_modules/.bin/tsc --noEmit -p packages/core/tsconfig.json`
 - `./node_modules/.bin/tsc --noEmit -p apps/cli/tsconfig.json`
 
 **Notes:**
+
 - Network access was unavailable, so Drizzle and `better-sqlite3` could not be fetched into the lockfile. The store uses Node 24's built-in `node:sqlite` API for the same local SQLite/WAL behavior and keeps the store boundary isolated for a later driver swap.
 
 ## `session-register-assign` — 2026-05-28 19:10:04
@@ -51,3 +54,10 @@
 **Summary:** Added persisted session token totals and a core `getTaskTimeline` rollup that returns a task's ordered sessions and docs with summed token totals. Added `trace task timeline <id> --json` plus token flags on `session register` so CLI-created sessions can contribute usage data.
 **Deviations:** The existing SQLite store remains on Node's built-in `node:sqlite`; token columns are added with lightweight `ALTER TABLE` migration defaults for existing databases.
 **Handoff:** `scan --codex` now persists parsed token totals into sessions. Timeline JSON includes `{ task, items, tokenTotals }`; items are `session` or `doc` entries sorted by `createdAt` with deterministic tie-breaking.
+
+## `skill-wrapper` — 2026-05-28 19:28:57
+
+**Status:** done
+**Summary:** Added `trace skill work-on-task <task>` to register and assign a current or simulated session through the existing CLI/store path, plus `trace skill re-enter <task>` to emit task docs and prior-session references as lightweight context. Covered the scripted bind and re-entry round trip with a CLI smoke test.
+**Deviations:** No live Claude Code or Codex dependency was introduced; the command supports explicit `--id`, `--transcript`, and `--tool` flags for CI, with lightweight env inference for `$CODEX_THREAD_ID` and Claude session variables.
+**Handoff:** Verified with all core/CLI node tests, core and CLI typechecks, and Prettier checks for touched files.

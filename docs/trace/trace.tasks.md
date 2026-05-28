@@ -78,7 +78,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `skill-wrapper` — Agent skills over the CLI
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A "work on task X" skill creates/binds the current session (Claude Code session ID or `$CODEX_THREAD_ID`) via the CLI; a "re-enter task X" skill emits the task's associated docs + prior-session references as context. Lightweight re-entry only — no auto-continue.
 

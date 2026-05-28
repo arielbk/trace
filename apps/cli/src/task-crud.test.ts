@@ -255,3 +255,77 @@ test("task timeline --json prints the aggregated task timeline", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("skill work-on-task binds a simulated session and re-enter lists task context", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+
+    const bound = execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        taskId,
+        "--id",
+        "codex-session-1",
+        "--transcript",
+        "/tmp/codex-session-1.jsonl",
+        "--tool",
+        "codex",
+      ],
+      { encoding: "utf8", env },
+    );
+    assert.equal(bound, `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl\n`);
+
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+    assert.match(
+      shown,
+      /- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
+    );
+
+    const context = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+    assert.match(context, new RegExp(`task: ${taskId}`));
+    assert.match(context, /docs:\n- \/tmp\/spec\.md/);
+    assert.match(
+      context,
+      /sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
