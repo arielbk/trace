@@ -54,7 +54,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `doc-association` — Task-scoped doc association
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace task add-doc <task> <path>` associates a spec/plan with a task; `trace task show <task>` lists associated docs.
 

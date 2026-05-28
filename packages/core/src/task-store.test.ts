@@ -55,3 +55,26 @@ test("session register and assign lifecycle keeps one task per session", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("task doc associations can be added, read, and removed through the store interface", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const doc = store.addTaskDoc(task.id, "/tmp/spec.md");
+
+    assert.equal(doc.taskId, task.id);
+    assert.equal(doc.path, "/tmp/spec.md");
+    assert.deepEqual(store.listDocsForTask(task.id), [doc]);
+
+    store.removeTaskDoc(task.id, "/tmp/spec.md");
+    assert.deepEqual(store.listDocsForTask(task.id), []);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

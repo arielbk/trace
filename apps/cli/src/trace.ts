@@ -5,6 +5,7 @@ import {
   type Session,
   type SessionTool,
   type Task,
+  type TaskDoc,
 } from "../../../packages/core/src/index.ts";
 
 type CommandResult = {
@@ -46,11 +47,28 @@ export function runTraceCli(argv: string[], env: Record<string, string | undefin
           return failure(`Task not found: ${id}`, 1);
         }
 
-        return success(formatTask(task, store.listSessionsForTask(task.id)));
+        return success(formatTask(task, store.listSessionsForTask(task.id), store.listDocsForTask(task.id)));
       }
 
       if (action === "list") {
         return success(store.listTasks().map(formatTaskSummary).join(""));
+      }
+
+      if (action === "add-doc") {
+        const taskId = args[0];
+        const path = args[1];
+
+        if (!taskId) {
+          return failure("Task id is required");
+        }
+
+        if (!path) {
+          return failure("Task doc path is required");
+        }
+
+        const doc = store.addTaskDoc(taskId, path);
+
+        return success(formatTaskDocSummary(doc));
       }
 
       return usage();
@@ -118,14 +136,18 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 function usage(): CommandResult {
-  return failure("Usage: trace task <create|show|list> ... | trace session <register|assign|list> ...");
+  return failure("Usage: trace task <create|show|list|add-doc> ... | trace session <register|assign|list> ...");
 }
 
-function formatTask(task: Task, sessions: Session[] = []): string {
+function formatTask(task: Task, sessions: Session[] = [], docs: TaskDoc[] = []): string {
   const lines = [`id: ${task.id}`, `title: ${task.title}`, `createdAt: ${task.createdAt}`];
 
   if (sessions.length > 0) {
     lines.push("sessions:", ...sessions.map((session) => `- ${formatSessionSummary(session).trimEnd()}`));
+  }
+
+  if (docs.length > 0) {
+    lines.push("docs:", ...docs.map((doc) => `- ${doc.path}`));
   }
 
   return [...lines, ""].join("\n");
@@ -137,6 +159,10 @@ function formatTaskSummary(task: Task): string {
 
 function formatSessionSummary(session: Session): string {
   return `${session.id}\t${session.tool}\t${session.transcriptPath}\n`;
+}
+
+function formatTaskDocSummary(doc: TaskDoc): string {
+  return `${doc.taskId}\t${doc.path}\n`;
 }
 
 function parseSessionRegisterArgs(args: string[]): { id: string; transcriptPath: string; tool: SessionTool } {

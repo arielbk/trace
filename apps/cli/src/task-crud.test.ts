@@ -91,3 +91,31 @@ test("register then assign session attaches it to task show", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("add-doc then show lists the associated task doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(process.execPath, [traceBin, "task", "create", "checkout"], {
+      encoding: "utf8",
+      env,
+    }).trim();
+
+    const added = execFileSync(process.execPath, [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"], {
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(added, `${taskId}\t/tmp/spec.md\n`);
+
+    const shown = execFileSync(process.execPath, [traceBin, "task", "show", taskId], {
+      encoding: "utf8",
+      env,
+    });
+    assert.match(shown, /docs:/);
+    assert.match(shown, /- \/tmp\/spec\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

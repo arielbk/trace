@@ -24,6 +24,12 @@ export type Session = {
   createdAt: string;
 };
 
+export type TaskDoc = {
+  taskId: string;
+  path: string;
+  createdAt: string;
+};
+
 export type RegisterSessionInput = {
   id: string;
   transcriptPath: string;
@@ -38,6 +44,9 @@ export type TaskStore = {
   assignSession(sessionId: string, taskId: string): Session;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
+  addTaskDoc(taskId: string, path: string): TaskDoc;
+  listDocsForTask(taskId: string): TaskDoc[];
+  removeTaskDoc(taskId: string, path: string): void;
   close(): void;
 };
 
@@ -52,6 +61,12 @@ type SessionRow = {
   transcript_path: string;
   tool: SessionTool;
   task_id: string | null;
+  created_at: string;
+};
+
+type TaskDocRow = {
+  task_id: string;
+  path: string;
   created_at: string;
 };
 
@@ -82,6 +97,14 @@ class SqliteTaskStore implements TaskStore {
         tool TEXT NOT NULL CHECK (tool IN ('claude', 'codex')),
         task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
         created_at TEXT NOT NULL
+      )
+    `);
+    this.#database.exec(`
+      CREATE TABLE IF NOT EXISTS task_docs (
+        task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (task_id, path)
       )
     `);
   }
@@ -194,6 +217,49 @@ class SqliteTaskStore implements TaskStore {
       .map((row) => sessionFromRow(row as SessionRow));
   }
 
+  addTaskDoc(taskId: string, path: string): TaskDoc {
+    const task = this.getTask(taskId);
+
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    const normalizedPath = path.trim();
+
+    if (normalizedPath.length === 0) {
+      throw new Error("Task doc path is required");
+    }
+
+    const existing = this.getTaskDoc(task.id, normalizedPath);
+
+    if (existing) {
+      return existing;
+    }
+
+    const doc: TaskDoc = {
+      taskId: task.id,
+      path: normalizedPath,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.#database
+      .prepare("INSERT INTO task_docs (task_id, path, created_at) VALUES (?, ?, ?)")
+      .run(doc.taskId, doc.path, doc.createdAt);
+
+    return doc;
+  }
+
+  listDocsForTask(taskId: string): TaskDoc[] {
+    return this.#database
+      .prepare("SELECT task_id, path, created_at FROM task_docs WHERE task_id = ? ORDER BY created_at ASC, path ASC")
+      .all(taskId)
+      .map((row) => taskDocFromRow(row as TaskDocRow));
+  }
+
+  removeTaskDoc(taskId: string, path: string): void {
+    this.#database.prepare("DELETE FROM task_docs WHERE task_id = ? AND path = ?").run(taskId, path.trim());
+  }
+
   close(): void {
     this.#database.close();
   }
@@ -204,6 +270,14 @@ class SqliteTaskStore implements TaskStore {
       .get(id);
 
     return row ? sessionFromRow(row as SessionRow) : null;
+  }
+
+  private getTaskDoc(taskId: string, path: string): TaskDoc | null {
+    const row = this.#database
+      .prepare("SELECT task_id, path, created_at FROM task_docs WHERE task_id = ? AND path = ?")
+      .get(taskId, path);
+
+    return row ? taskDocFromRow(row as TaskDocRow) : null;
   }
 }
 
@@ -221,6 +295,14 @@ function sessionFromRow(row: SessionRow): Session {
     transcriptPath: row.transcript_path,
     tool: row.tool,
     taskId: row.task_id,
+    createdAt: row.created_at,
+  };
+}
+
+function taskDocFromRow(row: TaskDocRow): TaskDoc {
+  return {
+    taskId: row.task_id,
+    path: row.path,
     createdAt: row.created_at,
   };
 }

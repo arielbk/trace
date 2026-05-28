@@ -37,3 +37,10 @@
 **Summary:** Added a Codex JSONL transcript adapter that validates `thread.started` identity against the transcript filename and optional live `$CODEX_THREAD_ID`, parses `turn.completed` token usage, and scans Codex homes via `session_index.jsonl` or `sessions/**/*.jsonl`. Added `trace session scan --codex --codex-home <path>` to backfill discovered sessions as unassigned `codex` sessions.
 **Deviations:** Token totals are parsed and exposed by the adapter, but the existing store schema still only persists session identity, transcript path, tool, and task assignment.
 **Handoff:** Verified with adapter unit tests, a CLI scan smoke test against a temporary Codex home fixture, existing core/CLI tests, and core/CLI typechecks.
+
+## `doc-association` — 2026-05-28 19:20:31
+
+**Status:** done
+**Summary:** Added task-scoped document associations in core, including add/list/remove support backed by a `task_docs` SQLite table. Added `trace task add-doc <task> <path>` and extended `trace task show` to list associated docs.
+**Deviations:** none.
+**Handoff:** Verified with core doc association tests, CLI `add-doc` -> `show` integration coverage, and core/CLI typechecks.
