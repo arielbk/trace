@@ -44,3 +44,10 @@
 **Summary:** Added the `tasks.project_root` column, typed it through `Task`, and made CLI task creation stamp the nearest git root via `resolveProjectRoot(cwd)`. `trace task show` and `skill re-enter` now surface `projectRoot`.
 **Deviations:** `drizzle-kit generate` could not run because the installed `esbuild` binary targets the wrong platform, so the migration SQL and snapshot metadata were produced manually and validated structurally.
 **Handoff:** Focused typechecks pass for `@trace/core` and `@trace/cli`; fresh and existing schema migration SQL was validated with `/usr/bin/sqlite3`. Vitest still cannot start because `@rolldown/binding-darwin-arm64` is missing, and direct store runtime is blocked by a Linux `better-sqlite3` binary; `pnpm install` and `pnpm rebuild better-sqlite3` were attempted but cannot fetch Darwin packages/Node headers without network.
+
+## `web-cross-project-view` — 2026-05-28 22:52:18 CEST
+
+**Status:** needs-review
+**Summary:** Updated the web server data adapter to use `~/.trace/trace.sqlite` when `TRACE_DB` is unset, matching the global default. Added project grouping for the task list with project-root basename headings and nested task links, plus focused tests for global path resolution and two-project grouping/rendering.
+**Deviations:** The slice has `Human checkpoint: yes`, so it is marked `needs-review` for the manual grouped-list eyeball check. Vitest and Vite build still cannot start in this checkout because the local install is missing `@rolldown/binding-darwin-arm64`; `pnpm install --offline` was attempted and completed but did not restore the native binding.
+**Handoff:** `pnpm --filter web check-types` passes. `pnpm --filter web test -- data.test.ts TasksPage.test.tsx` and `pnpm --filter web build` both fail before loading project code on the missing Rolldown native binding.

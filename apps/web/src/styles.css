@@ -7,11 +7,29 @@ body {
 a {
   color: inherit;
 }
-ul, ol {
+ul,
+ol {
   list-style: none;
   padding: 0;
 }
 li {
   padding: 0.5rem 0;
   border-bottom: 1px solid #eee;
+}
+.project-groups {
+  display: grid;
+  gap: 1.5rem;
+}
+.project-group header {
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 0.25rem;
+}
+.project-group h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+.project-group p {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0.75rem;
 }

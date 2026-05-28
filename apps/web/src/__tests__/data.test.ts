@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore } from "@trace/core";
-import { getTaskTimeline, listTasks } from "../server/data.ts";
+import { getDatabasePath, getTaskTimeline, listTasks } from "../server/data.ts";
 
 test("web data adapter lists tasks and returns the same task timeline as core", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-web-"));
@@ -42,6 +42,31 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
       delete process.env.TRACE_DB;
     } else {
       process.env.TRACE_DB = originalTraceDb;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("web data adapter uses ~/.trace/trace.sqlite when TRACE_DB is unset", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-web-home-"));
+  const originalTraceDb = process.env.TRACE_DB;
+  const originalHome = process.env.HOME;
+  delete process.env.TRACE_DB;
+  process.env.HOME = dir;
+
+  try {
+    expect(getDatabasePath()).toBe(join(dir, ".trace", "trace.sqlite"));
+    expect(listTasks()).toEqual([]);
+  } finally {
+    if (originalTraceDb === undefined) {
+      delete process.env.TRACE_DB;
+    } else {
+      process.env.TRACE_DB = originalTraceDb;
+    }
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
     }
     rmSync(dir, { recursive: true, force: true });
   }
