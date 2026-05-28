@@ -73,6 +73,20 @@ All four core modules are tested. Good tests here exercise real session fixtures
 
 ## Open Questions
 
-- **Storage engine**: SQLite is the natural local-embedded choice. Confirm before building, and decide whether to reuse any of v1's (`aitrace`) Prisma/Postgres schema or start fresh. (Recommendation: fresh, SQLite.)
-- **Stack for the read-only web view**: reuse a trimmed v1 Next.js surface, or something lighter (static generation over the SQLite DB)? The "zero design budget" constraint favors the lightest option.
 - **Doc association mechanism**: how docs get tied to a task — does the in-session skill stamp/record them as they're produced, or are they associated at assignment time by reading what the session touched? (Leaning: recorded via the skill during the session, since the session is already the join key.)
+
+## Addendum: Tech Stack
+
+Decided by comparison with the user's existing `pmdr` CLI (same author, same conventions). Trace inherits pmdr's monorepo DNA, diverges only where its domain demands it.
+
+**Shared with pmdr (adopt wholesale for consistency):**
+- **Turborepo + pnpm workspaces** (`apps/*`, `packages/*`).
+- **TypeScript + ESM**, prettier, and the shared `@repo/eslint-config` / `@repo/typescript-config` packages.
+- **tsup** to build and **vitest** to test. (Note: deliberately *not* following v1 `aitrace`'s Jest/Next setup — pmdr's lighter toolchain wins for a fresh repo.)
+
+**Divergences (justified by Trace's domain):**
+- **CLI rendering**: plain arg parser (cac/commander) + `--json`-first structured output. *No Ink* — pmdr needs a TUI for its live countdown; Trace's CLI is agent-facing command/query and doesn't.
+- **Storage**: **SQLite (WAL) + Drizzle + `better-sqlite3`**, behind a swappable store interface in `packages/core`. pmdr's hand-rolled JSONL suits a single-writer timer; Trace needs safe concurrent writers (hook, Codex skill, scan) and relational joins for the rollup.
+- **Web view**: **Vite + React**, reusing `@repo/ui` where useful. Lighter than v1's Next.js, which is more than a zero-design read-only view needs.
+
+**Token extraction note:** pmdr already depends on **`ccusage`** (a Claude Code token-usage reader). The `claude-code-adapter` slice should evaluate `ccusage` before hand-parsing JSONL for tokens — it may already do the job.
