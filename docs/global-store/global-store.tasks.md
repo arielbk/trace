@@ -48,7 +48,7 @@ Move Trace from per-cwd / env-only DB paths to a global `~/.trace/trace.sqlite` 
 
 ### `web-cross-project-view` — Web reads global store, groups by project
 
-**Status:** needs-review
+**Status:** done
 
 **Outside-in:** Launching the web app with no env vars reads `~/.trace/trace.sqlite`; the task list page renders tasks grouped by project, with a display name derived from the project root path basename.
 
