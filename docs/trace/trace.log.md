@@ -61,3 +61,10 @@
 **Summary:** Added `trace skill work-on-task <task>` to register and assign a current or simulated session through the existing CLI/store path, plus `trace skill re-enter <task>` to emit task docs and prior-session references as lightweight context. Covered the scripted bind and re-entry round trip with a CLI smoke test.
 **Deviations:** No live Claude Code or Codex dependency was introduced; the command supports explicit `--id`, `--transcript`, and `--tool` flags for CI, with lightweight env inference for `$CODEX_THREAD_ID` and Claude session variables.
 **Handoff:** Verified with all core/CLI node tests, core and CLI typechecks, and Prettier checks for touched files.
+
+## `web-view` — 2026-05-28 19:36:22
+
+**Status:** done
+**Summary:** Replaced the starter web page with a read-only Trace app: `/` lists tasks from the shared core store and `/task/:id` renders the task timeline with sessions, docs, and token totals. Added a web data adapter test that seeds SQLite and verifies the web adapter matches the core timeline.
+**Deviations:** The sandbox rejects binding a local HTTP listener with `EPERM`, so the headless route smoke was covered by the adapter test plus Next typecheck, lint, and production build instead of a live fetch against `next dev`.
+**Handoff:** Both routes force dynamic rendering so they read the current local SQLite store at request time. `TRACE_DB` is declared in `turbo.json`; without it the web app falls back to `.trace/trace.sqlite` relative to the app process.

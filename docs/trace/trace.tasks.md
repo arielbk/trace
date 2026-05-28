@@ -90,7 +90,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `web-view` — Read-only web timeline
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** Local web app over the same `core` store: `/` lists tasks; `/task/:id` shows the task timeline (sessions, docs, tokens). Read-only — no editing, auth, or filtering. Zero design budget.
 
