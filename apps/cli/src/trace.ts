@@ -8,6 +8,7 @@ import {
   type TaskDoc,
   type TokenTotals,
 } from "../../../packages/core/src/index.ts";
+import { resolveDbPath } from "./db-path.ts";
 
 type CommandResult = {
   exitCode: number;
@@ -19,10 +20,11 @@ export function runTraceCli(
   argv: string[],
   env: Record<string, string | undefined> = process.env,
 ): CommandResult {
-  const databasePath = env.TRACE_DB;
-
-  if (!databasePath) {
-    return failure("TRACE_DB must point to a SQLite database file");
+  let databasePath: string;
+  try {
+    databasePath = resolveDbPath(env);
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : String(error));
   }
 
   const [resource, action, ...args] = argv;
