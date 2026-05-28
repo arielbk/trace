@@ -66,7 +66,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `timeline-rollup` — Task timeline rollup
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace task timeline <id> --json` returns one ordered timeline aggregating the task's sessions (both tools), associated docs, token totals, and timestamps.
 

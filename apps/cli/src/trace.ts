@@ -6,6 +6,7 @@ import {
   type SessionTool,
   type Task,
   type TaskDoc,
+  type TokenTotals,
 } from "../../../packages/core/src/index.ts";
 
 type CommandResult = {
@@ -14,7 +15,10 @@ type CommandResult = {
   stderr: string;
 };
 
-export function runTraceCli(argv: string[], env: Record<string, string | undefined> = process.env): CommandResult {
+export function runTraceCli(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): CommandResult {
   const databasePath = env.TRACE_DB;
 
   if (!databasePath) {
@@ -47,11 +51,38 @@ export function runTraceCli(argv: string[], env: Record<string, string | undefin
           return failure(`Task not found: ${id}`, 1);
         }
 
-        return success(formatTask(task, store.listSessionsForTask(task.id), store.listDocsForTask(task.id)));
+        return success(
+          formatTask(
+            task,
+            store.listSessionsForTask(task.id),
+            store.listDocsForTask(task.id),
+          ),
+        );
       }
 
       if (action === "list") {
         return success(store.listTasks().map(formatTaskSummary).join(""));
+      }
+
+      if (action === "timeline") {
+        const id = args[0];
+        const format = args[1];
+
+        if (!id) {
+          return failure("Task id is required");
+        }
+
+        if (format !== "--json") {
+          return failure("Task timeline currently requires --json");
+        }
+
+        const timeline = store.getTaskTimeline(id);
+
+        if (!timeline) {
+          return failure(`Task not found: ${id}`, 1);
+        }
+
+        return success(`${JSON.stringify(timeline)}\n`);
       }
 
       if (action === "add-doc") {
@@ -100,7 +131,9 @@ export function runTraceCli(argv: string[], env: Record<string, string | undefin
       }
 
       if (action === "list" && args[0] === "--unassigned") {
-        return success(store.listUnassignedSessions().map(formatSessionSummary).join(""));
+        return success(
+          store.listUnassignedSessions().map(formatSessionSummary).join(""),
+        );
       }
 
       if (action === "scan" && args[0] === "--codex") {
@@ -110,6 +143,7 @@ export function runTraceCli(argv: string[], env: Record<string, string | undefin
             id: session.id,
             transcriptPath: session.transcriptPath,
             tool: session.tool,
+            tokenTotals: session.tokenTotals,
           }),
         );
 
@@ -136,14 +170,29 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 function usage(): CommandResult {
-  return failure("Usage: trace task <create|show|list|add-doc> ... | trace session <register|assign|list> ...");
+  return failure(
+    "Usage: trace task <create|show|list|add-doc> ... | trace session <register|assign|list> ...",
+  );
 }
 
-function formatTask(task: Task, sessions: Session[] = [], docs: TaskDoc[] = []): string {
-  const lines = [`id: ${task.id}`, `title: ${task.title}`, `createdAt: ${task.createdAt}`];
+function formatTask(
+  task: Task,
+  sessions: Session[] = [],
+  docs: TaskDoc[] = [],
+): string {
+  const lines = [
+    `id: ${task.id}`,
+    `title: ${task.title}`,
+    `createdAt: ${task.createdAt}`,
+  ];
 
   if (sessions.length > 0) {
-    lines.push("sessions:", ...sessions.map((session) => `- ${formatSessionSummary(session).trimEnd()}`));
+    lines.push(
+      "sessions:",
+      ...sessions.map(
+        (session) => `- ${formatSessionSummary(session).trimEnd()}`,
+      ),
+    );
   }
 
   if (docs.length > 0) {
@@ -165,17 +214,25 @@ function formatTaskDocSummary(doc: TaskDoc): string {
   return `${doc.taskId}\t${doc.path}\n`;
 }
 
-function parseSessionRegisterArgs(args: string[]): { id: string; transcriptPath: string; tool: SessionTool } {
+function parseSessionRegisterArgs(args: string[]): {
+  id: string;
+  transcriptPath: string;
+  tool: SessionTool;
+  tokenTotals: Partial<TokenTotals>;
+} {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
+  const tokenTotals: Partial<TokenTotals> = {};
 
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
     const value = args[index + 1];
 
     if (!flag || !value) {
-      throw new Error("Session register requires --id, --transcript, and --tool");
+      throw new Error(
+        "Session register requires --id, --transcript, and --tool",
+      );
     }
 
     if (flag === "--id") {
@@ -184,6 +241,19 @@ function parseSessionRegisterArgs(args: string[]): { id: string; transcriptPath:
       transcriptPath = value;
     } else if (flag === "--tool") {
       tool = value;
+    } else if (flag === "--input-tokens") {
+      tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
+    } else if (flag === "--output-tokens") {
+      tokenTotals.outputTokens = parseNonNegativeInteger(value, flag);
+    } else if (flag === "--cache-creation-input-tokens") {
+      tokenTotals.cacheCreationInputTokens = parseNonNegativeInteger(
+        value,
+        flag,
+      );
+    } else if (flag === "--cache-read-input-tokens") {
+      tokenTotals.cacheReadInputTokens = parseNonNegativeInteger(value, flag);
+    } else if (flag === "--total-tokens") {
+      tokenTotals.totalTokens = parseNonNegativeInteger(value, flag);
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -197,10 +267,23 @@ function parseSessionRegisterArgs(args: string[]): { id: string; transcriptPath:
     throw new Error("Session tool must be claude or codex");
   }
 
-  return { id, transcriptPath, tool };
+  return { id, transcriptPath, tool, tokenTotals };
 }
 
-function parseCodexScanArgs(args: string[], env: Record<string, string | undefined>): string {
+function parseNonNegativeInteger(value: string, flag: string): number {
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+
+  return parsed;
+}
+
+function parseCodexScanArgs(
+  args: string[],
+  env: Record<string, string | undefined>,
+): string {
   let codexHome = env.CODEX_HOME;
 
   for (let index = 0; index < args.length; index += 2) {

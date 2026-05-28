@@ -13,17 +13,25 @@ test("create then show round-trips a persisted task", () => {
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    const id = execFileSync(process.execPath, [traceBin, "task", "create", "checkout"], {
-      encoding: "utf8",
-      env,
-    }).trim();
+    const id = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
 
     assert.match(id, /^[0-9a-f-]{36}$/);
 
-    const shown = execFileSync(process.execPath, [traceBin, "task", "show", id], {
-      encoding: "utf8",
-      env,
-    });
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", id],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.match(shown, new RegExp(`id: ${id}`));
     assert.match(shown, /title: checkout/);
 
@@ -43,10 +51,14 @@ test("register then assign session attaches it to task show", () => {
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    const taskId = execFileSync(process.execPath, [traceBin, "task", "create", "checkout"], {
-      encoding: "utf8",
-      env,
-    }).trim();
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
 
     execFileSync(
       process.execPath,
@@ -64,28 +76,44 @@ test("register then assign session attaches it to task show", () => {
       { encoding: "utf8", env },
     );
 
-    const unassigned = execFileSync(process.execPath, [traceBin, "session", "list", "--unassigned"], {
-      encoding: "utf8",
-      env,
-    });
+    const unassigned = execFileSync(
+      process.execPath,
+      [traceBin, "session", "list", "--unassigned"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.equal(unassigned, "session-1\tcodex\t/tmp/session-1.jsonl\n");
 
-    execFileSync(process.execPath, [traceBin, "session", "assign", "session-1", taskId], {
-      encoding: "utf8",
-      env,
-    });
+    execFileSync(
+      process.execPath,
+      [traceBin, "session", "assign", "session-1", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
 
-    const shown = execFileSync(process.execPath, [traceBin, "task", "show", taskId], {
-      encoding: "utf8",
-      env,
-    });
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.match(shown, /sessions:/);
     assert.match(shown, /- session-1\tcodex\t\/tmp\/session-1\.jsonl/);
 
-    const nowUnassigned = execFileSync(process.execPath, [traceBin, "session", "list", "--unassigned"], {
-      encoding: "utf8",
-      env,
-    });
+    const nowUnassigned = execFileSync(
+      process.execPath,
+      [traceBin, "session", "list", "--unassigned"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.equal(nowUnassigned, "");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -98,23 +126,131 @@ test("add-doc then show lists the associated task doc", () => {
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    const taskId = execFileSync(process.execPath, [traceBin, "task", "create", "checkout"], {
-      encoding: "utf8",
-      env,
-    }).trim();
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
 
-    const added = execFileSync(process.execPath, [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"], {
-      encoding: "utf8",
-      env,
-    });
+    const added = execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.equal(added, `${taskId}\t/tmp/spec.md\n`);
 
-    const shown = execFileSync(process.execPath, [traceBin, "task", "show", taskId], {
-      encoding: "utf8",
-      env,
-    });
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
     assert.match(shown, /docs:/);
     assert.match(shown, /- \/tmp\/spec\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task timeline --json prints the aggregated task timeline", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "session",
+        "register",
+        "--id",
+        "session-1",
+        "--transcript",
+        "/tmp/session-1.jsonl",
+        "--tool",
+        "codex",
+        "--input-tokens",
+        "12",
+        "--output-tokens",
+        "8",
+        "--total-tokens",
+        "20",
+      ],
+      { encoding: "utf8", env },
+    );
+    execFileSync(
+      process.execPath,
+      [traceBin, "session", "assign", "session-1", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+
+    const timeline = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "timeline", taskId, "--json"],
+        {
+          encoding: "utf8",
+          env,
+        },
+      ),
+    ) as {
+      task: { id: string; title: string };
+      items: Array<{
+        type: string;
+        session?: { id: string };
+        doc?: { path: string };
+      }>;
+      tokenTotals: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      };
+    };
+
+    assert.equal(timeline.task.id, taskId);
+    assert.equal(timeline.task.title, "checkout");
+    assert.deepEqual(
+      timeline.items.map((item) =>
+        item.type === "session" ? item.session?.id : item.doc?.path,
+      ),
+      ["session-1", "/tmp/spec.md"],
+    );
+    assert.deepEqual(timeline.tokenTotals, {
+      inputTokens: 12,
+      outputTokens: 8,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 20,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

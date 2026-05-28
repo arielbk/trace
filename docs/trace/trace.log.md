@@ -44,3 +44,10 @@
 **Summary:** Added task-scoped document associations in core, including add/list/remove support backed by a `task_docs` SQLite table. Added `trace task add-doc <task> <path>` and extended `trace task show` to list associated docs.
 **Deviations:** none.
 **Handoff:** Verified with core doc association tests, CLI `add-doc` -> `show` integration coverage, and core/CLI typechecks.
+
+## `timeline-rollup` — 2026-05-28 19:25:39
+
+**Status:** done
+**Summary:** Added persisted session token totals and a core `getTaskTimeline` rollup that returns a task's ordered sessions and docs with summed token totals. Added `trace task timeline <id> --json` plus token flags on `session register` so CLI-created sessions can contribute usage data.
+**Deviations:** The existing SQLite store remains on Node's built-in `node:sqlite`; token columns are added with lightweight `ALTER TABLE` migration defaults for existing databases.
+**Handoff:** `scan --codex` now persists parsed token totals into sessions. Timeline JSON includes `{ task, items, tokenTotals }`; items are `session` or `doc` entries sorted by `createdAt` with deterministic tie-breaking.
