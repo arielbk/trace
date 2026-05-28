@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { openTraceStore } from "../../../packages/core/src/index.ts";
-import { getTaskTimeline, listTasks } from "./trace-data.ts";
+import { openTraceStore } from "@trace/core";
+import { getTaskTimeline, listTasks } from "../server/data.ts";
 
 test("web data adapter lists tasks and returns the same task timeline as core", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-web-"));
@@ -43,7 +43,6 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
     } else {
       process.env.TRACE_DB = originalTraceDb;
     }
-
     rmSync(dir, { recursive: true, force: true });
   }
 });

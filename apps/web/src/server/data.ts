@@ -1,14 +1,9 @@
-import {
-  openTraceStore,
-  type Task,
-  type TaskTimeline,
-} from "../../../packages/core/src/index.ts";
+import { openTraceStore, type Task, type TaskTimeline } from "@trace/core";
 
 const defaultDatabasePath = ".trace/trace.sqlite";
 
 export function listTasks(): Task[] {
   const store = openTraceStore(getDatabasePath());
-
   try {
     return store.listTasks();
   } finally {
@@ -18,7 +13,6 @@ export function listTasks(): Task[] {
 
 export function getTaskTimeline(id: string): TaskTimeline | null {
   const store = openTraceStore(getDatabasePath());
-
   try {
     return store.getTaskTimeline(id);
   } finally {

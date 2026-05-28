@@ -126,7 +126,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `vite-web` — Replace Next.js web app with Vite + React
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `apps/web` is a **Vite + React** app (per PRD addendum) — not Next.js. `/` lists tasks; `/task/:id` shows the timeline. Reads the same `packages/core` store via a thin server-side data layer (e.g. a tiny `vite-plugin`-served endpoint or a small companion process) since the browser can't open SQLite directly. Read-only. Zero design budget. The Next.js app is deleted.
 

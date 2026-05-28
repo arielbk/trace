@@ -75,6 +75,13 @@
 **Summary:** Added a core regression test asserting the store opens in WAL mode and that the current schema migration path is idempotent across fresh and reopened databases.
 **Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in the codex iteration sandbox (offline registry, unwritable cached store). Superseded by the follow-up entry below.
 
+## `vite-web` — 2026-05-28
+
+**Status:** done
+**Summary:** Replaced the Next.js `apps/web` app with a Vite + React SPA. New layout: `apps/web/index.html` (entry), `src/main.tsx` + `App.tsx` with `react-router-dom` routes (`/` → `TasksPage`, `/task/:id` → `TaskPage`), `src/server/data.ts` (the `listTasks`/`getTaskTimeline` adapter re-rooted under `@trace/core`), and `src/server/api-plugin.ts` — a `configureServer` Vite plugin that exposes `/api/tasks` and `/api/tasks/:id/timeline` so the browser SPA gets live data without bundling `better-sqlite3`. The `app/`, `public/`, `next.config.js`, `next-env.d.ts`, and `eslint.config.js` (Next-rooted) files are removed; `apps/web/.gitignore` now ignores `dist` and `.vite` instead of `.next`.
+**Deviations:** Dropped the `@repo/eslint-config` devDep on this app because the only available preset there targeted Next; the addendum doesn't mandate ESLint configuration, only the framework swap. Routing uses `react-router-dom` (matches the existing addition from earlier dependency steps).
+**Handoff:** `pnpm --filter web build` runs `vite build` and emits a production SPA to `dist/`. `pnpm --filter web dev` runs Vite with the API middleware. Verified with `pnpm --filter web test` (data-adapter parity test mirroring the core `getTaskTimeline` output), `pnpm --filter web check-types`, and `pnpm --filter web build`. Repo grep for `next/`, `next.config`, `next-env`, and `"next":` returns no matches outside `node_modules`.
+
 ## `vitest-migration` — 2026-05-28
 
 **Status:** done
