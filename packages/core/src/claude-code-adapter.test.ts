@@ -13,6 +13,7 @@ test("Claude Code transcript adapter returns session identity and token totals",
     id: "claude-session-1",
     transcriptPath,
     tool: "claude",
+    model: "claude-opus-4-7",
     tokenTotals: {
       inputTokens: 13,
       outputTokens: 25,
@@ -21,4 +22,19 @@ test("Claude Code transcript adapter returns session identity and token totals",
       totalTokens: 48,
     },
   });
+});
+
+test("Claude Code transcript adapter returns null when model is absent", () => {
+  const transcriptPath = "/tmp/claude-without-model.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "system",
+      session_id: "claude-session-without-model",
+      message: { usage: { input_tokens: 1, output_tokens: 2 } },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).model).toBe(
+    null,
+  );
 });

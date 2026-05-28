@@ -83,6 +83,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "cache_creation_input_tokens",
         "cache_read_input_tokens",
         "total_tokens",
+        "model",
       ]);
     } finally {
       database.close();
@@ -104,9 +105,11 @@ test("session register and assign lifecycle keeps one task per session", () => {
       id: "session-1",
       transcriptPath: "/tmp/session-1.jsonl",
       tool: "codex",
+      model: "gpt-5-codex",
     });
 
     expect(session.taskId).toBe(null);
+    expect(session.model).toBe("gpt-5-codex");
     expect(store.listUnassignedSessions()).toEqual([session]);
 
     const assigned = store.assignSession(session.id, firstTask.id);
@@ -119,6 +122,136 @@ test("session register and assign lifecycle keeps one task per session", () => {
     expect(store.listSessionsForTask(firstTask.id)).toEqual([]);
     expect(store.listSessionsForTask(secondTask.id)).toEqual([moved]);
 
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session register round-trips explicit and absent models idempotently", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const withModel = store.registerSession({
+      id: "with-model",
+      transcriptPath: "/tmp/with-model.jsonl",
+      tool: "claude",
+      model: "claude-opus-4-7",
+    });
+    const withoutModel = store.registerSession({
+      id: "without-model",
+      transcriptPath: "/tmp/without-model.jsonl",
+      tool: "codex",
+    });
+
+    expect(withModel.model).toBe("claude-opus-4-7");
+    expect(withoutModel.model).toBe(null);
+    expect(
+      store.registerSession({
+        id: "with-model",
+        transcriptPath: "/tmp/changed.jsonl",
+        tool: "claude",
+        model: "changed-model",
+      }),
+    ).toEqual(withModel);
+    expect(store.listUnassignedSessions()).toEqual([withModel, withoutModel]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("migration keeps existing session rows readable with a null model", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL
+      );
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        task_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root)
+        VALUES ('task-1', 'checkout', '2026-05-29T00:00:00.000Z', '');
+      INSERT INTO sessions (
+        id,
+        transcript_path,
+        tool,
+        task_id,
+        created_at,
+        input_tokens,
+        output_tokens,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
+        total_tokens
+      ) VALUES (
+        'old-session',
+        '/tmp/old-session.jsonl',
+        'claude',
+        'task-1',
+        '2026-05-29T00:00:01.000Z',
+        1,
+        2,
+        3,
+        4,
+        10
+      );
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    expect(store.listSessionsForTask("task-1")).toEqual([
+      {
+        id: "old-session",
+        transcriptPath: "/tmp/old-session.jsonl",
+        tool: "claude",
+        model: null,
+        taskId: "task-1",
+        createdAt: "2026-05-29T00:00:01.000Z",
+        tokenTotals: {
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheCreationInputTokens: 3,
+          cacheReadInputTokens: 4,
+          totalTokens: 10,
+        },
+      },
+    ]);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -161,6 +294,7 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
       id: "claude-session",
       transcriptPath: "/tmp/claude.jsonl",
       tool: "claude",
+      model: "claude-opus-4-7",
       tokenTotals: {
         inputTokens: 10,
         outputTokens: 20,

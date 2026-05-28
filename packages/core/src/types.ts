@@ -11,6 +11,7 @@ export type Session = {
   id: string;
   transcriptPath: string;
   tool: SessionTool;
+  model: string | null;
   taskId: string | null;
   createdAt: string;
   tokenTotals: TokenTotals;
@@ -52,6 +53,7 @@ export type RegisterSessionInput = {
   id: string;
   transcriptPath: string;
   tool: SessionTool;
+  model?: string | null;
   tokenTotals?: Partial<TokenTotals>;
 };
 

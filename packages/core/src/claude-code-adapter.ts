@@ -12,6 +12,7 @@ export type ParsedClaudeCodeSession = {
   id: string;
   transcriptPath: string;
   tool: "claude";
+  model: string | null;
   tokenTotals: ClaudeCodeTokenTotals;
 };
 
@@ -35,12 +36,17 @@ type ClaudeJsonlEvent = {
   message?: {
     session_id?: string;
     sessionId?: string;
+    model?: string;
     usage?: ClaudeUsage;
   };
+  model?: string;
 };
 
-export function parseClaudeCodeTranscript(input: ClaudeCodeTranscriptInput): ParsedClaudeCodeSession {
+export function parseClaudeCodeTranscript(
+  input: ClaudeCodeTranscriptInput,
+): ParsedClaudeCodeSession {
   let id: string | undefined;
+  let model: string | undefined;
   const tokenTotals: ClaudeCodeTokenTotals = {
     inputTokens: 0,
     outputTokens: 0,
@@ -55,7 +61,12 @@ export function parseClaudeCodeTranscript(input: ClaudeCodeTranscriptInput): Par
     }
 
     const event = JSON.parse(line) as ClaudeJsonlEvent;
-    id ??= event.session_id ?? event.sessionId ?? event.message?.session_id ?? event.message?.sessionId;
+    id ??=
+      event.session_id ??
+      event.sessionId ??
+      event.message?.session_id ??
+      event.message?.sessionId;
+    model ??= event.model ?? event.message?.model;
 
     addUsage(tokenTotals, event.usage);
     addUsage(tokenTotals, event.message?.usage);
@@ -69,18 +80,24 @@ export function parseClaudeCodeTranscript(input: ClaudeCodeTranscriptInput): Par
     id,
     transcriptPath: input.transcriptPath,
     tool: "claude",
+    model: model ?? null,
     tokenTotals,
   };
 }
 
-export function parseClaudeCodeTranscriptFile(transcriptPath: string): ParsedClaudeCodeSession {
+export function parseClaudeCodeTranscriptFile(
+  transcriptPath: string,
+): ParsedClaudeCodeSession {
   return parseClaudeCodeTranscript({
     transcript: readFileSync(transcriptPath, "utf8"),
     transcriptPath,
   });
 }
 
-function addUsage(tokenTotals: ClaudeCodeTokenTotals, usage: ClaudeUsage | undefined): void {
+function addUsage(
+  tokenTotals: ClaudeCodeTokenTotals,
+  usage: ClaudeUsage | undefined,
+): void {
   if (!usage) {
     return;
   }
@@ -95,5 +112,9 @@ function addUsage(tokenTotals: ClaudeCodeTokenTotals, usage: ClaudeUsage | undef
   tokenTotals.cacheCreationInputTokens += cacheCreationInputTokens;
   tokenTotals.cacheReadInputTokens += cacheReadInputTokens;
   tokenTotals.totalTokens +=
-    usage.total_tokens ?? inputTokens + outputTokens + cacheCreationInputTokens + cacheReadInputTokens;
+    usage.total_tokens ??
+    inputTokens +
+      outputTokens +
+      cacheCreationInputTokens +
+      cacheReadInputTokens;
 }

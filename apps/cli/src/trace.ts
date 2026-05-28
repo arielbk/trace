@@ -147,6 +147,7 @@ export function runTraceCli(
             id: session.id,
             transcriptPath: session.transcriptPath,
             tool: session.tool,
+            model: session.model,
             tokenTotals: session.tokenTotals,
           }),
         );
@@ -293,10 +294,12 @@ function parseSessionRegisterArgs(args: string[]): {
   transcriptPath: string;
   tool: SessionTool;
   tokenTotals: Partial<TokenTotals>;
+  model?: string | null;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
+  let model: string | null | undefined;
   const tokenTotals: Partial<TokenTotals> = {};
 
   for (let index = 0; index < args.length; index += 2) {
@@ -315,6 +318,8 @@ function parseSessionRegisterArgs(args: string[]): {
       transcriptPath = value;
     } else if (flag === "--tool") {
       tool = value;
+    } else if (flag === "--model") {
+      model = value;
     } else if (flag === "--input-tokens") {
       tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
     } else if (flag === "--output-tokens") {
@@ -341,7 +346,7 @@ function parseSessionRegisterArgs(args: string[]): {
     throw new Error("Session tool must be claude or codex");
   }
 
-  return { id, transcriptPath, tool, tokenTotals };
+  return { id, transcriptPath, tool, model, tokenTotals };
 }
 
 function parseNonNegativeInteger(value: string, flag: string): number {

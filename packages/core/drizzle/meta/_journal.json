@@ -15,6 +15,13 @@
       "when": 1779999700000,
       "tag": "0001_task_project_root",
       "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780019700000,
+      "tag": "0002_session_model",
+      "breakpoints": false
     }
   ]
 }

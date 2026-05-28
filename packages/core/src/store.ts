@@ -75,6 +75,7 @@ class DrizzleTaskStore implements TaskStore {
   registerSession(input: RegisterSessionInput): Session {
     const id = input.id.trim();
     const transcriptPath = input.transcriptPath.trim();
+    const model = input.model?.trim() || null;
 
     if (id.length === 0) {
       throw new Error("Session id is required");
@@ -94,6 +95,7 @@ class DrizzleTaskStore implements TaskStore {
       id,
       transcriptPath,
       tool: input.tool,
+      model,
       taskId: null,
       createdAt: new Date().toISOString(),
       tokenTotals: totals,
@@ -105,6 +107,7 @@ class DrizzleTaskStore implements TaskStore {
         id: session.id,
         transcriptPath: session.transcriptPath,
         tool: session.tool,
+        model: session.model,
         taskId: session.taskId,
         createdAt: session.createdAt,
         inputTokens: totals.inputTokens,
@@ -255,6 +258,7 @@ function sessionFromRow(row: SessionRow): Session {
     id: row.id,
     transcriptPath: row.transcriptPath,
     tool: row.tool,
+    model: row.model,
     taskId: row.taskId,
     createdAt: row.createdAt,
     tokenTotals: {

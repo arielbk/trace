@@ -187,6 +187,8 @@ test("task timeline --json prints the aggregated task timeline", () => {
         "/tmp/session-1.jsonl",
         "--tool",
         "codex",
+        "--model",
+        "gpt-5-codex",
         "--input-tokens",
         "12",
         "--output-tokens",
@@ -226,7 +228,7 @@ test("task timeline --json prints the aggregated task timeline", () => {
       task: { id: string; title: string };
       items: Array<{
         type: string;
-        session?: { id: string };
+        session?: { id: string; model: string | null };
         doc?: { path: string };
       }>;
       tokenTotals: {
@@ -238,9 +240,12 @@ test("task timeline --json prints the aggregated task timeline", () => {
 
     expect(timeline.task.id).toBe(taskId);
     expect(timeline.task.title).toBe("checkout");
-    expect(timeline.items.map((item) =>
+    expect(
+      timeline.items.map((item) =>
         item.type === "session" ? item.session?.id : item.doc?.path,
-      )).toEqual(["session-1", "/tmp/spec.md"]);
+      ),
+    ).toEqual(["session-1", "/tmp/spec.md"]);
+    expect(timeline.items[0]?.session?.model).toBe("gpt-5-codex");
     expect(timeline.tokenTotals).toEqual({
       inputTokens: 12,
       outputTokens: 8,
@@ -303,7 +308,9 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         env,
       },
     );
-    expect(shown).toMatch(/- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/);
+    expect(shown).toMatch(
+      /- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
+    );
 
     const context = execFileSync(
       process.execPath,
@@ -315,7 +322,9 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     );
     expect(context).toMatch(new RegExp(`task: ${taskId}`));
     expect(context).toMatch(/docs:\n- \/tmp\/spec\.md/);
-    expect(context).toMatch(/sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/);
+    expect(context).toMatch(
+      /sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
