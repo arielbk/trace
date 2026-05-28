@@ -102,7 +102,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `drizzle-storage` — Swap `node:sqlite` for Drizzle + `better-sqlite3`
 
-**Status:** needs-review
+**Status:** done
 
 **Outside-in:** The store in `packages/core` is backed by `better-sqlite3` (WAL mode) with Drizzle schemas/migrations, behind the existing swappable store interface. Public store API (task/session/doc/timeline) is unchanged; consumers (CLI, web, hooks) work identically. The interim `node:sqlite` implementation is removed.
 

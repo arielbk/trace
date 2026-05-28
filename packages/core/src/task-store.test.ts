@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 import { openTraceStore } from "./index.ts";
 
 test("task entity persists and reads back through the store interface", () => {
@@ -35,19 +35,19 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
     const reopened = openTraceStore(databasePath);
     reopened.close();
 
-    const database = new DatabaseSync(databasePath);
+    const database = new Database(databasePath);
 
     try {
-      const journalMode = database.prepare("PRAGMA journal_mode").get() as {
-        journal_mode: string;
-      };
+      const journalMode = database
+        .prepare("PRAGMA journal_mode")
+        .get() as { journal_mode: string };
       assert.equal(journalMode.journal_mode, "wal");
 
-      assert.deepEqual(tableNames(database), [
-        "sessions",
-        "task_docs",
-        "tasks",
-      ]);
+      const userTables = tableNames(database).filter(
+        (name) => !name.startsWith("__drizzle"),
+      );
+      assert.deepEqual(userTables, ["sessions", "task_docs", "tasks"]);
+
       assert.deepEqual(sessionColumnNames(database), [
         "id",
         "transcript_path",
@@ -222,14 +222,13 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
 
 function waitForNextMillisecond(): void {
   const startedAt = Date.now();
-
   while (Date.now() === startedAt) {
     // SQLite stores ISO timestamps with millisecond precision; the timeline
     // ordering assertion needs distinct timestamps without relying on timers.
   }
 }
 
-function tableNames(database: DatabaseSync): string[] {
+function tableNames(database: Database.Database): string[] {
   return database
     .prepare(
       "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name ASC",
@@ -238,7 +237,7 @@ function tableNames(database: DatabaseSync): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
-function sessionColumnNames(database: DatabaseSync): string[] {
+function sessionColumnNames(database: Database.Database): string[] {
   return database
     .prepare("PRAGMA table_info(sessions)")
     .all()

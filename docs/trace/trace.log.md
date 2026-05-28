@@ -71,7 +71,13 @@
 
 ## `drizzle-storage` — 2026-05-28 19:51:27
 
-**Status:** needs-review
+**Status:** done (initial iteration landed regression test only; follow-up landed the swap — see entry below)
 **Summary:** Added a core regression test asserting the store opens in WAL mode and that the current schema migration path is idempotent across fresh and reopened databases.
-**Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in this sandbox. `pnpm` registry fetches fail with `ENOTFOUND`, and the only cached Drizzle/`better-sqlite3` metadata is in a pnpm v10 store outside writable roots, so pnpm cannot relink this checkout from it. The store still uses Node 24's `node:sqlite`.
-**Handoff:** Verified the new storage regression with `node --test packages/core/src/task-store.test.ts`; verified the existing public behavior with `node --test packages/core/src/*.test.ts apps/cli/src/*.test.ts`; verified type structure with `tsc --noEmit -p packages/core/tsconfig.json` and `tsc --noEmit -p apps/cli/tsconfig.json`. Package-level `pnpm --filter ... test` still has the pre-existing cwd/path issue where test fixtures and CLI entrypoints are prefixed with the package path twice.
+**Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in the codex iteration sandbox (offline registry, unwritable cached store). Superseded by the follow-up entry below.
+
+## `drizzle-storage` — 2026-05-28 (follow-up: actual swap)
+
+**Status:** done
+**Summary:** Completed the dependency swap. `packages/core` now uses `better-sqlite3` as the driver and `drizzle-orm` for schema + queries, with a generated migration (`packages/core/drizzle/0000_*.sql`) applied via `drizzle-orm/better-sqlite3/migrator.migrate()` on store open. Schema lives in `src/schema.ts`; store implementation moved to `src/store.ts`; public types extracted to `src/types.ts`. The `TaskStore` interface and `openTraceStore` factory are unchanged. The interim `node:sqlite` implementation and the local `node-sqlite.d.ts` shim are removed.
+**Deviations:** none.
+**Handoff:** `drizzle-kit` is a `devDependency` of `@trace/core` for regenerating migrations. The WAL/migration regression test was updated to inspect via `better-sqlite3` and to ignore the `__drizzle_migrations` bookkeeping table. Verified with `node --test packages/core/src/*.test.ts apps/cli/src/*.test.ts` and core/CLI typechecks.
