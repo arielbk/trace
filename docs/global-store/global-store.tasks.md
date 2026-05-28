@@ -20,7 +20,7 @@ Move Trace from per-cwd / env-only DB paths to a global `~/.trace/trace.sqlite` 
 
 ### `project-root-resolver` — Walk-up-to-git-root helper
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `resolveProjectRoot(cwd)` exported from `@trace/core` returns the nearest ancestor directory containing a `.git` entry, falling back to the input `cwd` if none is found.
 
