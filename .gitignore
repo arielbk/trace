@@ -39,3 +39,9 @@ yarn-error.log*
 
 # Claude Code local state
 .claude/
+
+# pnpm content-addressable store (belongs in ~/.pnpm-store, not the repo)
+.pnpm-store/
+
+# QA capture artifacts (recordings/screenshots) — not tracked
+docs/**/qa-artifacts/
