@@ -1,5 +1,9 @@
-import { openTraceStore, type Task, type TaskTimeline } from "@trace/core";
-import { join } from "node:path";
+import {
+  openTraceStore,
+  resolveDatabasePath,
+  type Task,
+  type TaskTimeline,
+} from "@trace/core";
 
 export function listTasks(): Task[] {
   const store = openTraceStore(getDatabasePath());
@@ -20,9 +24,5 @@ export function getTaskTimeline(id: string): TaskTimeline | null {
 }
 
 export function getDatabasePath(): string {
-  if (process.env.TRACE_DB) return process.env.TRACE_DB;
-  if (process.env.HOME) return join(process.env.HOME, ".trace", "trace.sqlite");
-  throw new Error(
-    "TRACE_DB must be set, or HOME must be available for the default path ~/.trace/trace.sqlite",
-  );
+  return resolveDatabasePath(process.env);
 }

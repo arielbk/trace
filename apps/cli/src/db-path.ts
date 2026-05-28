@@ -1,11 +1,11 @@
-import { join } from "node:path";
+import { resolveDatabasePath } from "../../../packages/core/src/index.ts";
 
+/**
+ * Thin alias over the shared `@trace/core` resolver so the CLI never
+ * hard-codes a path. See `resolveDatabasePath` for the resolution rules.
+ */
 export function resolveDbPath(
   env: Record<string, string | undefined>,
 ): string {
-  if (env.TRACE_DB) return env.TRACE_DB;
-  if (env.HOME) return join(env.HOME, ".trace", "trace.sqlite");
-  throw new Error(
-    "TRACE_DB must be set, or HOME must be available for the default path ~/.trace/trace.sqlite",
-  );
+  return resolveDatabasePath(env);
 }

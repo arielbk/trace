@@ -1,5 +1,6 @@
 export { openTraceStore } from "./store.ts";
 export { resolveProjectRoot } from "./project-root.ts";
+export { resolveDatabasePath } from "./db-path.ts";
 export type {
   RegisterSessionInput,
   Session,
