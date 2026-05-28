@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "vitest";
 
-const hookBin = resolve("apps/cli/src/claude-session-start-hook.ts");
-const traceBin = resolve("apps/cli/src/trace.ts");
+const hookBin = fileURLToPath(new URL("./claude-session-start-hook.ts", import.meta.url));
+const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
 test("Claude Code SessionStart hook registers an unassigned CLI session", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-claude-hook-"));
@@ -30,7 +30,7 @@ test("Claude Code SessionStart hook registers an unassigned CLI session", () => 
       env,
     });
 
-    assert.equal(unassigned, `claude-session-1\tclaude\t${transcriptPath}\n`);
+    expect(unassigned).toBe(`claude-session-1\tclaude\t${transcriptPath}\n`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

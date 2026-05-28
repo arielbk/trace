@@ -1,8 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import Database from "better-sqlite3";
 import { openTraceStore } from "./index.ts";
 
@@ -16,8 +15,8 @@ test("task entity persists and reads back through the store interface", () => {
     store.close();
 
     const reopened = openTraceStore(databasePath);
-    assert.deepEqual(reopened.getTask(created.id), created);
-    assert.deepEqual(reopened.listTasks(), [created]);
+    expect(reopened.getTask(created.id)).toEqual(created);
+    expect(reopened.listTasks()).toEqual([created]);
     reopened.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -41,14 +40,14 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
       const journalMode = database
         .prepare("PRAGMA journal_mode")
         .get() as { journal_mode: string };
-      assert.equal(journalMode.journal_mode, "wal");
+      expect(journalMode.journal_mode).toBe("wal");
 
       const userTables = tableNames(database).filter(
         (name) => !name.startsWith("__drizzle"),
       );
-      assert.deepEqual(userTables, ["sessions", "task_docs", "tasks"]);
+      expect(userTables).toEqual(["sessions", "task_docs", "tasks"]);
 
-      assert.deepEqual(sessionColumnNames(database), [
+      expect(sessionColumnNames(database)).toEqual([
         "id",
         "transcript_path",
         "tool",
@@ -82,18 +81,18 @@ test("session register and assign lifecycle keeps one task per session", () => {
       tool: "codex",
     });
 
-    assert.equal(session.taskId, null);
-    assert.deepEqual(store.listUnassignedSessions(), [session]);
+    expect(session.taskId).toBe(null);
+    expect(store.listUnassignedSessions()).toEqual([session]);
 
     const assigned = store.assignSession(session.id, firstTask.id);
-    assert.equal(assigned.taskId, firstTask.id);
-    assert.deepEqual(store.listUnassignedSessions(), []);
-    assert.deepEqual(store.listSessionsForTask(firstTask.id), [assigned]);
+    expect(assigned.taskId).toBe(firstTask.id);
+    expect(store.listUnassignedSessions()).toEqual([]);
+    expect(store.listSessionsForTask(firstTask.id)).toEqual([assigned]);
 
     const moved = store.assignSession(session.id, secondTask.id);
-    assert.equal(moved.taskId, secondTask.id);
-    assert.deepEqual(store.listSessionsForTask(firstTask.id), []);
-    assert.deepEqual(store.listSessionsForTask(secondTask.id), [moved]);
+    expect(moved.taskId).toBe(secondTask.id);
+    expect(store.listSessionsForTask(firstTask.id)).toEqual([]);
+    expect(store.listSessionsForTask(secondTask.id)).toEqual([moved]);
 
     store.close();
   } finally {
@@ -111,12 +110,12 @@ test("task doc associations can be added, read, and removed through the store in
 
     const doc = store.addTaskDoc(task.id, "/tmp/spec.md");
 
-    assert.equal(doc.taskId, task.id);
-    assert.equal(doc.path, "/tmp/spec.md");
-    assert.deepEqual(store.listDocsForTask(task.id), [doc]);
+    expect(doc.taskId).toBe(task.id);
+    expect(doc.path).toBe("/tmp/spec.md");
+    expect(store.listDocsForTask(task.id)).toEqual([doc]);
 
     store.removeTaskDoc(task.id, "/tmp/spec.md");
-    assert.deepEqual(store.listDocsForTask(task.id), []);
+    expect(store.listDocsForTask(task.id)).toEqual([]);
 
     store.close();
   } finally {
@@ -178,7 +177,7 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
       },
     });
 
-    assert.deepEqual(store.getTaskTimeline(task.id), {
+    expect(store.getTaskTimeline(task.id)).toEqual({
       task,
       items: [
         {
@@ -202,7 +201,7 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
       },
     });
 
-    assert.deepEqual(store.getTaskTimeline(emptyTask.id), {
+    expect(store.getTaskTimeline(emptyTask.id)).toEqual({
       task: emptyTask,
       items: [],
       tokenTotals: {

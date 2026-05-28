@@ -1,20 +1,21 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "vitest";
 import { parseCodexTranscript } from "./codex-adapter.ts";
 
+const codexFixture = fileURLToPath(
+  new URL("./fixtures/codex-thread-1.jsonl", import.meta.url),
+);
+
 test("Codex transcript adapter validates identity and returns token totals", () => {
-  const transcriptPath = resolve("packages/core/src/fixtures/codex-thread-1.jsonl");
+  const transcriptPath = codexFixture;
   const transcript = readFileSync(transcriptPath, "utf8");
 
-  assert.deepEqual(
-    parseCodexTranscript({
+  expect(parseCodexTranscript({
       transcript,
       transcriptPath,
       expectedThreadId: "codex-thread-1",
-    }),
-    {
+    })).toEqual({
       id: "codex-thread-1",
       transcriptPath,
       tool: "codex",
@@ -25,21 +26,17 @@ test("Codex transcript adapter validates identity and returns token totals", () 
         cacheReadInputTokens: 11,
         totalTokens: 57,
       },
-    },
-  );
+    });
 });
 
 test("Codex transcript adapter rejects mismatched live thread identity", () => {
-  const transcriptPath = resolve("packages/core/src/fixtures/codex-thread-1.jsonl");
+  const transcriptPath = codexFixture;
   const transcript = readFileSync(transcriptPath, "utf8");
 
-  assert.throws(
-    () =>
+  expect(() =>
       parseCodexTranscript({
         transcript,
         transcriptPath,
         expectedThreadId: "different-thread",
-      }),
-    /does not match expected thread id/,
-  );
+      })).toThrow(/does not match expected thread id/);
 });

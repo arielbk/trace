@@ -75,6 +75,13 @@
 **Summary:** Added a core regression test asserting the store opens in WAL mode and that the current schema migration path is idempotent across fresh and reopened databases.
 **Deviations:** The actual Drizzle + `better-sqlite3` swap could not be completed in the codex iteration sandbox (offline registry, unwritable cached store). Superseded by the follow-up entry below.
 
+## `vitest-migration` — 2026-05-28
+
+**Status:** done
+**Summary:** Converted all test files in `packages/core`, `apps/cli`, and `apps/web` from `node:test`/`node:assert/strict` to `vitest` (`test`/`expect`). Per-package `test` scripts now invoke `vitest run`; `turbo.json` gained a `test` task. Fixture and CLI-bin paths in tests changed from `resolve("packages/core/...")` (CWD-dependent) to `fileURLToPath(new URL("./...", import.meta.url))` so tests resolve correctly when vitest runs them from the package directory. Removed the leftover `apps/cli/src/node-builtins.d.ts` shim now that real `@types/node` and `vitest` provide the types.
+**Deviations:** none.
+**Handoff:** `vitest@^4` is a devDep at the root and in each test-running package so the local `vitest` binary resolves under pnpm's symlink layout. Verified with `pnpm -r test` (12 tests across core/cli/web), `pnpm -r check-types`, and a repo grep that returns no `node:test` or `node --test` references.
+
 ## `drizzle-storage` — 2026-05-28 (follow-up: actual swap)
 
 **Status:** done

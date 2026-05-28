@@ -114,7 +114,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `vitest-migration` — Move tests from `node --test` to vitest
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** All test files in `packages/core`, `apps/cli`, and `apps/web` run under `vitest` (the addendum-mandated runner). Each package exposes a `test` script that invokes `vitest run`; `pnpm -r test` runs the full suite green. `node --test` is no longer referenced by any script or doc.
 

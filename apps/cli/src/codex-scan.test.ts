@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "vitest";
 
-const traceBin = resolve("apps/cli/src/trace.ts");
+const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
 test("scan --codex backfills sessions from a Codex sessions directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-codex-scan-"));
@@ -42,7 +42,7 @@ test("scan --codex backfills sessions from a Codex sessions directory", () => {
       env,
     });
 
-    assert.equal(unassigned, `codex-thread-1\tcodex\t${transcriptPath}\n`);
+    expect(unassigned).toBe(`codex-thread-1\tcodex\t${transcriptPath}\n`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

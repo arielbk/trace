@@ -1,8 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { openTraceStore } from "../../../packages/core/src/index.ts";
 import { getTaskTimeline, listTasks } from "./trace-data.ts";
 
@@ -30,14 +29,14 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
     const coreTimeline = store.getTaskTimeline(task.id);
     store.close();
 
-    assert.deepEqual(listTasks(), [task]);
-    assert.deepEqual(getTaskTimeline(task.id), coreTimeline);
+    expect(listTasks()).toEqual([task]);
+    expect(getTaskTimeline(task.id)).toEqual(coreTimeline);
     const timelineLabels = getTaskTimeline(task.id)?.items.map((item) =>
       item.type === "session" ? item.session.id : item.doc.path,
     );
-    assert(timelineLabels?.includes("session-1"));
-    assert(timelineLabels?.includes("/tmp/spec.md"));
-    assert.equal(getTaskTimeline(task.id)?.tokenTotals.totalTokens, 20);
+    expect(timelineLabels).toContain("session-1");
+    expect(timelineLabels).toContain("/tmp/spec.md");
+    expect(getTaskTimeline(task.id)?.tokenTotals.totalTokens).toBe(20);
   } finally {
     if (originalTraceDb === undefined) {
       delete process.env.TRACE_DB;

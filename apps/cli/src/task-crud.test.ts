@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import assert from "node:assert/strict";
-import test from "node:test";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, test } from "vitest";
 
-const traceBin = resolve("apps/cli/src/trace.ts");
+const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
 test("create then show round-trips a persisted task", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
@@ -22,7 +22,7 @@ test("create then show round-trips a persisted task", () => {
       },
     ).trim();
 
-    assert.match(id, /^[0-9a-f-]{36}$/);
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
 
     const shown = execFileSync(
       process.execPath,
@@ -32,14 +32,14 @@ test("create then show round-trips a persisted task", () => {
         env,
       },
     );
-    assert.match(shown, new RegExp(`id: ${id}`));
-    assert.match(shown, /title: checkout/);
+    expect(shown).toMatch(new RegExp(`id: ${id}`));
+    expect(shown).toMatch(/title: checkout/);
 
     const listed = execFileSync(process.execPath, [traceBin, "task", "list"], {
       encoding: "utf8",
       env,
     });
-    assert.equal(listed, `${id}\tcheckout\n`);
+    expect(listed).toBe(`${id}\tcheckout\n`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -84,7 +84,7 @@ test("register then assign session attaches it to task show", () => {
         env,
       },
     );
-    assert.equal(unassigned, "session-1\tcodex\t/tmp/session-1.jsonl\n");
+    expect(unassigned).toBe("session-1\tcodex\t/tmp/session-1.jsonl\n");
 
     execFileSync(
       process.execPath,
@@ -103,8 +103,8 @@ test("register then assign session attaches it to task show", () => {
         env,
       },
     );
-    assert.match(shown, /sessions:/);
-    assert.match(shown, /- session-1\tcodex\t\/tmp\/session-1\.jsonl/);
+    expect(shown).toMatch(/sessions:/);
+    expect(shown).toMatch(/- session-1\tcodex\t\/tmp\/session-1\.jsonl/);
 
     const nowUnassigned = execFileSync(
       process.execPath,
@@ -114,7 +114,7 @@ test("register then assign session attaches it to task show", () => {
         env,
       },
     );
-    assert.equal(nowUnassigned, "");
+    expect(nowUnassigned).toBe("");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -143,7 +143,7 @@ test("add-doc then show lists the associated task doc", () => {
         env,
       },
     );
-    assert.equal(added, `${taskId}\t/tmp/spec.md\n`);
+    expect(added).toBe(`${taskId}\t/tmp/spec.md\n`);
 
     const shown = execFileSync(
       process.execPath,
@@ -153,8 +153,8 @@ test("add-doc then show lists the associated task doc", () => {
         env,
       },
     );
-    assert.match(shown, /docs:/);
-    assert.match(shown, /- \/tmp\/spec\.md/);
+    expect(shown).toMatch(/docs:/);
+    expect(shown).toMatch(/- \/tmp\/spec\.md/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -236,15 +236,12 @@ test("task timeline --json prints the aggregated task timeline", () => {
       };
     };
 
-    assert.equal(timeline.task.id, taskId);
-    assert.equal(timeline.task.title, "checkout");
-    assert.deepEqual(
-      timeline.items.map((item) =>
+    expect(timeline.task.id).toBe(taskId);
+    expect(timeline.task.title).toBe("checkout");
+    expect(timeline.items.map((item) =>
         item.type === "session" ? item.session?.id : item.doc?.path,
-      ),
-      ["session-1", "/tmp/spec.md"],
-    );
-    assert.deepEqual(timeline.tokenTotals, {
+      )).toEqual(["session-1", "/tmp/spec.md"]);
+    expect(timeline.tokenTotals).toEqual({
       inputTokens: 12,
       outputTokens: 8,
       cacheCreationInputTokens: 0,
@@ -296,7 +293,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
       ],
       { encoding: "utf8", env },
     );
-    assert.equal(bound, `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl\n`);
+    expect(bound).toBe(`codex-session-1\tcodex\t/tmp/codex-session-1.jsonl\n`);
 
     const shown = execFileSync(
       process.execPath,
@@ -306,10 +303,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         env,
       },
     );
-    assert.match(
-      shown,
-      /- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
-    );
+    expect(shown).toMatch(/- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/);
 
     const context = execFileSync(
       process.execPath,
@@ -319,12 +313,9 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         env,
       },
     );
-    assert.match(context, new RegExp(`task: ${taskId}`));
-    assert.match(context, /docs:\n- \/tmp\/spec\.md/);
-    assert.match(
-      context,
-      /sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
-    );
+    expect(context).toMatch(new RegExp(`task: ${taskId}`));
+    expect(context).toMatch(/docs:\n- \/tmp\/spec\.md/);
+    expect(context).toMatch(/sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
