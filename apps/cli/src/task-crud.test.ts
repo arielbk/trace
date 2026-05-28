@@ -36,3 +36,58 @@ test("create then show round-trips a persisted task", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("register then assign session attaches it to task show", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(process.execPath, [traceBin, "task", "create", "checkout"], {
+      encoding: "utf8",
+      env,
+    }).trim();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "session",
+        "register",
+        "--id",
+        "session-1",
+        "--transcript",
+        "/tmp/session-1.jsonl",
+        "--tool",
+        "codex",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const unassigned = execFileSync(process.execPath, [traceBin, "session", "list", "--unassigned"], {
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(unassigned, "session-1\tcodex\t/tmp/session-1.jsonl\n");
+
+    execFileSync(process.execPath, [traceBin, "session", "assign", "session-1", taskId], {
+      encoding: "utf8",
+      env,
+    });
+
+    const shown = execFileSync(process.execPath, [traceBin, "task", "show", taskId], {
+      encoding: "utf8",
+      env,
+    });
+    assert.match(shown, /sessions:/);
+    assert.match(shown, /- session-1\tcodex\t\/tmp\/session-1\.jsonl/);
+
+    const nowUnassigned = execFileSync(process.execPath, [traceBin, "session", "list", "--unassigned"], {
+      encoding: "utf8",
+      env,
+    });
+    assert.equal(nowUnassigned, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

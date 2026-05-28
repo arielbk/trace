@@ -18,7 +18,7 @@ A local, read-only tool that registers Claude Code and Codex sessions, lets each
 
 ### `session-register-assign` — Session register + assign
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace session register --id <id> --transcript <path> --tool <claude|codex>` creates an unassigned session; `trace session assign <id> <task>` binds it; `trace session list --unassigned` shows the pile; assigned sessions appear under `trace task show <task>`.
 

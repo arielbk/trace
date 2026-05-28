@@ -22,3 +22,36 @@ test("task entity persists and reads back through the store interface", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("session register and assign lifecycle keeps one task per session", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const firstTask = store.createTask("checkout");
+    const secondTask = store.createTask("review");
+    const session = store.registerSession({
+      id: "session-1",
+      transcriptPath: "/tmp/session-1.jsonl",
+      tool: "codex",
+    });
+
+    assert.equal(session.taskId, null);
+    assert.deepEqual(store.listUnassignedSessions(), [session]);
+
+    const assigned = store.assignSession(session.id, firstTask.id);
+    assert.equal(assigned.taskId, firstTask.id);
+    assert.deepEqual(store.listUnassignedSessions(), []);
+    assert.deepEqual(store.listSessionsForTask(firstTask.id), [assigned]);
+
+    const moved = store.assignSession(session.id, secondTask.id);
+    assert.equal(moved.taskId, secondTask.id);
+    assert.deepEqual(store.listSessionsForTask(firstTask.id), []);
+    assert.deepEqual(store.listSessionsForTask(secondTask.id), [moved]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

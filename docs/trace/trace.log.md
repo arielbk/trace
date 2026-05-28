@@ -16,3 +16,10 @@
 
 **Notes:**
 - Network access was unavailable, so Drizzle and `better-sqlite3` could not be fetched into the lockfile. The store uses Node 24's built-in `node:sqlite` API for the same local SQLite/WAL behavior and keeps the store boundary isolated for a later driver swap.
+
+## `session-register-assign` — 2026-05-28 19:10:04
+
+**Status:** done
+**Summary:** Added persistent session registration and task assignment in core, plus CLI commands for `trace session register`, `trace session assign`, and `trace session list --unassigned`. Assigned sessions now appear under `trace task show`.
+**Deviations:** Used the existing Node 24 `node:sqlite` store boundary from the prior slice rather than adding Drizzle or `better-sqlite3`.
+**Handoff:** Sessions are stored once by `id`; assignment is a single nullable `task_id` update, so reassigning a session moves it rather than creating duplicate task links. Valid tools are constrained to `claude` and `codex`.
