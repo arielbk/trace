@@ -258,7 +258,7 @@ class DrizzleTaskStore implements TaskStore {
     this.#sqlite.close();
   }
 
-  private getSession(id: string): Session | null {
+  getSession(id: string): Session | null {
     const row = this.#db
       .select()
       .from(sessions)

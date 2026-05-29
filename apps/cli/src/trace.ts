@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   openTraceStore,
+  readTranscriptTail,
   resolveProjectRoot,
   scanCodexSessions,
   type Session,
@@ -139,6 +140,31 @@ export function runTraceCli(
       if (action === "list" && args[0] === "--unassigned") {
         return success(
           store.listUnassignedSessions().map(formatSessionSummary).join(""),
+        );
+      }
+
+      if (action === "tail") {
+        const sessionId = args[0];
+
+        if (!sessionId) {
+          return failure("Session id is required");
+        }
+
+        const session = store.getSession(sessionId);
+
+        if (!session) {
+          return failure(`Session not found: ${sessionId}`, 1);
+        }
+
+        const limit = parseSessionTailLimit(args.slice(1));
+        return success(
+          readTranscriptTail({
+            transcriptPath: session.transcriptPath,
+            tool: session.tool,
+            limit,
+          })
+            .map((message) => `${message.role}: ${message.text}\n`)
+            .join(""),
         );
       }
 
@@ -391,6 +417,18 @@ function parseCodexScanArgs(
   }
 
   return `${env.HOME}/.codex`;
+}
+
+function parseSessionTailLimit(args: string[]): number | undefined {
+  if (args.length === 0) {
+    return undefined;
+  }
+
+  if (args.length !== 2 || args[0] !== "--limit") {
+    throw new Error("Session tail accepts --limit <count>");
+  }
+
+  return parseNonNegativeInteger(args[1] ?? "", "--limit");
 }
 
 function parseSkillWorkOnTaskArgs(

@@ -1,2 +1,6 @@
 {"type":"thread.started","thread_id":"codex-thread-1","model":"gpt-5-codex"}
+{"type":"turn.started","prompt":"Inspect failing test"}
+{"type":"agent_message","message":"Need add adapter"}
 {"type":"turn.completed","usage":{"input_tokens":17,"output_tokens":29,"cache_read_input_tokens":11}}
+{"type":"user_message","message":"Run tests"}
+{"type":"assistant_message","message":"Tests pass"}

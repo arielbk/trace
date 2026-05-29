@@ -27,3 +27,8 @@ export {
   scanCodexSessions,
 } from "./codex-adapter.ts";
 export type { CodexTokenTotals, ParsedCodexSession } from "./codex-adapter.ts";
+export {
+  readTranscriptTail,
+  tailTranscriptMessages,
+} from "./transcript-tail.ts";
+export type { TranscriptMessage } from "./transcript-tail.ts";

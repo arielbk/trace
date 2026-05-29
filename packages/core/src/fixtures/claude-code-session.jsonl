@@ -1,3 +1,6 @@
 {"type":"system","session_id":"claude-session-1","cwd":"/repo","message":{"usage":{"input_tokens":2,"output_tokens":3}}}
+{"type":"user","session_id":"claude-session-1","message":{"role":"user","content":"Plan checkout flow"}}
 {"type":"assistant","session_id":"claude-session-1","message":{"id":"msg_1","model":"claude-opus-4-7","usage":{"input_tokens":10,"output_tokens":20,"cache_creation_input_tokens":4,"cache_read_input_tokens":6}}}
+{"type":"assistant","session_id":"claude-session-1","message":{"role":"assistant","content":[{"type":"text","text":"Use task docs first."}]}}
+{"type":"user","session_id":"claude-session-1","message":{"role":"user","content":"Run the focused tests"}}
 {"type":"assistant","session_id":"claude-session-1","usage":{"input_tokens":1,"output_tokens":2}}

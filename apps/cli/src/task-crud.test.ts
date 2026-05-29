@@ -120,6 +120,50 @@ test("register then assign session attaches it to task show", () => {
   }
 });
 
+test("session tail prints recent transcript messages", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-tail-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session-1.jsonl");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({ type: "user_message", message: "First" }),
+        JSON.stringify({ type: "assistant_message", message: "Second" }),
+        JSON.stringify({ type: "user_message", message: "Third" }),
+      ].join("\n"),
+    );
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "session",
+        "register",
+        "--id",
+        "session-1",
+        "--transcript",
+        transcriptPath,
+        "--tool",
+        "codex",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const tail = execFileSync(
+      process.execPath,
+      [traceBin, "session", "tail", "session-1", "--limit", "2"],
+      { encoding: "utf8", env },
+    );
+
+    expect(tail).toBe("assistant: Second\nuser: Third\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("add-doc then show lists the associated task doc", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, "trace.sqlite");

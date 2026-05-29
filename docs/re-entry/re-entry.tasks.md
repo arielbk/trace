@@ -22,7 +22,7 @@ stays tool-agnostic so it slots in later.
 
 ### `transcript-tail` — Recent-dialogue extraction
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace session tail <id>` prints the last N human/assistant message texts of a session's transcript as clean text, abstracting over Claude JSONL vs Codex JSONL. N has a sensible default and is overridable via a flag.
 

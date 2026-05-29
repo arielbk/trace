@@ -60,6 +60,7 @@ export type RegisterSessionInput = {
 export type TaskStore = {
   createTask(title: string, projectRoot?: string): Task;
   getTask(id: string): Task | null;
+  getSession(id: string): Session | null;
   listTasks(): Task[];
   registerSession(input: RegisterSessionInput): Session;
   assignSession(sessionId: string, taskId: string): Session;
