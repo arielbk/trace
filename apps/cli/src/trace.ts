@@ -10,6 +10,8 @@ import {
   type TokenTotals,
 } from "../../../packages/core/src/index.ts";
 import { resolveDbPath } from "./db-path.ts";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 type CommandResult = {
   exitCode: number;
@@ -398,11 +400,13 @@ function parseSkillWorkOnTaskArgs(
   id: string;
   transcriptPath: string;
   tool: SessionTool;
+  model?: string;
   tokenTotals: Partial<TokenTotals>;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
+  let model: string | undefined;
 
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -410,7 +414,7 @@ function parseSkillWorkOnTaskArgs(
 
     if (!flag || !value) {
       throw new Error(
-        "Skill work-on-task accepts --id, --transcript, and --tool",
+        "Skill work-on-task accepts --id, --transcript, --tool, and --model",
       );
     }
 
@@ -420,6 +424,8 @@ function parseSkillWorkOnTaskArgs(
       transcriptPath = value;
     } else if (flag === "--tool") {
       tool = value;
+    } else if (flag === "--model") {
+      model = value;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -444,6 +450,7 @@ function parseSkillWorkOnTaskArgs(
     transcriptPath:
       transcriptPath ?? inferTranscriptPath(inferredId, inferredTool, env),
     tool: inferredTool,
+    model,
     tokenTotals: {},
   };
 }
@@ -485,7 +492,21 @@ function inferTranscriptPath(
   return `${tool}:${sessionId}`;
 }
 
-const isDirectRun = import.meta.url === `file://${process.argv[1]}`;
+// `process.argv[1]` is the invoked path, which `pnpm link --global` exposes as
+// a symlink whose realpath is this entry. Compare resolved realpaths so the CLI
+// runs whether it was launched directly or through the linked `trace` shim.
+const invokedPath = process.argv[1];
+const isDirectRun =
+  invokedPath !== undefined &&
+  safeRealpath(invokedPath) === fileURLToPath(import.meta.url);
+
+function safeRealpath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
 
 if (isDirectRun) {
   const result = runTraceCli(process.argv.slice(2));

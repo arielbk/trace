@@ -329,3 +329,50 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("skill work-on-task --model persists the session model", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-model-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        taskId,
+        "--id",
+        "claude-session-1",
+        "--transcript",
+        "/tmp/claude-session-1.jsonl",
+        "--tool",
+        "claude",
+        "--model",
+        "claude-opus-4-7",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const timeline = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "timeline", taskId, "--json"],
+        { encoding: "utf8", env },
+      ),
+    ) as {
+      items: Array<{ type: string; session?: { id: string; model: string | null } }>;
+    };
+
+    expect(timeline.items[0]?.session?.model).toBe("claude-opus-4-7");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
