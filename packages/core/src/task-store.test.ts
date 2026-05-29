@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -273,6 +273,77 @@ test("task doc associations can be added, read, and removed through the store in
     expect(store.listDocsForTask(task.id)).toEqual([doc]);
 
     store.removeTaskDoc(task.id, "/tmp/spec.md");
+    expect(store.listDocsForTask(task.id)).toEqual([]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task docs include files written to the task docs directory without registration", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const docsDir = join(dir, ".trace", "tasks", task.id, "docs");
+    const nativeDocPath = join(docsDir, "decision.md");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(nativeDocPath, "# Decision\n");
+
+    expect(store.listDocsForTask(task.id)).toEqual([
+      expect.objectContaining({
+        taskId: task.id,
+        path: nativeDocPath,
+      }),
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task docs union trace-native files with external docs without duplicates", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const docsDir = join(dir, ".trace", "tasks", task.id, "docs");
+    const nativeDocPath = join(docsDir, "decision.md");
+    const externalDocPath = join(dir, "external.md");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(nativeDocPath, "# Decision\n");
+    writeFileSync(externalDocPath, "# External\n");
+
+    store.addTaskDoc(task.id, externalDocPath);
+    store.addTaskDoc(task.id, nativeDocPath);
+
+    expect(
+      store
+        .listDocsForTask(task.id)
+        .map((doc) => doc.path)
+        .sort(),
+    ).toEqual([externalDocPath, nativeDocPath].sort());
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task docs are empty when the task docs directory does not exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
     expect(store.listDocsForTask(task.id)).toEqual([]);
 
     store.close();

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -155,6 +155,51 @@ test("add-doc then show lists the associated task doc", () => {
     );
     expect(shown).toMatch(/docs:/);
     expect(shown).toMatch(/- \/tmp\/spec\.md/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task show and skill re-enter list docs written under the trace task docs directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
+    const docsDir = join(dir, ".trace", "tasks", taskId, "docs");
+    const docPath = join(docsDir, "decision.md");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(docPath, "# Decision\n");
+
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+    expect(shown).toMatch(/docs:/);
+    expect(shown).toContain(`- ${docPath}`);
+
+    const context = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", taskId],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+    expect(context).toMatch(/docs:/);
+    expect(context).toContain(`- ${docPath}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -368,7 +413,10 @@ test("skill work-on-task --model persists the session model", () => {
         { encoding: "utf8", env },
       ),
     ) as {
-      items: Array<{ type: string; session?: { id: string; model: string | null } }>;
+      items: Array<{
+        type: string;
+        session?: { id: string; model: string | null };
+      }>;
     };
 
     expect(timeline.items[0]?.session?.model).toBe("claude-opus-4-7");

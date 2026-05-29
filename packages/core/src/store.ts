@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import {
@@ -25,12 +25,21 @@ export function openTraceStore(databasePath: string): TaskStore {
   return new DrizzleTaskStore(databasePath);
 }
 
+export function resolveTaskDocsDir(
+  databasePath: string,
+  taskId: string,
+): string {
+  return join(dirname(resolve(databasePath)), "tasks", taskId, "docs");
+}
+
 class DrizzleTaskStore implements TaskStore {
   readonly #sqlite: Database.Database;
   readonly #db: BetterSQLite3Database;
+  readonly #databasePath: string;
 
   constructor(databasePath: string) {
     const resolvedPath = resolve(databasePath);
+    this.#databasePath = resolvedPath;
     mkdirSync(dirname(resolvedPath), { recursive: true });
     this.#sqlite = new Database(resolvedPath);
     this.#sqlite.pragma("journal_mode = WAL");
@@ -213,12 +222,29 @@ class DrizzleTaskStore implements TaskStore {
   }
 
   listDocsForTask(taskId: string): TaskDoc[] {
-    return this.#db
+    const registeredDocs = this.#db
       .select()
       .from(taskDocs)
       .where(eq(taskDocs.taskId, taskId))
       .orderBy(asc(taskDocs.createdAt), asc(taskDocs.path))
       .all();
+    const docsByPath = new Map<string, TaskDoc>();
+
+    for (const doc of registeredDocs) {
+      docsByPath.set(doc.path, doc);
+    }
+
+    for (const doc of listNativeTaskDocs(this.#databasePath, taskId)) {
+      if (!docsByPath.has(doc.path)) {
+        docsByPath.set(doc.path, doc);
+      }
+    }
+
+    return [...docsByPath.values()].sort((left, right) => {
+      const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
+      if (byCreatedAt !== 0) return byCreatedAt;
+      return left.path.localeCompare(right.path);
+    });
   }
 
   removeTaskDoc(taskId: string, path: string): void {
@@ -248,6 +274,34 @@ class DrizzleTaskStore implements TaskStore {
       .where(and(eq(taskDocs.taskId, taskId), eq(taskDocs.path, path)))
       .get();
     return row ?? null;
+  }
+}
+
+function listNativeTaskDocs(databasePath: string, taskId: string): TaskDoc[] {
+  const docsDir = resolveTaskDocsDir(databasePath, taskId);
+
+  try {
+    return readdirSync(docsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const path = join(docsDir, entry.name);
+        return {
+          taskId,
+          path,
+          createdAt: statSync(path).mtime.toISOString(),
+        };
+      });
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return [];
+    }
+
+    throw error;
   }
 }
 
