@@ -13,3 +13,10 @@
 **Summary:** Exposed a root-level `trace` bin that points to the existing TypeScript CLI entry at `apps/cli/src/trace.ts`, made that entry executable for package-manager link shims, and documented `pnpm link --global` in `docs/usable-v1/cli-link.md` for the repo skill to reference.
 **Deviations:** `pnpm link --global` prints a pnpm warning about no binaries while still creating the `trace` shim in the configured global bin dir; the linked command was verified from an external directory.
 **Handoff:** Verified with a red/green CLI link test, the full `@trace/cli` vitest suite, `@trace/cli` typecheck, and a temp-global manual link smoke test where `trace task list` exited 0 outside the repo.
+
+## `repo-skill` — 2026-05-29 02:05:17 CEST
+
+**Status:** needs-review
+**Summary:** Added an in-repo Claude Code Trace skill at `.claude/skills/trace/SKILL.md` plus a helper script that dispatches `work-on-task` and `re-enter` by exact task title. `work-on-task` resolves or creates the task, then delegates to `trace skill work-on-task` with live or simulated session flags; `re-enter` resolves an existing task and delegates to `trace skill re-enter`.
+**Deviations:** The automated helper supports explicit session flags and `TRACE_BIN` for tests, while the live natural-language Claude Code path remains the slice's required human checkpoint.
+**Handoff:** Verified with a red/green repo skill smoke test through the real Trace CLI using a simulated Claude session, the full `@trace/cli` vitest suite, and `@trace/cli` typecheck. Human review should exercise the skill phrasing in a live Claude Code session after `pnpm link --global` exposes `trace`.

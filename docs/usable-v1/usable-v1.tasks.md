@@ -33,7 +33,7 @@ color to read a timeline at a glance.
 
 ### `repo-skill` — In-repo Claude Code skill over the CLI
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** A single skill checked into the repo (`SKILL.md` + any helper) dispatching two verbs: "we're working on X" resolves-or-creates task X and registers-and-binds the current Claude Code session (using the live session id + transcript path) via `trace`; "re-enter X" surfaces the task's docs + prior-session references as context via `trace skill re-enter`.
 
