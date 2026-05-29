@@ -27,3 +27,13 @@
 **Summary:** Added a reusable `TaskTimelineView` for the web task page with baseline page styling, token summary cards, subtle timeline row separation, colored tool tags for Claude/Codex sessions, a doc tag, and muted model chips that render the model name or `—` when absent. Extended the web data-layer test to seed a model and assert the surfaced timeline includes it.
 **Deviations:** The `/implement` resource templates were not present in the available skill/plugin directories, so this entry follows the existing Ralph log shape. The slice has a required visual human checkpoint, so it is settled as `needs-review` after automated verification.
 **Handoff:** Verified with the red/green `TaskTimelineView` server-render test, the focused web data-layer test, full `@trace/web` vitest suite, `@trace/web` typecheck, and `@trace/web` production build. Human review should run the web app against a task timeline containing Claude and Codex sessions and eyeball the tag colors, model chip, spacing, and row separation.
+
+## `human-verification` — 2026-05-29 10:22:25 CEST
+
+**Status:** done
+**Summary:** Took over both human checkpoints (`repo-skill`, `web-color`) and verified them live; flipped both to `done`. Recorded the web flow with `agent-browser` into `docs/usable-v1/qa-artifacts/` (`usable-v1-web.webm` 4.7s + `.png`), eyeballed colored tool tags (claude/codex/doc), model chips (`claude-opus-4-7`, `gpt-5.1-codex-max`, `—` for nulls), token cards, and row separation. Exercised the repo skill end-to-end through the real linked `trace` CLI (`work-on-task` create+bind, `re-enter` context). Wrote `usable-v1.qa.md`.
+**Deviations:** Verification surfaced two real defects and one environment issue, all addressed:
+- **`cli-link` false green (fixed):** `trace.ts` `isDirectRun` compared `import.meta.url` to `argv[1]`, which never match through a `pnpm link` symlink (symlink path vs realpath) — the CLI exited 0 with no output. The original test only checked exit-on-empty-HOME so it passed regardless. Fixed to compare realpaths; rewrote the test to seed a task and invoke through a symlink.
+- **`skill work-on-task --model` missing (fixed):** parser rejected `--model` though the PRD specifies it; added the flag + threading + a CLI test + SKILL.md note.
+- **Stale Vite SSR cache (env, not code):** model chips first rendered `—` for all sessions; clearing `apps/web/node_modules/.vite` and restarting surfaced models correctly. `@trace/core` returns `model` correctly on direct import.
+**Handoff:** `pnpm -r test` 39/39 green, `pnpm -r check-types` clean. The `cli-link` fix and `work-on-task --model` fix are committed separately. See `usable-v1.qa.md` for the full verification runbook and artifacts.
