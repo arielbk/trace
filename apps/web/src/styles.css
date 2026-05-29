@@ -1,9 +1,14 @@
 body {
   font-family: system-ui, sans-serif;
   margin: 0;
-  padding: 2rem;
-  color: #111;
+  background: #f7f8fa;
+  color: #171717;
 }
+
+#root {
+  min-height: 100vh;
+}
+
 a {
   color: inherit;
 }
@@ -16,9 +21,158 @@ li {
   padding: 0.5rem 0;
   border-bottom: 1px solid #eee;
 }
+
+.task-page,
+.project-groups {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: flex-start;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #dfe3e8;
+}
+
+.eyebrow {
+  margin: 0 0 0.4rem;
+  color: #667085;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.task-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.task-id {
+  margin: 0.5rem 0 0;
+  color: #667085;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.token-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(4rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.token-summary div {
+  min-width: 5rem;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+}
+
+.token-summary dt {
+  color: #667085;
+  font-size: 0.75rem;
+}
+
+.token-summary dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.empty-state {
+  color: #667085;
+}
+
+.timeline-list {
+  margin: 1.5rem 0 0;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem 0;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.timeline-item-body h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.timeline-item-body p {
+  margin: 0.35rem 0 0;
+  color: #667085;
+  overflow-wrap: anywhere;
+}
+
+.item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.tool-tag,
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 1.6rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tool-tag {
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.tool-tag-claude {
+  background: #b94700;
+}
+
+.tool-tag-codex {
+  background: #1f6f5b;
+}
+
+.tool-tag-doc {
+  background: #475467;
+}
+
+.model-chip {
+  color: #475467;
+  background: #eef1f4;
+  border: 1px solid #d0d5dd;
+}
 .project-groups {
   display: grid;
   gap: 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .task-header,
+  .timeline-item {
+    display: block;
+  }
+
+  .token-summary {
+    margin-top: 1rem;
+  }
+
+  .timeline-item .tool-tag {
+    margin-bottom: 0.75rem;
+  }
 }
 .project-group header {
   border-bottom: 1px solid #ddd;

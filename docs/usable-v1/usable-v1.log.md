@@ -20,3 +20,10 @@
 **Summary:** Added an in-repo Claude Code Trace skill at `.claude/skills/trace/SKILL.md` plus a helper script that dispatches `work-on-task` and `re-enter` by exact task title. `work-on-task` resolves or creates the task, then delegates to `trace skill work-on-task` with live or simulated session flags; `re-enter` resolves an existing task and delegates to `trace skill re-enter`.
 **Deviations:** The automated helper supports explicit session flags and `TRACE_BIN` for tests, while the live natural-language Claude Code path remains the slice's required human checkpoint.
 **Handoff:** Verified with a red/green repo skill smoke test through the real Trace CLI using a simulated Claude session, the full `@trace/cli` vitest suite, and `@trace/cli` typecheck. Human review should exercise the skill phrasing in a live Claude Code session after `pnpm link --global` exposes `trace`.
+
+## `web-color` — 2026-05-29 02:09:56 CEST
+
+**Status:** needs-review
+**Summary:** Added a reusable `TaskTimelineView` for the web task page with baseline page styling, token summary cards, subtle timeline row separation, colored tool tags for Claude/Codex sessions, a doc tag, and muted model chips that render the model name or `—` when absent. Extended the web data-layer test to seed a model and assert the surfaced timeline includes it.
+**Deviations:** The `/implement` resource templates were not present in the available skill/plugin directories, so this entry follows the existing Ralph log shape. The slice has a required visual human checkpoint, so it is settled as `needs-review` after automated verification.
+**Handoff:** Verified with the red/green `TaskTimelineView` server-render test, the focused web data-layer test, full `@trace/web` vitest suite, `@trace/web` typecheck, and `@trace/web` production build. Human review should run the web app against a task timeline containing Claude and Codex sessions and eyeball the tag colors, model chip, spacing, and row separation.

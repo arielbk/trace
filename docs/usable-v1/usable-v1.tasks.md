@@ -45,7 +45,7 @@ color to read a timeline at a glance.
 
 ### `web-color` — Colored tool tag, model chip, baseline page styling
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** The web timeline renders each session with a color-coded tool tag (claude / codex) and a muted model chip (`—` when null), on a page with baseline styling — readable type, spacing/padding, a header, subtle row separation. Read-only; data layer and core untouched beyond carrying `model`.
 

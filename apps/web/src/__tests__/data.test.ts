@@ -18,6 +18,7 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
       id: "session-1",
       transcriptPath: "/tmp/session-1.jsonl",
       tool: "codex",
+      model: "gpt-5-codex",
       tokenTotals: {
         inputTokens: 12,
         outputTokens: 8,
@@ -34,8 +35,12 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
     const timelineLabels = getTaskTimeline(task.id)?.items.map((item) =>
       item.type === "session" ? item.session.id : item.doc.path,
     );
+    const timelineSessions = getTaskTimeline(task.id)?.items.filter(
+      (item) => item.type === "session",
+    );
     expect(timelineLabels).toContain("session-1");
     expect(timelineLabels).toContain("/tmp/spec.md");
+    expect(timelineSessions?.[0]?.session.model).toBe("gpt-5-codex");
     expect(getTaskTimeline(task.id)?.tokenTotals.totalTokens).toBe(20);
   } finally {
     if (originalTraceDb === undefined) {
