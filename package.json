@@ -1,6 +1,9 @@
 {
   "name": "trace-v2",
   "private": true,
+  "bin": {
+    "trace": "apps/cli/src/trace.ts"
+  },
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",

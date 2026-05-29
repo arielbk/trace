@@ -21,7 +21,7 @@ color to read a timeline at a glance.
 
 ### `cli-link` — `trace` reachable without a repo path
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace task list` (and any subcommand) runs from any directory after `pnpm link --global`, executing the existing `.ts` entry under Node 24. If linking the TS bin is unreliable, a thin root-level launcher/script forwards argv to the CLI entry instead.
 
