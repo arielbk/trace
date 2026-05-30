@@ -49,6 +49,23 @@ export type TaskTimeline = {
   tokenTotals: TokenTotals;
 };
 
+export type ReEntryManifestDoc = TaskDoc;
+
+export type ReEntryManifestSession = {
+  id: string;
+  transcriptPath: string;
+  tool: SessionTool;
+  model: string | null;
+  createdAt: string;
+  isMostRecent: boolean;
+};
+
+export type ReEntryManifest = {
+  task: Pick<Task, "id" | "title" | "projectRoot">;
+  docs: ReEntryManifestDoc[];
+  sessions: ReEntryManifestSession[];
+};
+
 export type RegisterSessionInput = {
   id: string;
   transcriptPath: string;
@@ -67,6 +84,7 @@ export type TaskStore = {
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
+  getReEntryManifest(taskId: string): ReEntryManifest | null;
   addTaskDoc(taskId: string, path: string): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;

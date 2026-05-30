@@ -2,6 +2,7 @@
 import {
   openTraceStore,
   readTranscriptTail,
+  type ReEntryManifest,
   resolveProjectRoot,
   scanCodexSessions,
   type Session,
@@ -215,13 +216,12 @@ export function runTraceCli(
           return failure(`Task not found: ${taskId}`, 1);
         }
 
-        return success(
-          formatTaskContext(
-            task,
-            store.listDocsForTask(task.id),
-            store.listSessionsForTask(task.id),
-          ),
-        );
+        const manifest = store.getReEntryManifest(task.id);
+        if (!manifest) {
+          return failure(`Task not found: ${taskId}`, 1);
+        }
+
+        return success(formatReEntryManifest(manifest));
       }
 
       return usage();
@@ -289,28 +289,32 @@ function formatTaskDocSummary(doc: TaskDoc): string {
   return `${doc.taskId}\t${doc.path}\n`;
 }
 
-function formatTaskContext(
-  task: Task,
-  docs: TaskDoc[],
-  sessions: Session[],
-): string {
+function formatReEntryManifest(manifest: ReEntryManifest): string {
   const lines = [
-    `task: ${task.id}`,
-    `title: ${task.title}`,
-    `createdAt: ${task.createdAt}`,
-    `projectRoot: ${task.projectRoot}`,
+    "task:",
+    `  id: ${manifest.task.id}`,
+    `  title: ${manifest.task.title}`,
+    `  projectRoot: ${manifest.task.projectRoot}`,
   ];
 
-  if (docs.length > 0) {
-    lines.push("docs:", ...docs.map((doc) => `- ${doc.path}`));
+  if (manifest.docs.length === 0) {
+    lines.push("docs: []");
+  } else {
+    lines.push("docs:", ...manifest.docs.map((doc) => `- path: ${doc.path}`));
   }
 
-  if (sessions.length > 0) {
+  if (manifest.sessions.length === 0) {
+    lines.push("sessions: []");
+  } else {
     lines.push(
       "sessions:",
-      ...sessions.map(
-        (session) => `- ${formatSessionSummary(session).trimEnd()}`,
-      ),
+      ...manifest.sessions.flatMap((session) => [
+        `- id: ${session.id}`,
+        `  tool: ${session.tool}`,
+        `  transcript: ${session.transcriptPath}`,
+        `  mostRecent: ${session.isMostRecent ? "true" : "false"}`,
+        ...(session.model ? [`  model: ${session.model}`] : []),
+      ]),
     );
   }
 

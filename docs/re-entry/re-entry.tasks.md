@@ -34,7 +34,7 @@ stays tool-agnostic so it slots in later.
 
 ### `re-entry-payload` — Ordered re-entry manifest
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace skill re-enter X` returns a manifest (not a flat dump): task header (id, title, project root), the task's decision-docs (trace-native + external), and the task's session references with transcript pointers ordered newest-first, with the most-recent session identifiable. Pointers only — not inlined content. Missing docs / missing sessions degrade to empty sections.
 

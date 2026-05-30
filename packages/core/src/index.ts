@@ -3,6 +3,9 @@ export { resolveProjectRoot } from "./project-root.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export type {
   RegisterSessionInput,
+  ReEntryManifest,
+  ReEntryManifestDoc,
+  ReEntryManifestSession,
   Session,
   SessionTool,
   Task,

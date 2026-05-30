@@ -12,6 +12,7 @@ import { sessions, taskDocs, tasks } from "./schema.ts";
 import { migrationsDir } from "./migrations-path.ts";
 import type {
   RegisterSessionInput,
+  ReEntryManifest,
   Session,
   Task,
   TaskDoc,
@@ -199,6 +200,33 @@ class DrizzleTaskStore implements TaskStore {
     };
   }
 
+  getReEntryManifest(taskId: string): ReEntryManifest | null {
+    const task = this.getTask(taskId);
+    if (!task) return null;
+
+    const sessions = this.listSessionsForTask(task.id)
+      .slice()
+      .sort(compareSessionsNewestFirst)
+      .map((session, index) => ({
+        id: session.id,
+        transcriptPath: session.transcriptPath,
+        tool: session.tool,
+        model: session.model,
+        createdAt: session.createdAt,
+        isMostRecent: index === 0,
+      }));
+
+    return {
+      task: {
+        id: task.id,
+        title: task.title,
+        projectRoot: task.projectRoot,
+      },
+      docs: this.listDocsForTask(task.id),
+      sessions,
+    };
+  }
+
   addTaskDoc(taskId: string, path: string): TaskDoc {
     const task = this.getTask(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
@@ -372,4 +400,10 @@ function compareTimelineItems(
       ? `session:${right.session.id}`
       : `doc:${right.doc.path}`;
   return leftKey.localeCompare(rightKey);
+}
+
+function compareSessionsNewestFirst(left: Session, right: Session): number {
+  const byCreatedAt = right.createdAt.localeCompare(left.createdAt);
+  if (byCreatedAt !== 0) return byCreatedAt;
+  return right.id.localeCompare(left.id);
 }

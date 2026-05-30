@@ -449,6 +449,98 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
   }
 });
 
+test("re-entry manifest includes task docs and newest-first session pointers", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout", "/repo");
+    const docsDir = join(dir, ".trace", "tasks", task.id, "docs");
+    const nativeDocPath = join(docsDir, "decision.md");
+    const externalDocPath = join(dir, "external.md");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(nativeDocPath, "# Decision\n");
+    writeFileSync(externalDocPath, "# External\n");
+    store.addTaskDoc(task.id, externalDocPath);
+
+    const olderSession = store.registerSession({
+      id: "older-session",
+      transcriptPath: "/tmp/older.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(olderSession.id, task.id);
+
+    waitForNextMillisecond();
+    const newestSession = store.registerSession({
+      id: "newest-session",
+      transcriptPath: "/tmp/newest.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+    });
+    store.assignSession(newestSession.id, task.id);
+
+    expect(store.getReEntryManifest(task.id)).toEqual({
+      task: {
+        id: task.id,
+        title: "checkout",
+        projectRoot: "/repo",
+      },
+      docs: expect.arrayContaining([
+        expect.objectContaining({ path: nativeDocPath }),
+        expect.objectContaining({ path: externalDocPath }),
+      ]),
+      sessions: [
+        {
+          id: "newest-session",
+          tool: "codex",
+          transcriptPath: "/tmp/newest.jsonl",
+          model: "gpt-5-codex",
+          createdAt: newestSession.createdAt,
+          isMostRecent: true,
+        },
+        {
+          id: "older-session",
+          tool: "claude",
+          transcriptPath: "/tmp/older.jsonl",
+          model: null,
+          createdAt: olderSession.createdAt,
+          isMostRecent: false,
+        },
+      ],
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest returns empty sections for tasks without docs or sessions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("empty");
+
+    expect(store.getReEntryManifest(task.id)).toEqual({
+      task: {
+        id: task.id,
+        title: "empty",
+        projectRoot: "",
+      },
+      docs: [],
+      sessions: [],
+    });
+    expect(store.getReEntryManifest("missing")).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function waitForNextMillisecond(): void {
   const startedAt = Date.now();
   while (Date.now() === startedAt) {

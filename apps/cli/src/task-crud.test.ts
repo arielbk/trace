@@ -243,7 +243,7 @@ test("task show and skill re-enter list docs written under the trace task docs d
       },
     );
     expect(context).toMatch(/docs:/);
-    expect(context).toContain(`- ${docPath}`);
+    expect(context).toContain(`- path: ${docPath}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -409,10 +409,104 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         env,
       },
     );
-    expect(context).toMatch(new RegExp(`task: ${taskId}`));
-    expect(context).toMatch(/docs:\n- \/tmp\/spec\.md/);
+    expect(context).toMatch(new RegExp(`task:\\n  id: ${taskId}`));
+    expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
     expect(context).toMatch(
-      /sessions:\n- codex-session-1\tcodex\t\/tmp\/codex-session-1\.jsonl/,
+      /sessions:\n- id: codex-session-1\n  tool: codex\n  transcript: \/tmp\/codex-session-1\.jsonl\n  mostRecent: true/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter prints an ordered manifest with empty sections", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-manifest-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const emptyManifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", taskId],
+      { encoding: "utf8", env },
+    );
+    expect(emptyManifest).toContain(`task:\n  id: ${taskId}\n`);
+    expect(emptyManifest).toContain("docs: []\n");
+    expect(emptyManifest).toContain("sessions: []\n");
+
+    const docsDir = join(dir, ".trace", "tasks", taskId, "docs");
+    const nativeDocPath = join(docsDir, "decision.md");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(nativeDocPath, "# Decision\n");
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", taskId, "/tmp/external.md"],
+      { encoding: "utf8", env },
+    );
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "session",
+        "register",
+        "--id",
+        "older-session",
+        "--transcript",
+        "/tmp/older.jsonl",
+        "--tool",
+        "claude",
+      ],
+      { encoding: "utf8", env },
+    );
+    execFileSync(
+      process.execPath,
+      [traceBin, "session", "assign", "older-session", taskId],
+      { encoding: "utf8", env },
+    );
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "session",
+        "register",
+        "--id",
+        "newer-session",
+        "--transcript",
+        "/tmp/newer.jsonl",
+        "--tool",
+        "codex",
+      ],
+      { encoding: "utf8", env },
+    );
+    execFileSync(
+      process.execPath,
+      [traceBin, "session", "assign", "newer-session", taskId],
+      { encoding: "utf8", env },
+    );
+
+    const manifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", taskId],
+      { encoding: "utf8", env },
+    );
+
+    expect(manifest).toContain(`- path: ${nativeDocPath}`);
+    expect(manifest).toContain("- path: /tmp/external.md");
+    expect(manifest.indexOf("- id: newer-session")).toBeLessThan(
+      manifest.indexOf("- id: older-session"),
+    );
+    expect(manifest).toMatch(
+      /- id: newer-session\n  tool: codex\n  transcript: \/tmp\/newer\.jsonl\n  mostRecent: true/,
+    );
+    expect(manifest).toMatch(
+      /- id: older-session\n  tool: claude\n  transcript: \/tmp\/older\.jsonl\n  mostRecent: false/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
