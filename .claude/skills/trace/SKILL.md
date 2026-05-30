@@ -20,9 +20,10 @@ node .claude/skills/trace/trace-skill.mjs work-on-task "X"
 ```
 
 The helper forwards to `trace skill work-on-task` and lets the CLI infer the
-current Claude Code session from `CLAUDE_SESSION_ID` or `session_id`, and the
-transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass `--model <name>`
-when the model is known to record it on the session:
+current Claude Code session from `CLAUDE_CODE_SESSION_ID` (the variable live
+Claude Code sessions export; `CLAUDE_SESSION_ID` / `session_id` are also
+accepted), and the transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass
+`--model <name>` when the model is known to record it on the session:
 
 ```sh
 node .claude/skills/trace/trace-skill.mjs work-on-task "X" --model claude-opus-4-7

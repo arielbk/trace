@@ -530,6 +530,43 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
   }
 });
 
+test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION_ID", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-infer-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TRACE_DB: databasePath,
+    CLAUDE_CODE_SESSION_ID: "live-claude-session",
+  };
+  // Prove CLAUDE_CODE_SESSION_ID is what's read, not the legacy names.
+  delete env.CLAUDE_SESSION_ID;
+  delete env.session_id;
+  delete env.CODEX_THREAD_ID;
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const bound = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "work-on-task", taskId],
+      { encoding: "utf8", env },
+    );
+    expect(bound).toBe(
+      [
+        `live-claude-session\tclaude\tclaude:live-claude-session`,
+        `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
+        "",
+      ].join("\n"),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill re-enter prints an ordered manifest with empty sections", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-manifest-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");

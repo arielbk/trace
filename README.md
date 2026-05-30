@@ -1,159 +1,123 @@
-# Turborepo starter
+# trace
 
-This Turborepo starter is maintained by the Turborepo core team.
+**Re-enter a task with zero re-explaining.**
 
-## Using this example
+You work on something in a Claude Code session — make decisions, write code,
+build up context. The session ends. Days later you (or a fresh agent) come back
+and have to reconstruct all of it from memory and scrollback.
 
-Run the following command:
+trace removes that step. It captures each session against a task, lets you drop
+decision docs into a known place, and gives a fresh agent a single command that
+hands back the thread: the task, its decision docs, and pointers to prior
+sessions — newest first. No pasting transcripts, no re-explaining.
 
-```sh
-npx create-turbo@latest
-```
+The first verified experience is **same-tool** re-entry: work in Claude Code,
+`/clear`, re-enter, and keep going. Cross-tool (Codex) re-entry is the next
+increment — the architecture is already tool-agnostic, but the Codex entry
+point is intentionally not wired yet.
 
-## What's inside?
+## Setup
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+trace is a small CLI plus a Claude Code skill. Two one-time steps:
 
 ```sh
-cd my-turborepo
-turbo build
+# 1. Make the `trace` command available on your PATH (run once, from the repo).
+pnpm install
+pnpm link --global
+
+# 2. Wire trace into Claude Code (idempotent — safe to re-run).
+trace init
 ```
 
-Without global `turbo`, use your package manager:
+`trace init` registers a `SessionStart` hook in your `~/.claude/settings.json`
+so every new Claude Code session is recorded against the store, confirms the
+`trace` skill is discoverable, and prints anything still manual. Running it a
+second time is a no-op — it won't duplicate the hook.
+
+To confirm the hook is firing, start a fresh Claude Code session, then:
 
 ```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+trace session list --unassigned
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+The new session should appear.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## The hero loop (same-tool)
+
+This is the loop trace exists for. Walk it once and the value is obvious.
+
+**1. Start working on a task.** In a Claude Code session, tell Claude what
+you're working on:
+
+> We're working on the checkout flow.
+
+The `trace` skill binds the current session to a task (creating it if it
+doesn't exist) and reports a **task docs directory**:
+
+```
+checkout-session-id   claude   claude:checkout-session-id
+taskDocsDir: ~/.trace/tasks/<taskId>/docs
+```
+
+**2. Capture decisions where re-entry can find them.** Anything you write into
+that `taskDocsDir` — a decisions doc, a plan, a handoff note — is associated
+with the task automatically. No registration step.
+
+```
+~/.trace/tasks/<taskId>/docs/decisions.md
+```
+
+**3. Clear and re-enter.** Run `/clear` (or come back tomorrow in a brand-new
+session). Then tell the fresh agent:
+
+> Re-enter the checkout flow.
+
+The skill hands the agent a manifest — the task header, its decision docs, and
+prior sessions ordered newest-first with the most recent flagged:
+
+```
+task:
+  id: <taskId>
+  title: Checkout flow
+  projectRoot: /path/to/repo
+docs:
+- path: ~/.trace/tasks/<taskId>/docs/decisions.md
+sessions:
+- id: checkout-session-id
+  tool: claude
+  transcript: claude:checkout-session-id
+  mostRecent: true
+```
+
+The fresh agent reads the decision docs first. Only if those don't cover the
+current state does it pull the recent dialogue from the most-recent session:
 
 ```sh
-turbo build --filter=docs
+trace session tail <session-id>
 ```
 
-Without global `turbo`:
+It never pastes raw transcripts, and never asks you to re-explain what the
+manifest already carries. That's the whole point: the thread is picked up, not
+reconstructed.
+
+## What's next
+
+- **Cross-tool re-entry (Codex).** The store, transcript adapters, and re-entry
+  manifest are already tool-agnostic — `trace session tail` reads both Claude
+  and Codex transcripts today. The remaining work is a Codex-side entry point
+  (a session hook + skill wrapper) so a task worked in Claude can be re-entered
+  in Codex and vice versa.
+
+## Development
+
+This is a [Turborepo](https://turborepo.dev) monorepo (pnpm workspaces).
 
 ```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+pnpm install        # install dependencies
+pnpm test           # run the test suites
+pnpm check-types    # typecheck all packages
 ```
 
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- `apps/cli` — the `trace` CLI
+- `packages/core` — the store, transcript adapters, and re-entry manifest
+- `.claude/skills/trace` — the Claude Code skill that drives the hero loop

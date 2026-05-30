@@ -629,7 +629,10 @@ function inferCurrentSessionId(
     return env.CODEX_THREAD_ID;
   }
 
-  return env.CLAUDE_SESSION_ID ?? env.session_id;
+  // Claude Code exports the live session id as CLAUDE_CODE_SESSION_ID; the
+  // legacy CLAUDE_SESSION_ID / session_id are accepted for hook-stdin callers
+  // and older integrations.
+  return env.CLAUDE_CODE_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? env.session_id;
 }
 
 function inferTranscriptPath(

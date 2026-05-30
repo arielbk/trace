@@ -70,7 +70,7 @@ stays tool-agnostic so it slots in later.
 
 ### `readme-walkthrough` — First-user README + verified hero loop
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** Replace the Turborepo-starter README with a first-user guide: what trace is, the hero (re-enter a task with zero re-explaining), setup (link + `trace init`), and a walked same-tool hero loop — work on a task in Claude, `/clear`, re-enter it, and confirm the fresh agent picks up the thread. README states cross-tool (Codex) re-entry as the next increment.
 
