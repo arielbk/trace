@@ -30,7 +30,7 @@ Behavior-preserving refactors that turn shallow, scattered modules in `@trace/co
 
 ### `session-identity` — Lift env→Session inference into core
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A core module owning the cross-tool "which env var is the live session" contract (replacing `inferCurrentTool` / `inferCurrentSessionId` / `inferTranscriptPath` in the CLI), takes an env map and returns tool + id + transcript path.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {
   getTranscriptAdapter,
+  inferSessionIdentity,
   openTraceStore,
   type ReEntryManifest,
   resolveProjectRoot,
@@ -587,68 +588,39 @@ function parseSkillWorkOnTaskArgs(
     }
   }
 
-  const inferredTool = tool ?? inferCurrentTool(env);
-
-  if (inferredTool !== "claude" && inferredTool !== "codex") {
+  let toolOverride: SessionTool | undefined;
+  if (tool === undefined) {
+    toolOverride = undefined;
+  } else if (tool === "claude" || tool === "codex") {
+    toolOverride = tool;
+  } else {
     throw new Error("Session tool must be claude or codex");
   }
 
-  const inferredId = id ?? inferCurrentSessionId(inferredTool, env);
+  // The env→session contract (which env var names the live session, transcript
+  // path synthesis, legacy id fallbacks) lives in @trace/core; the CLI only
+  // layers its explicit --id / --transcript / --tool flags on top as overrides.
+  const identity = inferSessionIdentity(env, {
+    tool: toolOverride,
+    id,
+    transcriptPath,
+  });
 
-  if (!inferredId) {
+  // transcriptPath is undefined exactly when id is undefined, so this single
+  // guard narrows both to the strings the registration contract requires.
+  if (identity.id === undefined || identity.transcriptPath === undefined) {
     throw new Error(
       "Skill work-on-task requires --id or a current session env var",
     );
   }
 
   return {
-    id: inferredId,
-    transcriptPath:
-      transcriptPath ?? inferTranscriptPath(inferredId, inferredTool, env),
-    tool: inferredTool,
+    id: identity.id,
+    transcriptPath: identity.transcriptPath,
+    tool: identity.tool,
     model,
     tokenTotals: {},
   };
-}
-
-function inferCurrentTool(
-  env: Record<string, string | undefined>,
-): SessionTool {
-  if (env.CODEX_THREAD_ID) {
-    return "codex";
-  }
-
-  return "claude";
-}
-
-function inferCurrentSessionId(
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-): string | undefined {
-  if (tool === "codex") {
-    return env.CODEX_THREAD_ID;
-  }
-
-  // Claude Code exports the live session id as CLAUDE_CODE_SESSION_ID; the
-  // legacy CLAUDE_SESSION_ID / session_id are accepted for hook-stdin callers
-  // and older integrations.
-  return env.CLAUDE_CODE_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? env.session_id;
-}
-
-function inferTranscriptPath(
-  sessionId: string,
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-): string {
-  if (tool === "claude" && env.CLAUDE_TRANSCRIPT_PATH) {
-    return env.CLAUDE_TRANSCRIPT_PATH;
-  }
-
-  if (tool === "codex" && env.CODEX_TRANSCRIPT_PATH) {
-    return env.CODEX_TRANSCRIPT_PATH;
-  }
-
-  return `${tool}:${sessionId}`;
 }
 
 // `process.argv[1]` is the invoked path, which `pnpm link --global` exposes as

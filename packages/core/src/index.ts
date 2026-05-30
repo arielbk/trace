@@ -46,3 +46,8 @@ export {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";
+export { inferSessionIdentity } from "./session-identity.ts";
+export type {
+  SessionIdentity,
+  SessionIdentityOverrides,
+} from "./session-identity.ts";
