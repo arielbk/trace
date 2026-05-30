@@ -44,10 +44,6 @@ test("repo skill helper resolves or creates a task, binds a simulated session, a
       { encoding: "utf8", env },
     );
 
-    expect(bound).toBe(
-      `claude-session-1\tclaude\t/tmp/claude-session-1.jsonl\n`,
-    );
-
     const taskList = execFileSync(
       process.execPath,
       [traceBin, "task", "list"],
@@ -62,6 +58,13 @@ test("repo skill helper resolves or creates a task, binds a simulated session, a
     }
     expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
     expect(title).toBe("checkout");
+    expect(bound).toBe(
+      [
+        `claude-session-1\tclaude\t/tmp/claude-session-1.jsonl`,
+        `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
+        "",
+      ].join("\n"),
+    );
 
     execFileSync(
       process.execPath,
@@ -89,4 +92,18 @@ test("repo skill helper resolves or creates a task, binds a simulated session, a
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("repo skill prose carries the re-entry consumption protocol", () => {
+  const prose = execFileSync("sed", ["-n", "1,220p", skillReadme], {
+    encoding: "utf8",
+  });
+
+  const normalizedProse = prose.toLowerCase();
+
+  expect(normalizedProse).toContain("read the decision docs first");
+  expect(prose).toContain("transcript tail");
+  expect(normalizedProse).toContain("never paste raw transcripts");
+  expect(prose).toContain("taskDocsDir");
+  expect(prose).toContain("Codex entry point");
 });

@@ -387,7 +387,13 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
       ],
       { encoding: "utf8", env },
     );
-    expect(bound).toBe(`codex-session-1\tcodex\t/tmp/codex-session-1.jsonl\n`);
+    expect(bound).toBe(
+      [
+        `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl`,
+        `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
+        "",
+      ].join("\n"),
+    );
 
     const shown = execFileSync(
       process.execPath,

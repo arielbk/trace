@@ -4,6 +4,7 @@ import {
   readTranscriptTail,
   type ReEntryManifest,
   resolveProjectRoot,
+  resolveTaskDocsDir,
   scanCodexSessions,
   type Session,
   type SessionTool,
@@ -198,9 +199,9 @@ export function runTraceCli(
         const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
         const session = store.registerSession(parsed);
 
-        return success(
-          formatSessionSummary(store.assignSession(session.id, taskId)),
-        );
+        const assigned = store.assignSession(session.id, taskId);
+
+        return success(formatSkillWorkOnTaskResult(assigned, databasePath));
       }
 
       if (action === "re-enter") {
@@ -283,6 +284,21 @@ function formatTaskSummary(task: Task): string {
 
 function formatSessionSummary(session: Session): string {
   return `${session.id}\t${session.tool}\t${session.transcriptPath}\n`;
+}
+
+function formatSkillWorkOnTaskResult(
+  session: Session,
+  databasePath: string,
+): string {
+  if (!session.taskId) {
+    return formatSessionSummary(session);
+  }
+
+  return [
+    formatSessionSummary(session).trimEnd(),
+    `taskDocsDir: ${resolveTaskDocsDir(databasePath, session.taskId)}`,
+    "",
+  ].join("\n");
 }
 
 function formatTaskDocSummary(doc: TaskDoc): string {

@@ -28,6 +28,10 @@ when the model is known to record it on the session:
 node .claude/skills/trace/trace-skill.mjs work-on-task "X" --model claude-opus-4-7
 ```
 
+The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
+plans, handoffs, and notes in that directory so future re-entry sees them
+without a separate registration step.
+
 ### Re-enter X
 
 Resolve an existing task with the exact title `X`, then print its docs and prior
@@ -36,6 +40,19 @@ session references:
 ```sh
 node .claude/skills/trace/trace-skill.mjs re-enter "X"
 ```
+
+When re-entering:
+
+1. Call the helper above and treat its output as a manifest.
+2. Read the decision docs first, in the listed order.
+3. Only if those docs do not cover the current state, read the transcript tail
+   for the `mostRecent: true` session with `trace session tail <session-id>`.
+4. Never paste raw transcripts into the chat, and never ask the user to
+   re-explain context that the manifest, docs, or transcript tail already cover.
+
+Codex entry point support is deferred. This Claude skill keeps the protocol
+tool-agnostic so a Codex wrapper can follow the same manifest consumption rules
+later.
 
 ## CLI Setup
 

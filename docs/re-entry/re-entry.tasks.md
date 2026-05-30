@@ -46,7 +46,7 @@ stays tool-agnostic so it slots in later.
 
 ### `re-entry-skill` — Re-entry consumption protocol (Claude)
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** The `trace` skill's "Re-enter X" verb carries the consumption protocol an agent follows: (1) call `re-enter X`, (2) read the decision-docs first, (3) only if the docs don't cover current state, read the transcript tail of the most-recent session, (4) never paste raw transcripts, never re-explain. The `work-on-task` verb tells the agent where the task's doc directory is, so artifacts produced during work land in the captured location. Codex entry point is left as an explicit seam (deferred), not built.
 
