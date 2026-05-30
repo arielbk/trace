@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import {
+  addTokenTotals,
+  emptyTokenTotals,
+  tokenTotalsFromUsage,
+} from "./token-totals.ts";
+import type { TokenTotals } from "./types.ts";
 
-export type CodexTokenTotals = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
-  totalTokens: number;
-};
+export type CodexTokenTotals = TokenTotals;
 
 export type ParsedCodexSession = {
   id: string;
@@ -65,13 +65,7 @@ export function parseCodexTranscript(
   let id: string | undefined;
   let model: string | undefined;
   const filenameId = codexThreadIdFromPath(input.transcriptPath);
-  const tokenTotals: CodexTokenTotals = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: 0,
-    totalTokens: 0,
-  };
+  let tokenTotals = emptyTokenTotals();
 
   for (const line of input.transcript.split(/\r?\n/)) {
     if (line.trim().length === 0) {
@@ -86,7 +80,10 @@ export function parseCodexTranscript(
     }
 
     if (event.type === "turn.completed") {
-      addUsage(tokenTotals, event.usage ?? event.turn?.usage);
+      tokenTotals = addTokenTotals(
+        tokenTotals,
+        tokenTotalsFromUsage(event.usage ?? event.turn?.usage),
+      );
     }
   }
 
@@ -206,32 +203,4 @@ function findJsonlFiles(
 function codexThreadIdFromPath(transcriptPath: string): string | undefined {
   const filename = basename(transcriptPath).replace(/\.jsonl$/, "");
   return filename.length > 0 ? filename.replace(/^rollout-/, "") : undefined;
-}
-
-function addUsage(
-  tokenTotals: CodexTokenTotals,
-  usage: CodexUsage | undefined,
-): void {
-  if (!usage) {
-    return;
-  }
-
-  const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
-  const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
-  const cacheCreationInputTokens =
-    usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens ?? 0;
-  const cacheReadInputTokens =
-    usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? 0;
-
-  tokenTotals.inputTokens += inputTokens;
-  tokenTotals.outputTokens += outputTokens;
-  tokenTotals.cacheCreationInputTokens += cacheCreationInputTokens;
-  tokenTotals.cacheReadInputTokens += cacheReadInputTokens;
-  tokenTotals.totalTokens +=
-    usage.total_tokens ??
-    usage.totalTokens ??
-    inputTokens +
-      outputTokens +
-      cacheCreationInputTokens +
-      cacheReadInputTokens;
 }

@@ -1,0 +1,68 @@
+import type { TokenTotals } from "./types.ts";
+
+export type RawTokenUsage = {
+  input_tokens?: number;
+  inputTokens?: number;
+  output_tokens?: number;
+  outputTokens?: number;
+  cache_creation_input_tokens?: number;
+  cacheCreationInputTokens?: number;
+  cache_read_input_tokens?: number;
+  cacheReadInputTokens?: number;
+  total_tokens?: number;
+  totalTokens?: number;
+};
+
+export function emptyTokenTotals(): TokenTotals {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    totalTokens: 0,
+  };
+}
+
+export function tokenTotalsFromUsage(
+  usage: RawTokenUsage | undefined,
+): TokenTotals {
+  if (!usage) {
+    return emptyTokenTotals();
+  }
+
+  const inputTokens = usage.input_tokens ?? usage.inputTokens ?? 0;
+  const outputTokens = usage.output_tokens ?? usage.outputTokens ?? 0;
+  const cacheCreationInputTokens =
+    usage.cache_creation_input_tokens ?? usage.cacheCreationInputTokens ?? 0;
+  const cacheReadInputTokens =
+    usage.cache_read_input_tokens ?? usage.cacheReadInputTokens ?? 0;
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    totalTokens:
+      usage.total_tokens ??
+      usage.totalTokens ??
+      inputTokens +
+        outputTokens +
+        cacheCreationInputTokens +
+        cacheReadInputTokens,
+  };
+}
+
+export function addTokenTotals(
+  left: TokenTotals,
+  right: TokenTotals,
+): TokenTotals {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    cacheCreationInputTokens:
+      left.cacheCreationInputTokens + right.cacheCreationInputTokens,
+    cacheReadInputTokens:
+      left.cacheReadInputTokens + right.cacheReadInputTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}

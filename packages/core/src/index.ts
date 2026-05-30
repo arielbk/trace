@@ -35,3 +35,9 @@ export {
   tailTranscriptMessages,
 } from "./transcript-tail.ts";
 export type { TranscriptMessage } from "./transcript-tail.ts";
+export {
+  addTokenTotals,
+  emptyTokenTotals,
+  tokenTotalsFromUsage,
+} from "./token-totals.ts";
+export type { RawTokenUsage } from "./token-totals.ts";

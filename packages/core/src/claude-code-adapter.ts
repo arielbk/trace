@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
+import {
+  addTokenTotals,
+  emptyTokenTotals,
+  tokenTotalsFromUsage,
+} from "./token-totals.ts";
+import type { TokenTotals } from "./types.ts";
 
-export type ClaudeCodeTokenTotals = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationInputTokens: number;
-  cacheReadInputTokens: number;
-  totalTokens: number;
-};
+export type ClaudeCodeTokenTotals = TokenTotals;
 
 export type ParsedClaudeCodeSession = {
   id: string;
@@ -47,13 +47,7 @@ export function parseClaudeCodeTranscript(
 ): ParsedClaudeCodeSession {
   let id: string | undefined;
   let model: string | undefined;
-  const tokenTotals: ClaudeCodeTokenTotals = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: 0,
-    totalTokens: 0,
-  };
+  let tokenTotals = emptyTokenTotals();
 
   for (const line of input.transcript.split(/\r?\n/)) {
     if (line.trim().length === 0) {
@@ -68,8 +62,14 @@ export function parseClaudeCodeTranscript(
       event.message?.sessionId;
     model ??= event.model ?? event.message?.model;
 
-    addUsage(tokenTotals, event.usage);
-    addUsage(tokenTotals, event.message?.usage);
+    tokenTotals = addTokenTotals(
+      tokenTotals,
+      tokenTotalsFromUsage(event.usage),
+    );
+    tokenTotals = addTokenTotals(
+      tokenTotals,
+      tokenTotalsFromUsage(event.message?.usage),
+    );
   }
 
   if (!id) {
@@ -92,29 +92,4 @@ export function parseClaudeCodeTranscriptFile(
     transcript: readFileSync(transcriptPath, "utf8"),
     transcriptPath,
   });
-}
-
-function addUsage(
-  tokenTotals: ClaudeCodeTokenTotals,
-  usage: ClaudeUsage | undefined,
-): void {
-  if (!usage) {
-    return;
-  }
-
-  const inputTokens = usage.input_tokens ?? 0;
-  const outputTokens = usage.output_tokens ?? 0;
-  const cacheCreationInputTokens = usage.cache_creation_input_tokens ?? 0;
-  const cacheReadInputTokens = usage.cache_read_input_tokens ?? 0;
-
-  tokenTotals.inputTokens += inputTokens;
-  tokenTotals.outputTokens += outputTokens;
-  tokenTotals.cacheCreationInputTokens += cacheCreationInputTokens;
-  tokenTotals.cacheReadInputTokens += cacheReadInputTokens;
-  tokenTotals.totalTokens +=
-    usage.total_tokens ??
-    inputTokens +
-      outputTokens +
-      cacheCreationInputTokens +
-      cacheReadInputTokens;
 }

@@ -1,0 +1,8 @@
+# Core Deepening — Implementation Log
+
+## `token-totals` — 2026-05-30 03:45:05
+
+**Status:** done
+**Summary:** Added `packages/core/src/token-totals.ts` — a deep TokenTotals value module exporting `emptyTokenTotals()`, `addTokenTotals(a, b)`, and `tokenTotalsFromUsage(raw)` (with the `total ?? sum-of-parts` derivation and snake_case/camelCase usage-key handling). Both transcript adapters (`claude-code-adapter`, `codex-adapter`) and `store.ts` now consume it instead of their three private copies of the same math. All three functions are re-exported from `index.ts`, plus a `RawTokenUsage` type.
+**Deviations:** Function names are prefixed (`emptyTokenTotals`/`addTokenTotals`/`tokenTotalsFromUsage`) rather than bare `empty`/`add`/`fromUsage` from the slice sketch — these are top-level named exports from the package barrel, so unprefixed names would be ambiguous. The merged usage-normalizer is `tokenTotalsFromUsage` (it subsumes the store's former `normalizeTokenTotals`, which accepted camelCase `Partial<TokenTotals>` — `RawTokenUsage` accepts both casings so that input still works).
+**Handoff:** `ClaudeCodeTokenTotals` and `CodexTokenTotals` are now plain aliases of `TokenTotals` (kept so existing re-exports/consumers don't break — they're structurally identical). The adapters accumulate via `addTokenTotals(acc, tokenTotalsFromUsage(usage))` per event, which is behavior-equivalent to the old in-place `addUsage` (undefined usage → empty → no-op). The `transcript-adapters` slice (depends on this one) should build its per-tool adapter interface on top of this module rather than reintroducing token math. Feedback loop verified: core 31/31 + types + lint clean; CLI 24/24 still green.

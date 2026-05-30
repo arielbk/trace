@@ -10,6 +10,11 @@ import {
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { sessions, taskDocs, tasks } from "./schema.ts";
 import { migrationsDir } from "./migrations-path.ts";
+import {
+  addTokenTotals,
+  emptyTokenTotals,
+  tokenTotalsFromUsage,
+} from "./token-totals.ts";
 import type {
   RegisterSessionInput,
   ReEntryManifest,
@@ -19,7 +24,6 @@ import type {
   TaskStore,
   TaskTimeline,
   TaskTimelineItem,
-  TokenTotals,
 } from "./types.ts";
 
 export function openTraceStore(databasePath: string): TaskStore {
@@ -100,7 +104,7 @@ class DrizzleTaskStore implements TaskStore {
     const existing = this.getSession(id);
     if (existing) return existing;
 
-    const totals = normalizeTokenTotals(input.tokenTotals);
+    const totals = tokenTotalsFromUsage(input.tokenTotals);
     const session: Session = {
       id,
       transcriptPath,
@@ -195,7 +199,7 @@ class DrizzleTaskStore implements TaskStore {
       items,
       tokenTotals: sessionList.reduce(
         (totals, session) => addTokenTotals(totals, session.tokenTotals),
-        normalizeTokenTotals(),
+        emptyTokenTotals(),
       ),
     };
   }
@@ -350,37 +354,6 @@ function sessionFromRow(row: SessionRow): Session {
       cacheReadInputTokens: row.cacheReadInputTokens,
       totalTokens: row.totalTokens,
     },
-  };
-}
-
-function normalizeTokenTotals(input: Partial<TokenTotals> = {}): TokenTotals {
-  const inputTokens = input.inputTokens ?? 0;
-  const outputTokens = input.outputTokens ?? 0;
-  const cacheCreationInputTokens = input.cacheCreationInputTokens ?? 0;
-  const cacheReadInputTokens = input.cacheReadInputTokens ?? 0;
-  return {
-    inputTokens,
-    outputTokens,
-    cacheCreationInputTokens,
-    cacheReadInputTokens,
-    totalTokens:
-      input.totalTokens ??
-      inputTokens +
-        outputTokens +
-        cacheCreationInputTokens +
-        cacheReadInputTokens,
-  };
-}
-
-function addTokenTotals(left: TokenTotals, right: TokenTotals): TokenTotals {
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    cacheCreationInputTokens:
-      left.cacheCreationInputTokens + right.cacheCreationInputTokens,
-    cacheReadInputTokens:
-      left.cacheReadInputTokens + right.cacheReadInputTokens,
-    totalTokens: left.totalTokens + right.totalTokens,
   };
 }
 
