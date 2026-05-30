@@ -1,11 +1,116 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
+
+test("init writes the Claude SessionStart hook into settings", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
+  const env = {
+    ...process.env,
+    HOME: dir,
+    TRACE_DB: join(dir, "trace.sqlite"),
+  };
+
+  try {
+    const output = execFileSync(process.execPath, [traceBin, "init"], {
+      encoding: "utf8",
+      env,
+    });
+
+    expect(output).toContain("registered Claude SessionStart hook");
+    expect(output).toContain("trace skill: found");
+    expect(output).toContain("manual: run pnpm link --global");
+
+    const settings = JSON.parse(
+      readFileSync(join(dir, ".claude", "settings.json"), "utf8"),
+    ) as {
+      hooks?: {
+        SessionStart?: Array<{
+          hooks?: Array<{ type?: string; command?: string }>;
+        }>;
+      };
+    };
+    expect(settings.hooks?.SessionStart).toEqual([
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `${process.execPath} ${fileURLToPath(
+              new URL("./claude-session-start-hook.ts", import.meta.url),
+            )}`,
+          },
+        ],
+      },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("init preserves existing Claude settings and does not duplicate the hook", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
+  const settingsPath = join(dir, ".claude", "settings.json");
+  const env = {
+    ...process.env,
+    HOME: dir,
+    TRACE_DB: join(dir, "trace.sqlite"),
+  };
+
+  try {
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          permissions: { allow: ["Bash(git status:*)"] },
+          hooks: {
+            Stop: [{ hooks: [{ type: "command", command: "echo stop" }] }],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    execFileSync(process.execPath, [traceBin, "init"], {
+      encoding: "utf8",
+      env,
+    });
+    const secondOutput = execFileSync(process.execPath, [traceBin, "init"], {
+      encoding: "utf8",
+      env,
+    });
+
+    expect(secondOutput).toContain(
+      "Claude SessionStart hook already registered",
+    );
+
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      permissions?: { allow?: string[] };
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ type?: string; command?: string }> }>
+      >;
+    };
+    expect(settings.permissions?.allow).toEqual(["Bash(git status:*)"]);
+    expect(settings.hooks?.Stop).toEqual([
+      { hooks: [{ type: "command", command: "echo stop" }] },
+    ]);
+    expect(settings.hooks?.SessionStart).toHaveLength(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("create then show round-trips a persisted task", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));

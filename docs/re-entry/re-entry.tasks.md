@@ -58,7 +58,7 @@ stays tool-agnostic so it slots in later.
 
 ### `setup-path` — One-command install (`trace init`)
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** A single `trace init` wires up everything a fresh user needs: it registers the `SessionStart` hook into the appropriate `settings.json` (currently present in code but unwired), confirms the `trace` skill is discoverable, and reports what it did + anything still manual (e.g. the one-time `pnpm link --global` that must precede it, since the CLI must exist to be invoked). Idempotent — re-running it doesn't duplicate the hook. After running it, starting a Claude session registers in the store with no manual editing.
 

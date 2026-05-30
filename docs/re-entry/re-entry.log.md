@@ -25,3 +25,10 @@
 **Summary:** Updated the Claude Trace skill prose with the re-entry consumption protocol: call the helper, read decision docs first, fall back to the most-recent transcript tail only when docs are insufficient, never paste raw transcripts, and leave the Codex entry point deferred. `trace skill work-on-task` now prints the task doc directory as `taskDocsDir: <path>`, and the helper forwards that output so agents know where to write task artifacts.
 **Deviations:** The `/implement` resource templates were not present in the available skill/plugin directories, so this entry follows the existing Ralph log shape used in this file. The slice has a required human prose/manual checkpoint, so it is settled as `needs-review` after automated checks passed.
 **Handoff:** Verified with a red/green repo skill smoke test for helper forwarding and protocol prose, the existing CLI work-on-task/re-enter smoke tests updated for `taskDocsDir`, the full `@trace/cli` test suite, `@trace/cli` typecheck, and Prettier check on touched files. Manual follow-up: review the skill prose and run a live Claude `work-on-task` flow that writes into `taskDocsDir`, then confirm `re-enter` surfaces the doc.
+
+## `setup-path` — 2026-05-30 02:08:40
+
+**Status:** needs-review
+**Summary:** Added `trace init`, which writes an idempotent Claude `SessionStart` hook into `HOME/.claude/settings.json` (or `CLAUDE_SETTINGS_PATH`), points it at the existing `claude-session-start-hook.ts`, reports whether the in-repo trace skill is discoverable, and prints the remaining one-time `pnpm link --global` manual setup note.
+**Deviations:** none.
+**Handoff:** Verified with red/green focused CLI tests for first-run hook installation and idempotent re-run preserving existing settings without duplicate hooks; full `@trace/cli` test suite; `@trace/cli` typecheck; and Prettier check on touched TypeScript/Markdown files. Manual follow-up: on a clean checkout, run `pnpm link --global`, `trace init`, start a Claude session, then confirm `trace session list --unassigned` shows the new session.
