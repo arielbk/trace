@@ -18,7 +18,7 @@ Behavior-preserving refactors that turn shallow, scattered modules in `@trace/co
 
 ### `transcript-adapters` — One deep adapter per tool
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A single transcript-adapter interface per `SessionTool` (claude, codex) answering id, model, token totals, and message tail from a transcript; callers (store, CLI, hook) consult an adapter rather than importing three free functions and re-branching on the tool string.
 

@@ -27,6 +27,14 @@ export const config = [
     },
   },
   {
+    // Tests routinely read/mutate process.env (e.g. HOME, TRACE_DB) to set up
+    // fixtures. The turbo env-var rule guards build-affecting source, not tests.
+    files: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "turbo/no-undeclared-env-vars": "off",
+    },
+  },
+  {
     ignores: ["dist/**"],
   },
 ];

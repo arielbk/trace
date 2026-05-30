@@ -87,7 +87,7 @@ test("repo skill helper resolves or creates a task, binds a simulated session, a
     expect(context).toMatch(/title: checkout/);
     expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
     expect(context).toMatch(
-      /sessions:\n- id: claude-session-1\n  tool: claude\n  transcript: \/tmp\/claude-session-1\.jsonl\n  mostRecent: true/,
+      /sessions:\n- id: claude-session-1\n {2}tool: claude\n {2}transcript: \/tmp\/claude-session-1\.jsonl\n {2}mostRecent: true/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

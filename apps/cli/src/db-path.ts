@@ -1,4 +1,4 @@
-import { resolveDatabasePath } from "../../../packages/core/src/index.ts";
+import { resolveDatabasePath } from "@trace/core";
 
 /**
  * Thin alias over the shared `@trace/core` resolver so the CLI never

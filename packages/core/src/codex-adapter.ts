@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
+  collectTranscriptTail,
+  normalizeRole,
+  textFromContent,
+  type JsonObject,
+  type TranscriptMessage,
+} from "./transcript-messages.ts";
+import {
   addTokenTotals,
   emptyTokenTotals,
   tokenTotalsFromUsage,
@@ -121,6 +128,36 @@ export function parseCodexTranscriptFile(
     transcriptPath,
     expectedThreadId: options.expectedThreadId,
   });
+}
+
+export function tailCodexTranscript(input: {
+  transcript: string;
+  limit?: number | undefined;
+}): TranscriptMessage[] {
+  return collectTranscriptTail(
+    input.transcript,
+    input.limit,
+    messageFromCodexEvent,
+  );
+}
+
+function messageFromCodexEvent(event: JsonObject): TranscriptMessage | null {
+  const type = typeof event.type === "string" ? event.type : "";
+  const role =
+    normalizeRole(event.role) ??
+    (type === "turn.started" || type === "user_message" ? "user" : undefined) ??
+    (type === "agent_message" || type === "assistant_message"
+      ? "assistant"
+      : undefined);
+
+  if (!role) {
+    return null;
+  }
+
+  const text = textFromContent(
+    event.message ?? event.prompt ?? event.content ?? event.text,
+  );
+  return text ? { role, text } : null;
 }
 
 export function scanCodexSessions(codexHome: string): ParsedCodexSession[] {

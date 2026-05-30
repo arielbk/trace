@@ -1,5 +1,13 @@
 import { readFileSync } from "node:fs";
 import {
+  collectTranscriptTail,
+  isObject,
+  normalizeRole,
+  textFromContent,
+  type JsonObject,
+  type TranscriptMessage,
+} from "./transcript-messages.ts";
+import {
   addTokenTotals,
   emptyTokenTotals,
   tokenTotalsFromUsage,
@@ -92,4 +100,26 @@ export function parseClaudeCodeTranscriptFile(
     transcript: readFileSync(transcriptPath, "utf8"),
     transcriptPath,
   });
+}
+
+export function tailClaudeCodeTranscript(input: {
+  transcript: string;
+  limit?: number | undefined;
+}): TranscriptMessage[] {
+  return collectTranscriptTail(
+    input.transcript,
+    input.limit,
+    messageFromClaudeEvent,
+  );
+}
+
+function messageFromClaudeEvent(event: JsonObject): TranscriptMessage | null {
+  const message = isObject(event.message) ? event.message : undefined;
+  const role = normalizeRole(event.type) ?? normalizeRole(message?.role);
+  if (!role) {
+    return null;
+  }
+
+  const text = textFromContent(message?.content ?? event.content);
+  return text ? { role, text } : null;
 }

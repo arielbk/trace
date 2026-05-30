@@ -523,7 +523,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     expect(context).toMatch(new RegExp(`task:\\n  id: ${taskId}`));
     expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
     expect(context).toMatch(
-      /sessions:\n- id: codex-session-1\n  tool: codex\n  transcript: \/tmp\/codex-session-1\.jsonl\n  mostRecent: true/,
+      /sessions:\n- id: codex-session-1\n {2}tool: codex\n {2}transcript: \/tmp\/codex-session-1\.jsonl\n {2}mostRecent: true/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -651,10 +651,10 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
       manifest.indexOf("- id: older-session"),
     );
     expect(manifest).toMatch(
-      /- id: newer-session\n  tool: codex\n  transcript: \/tmp\/newer\.jsonl\n  mostRecent: true/,
+      /- id: newer-session\n {2}tool: codex\n {2}transcript: \/tmp\/newer\.jsonl\n {2}mostRecent: true/,
     );
     expect(manifest).toMatch(
-      /- id: older-session\n  tool: claude\n  transcript: \/tmp\/older\.jsonl\n  mostRecent: false/,
+      /- id: older-session\n {2}tool: claude\n {2}transcript: \/tmp\/older\.jsonl\n {2}mostRecent: false/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

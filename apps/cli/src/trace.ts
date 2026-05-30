@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {
+  getTranscriptAdapter,
   openTraceStore,
-  readTranscriptTail,
   type ReEntryManifest,
   resolveProjectRoot,
   resolveTaskDocsDir,
@@ -11,7 +11,7 @@ import {
   type Task,
   type TaskDoc,
   type TokenTotals,
-} from "../../../packages/core/src/index.ts";
+} from "@trace/core";
 import { resolveDbPath } from "./db-path.ts";
 import {
   existsSync,
@@ -171,11 +171,11 @@ export function runTraceCli(
 
         const limit = parseSessionTailLimit(args.slice(1));
         return success(
-          readTranscriptTail({
-            transcriptPath: session.transcriptPath,
-            tool: session.tool,
-            limit,
-          })
+          getTranscriptAdapter(session.tool)
+            .readTail({
+              transcriptPath: session.transcriptPath,
+              limit,
+            })
             .map((message) => `${message.role}: ${message.text}\n`)
             .join(""),
         );

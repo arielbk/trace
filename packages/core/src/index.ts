@@ -35,6 +35,11 @@ export {
   tailTranscriptMessages,
 } from "./transcript-tail.ts";
 export type { TranscriptMessage } from "./transcript-tail.ts";
+export { getTranscriptAdapter } from "./transcript-adapter.ts";
+export type {
+  ParsedTranscript,
+  TranscriptAdapter,
+} from "./transcript-adapter.ts";
 export {
   addTokenTotals,
   emptyTokenTotals,
