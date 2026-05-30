@@ -42,7 +42,7 @@ Behavior-preserving refactors that turn shallow, scattered modules in `@trace/co
 
 ### `task-docs` — Dual-source TaskDocs module
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A named module that merges DB-registered docs with native docs-dir files (dedup by path, ordering preserved), with the SQLite store as one source behind a seam; `listDocsForTask` delegates to it.
 
