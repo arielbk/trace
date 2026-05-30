@@ -54,7 +54,7 @@ Behavior-preserving refactors that turn shallow, scattered modules in `@trace/co
 
 ### `cli-installer-split` — Split installer & consume lifted inference
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace init` + Claude `settings.json` wiring lives in its own module; `runTraceCli` and the SessionStart hook source session identity from the core `session-identity` module instead of inline CLI helpers.
 

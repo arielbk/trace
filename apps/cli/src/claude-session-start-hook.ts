@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { inferSessionIdentity } from "@trace/core";
 import { readFileSync } from "node:fs";
 import { runTraceCli } from "./trace.ts";
 
@@ -32,8 +33,26 @@ export function runClaudeSessionStartHook(
     return { exitCode: 2, stdout: "", stderr: "SessionStart input requires transcript_path\n" };
   }
 
+  // The "which tool / id / transcript path is the live session" contract lives
+  // in @trace/core; the hook treats its stdin payload as overrides (a Claude
+  // SessionStart is always the claude tool) and reads back the resolved values.
+  const identity = inferSessionIdentity(env, {
+    tool: "claude",
+    id: input.session_id,
+    transcriptPath: input.transcript_path,
+  });
+
   const result = runTraceCli(
-    ["session", "register", "--id", input.session_id, "--transcript", input.transcript_path, "--tool", "claude"],
+    [
+      "session",
+      "register",
+      "--id",
+      identity.id ?? input.session_id,
+      "--transcript",
+      identity.transcriptPath ?? input.transcript_path,
+      "--tool",
+      identity.tool,
+    ],
     env,
   );
 
