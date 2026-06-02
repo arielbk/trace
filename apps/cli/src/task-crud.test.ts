@@ -341,7 +341,7 @@ test("task show and skill re-enter list docs written under the trace task docs d
 
     const context = execFileSync(
       process.execPath,
-      [traceBin, "skill", "re-enter", taskId],
+      [traceBin, "skill", "re-enter", "checkout"],
       {
         encoding: "utf8",
         env,
@@ -482,7 +482,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         traceBin,
         "skill",
         "work-on-task",
-        taskId,
+        "checkout",
         "--id",
         "codex-session-1",
         "--transcript",
@@ -514,7 +514,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
 
     const context = execFileSync(
       process.execPath,
-      [traceBin, "skill", "re-enter", taskId],
+      [traceBin, "skill", "re-enter", "checkout"],
       {
         encoding: "utf8",
         env,
@@ -552,7 +552,7 @@ test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION
 
     const bound = execFileSync(
       process.execPath,
-      [traceBin, "skill", "work-on-task", taskId],
+      [traceBin, "skill", "work-on-task", "checkout"],
       { encoding: "utf8", env },
     );
     expect(bound).toBe(
@@ -581,7 +581,7 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
 
     const emptyManifest = execFileSync(
       process.execPath,
-      [traceBin, "skill", "re-enter", taskId],
+      [traceBin, "skill", "re-enter", "checkout"],
       { encoding: "utf8", env },
     );
     expect(emptyManifest).toContain(`task:\n  id: ${taskId}\n`);
@@ -641,7 +641,7 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
 
     const manifest = execFileSync(
       process.execPath,
-      [traceBin, "skill", "re-enter", taskId],
+      [traceBin, "skill", "re-enter", "checkout"],
       { encoding: "utf8", env },
     );
 
@@ -679,7 +679,7 @@ test("skill work-on-task --model persists the session model", () => {
         traceBin,
         "skill",
         "work-on-task",
-        taskId,
+        "checkout",
         "--id",
         "claude-session-1",
         "--transcript",

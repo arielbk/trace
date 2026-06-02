@@ -120,4 +120,4 @@ pnpm check-types    # typecheck all packages
 
 - `apps/cli` — the `trace` CLI
 - `packages/core` — the store, transcript adapters, and re-entry manifest
-- `.claude/skills/trace` — the Claude Code skill that drives the hero loop
+- `skills/trace` — the Claude Code skill that drives the hero loop (installed into a project's `.claude/skills/` via npx-skills)

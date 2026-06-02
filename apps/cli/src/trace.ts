@@ -196,11 +196,18 @@ export function runTraceCli(
 
     if (resource === "skill") {
       if (action === "work-on-task") {
-        const taskId = args[0];
+        const title = args[0];
 
-        if (!taskId) {
-          return failure("Task id is required");
+        if (!title) {
+          return failure("Task title is required");
         }
+
+        // The skill's contract is title-based: resolve the exact title, or
+        // create the task when absent. Keeping this in the CLI means the skill
+        // is pure prose and any other tool wrapper inherits the same behaviour.
+        const taskId =
+          findTaskIdByTitle(store.listTasks(), title) ??
+          store.createTask(title, resolveProjectRoot(cwd)).id;
 
         const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
         const session = store.registerSession(parsed);
@@ -211,21 +218,20 @@ export function runTraceCli(
       }
 
       if (action === "re-enter") {
-        const taskId = args[0];
+        const title = args[0];
 
+        if (!title) {
+          return failure("Task title is required");
+        }
+
+        const taskId = findTaskIdByTitle(store.listTasks(), title);
         if (!taskId) {
-          return failure("Task id is required");
+          return failure(`Task not found: ${title}`, 1);
         }
 
-        const task = store.getTask(taskId);
-
-        if (!task) {
-          return failure(`Task not found: ${taskId}`, 1);
-        }
-
-        const manifest = store.getReEntryManifest(task.id);
+        const manifest = store.getReEntryManifest(taskId);
         if (!manifest) {
-          return failure(`Task not found: ${taskId}`, 1);
+          return failure(`Task not found: ${title}`, 1);
         }
 
         return success(formatReEntryManifest(manifest));
@@ -240,6 +246,12 @@ export function runTraceCli(
   } finally {
     store.close();
   }
+}
+
+function findTaskIdByTitle(tasks: Task[], title: string): string | null {
+  const normalized = title.trim();
+  const match = tasks.find((task) => task.title === normalized);
+  return match ? match.id : null;
 }
 
 function success(stdout: string): CommandResult {

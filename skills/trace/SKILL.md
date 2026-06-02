@@ -16,17 +16,17 @@ Resolve an existing task with the exact title `X`, or create one when absent,
 then bind the current Claude Code session to it:
 
 ```sh
-node .claude/skills/trace/trace-skill.mjs work-on-task "X"
+trace skill work-on-task "X"
 ```
 
-The helper forwards to `trace skill work-on-task` and lets the CLI infer the
+The CLI resolves the title (creating the task when absent) and infers the
 current Claude Code session from `CLAUDE_CODE_SESSION_ID` (the variable live
 Claude Code sessions export; `CLAUDE_SESSION_ID` / `session_id` are also
 accepted), and the transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass
 `--model <name>` when the model is known to record it on the session:
 
 ```sh
-node .claude/skills/trace/trace-skill.mjs work-on-task "X" --model claude-opus-4-7
+trace skill work-on-task "X" --model claude-opus-4-7
 ```
 
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
@@ -39,12 +39,12 @@ Resolve an existing task with the exact title `X`, then print its docs and prior
 session references:
 
 ```sh
-node .claude/skills/trace/trace-skill.mjs re-enter "X"
+trace skill re-enter "X"
 ```
 
 When re-entering:
 
-1. Call the helper above and treat its output as a manifest.
+1. Call the command above and treat its output as a manifest.
 2. Read the decision docs first, in the listed order.
 3. Only if those docs do not cover the current state, read the transcript tail
    for the `mostRecent: true` session with `trace session tail <session-id>`.
@@ -60,9 +60,9 @@ later.
 This skill expects the `trace` command to be reachable on `PATH`. From the repo,
 run `pnpm link --global` once; see `docs/usable-v1/cli-link.md`.
 
-For tests or local debugging, set `TRACE_BIN` to an alternate command, for
-example:
+For local debugging without a global link, invoke the CLI entry point directly,
+for example:
 
 ```sh
-TRACE_BIN="node apps/cli/src/trace.ts" node .claude/skills/trace/trace-skill.mjs re-enter "checkout"
+node apps/cli/src/trace.ts skill re-enter "checkout"
 ```

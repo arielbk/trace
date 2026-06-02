@@ -7,31 +7,21 @@ import { expect, test } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
-const skillHelper = join(
-  repoRoot,
-  ".claude",
-  "skills",
-  "trace",
-  "trace-skill.mjs",
-);
-const skillReadme = join(repoRoot, ".claude", "skills", "trace", "SKILL.md");
+const skillReadme = join(repoRoot, "skills", "trace", "SKILL.md");
 
-test("repo skill helper resolves or creates a task, binds a simulated session, and re-enters context", () => {
+test("trace skill resolves or creates a task by title, binds a simulated session, and re-enters context", () => {
   expect(existsSync(skillReadme)).toBe(true);
 
   const dir = mkdtempSync(join(tmpdir(), "trace-repo-skill-"));
   const databasePath = join(dir, "trace.sqlite");
-  const env = {
-    ...process.env,
-    TRACE_DB: databasePath,
-    TRACE_BIN: `${process.execPath} ${traceBin}`,
-  };
+  const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
     const bound = execFileSync(
       process.execPath,
       [
-        skillHelper,
+        traceBin,
+        "skill",
         "work-on-task",
         "checkout",
         "--id",
@@ -77,7 +67,7 @@ test("repo skill helper resolves or creates a task, binds a simulated session, a
 
     const context = execFileSync(
       process.execPath,
-      [skillHelper, "re-enter", "checkout"],
+      [traceBin, "skill", "re-enter", "checkout"],
       {
         encoding: "utf8",
         env,

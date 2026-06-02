@@ -51,13 +51,13 @@ already exist and are tool-agnostic. No new store/adapter/manifest/CLI-verb code
 
 **Codex `trace` skill (new artifact).** A `SKILL.md` in the Codex skills format, installed
 to the Codex skills directory (`~/.codex/skills/trace/`). It is *not* a verbatim copy of the
-Claude skill — that one is Claude-specific in prose, references `CLAUDE_*` env vars, and
-invokes the repo-local `trace-skill.mjs` helper. The Codex skill instead:
+Claude skill — that one is Claude-specific in prose and references `CLAUDE_*` env vars. The
+Codex skill instead:
 - carries the same consumption protocol (re-enter → docs first → transcript tail fallback →
   never paste raw transcripts);
-- invokes the global `trace` bin's `skill work-on-task` / `skill re-enter` verbs, which
-  already infer the Codex session from `CODEX_THREAD_ID` and the transcript from
-  `CODEX_TRANSCRIPT_PATH` when present;
+- invokes the global `trace` bin's `skill work-on-task` / `skill re-enter` verbs (the same
+  title-based commands the Claude skill calls), which already infer the Codex session from
+  `CODEX_THREAD_ID` and the transcript from `CODEX_TRANSCRIPT_PATH` when present;
 - runs `trace session scan --codex` on invocation so the current Codex-started session is
   backfilled into the store before binding.
 

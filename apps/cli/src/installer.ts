@@ -89,7 +89,7 @@ function resolveTraceSkillPath(cwd: string): string {
     const parent = dirname(current);
     if (parent === current) {
       return fileURLToPath(
-        new URL("../../../.claude/skills/trace/SKILL.md", import.meta.url),
+        new URL("../../../skills/trace/SKILL.md", import.meta.url),
       );
     }
 
