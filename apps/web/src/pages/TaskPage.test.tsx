@@ -321,9 +321,13 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
-  expect(html).toContain("tool-tag tool-tag-doc");
+  expect(html).toContain("type-icon type-icon-doc");
   expect(html).toContain("findings.md");
   expect(html).not.toContain("No timeline items found.");
   // Zero token totals still render (no session rows, no crash).
