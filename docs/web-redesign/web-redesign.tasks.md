@@ -54,7 +54,7 @@ Visual and usability redesign of the two existing web pages (task list, task tim
 
 ### `tasks-page-redesign` — Project-grouped, sorted, scannable task list
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** TasksPage groups tasks under prominent project headers (name prominent, path muted and copyable), sorts rows newest-activity-first within each group, and renders each row as title, short copyable ID, relative last-activity, and compact token total. Tasks whose title is a raw UUID render a distinct "untitled" fallback style.
 

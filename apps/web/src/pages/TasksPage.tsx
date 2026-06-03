@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Task } from "@trace/core";
+import type { TaskSummary } from "@trace/core";
+import { CopyChip } from "../components/CopyChip.tsx";
 import { ThemeToggle } from "../components/ThemeToggle.tsx";
+import { formatRelativeTime, formatTokensCompact, truncateId } from "../format.ts";
 
 export type ProjectTaskGroup = {
   projectRoot: string;
   displayName: string;
-  tasks: Task[];
+  tasks: TaskSummary[];
 };
 
 export function TasksPage() {
-  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
 
   useEffect(() => {
     fetch("/api/tasks")
@@ -40,23 +42,18 @@ export function TasksPage() {
   );
 }
 
-export function TaskList({ tasks }: { tasks: Task[] }) {
+export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
   return (
     <div className="project-groups">
       {groupTasksByProject(tasks).map((group) => (
         <section className="project-group" key={group.projectRoot}>
           <header>
             <h2>{group.displayName}</h2>
-            <p>{group.projectRoot}</p>
+            <CopyChip value={group.projectRoot} display={group.projectRoot} />
           </header>
           <ul>
             {group.tasks.map((task) => (
-              <li key={task.id}>
-                <Link to={`/task/${task.id}`}>
-                  <strong>{task.title}</strong>
-                  <span> {task.id}</span>
-                </Link>
-              </li>
+              <TaskRow key={task.id} task={task} />
             ))}
           </ul>
         </section>
@@ -65,7 +62,42 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
   );
 }
 
-export function groupTasksByProject(tasks: Task[]): ProjectTaskGroup[] {
+function TaskRow({ task }: { task: TaskSummary }) {
+  const untitled = isUntitled(task.title);
+  return (
+    <li className={untitled ? "task-row task-row-untitled" : "task-row"}>
+      <Link to={`/task/${task.id}`} className="task-row-link">
+        <span className="task-row-title">
+          {untitled ? "Untitled task" : task.title}
+        </span>
+        <span className="task-row-meta">
+          <span className="task-row-time">
+            {formatRelativeTime(task.lastActivityAt)}
+          </span>
+          <span
+            className="task-row-tokens"
+            title={String(task.tokenTotals.totalTokens)}
+          >
+            {formatTokensCompact(task.tokenTotals.totalTokens)}
+          </span>
+        </span>
+      </Link>
+      <CopyChip value={task.id} display={truncateId(task.id)} />
+    </li>
+  );
+}
+
+/**
+ * A task is "untitled" when its title is a raw UUID (no human-authored title was
+ * ever set). We lean on `truncateId`'s documented contract: it shortens strict
+ * UUIDs and returns anything else unchanged, so a changed result means the title
+ * was a bare UUID.
+ */
+function isUntitled(title: string): boolean {
+  return truncateId(title) !== title;
+}
+
+export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
   const groups = new Map<string, ProjectTaskGroup>();
 
   for (const task of tasks) {
@@ -84,7 +116,27 @@ export function groupTasksByProject(tasks: Task[]): ProjectTaskGroup[] {
     });
   }
 
-  return Array.from(groups.values());
+  // Sort rows newest-activity-first within each group, then order the groups
+  // themselves by their single most recent activity so the liveliest project
+  // sits on top.
+  const ordered = Array.from(groups.values());
+  for (const group of ordered) {
+    group.tasks.sort(byActivityDesc);
+  }
+  ordered.sort(
+    (a, b) =>
+      activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
+  );
+
+  return ordered;
+}
+
+function byActivityDesc(a: TaskSummary, b: TaskSummary): number {
+  return activityEpoch(b) - activityEpoch(a);
+}
+
+function activityEpoch(task: TaskSummary): number {
+  return new Date(task.lastActivityAt).getTime();
 }
 
 function projectDisplayName(projectRoot: string): string {
