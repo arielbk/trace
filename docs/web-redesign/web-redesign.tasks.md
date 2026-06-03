@@ -30,7 +30,7 @@ Visual and usability redesign of the two existing web pages (task list, task tim
 
 ### `theme-tokens-toggle` — CSS custom properties with light/dark toggle
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** `styles.css` rebuilt on CSS custom properties (palette, spacing, type scale) with light and dark palettes; a header toggle component on both pages initialized from `prefers-color-scheme`, override persisted in `localStorage`; page layout centered with sane max-width so content no longer hugs the left edge.
 

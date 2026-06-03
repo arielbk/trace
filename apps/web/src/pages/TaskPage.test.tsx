@@ -68,6 +68,29 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
   expect(html).toContain(">—<");
 });
 
+test("TaskTimelineView header includes the theme toggle", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+
+  expect(html).toContain('class="theme-toggle"');
+});
+
 test("TaskTimelineView header shows the task id as a truncated copy chip", () => {
   const fullId = "0e1d2c3b-4a59-6879-8a7b-6c5d4e3f2a1b";
   const timeline: TaskTimeline = {

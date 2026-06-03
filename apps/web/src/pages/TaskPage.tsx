@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { Session, TaskTimeline } from "@trace/core";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { ThemeToggle } from "../components/ThemeToggle.tsx";
 import { truncateId } from "../format.ts";
 
 export function TaskPage() {
@@ -32,11 +33,14 @@ export function TaskTimelineView({ timeline }: { timeline: TaskTimeline }) {
             <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
           </p>
         </div>
-        <dl className="token-summary" aria-label="Token totals">
-          <div><dt>Total</dt><dd>{timeline.tokenTotals.totalTokens}</dd></div>
-          <div><dt>Input</dt><dd>{timeline.tokenTotals.inputTokens}</dd></div>
-          <div><dt>Output</dt><dd>{timeline.tokenTotals.outputTokens}</dd></div>
-        </dl>
+        <div className="header-aside">
+          <ThemeToggle />
+          <dl className="token-summary" aria-label="Token totals">
+            <div><dt>Total</dt><dd>{timeline.tokenTotals.totalTokens}</dd></div>
+            <div><dt>Input</dt><dd>{timeline.tokenTotals.inputTokens}</dd></div>
+            <div><dt>Output</dt><dd>{timeline.tokenTotals.outputTokens}</dd></div>
+          </dl>
+        </div>
       </header>
       {timeline.items.length === 0 ? (
         <p className="empty-state">No timeline items found.</p>

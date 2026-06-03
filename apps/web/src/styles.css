@@ -1,8 +1,78 @@
+/*
+ * Theme tokens. All color, spacing, type-scale, radius and layout values live
+ * as CSS custom properties here. Light is the default palette on :root; the
+ * dark palette overrides only the color tokens under [data-theme="dark"].
+ * No hardcoded hex colors should appear anywhere below these two blocks —
+ * see styles.test.ts, which enforces it.
+ */
+:root {
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+
+  /* Type scale */
+  --text-xs: 0.7rem;
+  --text-sm: 0.78rem;
+  --text-base: 0.9rem;
+  --text-md: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 2rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  /* Layout */
+  --max-width: 960px;
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Light palette */
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-text: #171717;
+  --color-text-muted: #667085;
+  --color-border: #dfe3e8;
+  --color-border-subtle: #eeeeee;
+  --color-border-strong: #98a2b3;
+  --color-chip-border: #d0d5dd;
+  --color-chip-text: #475467;
+  --color-chip-bg: #eef1f4;
+  --color-accent: #1f6f5b;
+  --color-tag-claude: #b94700;
+  --color-tag-codex: #1f6f5b;
+  --color-tag-doc: #475467;
+  --color-tag-text: #ffffff;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0f1419;
+  --color-surface: #1a2027;
+  --color-text: #e6e8eb;
+  --color-text-muted: #9aa4b2;
+  --color-border: #2a313a;
+  --color-border-subtle: #232a32;
+  --color-border-strong: #3a434f;
+  --color-chip-border: #3a434f;
+  --color-chip-text: #c2cad4;
+  --color-chip-bg: #232a32;
+  --color-accent: #3ba88c;
+  --color-tag-claude: #e2620f;
+  --color-tag-codex: #2f9d7f;
+  --color-tag-doc: #6b7685;
+  --color-tag-text: #0f1419;
+}
+
 body {
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans);
   margin: 0;
-  background: #f7f8fa;
-  color: #171717;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 #root {
@@ -18,99 +88,146 @@ ol {
   padding: 0;
 }
 li {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .task-page,
-.project-groups {
-  max-width: 960px;
+.tasks-page {
+  max-width: var(--max-width);
   margin: 0 auto;
-  padding: 2.5rem 1.5rem;
+  padding: var(--space-6) var(--space-5);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.1;
+}
+
+.page-subtitle {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
 }
 
 .task-header {
   display: flex;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: var(--space-5);
   align-items: flex-start;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid #dfe3e8;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--color-chip-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--color-border-strong);
 }
 
 .eyebrow {
-  margin: 0 0 0.4rem;
-  color: #667085;
-  font-size: 0.78rem;
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .task-header h1 {
   margin: 0;
-  font-size: 2rem;
+  font-size: var(--text-xl);
   line-height: 1.1;
 }
 
 .task-id {
-  margin: 0.5rem 0 0;
-  color: #667085;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9rem;
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
 }
 
 .token-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(4rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
   margin: 0;
 }
 
 .token-summary div {
   min-width: 5rem;
-  padding: 0.75rem;
-  background: #fff;
-  border: 1px solid #dfe3e8;
-  border-radius: 8px;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .token-summary dt {
-  color: #667085;
-  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 .token-summary dd {
-  margin: 0.2rem 0 0;
-  font-size: 1.15rem;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-lg);
   font-weight: 700;
 }
 
 .empty-state {
-  color: #667085;
+  color: var(--color-text-muted);
 }
 
 .copy-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid #d0d5dd;
-  border-radius: 6px;
-  background: #fff;
-  color: #475467;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-chip-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-chip-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
   line-height: 1.4;
   cursor: pointer;
 }
 
 .copy-chip:hover {
-  border-color: #98a2b3;
+  border-color: var(--color-border-strong);
 }
 
 .copy-chip-status {
-  color: #1f6f5b;
-  font-size: 0.7rem;
+  color: var(--color-accent);
+  font-size: var(--text-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -120,33 +237,33 @@ li {
 }
 
 .timeline-list {
-  margin: 1.5rem 0 0;
+  margin: var(--space-5) 0 0;
 }
 
 .timeline-item {
   display: grid;
   grid-template-columns: 5.25rem minmax(0, 1fr);
-  gap: 1rem;
+  gap: var(--space-4);
   align-items: start;
-  padding: 1rem 0;
-  border-bottom: 1px solid #e4e7ec;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .timeline-item-body h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-md);
 }
 
 .timeline-item-body p {
-  margin: 0.35rem 0 0;
-  color: #667085;
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
   overflow-wrap: anywhere;
 }
 
 .item-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -156,38 +273,40 @@ li {
   align-items: center;
   width: fit-content;
   min-height: 1.6rem;
-  padding: 0 0.55rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
   font-weight: 700;
   line-height: 1;
 }
 
 .tool-tag {
-  color: #fff;
+  color: var(--color-tag-text);
   text-transform: uppercase;
 }
 
 .tool-tag-claude {
-  background: #b94700;
+  background: var(--color-tag-claude);
 }
 
 .tool-tag-codex {
-  background: #1f6f5b;
+  background: var(--color-tag-codex);
 }
 
 .tool-tag-doc {
-  background: #475467;
+  background: var(--color-tag-doc);
 }
 
 .model-chip {
-  color: #475467;
-  background: #eef1f4;
-  border: 1px solid #d0d5dd;
+  color: var(--color-chip-text);
+  background: var(--color-chip-bg);
+  border: 1px solid var(--color-chip-border);
 }
+
 .project-groups {
   display: grid;
-  gap: 1.5rem;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 @media (max-width: 720px) {
@@ -196,24 +315,30 @@ li {
     display: block;
   }
 
+  .header-aside {
+    margin-top: var(--space-4);
+    align-items: flex-start;
+  }
+
   .token-summary {
-    margin-top: 1rem;
+    margin-top: var(--space-4);
   }
 
   .timeline-item .tool-tag {
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
   }
 }
+
 .project-group header {
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-1);
 }
 .project-group h2 {
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
   margin: 0;
 }
 .project-group p {
-  color: #666;
-  font-size: 0.9rem;
-  margin: 0.25rem 0 0.75rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  margin: var(--space-1) 0 var(--space-3);
 }

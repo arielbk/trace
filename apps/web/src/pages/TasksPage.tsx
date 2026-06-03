@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Task } from "@trace/core";
+import { ThemeToggle } from "../components/ThemeToggle.tsx";
 
 export type ProjectTaskGroup = {
   projectRoot: string;
@@ -25,11 +26,14 @@ export function TasksPage() {
     );
 
   return (
-    <main>
-      <header>
-        <p>Trace</p>
-        <h1>Tasks</h1>
-        <p>{tasks.length} tasks</p>
+    <main className="tasks-page">
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Trace</p>
+          <h1>Tasks</h1>
+          <p className="page-subtitle">{tasks.length} tasks</p>
+        </div>
+        <ThemeToggle />
       </header>
       {tasks.length === 0 ? <p>No tasks found.</p> : <TaskList tasks={tasks} />}
     </main>
