@@ -18,12 +18,17 @@ point is intentionally not wired yet.
 
 ## Setup
 
-trace is installed as a Claude Code plugin. From Claude Code, add this repo as a
-marketplace and install the plugin:
+trace is installed as a Claude Code plugin. From Claude Code, first add this
+repo as a marketplace:
 
 ```sh
-/plugin marketplace add github:arielbk/trace-v2
-/plugin install trace
+/plugin marketplace add arielbk/trace-v2
+```
+
+Then, as a separate command, install the plugin:
+
+```sh
+/plugin install trace@trace-v2
 ```
 
 The plugin ships the bundled `trace` CLI, the trace skill, and the

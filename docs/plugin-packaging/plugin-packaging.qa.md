@@ -47,7 +47,7 @@ pnpm --filter @trace/cli build
 - [ ] **`marketplace` needs-review: clean marketplace add + plugin install**
   - Run: use the Claude Code slash-command prompt in a fresh Claude Code session.
   - Open: Claude Code in `/Users/arielbk/Projects/side/trace-v2`.
-  - Do: run `/plugin marketplace add github:arielbk/trace-v2`, then `/plugin install trace`.
+  - Do: run `/plugin marketplace add arielbk/trace-v2`, then as a separate command `/plugin install trace@trace-v2`.
   - Expect: Claude Code accepts the repo as marketplace `trace-v2`, installs plugin `trace`, and reports no manual file-copy, `pnpm link`, or `trace init` step.
 
 - [ ] **Installed plugin registers a real SessionStart hook**

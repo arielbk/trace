@@ -29,8 +29,8 @@ test("init reports plugin setup without writing Claude settings", () => {
     });
 
     expect(output).toContain("trace is now installed through the Claude Code plugin");
-    expect(output).toContain("/plugin marketplace add github:arielbk/trace-v2");
-    expect(output).toContain("/plugin install trace");
+    expect(output).toContain("/plugin marketplace add arielbk/trace-v2");
+    expect(output).toContain("/plugin install trace@trace-v2");
     expect(output).toContain("trace skill: found");
     expect(output).not.toContain("pnpm link --global");
     expect(output).not.toContain("SessionStart hook");

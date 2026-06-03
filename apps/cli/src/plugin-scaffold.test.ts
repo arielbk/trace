@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -41,7 +41,9 @@ describe("plugin scaffold", () => {
     assert.equal(manifest.displayName, "Trace");
     assert.equal(typeof manifest.description, "string");
     assert.equal(manifest.skills, "./skills/");
-    assert.equal(manifest.hooks, "./hooks/hooks.json");
+    // The conventional hooks/hooks.json is auto-loaded; referencing it from the
+    // manifest causes a duplicate-hooks load error in Claude Code.
+    assert.equal(manifest.hooks, undefined);
 
     const hooks = JSON.parse(readFileSync(hooksConfig, "utf8")) as {
       hooks?: {

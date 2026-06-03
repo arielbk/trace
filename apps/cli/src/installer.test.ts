@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { runInit } from "./installer.ts";
 
 type Settings = {
@@ -25,10 +25,10 @@ describe("trace init", () => {
         true,
       );
       assert.equal(
-        output.includes("/plugin marketplace add github:arielbk/trace-v2"),
+        output.includes("/plugin marketplace add arielbk/trace-v2"),
         true,
       );
-      assert.equal(output.includes("/plugin install trace"), true);
+      assert.equal(output.includes("/plugin install trace@trace-v2"), true);
       assert.equal(output.includes("trace skill: found"), true);
       assert.equal(output.includes("pnpm link --global"), false);
       assert.equal(output.includes("SessionStart hook"), false);

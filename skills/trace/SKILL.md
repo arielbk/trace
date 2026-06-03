@@ -57,11 +57,16 @@ later.
 
 ## CLI Setup
 
-Install Trace as a Claude Code plugin:
+Install Trace as a Claude Code plugin. First add this repo as a marketplace:
 
 ```sh
-/plugin marketplace add github:arielbk/trace-v2
-/plugin install trace
+/plugin marketplace add arielbk/trace-v2
+```
+
+Then, as a separate command, install the plugin:
+
+```sh
+/plugin install trace@trace-v2
 ```
 
 When installed, this skill invokes the bundled Trace CLI from the plugin root;

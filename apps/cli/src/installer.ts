@@ -12,8 +12,8 @@ export function runInit(
   const skillPath = resolveTraceSkillPath(cwd);
   const lines = [
     "trace is now installed through the Claude Code plugin.",
-    "setup: /plugin marketplace add github:arielbk/trace-v2",
-    "setup: /plugin install trace",
+    "setup: /plugin marketplace add arielbk/trace-v2",
+    "setup: /plugin install trace@trace-v2",
     existsSync(skillPath)
       ? `trace skill: found at ${skillPath}`
       : `trace skill: missing at ${skillPath}`,
