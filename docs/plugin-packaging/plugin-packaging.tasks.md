@@ -66,7 +66,7 @@ and no `trace init`.
 
 ### `retire-init-and-docs` — Remove `trace init` hook-wiring + update docs
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** Installing the plugin is the only documented setup path; `trace init` no longer writes a hook into `settings.json`, and README + the skill's "CLI Setup" section describe plugin install instead of `pnpm link --global` + `trace init`.
 

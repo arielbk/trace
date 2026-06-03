@@ -18,26 +18,22 @@ point is intentionally not wired yet.
 
 ## Setup
 
-trace is a small CLI plus a Claude Code skill. Two one-time steps:
+trace is installed as a Claude Code plugin. From Claude Code, add this repo as a
+marketplace and install the plugin:
 
 ```sh
-# 1. Make the `trace` command available on your PATH (run once, from the repo).
-pnpm install
-pnpm link --global
-
-# 2. Wire trace into Claude Code (idempotent — safe to re-run).
-trace init
+/plugin marketplace add github:arielbk/trace-v2
+/plugin install trace
 ```
 
-`trace init` registers a `SessionStart` hook in your `~/.claude/settings.json`
-so every new Claude Code session is recorded against the store, confirms the
-`trace` skill is discoverable, and prints anything still manual. Running it a
-second time is a no-op — it won't duplicate the hook.
+The plugin ships the bundled `trace` CLI, the trace skill, and the
+`SessionStart` hook declaration. No global CLI link or manual settings edit is
+required.
 
 To confirm the hook is firing, start a fresh Claude Code session, then:
 
 ```sh
-trace session list --unassigned
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" session list --unassigned
 ```
 
 The new session should appear.

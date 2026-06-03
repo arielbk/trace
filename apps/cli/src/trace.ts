@@ -29,6 +29,12 @@ export function runTraceCli(
   env: Record<string, string | undefined> = process.env,
   cwd = process.cwd(),
 ): CommandResult {
+  const [resource, action, ...args] = argv;
+
+  if (resource === "init") {
+    return success(runInit(env, cwd));
+  }
+
   let databasePath: string;
   try {
     databasePath = resolveDbPath(env);
@@ -36,15 +42,9 @@ export function runTraceCli(
     return failure(error instanceof Error ? error.message : String(error));
   }
 
-  const [resource, action, ...args] = argv;
-
   const store = openTraceStore(databasePath);
 
   try {
-    if (resource === "init") {
-      return success(runInit(env, cwd));
-    }
-
     if (resource === "task") {
       if (action === "create") {
         const title = args.join(" ");

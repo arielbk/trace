@@ -57,8 +57,16 @@ later.
 
 ## CLI Setup
 
-When installed as a Claude Code plugin, this skill invokes the bundled Trace CLI
-from the plugin root; no global `trace` command is required.
+Install Trace as a Claude Code plugin:
+
+```sh
+/plugin marketplace add github:arielbk/trace-v2
+/plugin install trace
+```
+
+When installed, this skill invokes the bundled Trace CLI from the plugin root;
+no global `trace` command is required and hook registration is declared by the
+plugin.
 
 For local debugging without a global link, invoke the CLI entry point directly,
 for example:

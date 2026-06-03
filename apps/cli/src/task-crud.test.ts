@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -13,7 +14,7 @@ import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
-test("init writes the Claude SessionStart hook into settings", () => {
+test("init reports plugin setup without writing Claude settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
   const env = {
     ...process.env,
@@ -27,37 +28,19 @@ test("init writes the Claude SessionStart hook into settings", () => {
       env,
     });
 
-    expect(output).toContain("registered Claude SessionStart hook");
+    expect(output).toContain("trace is now installed through the Claude Code plugin");
+    expect(output).toContain("/plugin marketplace add github:arielbk/trace-v2");
+    expect(output).toContain("/plugin install trace");
     expect(output).toContain("trace skill: found");
-    expect(output).toContain("manual: run pnpm link --global");
-
-    const settings = JSON.parse(
-      readFileSync(join(dir, ".claude", "settings.json"), "utf8"),
-    ) as {
-      hooks?: {
-        SessionStart?: Array<{
-          hooks?: Array<{ type?: string; command?: string }>;
-        }>;
-      };
-    };
-    expect(settings.hooks?.SessionStart).toEqual([
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `${process.execPath} ${fileURLToPath(
-              new URL("./claude-session-start-hook.ts", import.meta.url),
-            )}`,
-          },
-        ],
-      },
-    ]);
+    expect(output).not.toContain("pnpm link --global");
+    expect(output).not.toContain("SessionStart hook");
+    expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("init preserves existing Claude settings and does not duplicate the hook", () => {
+test("init preserves existing Claude settings without adding SessionStart hooks", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
   const settingsPath = join(dir, ".claude", "settings.json");
   const env = {
@@ -91,9 +74,7 @@ test("init preserves existing Claude settings and does not duplicate the hook", 
       env,
     });
 
-    expect(secondOutput).toContain(
-      "Claude SessionStart hook already registered",
-    );
+    expect(secondOutput).toContain("trace is now installed through the Claude Code plugin");
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       permissions?: { allow?: string[] };
@@ -106,7 +87,7 @@ test("init preserves existing Claude settings and does not duplicate the hook", 
     expect(settings.hooks?.Stop).toEqual([
       { hooks: [{ type: "command", command: "echo stop" }] },
     ]);
-    expect(settings.hooks?.SessionStart).toHaveLength(1);
+    expect(settings.hooks?.SessionStart).toBeUndefined();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
