@@ -6,6 +6,7 @@ import {
   type ReEntryManifest,
   resolveProjectRoot,
   resolveTaskDocsDir,
+  scanClaudeCodeSessions,
   scanCodexSessions,
   type Session,
   type SessionTool,
@@ -237,6 +238,23 @@ export function runTraceCli(
       if (action === "scan" && args[0] === "--codex") {
         const codexHome = parseCodexScanArgs(args.slice(1), env);
         const sessions = scanCodexSessions(codexHome).map((session) =>
+          store.registerSession({
+            id: session.id,
+            transcriptPath: session.transcriptPath,
+            tool: session.tool,
+            model: session.model,
+            tokenTotals: session.tokenTotals,
+          }),
+        );
+
+        return success(sessions.map(formatSessionSummary).join(""));
+      }
+
+      if (action === "scan" && args[0] === "--claude") {
+        const projectsRoot = parseClaudeScanArgs(args.slice(1), env);
+        // Backfill shares the hook's registration path (store.registerSession),
+        // so a scanned session and a hooked session can't diverge.
+        const sessions = scanClaudeCodeSessions(projectsRoot).map((session) =>
           store.registerSession({
             id: session.id,
             transcriptPath: session.transcriptPath,
@@ -621,6 +639,41 @@ function parseCodexScanArgs(
   }
 
   return `${env.HOME}/.codex`;
+}
+
+function parseClaudeScanArgs(
+  args: string[],
+  env: Record<string, string | undefined>,
+): string {
+  let projectsRoot: string | undefined;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+
+    if (!flag || !value) {
+      throw new Error("Claude scan accepts --projects-root <path>");
+    }
+
+    if (flag === "--projects-root") {
+      projectsRoot = value;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (projectsRoot) {
+    return projectsRoot;
+  }
+
+  // Claude Code stores transcripts under <config-home>/projects. The default
+  // config home is ~/.claude, but alternate homes (e.g. ~/.claude-infinum) are
+  // common — pass --projects-root explicitly to scan those.
+  if (!env.HOME) {
+    throw new Error("Claude scan requires --projects-root when HOME is not set");
+  }
+
+  return `${env.HOME}/.claude/projects`;
 }
 
 function parseSessionTailLimit(args: string[]): number | undefined {

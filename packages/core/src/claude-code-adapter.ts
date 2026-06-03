@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   collectTranscriptTail,
   isObject,
@@ -106,6 +107,41 @@ export function parseClaudeCodeTranscriptFile(
     transcript: readFileSync(transcriptPath, "utf8"),
     transcriptPath,
   });
+}
+
+export function scanClaudeCodeSessions(
+  projectsRoot: string,
+): ParsedClaudeCodeSession[] {
+  const sessions: ParsedClaudeCodeSession[] = [];
+
+  for (const transcriptPath of findJsonlFiles(resolve(projectsRoot))) {
+    try {
+      sessions.push(parseClaudeCodeTranscriptFile(transcriptPath));
+    } catch {
+      // A transcript without a session id (or otherwise unparseable) can't be
+      // registered; skip it rather than aborting the whole backfill.
+    }
+  }
+
+  return sessions;
+}
+
+function findJsonlFiles(directoryPath: string): string[] {
+  if (!existsSync(directoryPath)) {
+    return [];
+  }
+
+  return readdirSync(directoryPath, { withFileTypes: true })
+    .flatMap((entry: Dirent): string[] => {
+      const fullPath = join(directoryPath, entry.name);
+
+      if (entry.isDirectory()) {
+        return findJsonlFiles(fullPath);
+      }
+
+      return entry.isFile() && entry.name.endsWith(".jsonl") ? [fullPath] : [];
+    })
+    .sort((left, right) => left.localeCompare(right));
 }
 
 export function tailClaudeCodeTranscript(input: {
