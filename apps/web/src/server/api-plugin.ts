@@ -1,35 +1,24 @@
 import type { Plugin } from "vite";
-import { getTaskTimeline, listTaskSummaries } from "./data.ts";
+import { handleTraceApiRequest, writeTraceApiResponse } from "@trace/core";
+import { getDatabasePath } from "./data.ts";
 
 export function traceApiPlugin(): Plugin {
   return {
     name: "trace-api",
     configureServer(server) {
-      server.middlewares.use("/api/tasks", (req, res, next) => {
-        try {
-          const url = req.url ?? "/";
-          if (url === "/" || url === "") {
-            res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify(listTaskSummaries()));
-            return;
-          }
-          const match = /^\/([^/]+)\/timeline\/?$/.exec(url);
-          if (match && match[1]) {
-            const timeline = getTaskTimeline(match[1]);
-            if (!timeline) {
-              res.statusCode = 404;
-              res.end();
-              return;
-            }
-            res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify(timeline));
-            return;
-          }
+      // Mount unscoped so the shared handler sees the full `/api/...` path and
+      // routes identically to the standalone `trace serve` server.
+      server.middlewares.use((req, res, next) => {
+        const response = handleTraceApiRequest(
+          getDatabasePath(),
+          req.method ?? "GET",
+          req.url ?? "/",
+        );
+        if (!response) {
           next();
-        } catch (err) {
-          res.statusCode = 500;
-          res.end(String(err));
+          return;
         }
+        writeTraceApiResponse(res, response);
       });
     },
   };
