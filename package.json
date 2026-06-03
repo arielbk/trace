@@ -1,6 +1,7 @@
 {
   "name": "trace-v2",
   "private": true,
+  "type": "module",
   "bin": {
     "trace": "apps/cli/src/trace.ts"
   },

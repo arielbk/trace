@@ -1,11 +1,18 @@
 import { stripTypeScriptTypes } from "node:module";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
 const distDir = resolve(here, "../dist");
+const pluginBinDir = resolve(repoRoot, "bin");
 const coreEntry = resolve(repoRoot, "packages/core/src/index.ts");
 const moduleSpecifierPattern =
   /(?:import|export)\s+(?:[^"']*?\s+from\s+)?["']([^"']+)["']/g;
@@ -17,22 +24,26 @@ type CollectedModule = {
 };
 
 mkdirSync(distDir, { recursive: true });
+mkdirSync(pluginBinDir, { recursive: true });
 
 writeBundle({
   entryPath: resolve(here, "trace.ts"),
   outputPath: resolve(distDir, "trace.js"),
+  pluginOutputPath: resolve(pluginBinDir, "trace.js"),
   runner: "trace",
 });
 
 writeBundle({
   entryPath: resolve(here, "claude-session-start-hook.ts"),
   outputPath: resolve(distDir, "claude-session-start-hook.js"),
+  pluginOutputPath: resolve(pluginBinDir, "claude-session-start-hook.js"),
   runner: "hook",
 });
 
 function writeBundle(options: {
   entryPath: string;
   outputPath: string;
+  pluginOutputPath: string;
   runner: "trace" | "hook";
 }): void {
   const modules = collectModules(options.entryPath);
@@ -81,6 +92,8 @@ ${runner}
 `,
   );
   chmodSync(options.outputPath, 0o755);
+  copyFileSync(options.outputPath, options.pluginOutputPath);
+  chmodSync(options.pluginOutputPath, 0o755);
 }
 
 function collectModules(entryPath: string): CollectedModule[] {

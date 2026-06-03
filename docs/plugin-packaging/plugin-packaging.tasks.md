@@ -38,7 +38,7 @@ and no `trace init`.
 
 ### `plugin-scaffold` — Plugin manifest + hooks.json + skill + bundle
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A Claude Code plugin definition in the repo: plugin manifest, `hooks.json` declaring the `SessionStart` hook against the bundled artifact via the plugin-root path, the trace skill, and the bundled CLI — installable locally with no PATH dependency and no npx.
 

@@ -16,7 +16,7 @@ Resolve an existing task with the exact title `X`, or create one when absent,
 then bind the current Claude Code session to it:
 
 ```sh
-trace skill work-on-task "X"
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X"
 ```
 
 The CLI resolves the title (creating the task when absent) and infers the
@@ -26,7 +26,7 @@ accepted), and the transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass
 `--model <name>` when the model is known to record it on the session:
 
 ```sh
-trace skill work-on-task "X" --model claude-opus-4-7
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X" --model claude-opus-4-7
 ```
 
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
@@ -39,7 +39,7 @@ Resolve an existing task with the exact title `X`, then print its docs and prior
 session references:
 
 ```sh
-trace skill re-enter "X"
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "X"
 ```
 
 When re-entering:
@@ -57,8 +57,8 @@ later.
 
 ## CLI Setup
 
-This skill expects the `trace` command to be reachable on `PATH`. From the repo,
-run `pnpm link --global` once; see `docs/usable-v1/cli-link.md`.
+When installed as a Claude Code plugin, this skill invokes the bundled Trace CLI
+from the plugin root; no global `trace` command is required.
 
 For local debugging without a global link, invoke the CLI entry point directly,
 for example:
