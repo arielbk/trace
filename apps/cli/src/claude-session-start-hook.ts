@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import { inferSessionIdentity } from "@trace/core";
-import { readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { resolveDbPath } from "./db-path.ts";
 import { runTraceCli } from "./trace.ts";
 
 type ClaudeSessionStartHookInput = {
   session_id?: string;
   transcript_path?: string;
   hook_event_name?: string;
+  // startup | resume | clear | compact — registration is source-agnostic, but
+  // the field is part of the contract so the matcher must admit every value.
+  source?: string;
 };
 
 const isDirectRun = import.meta.url === `file://${process.argv[1]}`;
@@ -42,21 +47,54 @@ export function runClaudeSessionStartHook(
     transcriptPath: input.transcript_path,
   });
 
-  const result = runTraceCli(
-    [
-      "session",
-      "register",
-      "--id",
-      identity.id ?? input.session_id,
-      "--transcript",
-      identity.transcriptPath ?? input.transcript_path,
-      "--tool",
-      identity.tool,
-    ],
-    env,
-  );
+  let result: { exitCode: number; stdout: string; stderr: string };
+  try {
+    result = runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        identity.id ?? input.session_id,
+        "--transcript",
+        identity.transcriptPath ?? input.transcript_path,
+        "--tool",
+        identity.tool,
+      ],
+      env,
+    );
+  } catch (error) {
+    // A thrown error (e.g. the store failing to open) escapes runTraceCli; treat
+    // it as a registration failure rather than letting it crash the hook unseen.
+    const reason = error instanceof Error ? error.message : String(error);
+    result = { exitCode: 1, stdout: "", stderr: `${reason}\n` };
+  }
+
+  if (result.exitCode !== 0) {
+    // Claude Code swallows SessionStart hook stderr/exit codes, so a failed
+    // registration would otherwise vanish. Leave an inspectable breadcrumb so
+    // gaps are noticed when they happen, not weeks later.
+    recordHookFailure(env, {
+      sessionId: input.session_id,
+      source: input.source,
+      reason: result.stderr.trim() || `exit code ${result.exitCode}`,
+    });
+  }
 
   return result.exitCode === 0 ? { ...result, stdout: "" } : result;
+}
+
+function recordHookFailure(
+  env: Record<string, string | undefined>,
+  failure: { sessionId: string; source?: string | undefined; reason: string },
+): void {
+  try {
+    const logDir = dirname(resolveDbPath(env));
+    mkdirSync(logDir, { recursive: true });
+    const entry = `${new Date().toISOString()}\tSessionStart\tsession=${failure.sessionId}\tsource=${failure.source ?? "unknown"}\treason=${failure.reason.replace(/\s+/g, " ")}\n`;
+    appendFileSync(`${logDir}/hook-errors.log`, entry);
+  } catch {
+    // Logging is best-effort; never let it mask or replace the original failure.
+  }
 }
 
 if (isDirectRun) {

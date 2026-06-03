@@ -12,6 +12,7 @@ export type {
   Task,
   TaskDoc,
   TaskStore,
+  TaskSummary,
   TaskTimeline,
   TaskTimelineItem,
   TokenTotals,
@@ -20,6 +21,7 @@ export type {
 export {
   parseClaudeCodeTranscript,
   parseClaudeCodeTranscriptFile,
+  scanClaudeCodeSessions,
 } from "./claude-code-adapter.ts";
 export type {
   ClaudeCodeTokenTotals,

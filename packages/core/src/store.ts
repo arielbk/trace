@@ -18,6 +18,7 @@ import type {
   Task,
   TaskDoc,
   TaskStore,
+  TaskSummary,
   TaskTimeline,
   TaskTimelineItem,
   TokenTotals,
@@ -104,6 +105,28 @@ class NodeSqliteTaskStore implements TaskStore {
       )
       .all()
       .map((row) => taskFromRow(row as TaskRow));
+  }
+
+  listTaskSummaries(): TaskSummary[] {
+    return this.listTasks().map((task) => {
+      const sessions = this.listSessionsForTask(task.id);
+      const docs = this.listDocsForTask(task.id);
+
+      const lastActivityAt = [
+        ...sessions.map((session) => session.createdAt),
+        ...docs.map((doc) => doc.createdAt),
+      ].reduce(
+        (latest, current) => (current > latest ? current : latest),
+        task.createdAt,
+      );
+
+      const tokenTotals = sessions.reduce(
+        (totals, session) => addTokenTotals(totals, session.tokenTotals),
+        emptyTokenTotals(),
+      );
+
+      return { ...task, lastActivityAt, tokenTotals };
+    });
   }
 
   registerSession(input: RegisterSessionInput): Session {

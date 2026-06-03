@@ -667,6 +667,112 @@ test("re-entry manifest returns empty sections for tasks without docs or session
   }
 });
 
+test("listTaskSummaries reports last activity and aggregated token totals", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const emptyTask = store.createTask("empty");
+
+    const claudeSession = store.registerSession({
+      id: "claude-session",
+      transcriptPath: "/tmp/claude.jsonl",
+      tool: "claude",
+      tokenTotals: {
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheCreationInputTokens: 2,
+        cacheReadInputTokens: 3,
+        totalTokens: 35,
+      },
+    });
+    store.assignSession(claudeSession.id, task.id);
+
+    waitForNextMillisecond();
+    const codexSession = store.registerSession({
+      id: "codex-session",
+      transcriptPath: "/tmp/codex.jsonl",
+      tool: "codex",
+      tokenTotals: {
+        inputTokens: 7,
+        outputTokens: 11,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 5,
+        totalTokens: 23,
+      },
+    });
+    store.assignSession(codexSession.id, task.id);
+
+    waitForNextMillisecond();
+    const doc = store.addTaskDoc(task.id, "/tmp/spec.md");
+
+    const summaries = store.listTaskSummaries();
+    expect(summaries.map((summary) => summary.id).sort()).toEqual(
+      [task.id, emptyTask.id].sort(),
+    );
+
+    expect(summaries.find((summary) => summary.id === task.id)).toEqual({
+      ...task,
+      lastActivityAt: doc.createdAt,
+      tokenTotals: {
+        inputTokens: 17,
+        outputTokens: 31,
+        cacheCreationInputTokens: 2,
+        cacheReadInputTokens: 8,
+        totalTokens: 58,
+      },
+    });
+
+    expect(summaries.find((summary) => summary.id === emptyTask.id)).toEqual({
+      ...emptyTask,
+      lastActivityAt: emptyTask.createdAt,
+      tokenTotals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 0,
+      },
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries falls back to task createdAt when only docs predate it is impossible, and a doc-only task uses the doc time", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("docs-only");
+
+    waitForNextMillisecond();
+    const doc = store.addTaskDoc(task.id, "/tmp/only-doc.md");
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary).toEqual({
+      ...task,
+      lastActivityAt: doc.createdAt,
+      tokenTotals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 0,
+      },
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 // refresh-on-read: session reads refresh token totals from transcripts
 // ──────────────────────────────────────────────────────────────────────────────

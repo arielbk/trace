@@ -1,9 +1,11 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -689,6 +691,206 @@ test("skill work-on-task --model persists the session model", () => {
     };
 
     expect(timeline.items[0]?.session?.model).toBe("claude-opus-4-7");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task create rejects a flag-looking title without creating a task", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    let error: { status?: number; stderr?: string } | undefined;
+    try {
+      execFileSync(process.execPath, [traceBin, "task", "create", "--oops"], {
+        encoding: "utf8",
+        env,
+      });
+    } catch (caught) {
+      error = caught as { status?: number; stderr?: string };
+    }
+
+    expect(error).toBeDefined();
+    expect(error?.status).not.toBe(0);
+    expect(error?.stderr).toContain("Usage:");
+
+    const listed = execFileSync(process.execPath, [traceBin, "task", "list"], {
+      encoding: "utf8",
+      env,
+    });
+    expect(listed).toBe("");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task create --help prints usage without creating a task", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const output = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "--help"],
+      { encoding: "utf8", env },
+    );
+    expect(output).toContain("Usage:");
+
+    const listed = execFileSync(process.execPath, [traceBin, "task", "list"], {
+      encoding: "utf8",
+      env,
+    });
+    expect(listed).toBe("");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task capture --doc creates a task with one doc and zero token totals", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const findingsPath = join(dir, "findings.md");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    writeFileSync(findingsPath, "# Findings\n\nFlaky test in checkout.\n");
+
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "capture", "Fix flaky checkout test", "--doc", findingsPath],
+      { encoding: "utf8", env },
+    ).trim();
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const copiedPath = join(
+      dir,
+      ".trace",
+      "tasks",
+      taskId,
+      "docs",
+      "findings.md",
+    );
+    expect(existsSync(copiedPath)).toBe(true);
+    expect(readFileSync(copiedPath, "utf8")).toContain("Flaky test in checkout");
+
+    const timeline = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "timeline", taskId, "--json"],
+        { encoding: "utf8", env },
+      ),
+    ) as {
+      task: { title: string };
+      items: Array<{ type: string; doc?: { path: string } }>;
+      tokenTotals: { totalTokens: number };
+    };
+
+    expect(timeline.task.title).toBe("Fix flaky checkout test");
+    expect(timeline.items).toHaveLength(1);
+    expect(timeline.items[0]?.type).toBe("doc");
+    expect(timeline.items[0]?.doc?.path).toBe(copiedPath);
+    expect(timeline.tokenTotals.totalTokens).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task capture rejects a flag-looking title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const findingsPath = join(dir, "findings.md");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    writeFileSync(findingsPath, "# Findings\n");
+
+    let error: { status?: number; stderr?: string } | undefined;
+    try {
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "capture", "--help", "--doc", findingsPath],
+        { encoding: "utf8", env },
+      );
+    } catch (caught) {
+      error = caught as { status?: number; stderr?: string };
+    }
+
+    // --help is a help flag, so it prints usage with a success exit; either way
+    // no task should be created.
+    const listed = execFileSync(process.execPath, [traceBin, "task", "list"], {
+      encoding: "utf8",
+      env,
+    });
+    expect(listed).toBe("");
+    expect(error?.status === undefined || error.status !== 0).toBe(true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task capture reads doc content from stdin when no --doc is given", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const taskId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "capture", "Park follow-up idea"],
+      { encoding: "utf8", env, input: "## Idea\n\nExtract the parser.\n" },
+    ).trim();
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const docPath = join(dir, ".trace", "tasks", taskId, "docs", "capture.md");
+    expect(existsSync(docPath)).toBe(true);
+    expect(readFileSync(docPath, "utf8")).toContain("Extract the parser.");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task capture --link creates an idempotent repo docs symlink", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const repoRoot = join(dir, "repo");
+  const findingsPath = join(repoRoot, "findings.md");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    mkdirSync(join(repoRoot, ".git"), { recursive: true });
+    writeFileSync(findingsPath, "# Findings\n");
+
+    const run = () =>
+      execFileSync(
+        process.execPath,
+        [
+          traceBin,
+          "task",
+          "capture",
+          "Refactor parser",
+          "--doc",
+          findingsPath,
+          "--link",
+        ],
+        { encoding: "utf8", env, cwd: repoRoot },
+      ).trim();
+
+    const taskId = run();
+    const linkPath = join(repoRoot, "docs", "refactor-parser");
+    const target = join(dir, ".trace", "tasks", taskId, "docs");
+
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(realpathSync(linkPath)).toBe(realpathSync(target));
+
+    // Re-running must not throw and must leave a single symlink (re-pointed at
+    // the latest capture's docs dir, not a nested or duplicated link).
+    const secondId = run();
+    const secondTarget = join(dir, ".trace", "tasks", secondId, "docs");
+    expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(realpathSync(linkPath)).toBe(realpathSync(secondTarget));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore } from "@trace/core";
-import { getDatabasePath, getTaskTimeline, listTasks } from "../server/data.ts";
+import {
+  getDatabasePath,
+  getTaskTimeline,
+  listTaskSummaries,
+  listTasks,
+} from "../server/data.ts";
 
 test("web data adapter lists tasks and returns the same task timeline as core", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-web-"));
@@ -42,6 +47,52 @@ test("web data adapter lists tasks and returns the same task timeline as core", 
     expect(timelineLabels).toContain("/tmp/spec.md");
     expect(timelineSessions?.[0]?.session.model).toBe("gpt-5-codex");
     expect(getTaskTimeline(task.id)?.tokenTotals.totalTokens).toBe(20);
+  } finally {
+    if (originalTraceDb === undefined) {
+      delete process.env.TRACE_DB;
+    } else {
+      process.env.TRACE_DB = originalTraceDb;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("web data adapter exposes task summaries with last activity and token totals", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-web-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const originalTraceDb = process.env.TRACE_DB;
+  process.env.TRACE_DB = databasePath;
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "session-1",
+      transcriptPath: "/tmp/session-1.jsonl",
+      tool: "codex",
+      tokenTotals: {
+        inputTokens: 12,
+        outputTokens: 8,
+        totalTokens: 20,
+      },
+    });
+    store.assignSession(session.id, task.id);
+    const doc = store.addTaskDoc(task.id, "/tmp/spec.md");
+    store.close();
+
+    const summaries = listTaskSummaries();
+    expect(summaries).toHaveLength(1);
+    const summary = summaries[0]!;
+    expect(summary.id).toBe(task.id);
+    expect(summary.title).toBe(task.title);
+    expect(summary.projectRoot).toBe(task.projectRoot);
+    expect(summary.createdAt).toBe(task.createdAt);
+    expect(summary.tokenTotals.totalTokens).toBe(20);
+    // last activity is the max of session/doc createdAt — never before the task.
+    expect(summary.lastActivityAt >= task.createdAt).toBe(true);
+    expect(summary.lastActivityAt).toBe(
+      [session.createdAt, doc.createdAt].sort().at(-1),
+    );
   } finally {
     if (originalTraceDb === undefined) {
       delete process.env.TRACE_DB;
