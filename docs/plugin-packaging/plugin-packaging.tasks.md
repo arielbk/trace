@@ -52,7 +52,7 @@ and no `trace init`.
 
 ### `marketplace` — Repo installable as a marketplace
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** A marketplace definition so `/plugin marketplace add github:arielbk/trace-v2` followed by plugin install registers the hook and skill in one step.
 
