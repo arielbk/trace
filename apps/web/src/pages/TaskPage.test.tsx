@@ -8,6 +8,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -95,6 +96,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -136,6 +138,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -195,6 +198,7 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -237,6 +241,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -265,6 +270,7 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
   const timeline: TaskTimeline = {
     task: {
       id: fullId,
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -291,12 +297,15 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
   expect(html).toContain(">0e1d2c3b<");
   // The raw 36-char id is no longer rendered as bare body text.
   expect(html).not.toContain(`>${fullId}<`);
+  // The human-readable slug is shown alongside the id chip.
+  expect(html).toContain("usable-v1");
 });
 
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-2",
+      slug: "captured-findings",
       title: "Captured findings",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-06-03T00:00:00.000Z",

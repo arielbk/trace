@@ -68,10 +68,11 @@ function TaskRow({ task }: { task: TaskSummary }) {
   const untitled = isUntitled(task.title);
   return (
     <li className={untitled ? "task-row task-row-untitled" : "task-row"}>
-      <Link to={`/task/${task.id}`} className="task-row-link">
+      <Link to={`/task/${task.slug}`} className="task-row-link">
         <span className="task-row-title">
           {untitled ? "Untitled task" : task.title}
         </span>
+        <span className="task-row-slug">{task.slug}</span>
       </Link>
       <CopyChip value={task.id} display={truncateId(task.id)} />
       <span
@@ -88,13 +89,14 @@ function TaskRow({ task }: { task: TaskSummary }) {
 }
 
 /**
- * A task is "untitled" when its title is a raw UUID (no human-authored title was
- * ever set). We lean on `truncateId`'s documented contract: it shortens strict
- * UUIDs and returns anything else unchanged, so a changed result means the title
- * was a bare UUID.
+ * A task is "untitled" when no human-authored title was ever set. New untitled
+ * tasks carry an empty title (and a `task-<id>` placeholder slug); legacy rows
+ * created before slugs used the raw UUID as the title. We detect the latter via
+ * `truncateId`'s documented contract — it shortens strict UUIDs and returns
+ * anything else unchanged, so a changed result means the title was a bare UUID.
  */
 function isUntitled(title: string): boolean {
-  return truncateId(title) !== title;
+  return title === "" || truncateId(title) !== title;
 }
 
 export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {

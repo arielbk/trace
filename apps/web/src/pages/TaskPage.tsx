@@ -41,6 +41,7 @@ export function TaskTimelineView({
       <header className="task-header">
         <div className="task-heading">
           <h1>{timeline.task.title}</h1>
+          <p className="task-slug">{timeline.task.slug}</p>
           <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
         </div>
         <TokenSummary totals={timeline.tokenTotals} />

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
+import { generatePlaceholderSlug, slugify } from "./slug.ts";
 import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
 import {
   addTokenTotals,
@@ -41,19 +42,18 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite.exec("PRAGMA journal_mode = WAL");
     this.#sqlite.exec("PRAGMA foreign_keys = ON");
     applyMigrations(this.#sqlite);
+    this.#backfillSlugs();
   }
 
   createTask(title: string, projectRoot = ""): Task {
     const normalizedTitle = title.trim();
     const normalizedProjectRoot = projectRoot.trim();
 
-    if (normalizedTitle.length === 0) {
-      throw new Error("Task title is required");
-    }
-
+    const id = randomUUID();
     const task: Task = {
-      id: randomUUID(),
+      id,
       title: normalizedTitle,
+      slug: this.#allocateSlug(slugify(normalizedTitle), id),
       createdAt: new Date().toISOString(),
       projectRoot: normalizedProjectRoot,
     };
@@ -61,11 +61,11 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, created_at, project_root)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root)
+          VALUES (?, ?, ?, ?, ?)
         `,
       )
-      .run(task.id, task.title, task.createdAt, task.projectRoot);
+      .run(task.id, task.title, task.slug, task.createdAt, task.projectRoot);
 
     return task;
   }
@@ -73,9 +73,24 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, created_at, project_root FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root FROM tasks WHERE id = ?",
       )
       .get(id);
+    return row ? taskFromRow(row as TaskRow) : null;
+  }
+
+  getTaskByRef(ref: string): Task | null {
+    const trimmed = ref.trim();
+    if (trimmed.length === 0) return null;
+
+    const byId = this.getTask(trimmed);
+    if (byId) return byId;
+
+    const row = this.#sqlite
+      .prepare(
+        "SELECT id, title, slug, created_at, project_root FROM tasks WHERE slug = ?",
+      )
+      .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
   }
 
@@ -83,7 +98,7 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT id, title, created_at, project_root
+          SELECT id, title, slug, created_at, project_root
           FROM tasks
           ORDER BY created_at ASC, id ASC
         `,
@@ -183,7 +198,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-    const task = this.getTask(taskId);
+    const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
     this.#sqlite
@@ -222,7 +237,7 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   getTaskTimeline(taskId: string): TaskTimeline | null {
-    const task = this.getTask(taskId);
+    const task = this.getTaskByRef(taskId);
     if (!task) return null;
 
     const sessionList = this.listSessionsForTask(task.id);
@@ -255,7 +270,7 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   getReEntryManifest(taskId: string): ReEntryManifest | null {
-    const task = this.getTask(taskId);
+    const task = this.getTaskByRef(taskId);
     if (!task) return null;
 
     const sessions = this.listSessionsForTask(task.id)
@@ -282,7 +297,7 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   addTaskDoc(taskId: string, path: string): TaskDoc {
-    const task = this.getTask(taskId);
+    const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
     const normalizedPath = path.trim();
@@ -311,6 +326,9 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   listDocsForTask(taskId: string): TaskDoc[] {
+    const task = this.getTaskByRef(taskId);
+    const id = task?.id ?? taskId;
+
     const registeredDocs = this.#sqlite
       .prepare(
         `
@@ -320,12 +338,16 @@ class NodeSqliteTaskStore implements TaskStore {
           ORDER BY created_at ASC, path ASC
         `,
       )
-      .all(taskId)
+      .all(id)
       .map((row) => taskDocFromRow(row as TaskDocRow));
+
+    // New tasks store docs under their slug directory; the UUID directory is the
+    // legacy fallback so docs written before slugs existed still surface.
+    const dirRefs = task?.slug ? [task.slug, id] : [id];
 
     return mergeTaskDocs(
       registeredDocs,
-      listNativeTaskDocs(this.#databasePath, taskId),
+      listNativeTaskDocs(this.#databasePath, id, dirRefs),
     );
   }
 
@@ -394,6 +416,57 @@ class NodeSqliteTaskStore implements TaskStore {
     }
 
     return { ...session, tokenTotals: totals };
+  }
+
+  // Reserve a unique slug. An empty base (untitled task or a title that left
+  // nothing slug-worthy) falls back to a placeholder derived from the id;
+  // otherwise collisions get a numeric suffix.
+  #allocateSlug(base: string, id: string): string {
+    const candidate = base.length > 0 ? base : generatePlaceholderSlug(id);
+
+    if (!this.#slugExists(candidate)) {
+      return candidate;
+    }
+
+    for (let suffix = 2; ; suffix += 1) {
+      const next = `${candidate}-${suffix}`;
+      if (!this.#slugExists(next)) {
+        return next;
+      }
+    }
+  }
+
+  #slugExists(slug: string): boolean {
+    const row = this.#sqlite
+      .prepare("SELECT 1 FROM tasks WHERE slug = ? LIMIT 1")
+      .get(slug);
+    return row !== undefined;
+  }
+
+  // After migrations, any task row missing a slug (rows that predate the slug
+  // column) is backfilled deterministically by creation order so suffixing is
+  // stable, then locked in by the unique index.
+  #backfillSlugs(): void {
+    const rows = this.#sqlite
+      .prepare(
+        `
+          SELECT id, title
+          FROM tasks
+          WHERE slug IS NULL
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
+      .all() as { id: string; title: string }[];
+
+    if (rows.length === 0) return;
+
+    const update = this.#sqlite.prepare(
+      "UPDATE tasks SET slug = ? WHERE id = ?",
+    );
+    for (const row of rows) {
+      const slug = this.#allocateSlug(slugify(row.title.trim()), row.id);
+      update.run(slug, row.id);
+    }
   }
 
   private getTaskDoc(taskId: string, path: string): TaskDoc | null {
@@ -477,6 +550,7 @@ function hashMigration(sql: string): string {
 type TaskRow = {
   id: string;
   title: string;
+  slug: string;
   created_at: string;
   project_root: string;
 };
@@ -505,6 +579,7 @@ function taskFromRow(row: TaskRow): Task {
   return {
     id: row.id,
     title: row.title,
+    slug: row.slug,
     createdAt: row.created_at,
     projectRoot: row.project_root,
   };

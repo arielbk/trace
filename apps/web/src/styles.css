@@ -200,6 +200,13 @@ li {
   line-height: 1.1;
 }
 
+.task-slug {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
 .token-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
@@ -430,6 +437,16 @@ li {
   color: var(--color-text-muted);
   font-weight: 400;
   font-style: italic;
+}
+
+.task-row-slug {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .task-row .copy-chip {

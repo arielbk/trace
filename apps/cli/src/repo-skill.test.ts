@@ -42,23 +42,23 @@ test("trace skill resolves or creates a task by title, binds a simulated session
         env,
       },
     );
-    const [taskId, title] = taskList.trim().split("\t");
-    if (!taskId) {
-      throw new Error("Expected created task id");
+    const [slug, title] = taskList.trim().split("\t");
+    if (!slug) {
+      throw new Error("Expected created task slug");
     }
-    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(slug).toBe("checkout");
     expect(title).toBe("checkout");
     expect(bound).toBe(
       [
         `claude-session-1\tclaude\t/tmp/claude-session-1.jsonl`,
-        `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
+        `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
       ].join("\n"),
     );
 
     execFileSync(
       process.execPath,
-      [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"],
+      [traceBin, "task", "add-doc", slug, "/tmp/spec.md"],
       {
         encoding: "utf8",
         env,
@@ -73,7 +73,7 @@ test("trace skill resolves or creates a task by title, binds a simulated session
         env,
       },
     );
-    expect(context).toMatch(new RegExp(`task:\\n  id: ${taskId}`));
+    expect(context).toMatch(/task:\n {2}id: [0-9a-f-]{36}/);
     expect(context).toMatch(/title: checkout/);
     expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
     expect(context).toMatch(
