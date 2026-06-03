@@ -19,6 +19,7 @@ export type {
 export {
   parseClaudeCodeTranscript,
   parseClaudeCodeTranscriptFile,
+  scanClaudeCodeSessions,
 } from "./claude-code-adapter.ts";
 export type {
   ClaudeCodeTokenTotals,

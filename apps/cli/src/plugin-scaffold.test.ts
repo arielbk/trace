@@ -55,7 +55,7 @@ describe("plugin scaffold", () => {
     };
     assert.deepEqual(hooks.hooks?.SessionStart, [
       {
-        matcher: "startup|resume|clear",
+        matcher: "startup|resume|clear|compact",
         hooks: [
           {
             type: "command",

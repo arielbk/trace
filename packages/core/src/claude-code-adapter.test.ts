@@ -1,7 +1,12 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { parseClaudeCodeTranscript } from "./claude-code-adapter.ts";
+import {
+  parseClaudeCodeTranscript,
+  scanClaudeCodeSessions,
+} from "./claude-code-adapter.ts";
 
 test("Claude Code transcript adapter returns session identity and token totals", () => {
   const transcriptPath = fileURLToPath(
@@ -45,6 +50,63 @@ test("Claude Code transcript adapter skips unparseable lines and sums the rest",
       totalTokens: 48,
     },
   });
+});
+
+test("scanClaudeCodeSessions parses every transcript under a projects root and skips garbage", () => {
+  const projectsRoot = mkdtempSync(join(tmpdir(), "claude-projects-"));
+  const projectDir = join(projectsRoot, "-Users-someone-project");
+
+  try {
+    mkdirSync(projectDir, { recursive: true });
+
+    writeFileSync(
+      join(projectDir, "session-a.jsonl"),
+      [
+        JSON.stringify({
+          type: "assistant",
+          session_id: "scan-session-a",
+          message: { model: "claude-opus-4-7", usage: { input_tokens: 5, output_tokens: 7 } },
+        }),
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(projectDir, "session-b.jsonl"),
+      [
+        JSON.stringify({
+          type: "assistant",
+          session_id: "scan-session-b",
+          usage: { input_tokens: 2, output_tokens: 3 },
+        }),
+      ].join("\n"),
+    );
+    // A transcript with no session id can't be registered — it must be skipped,
+    // not abort the whole scan.
+    writeFileSync(
+      join(projectDir, "garbage.jsonl"),
+      `${JSON.stringify({ type: "summary", note: "no id here" })}\n`,
+    );
+    // Non-jsonl files are ignored.
+    writeFileSync(join(projectDir, "notes.txt"), "ignore me");
+
+    const sessions = scanClaudeCodeSessions(projectsRoot);
+
+    expect(sessions.map((session) => session.id).sort()).toEqual([
+      "scan-session-a",
+      "scan-session-b",
+    ]);
+    const a = sessions.find((session) => session.id === "scan-session-a");
+    expect(a?.tool).toBe("claude");
+    expect(a?.model).toBe("claude-opus-4-7");
+    expect(a?.tokenTotals.inputTokens).toBe(5);
+  } finally {
+    rmSync(projectsRoot, { recursive: true, force: true });
+  }
+});
+
+test("scanClaudeCodeSessions returns nothing for a missing projects root", () => {
+  expect(scanClaudeCodeSessions(join(tmpdir(), "does-not-exist-xyz"))).toEqual(
+    [],
+  );
 });
 
 test("Claude Code transcript adapter returns null when model is absent", () => {
