@@ -19,12 +19,13 @@ test("task create stamps and task show prints the resolved project root", () => 
     expect(created.exitCode).toBe(0);
     expect(created.stderr).toBe("");
 
-    const taskId = created.stdout.trim();
-    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+    const slug = created.stdout.trim();
+    expect(slug).toBe("checkout");
 
-    const shown = runTraceCli(["task", "show", taskId], env, nestedCwd);
+    const shown = runTraceCli(["task", "show", slug], env, nestedCwd);
     expect(shown.exitCode).toBe(0);
-    expect(shown.stdout).toMatch(new RegExp(`id: ${taskId}`));
+    expect(shown.stdout).toMatch(/id: [0-9a-f-]{36}/);
+    expect(shown.stdout).toMatch(`slug: ${slug}`);
     expect(shown.stdout).toMatch(`projectRoot: ${projectRoot}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });

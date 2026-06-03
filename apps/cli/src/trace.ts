@@ -50,7 +50,7 @@ export function runTraceCli(
         const title = args.join(" ");
         const task = store.createTask(title, resolveProjectRoot(cwd));
 
-        return success(`${task.id}\n`);
+        return success(`${task.slug}\n`);
       }
 
       if (action === "show") {
@@ -60,7 +60,7 @@ export function runTraceCli(
           return failure("Task id is required");
         }
 
-        const task = store.getTask(id);
+        const task = store.getTaskByRef(id);
 
         if (!task) {
           return failure(`Task not found: ${id}`, 1);
@@ -112,9 +112,14 @@ export function runTraceCli(
           return failure("Task doc path is required");
         }
 
-        const doc = store.addTaskDoc(taskId, path);
+        const task = store.getTaskByRef(taskId);
+        if (!task) {
+          return failure(`Task not found: ${taskId}`, 1);
+        }
 
-        return success(formatTaskDocSummary(doc));
+        const doc = store.addTaskDoc(task.id, path);
+
+        return success(formatTaskDocSummary(task.slug, doc));
       }
 
       return usage();
@@ -205,16 +210,23 @@ export function runTraceCli(
         // The skill's contract is title-based: resolve the exact title, or
         // create the task when absent. Keeping this in the CLI means the skill
         // is pure prose and any other tool wrapper inherits the same behaviour.
-        const taskId =
-          findTaskIdByTitle(store.listTasks(), title) ??
-          store.createTask(title, resolveProjectRoot(cwd)).id;
+        const existingId = findTaskIdByTitle(store.listTasks(), title);
+        const task = existingId
+          ? store.getTask(existingId)
+          : store.createTask(title, resolveProjectRoot(cwd));
+
+        if (!task) {
+          return failure(`Task not found: ${title}`, 1);
+        }
 
         const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
         const session = store.registerSession(parsed);
 
-        const assigned = store.assignSession(session.id, taskId);
+        const assigned = store.assignSession(session.id, task.id);
 
-        return success(formatSkillWorkOnTaskResult(assigned, databasePath));
+        return success(
+          formatSkillWorkOnTaskResult(assigned, task, databasePath),
+        );
       }
 
       if (action === "re-enter") {
@@ -274,6 +286,7 @@ function formatTask(
   docs: TaskDoc[] = [],
 ): string {
   const lines = [
+    `slug: ${task.slug}`,
     `id: ${task.id}`,
     `title: ${task.title}`,
     `createdAt: ${task.createdAt}`,
@@ -297,7 +310,7 @@ function formatTask(
 }
 
 function formatTaskSummary(task: Task): string {
-  return `${task.id}\t${task.title}\n`;
+  return `${task.slug}\t${task.title}\n`;
 }
 
 function formatSessionSummary(session: Session): string {
@@ -306,21 +319,24 @@ function formatSessionSummary(session: Session): string {
 
 function formatSkillWorkOnTaskResult(
   session: Session,
+  task: Task,
   databasePath: string,
 ): string {
   if (!session.taskId) {
     return formatSessionSummary(session);
   }
 
+  // New tasks live under their slug-named docs directory; the slug is the
+  // human-facing handle the skill prose tells agents to write docs into.
   return [
     formatSessionSummary(session).trimEnd(),
-    `taskDocsDir: ${resolveTaskDocsDir(databasePath, session.taskId)}`,
+    `taskDocsDir: ${resolveTaskDocsDir(databasePath, task.slug)}`,
     "",
   ].join("\n");
 }
 
-function formatTaskDocSummary(doc: TaskDoc): string {
-  return `${doc.taskId}\t${doc.path}\n`;
+function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {
+  return `${taskRef}\t${doc.path}\n`;
 }
 
 function formatReEntryManifest(manifest: ReEntryManifest): string {

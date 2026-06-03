@@ -94,6 +94,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "title",
         "created_at",
         "project_root",
+        "slug",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -333,6 +334,7 @@ test("store reads and writes a database created with the old schema through node
     expect(store.getTask("task-1")).toEqual({
       id: "task-1",
       title: "checkout",
+      slug: "checkout",
       createdAt: "2026-05-29T00:00:00.000Z",
       projectRoot: "/repo",
     });
@@ -395,6 +397,33 @@ test("task docs include files written to the task docs directory without registr
         taskId: task.id,
         path: nativeDocPath,
       }),
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("new tasks read native docs from their slug-named directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("Manual Break");
+    expect(task.slug).toBe("manual-break");
+
+    const slugDocsDir = join(dir, ".trace", "tasks", task.slug, "docs");
+    const nativeDocPath = join(slugDocsDir, "decision.md");
+    mkdirSync(slugDocsDir, { recursive: true });
+    writeFileSync(nativeDocPath, "# Decision\n");
+
+    expect(store.listDocsForTask(task.id)).toEqual([
+      expect.objectContaining({ taskId: task.id, path: nativeDocPath }),
+    ]);
+    expect(store.listDocsForTask(task.slug)).toEqual([
+      expect.objectContaining({ taskId: task.id, path: nativeDocPath }),
     ]);
 
     store.close();
@@ -811,6 +840,162 @@ function waitForNextMillisecond(): void {
     // ordering assertion needs distinct timestamps without relying on timers.
   }
 }
+
+test("createTask derives a slug from the title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("Manual Break Start & Sounds");
+    expect(task.slug).toBe("manual-break-start-sounds");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("createTask suffixes slugs on collision", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const first = store.createTask("Checkout");
+    const second = store.createTask("checkout");
+    const third = store.createTask("CHECKOUT");
+
+    expect(first.slug).toBe("checkout");
+    expect(second.slug).toBe("checkout-2");
+    expect(third.slug).toBe("checkout-3");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("createTask gives untitled tasks a placeholder slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("   ");
+    expect(task.title).toBe("");
+    expect(task.slug).toBe(`task-${task.id.split("-")[0]}`);
+    expect(store.getTaskByRef(task.slug)).toEqual(task);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("slug column enforces uniqueness at the database level", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.createTask("checkout");
+    store.close();
+
+    const database = new DatabaseSync(databasePath);
+    try {
+      const indexes = database
+        .prepare("PRAGMA index_list(tasks)")
+        .all()
+        .map((row) => (row as { unique: number }).unique);
+      expect(indexes.some((unique) => unique === 1)).toBe(true);
+    } finally {
+      database.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getTaskByRef resolves by uuid then slug and misses cleanly", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("Manual Break");
+
+    expect(store.getTaskByRef(task.id)).toEqual(task);
+    expect(store.getTaskByRef(task.slug)).toEqual(task);
+    expect(store.getTaskByRef("does-not-exist")).toBeNull();
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("migration backfills slugs for existing rows with collision handling", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000),
+        ('c0ffee', 1780019700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL
+      );
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        model text,
+        task_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root) VALUES
+        ('task-a', 'Checkout', '2026-05-29T00:00:00.000Z', '/repo'),
+        ('task-b', 'checkout', '2026-05-29T00:00:01.000Z', '/repo'),
+        ('task-c', '', '2026-05-29T00:00:02.000Z', '/repo');
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    expect(store.getTask("task-a")?.slug).toBe("checkout");
+    expect(store.getTask("task-b")?.slug).toBe("checkout-2");
+    // id "task-c" splits on its dash, so the placeholder short id is "task".
+    expect(store.getTask("task-c")?.slug).toBe("task-task");
+
+    // A new task created after backfill still gets a unique slug.
+    const created = store.createTask("Checkout");
+    expect(created.slug).toBe("checkout-3");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function tableNames(database: DatabaseSync): string[] {
   return database

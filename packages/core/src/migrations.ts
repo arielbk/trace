@@ -15,6 +15,11 @@ export const migrationJournal = {
       tag: "0002_session_model",
       breakpoints: false,
     },
+    {
+      when: 1780099700000,
+      tag: "0003_task_slug",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -24,4 +29,9 @@ export const migrationSqlByTag: Record<string, string> = {
   "0001_task_project_root":
     "ALTER TABLE `tasks` ADD `project_root` text DEFAULT '' NOT NULL;\n",
   "0002_session_model": "ALTER TABLE `sessions` ADD `model` text;\n",
+  // The slug column lands nullable so existing rows survive the ALTER; the store
+  // backfills slugs immediately after migrations run, then the unique index
+  // guards uniqueness for backfilled and freshly created tasks alike.
+  "0003_task_slug":
+    "ALTER TABLE `tasks` ADD `slug` text;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `tasks_slug_unique` ON `tasks` (`slug`);\n",
 };

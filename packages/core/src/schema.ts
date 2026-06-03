@@ -9,6 +9,7 @@ import {
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
+  slug: text("slug").notNull().unique(),
   createdAt: text("created_at").notNull(),
   projectRoot: text("project_root").notNull().default(""),
 });

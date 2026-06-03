@@ -1,6 +1,7 @@
 export type Task = {
   id: string;
   title: string;
+  slug: string;
   createdAt: string;
   projectRoot: string;
 };
@@ -77,6 +78,7 @@ export type RegisterSessionInput = {
 export type TaskStore = {
   createTask(title: string, projectRoot?: string): Task;
   getTask(id: string): Task | null;
+  getTaskByRef(ref: string): Task | null;
   getSession(id: string): Session | null;
   listTasks(): Task[];
   registerSession(input: RegisterSessionInput): Session;

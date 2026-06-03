@@ -99,7 +99,7 @@ test("create then show round-trips a persisted task", () => {
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    const id = execFileSync(
+    const slug = execFileSync(
       process.execPath,
       [traceBin, "task", "create", "checkout"],
       {
@@ -108,24 +108,25 @@ test("create then show round-trips a persisted task", () => {
       },
     ).trim();
 
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(slug).toBe("checkout");
 
     const shown = execFileSync(
       process.execPath,
-      [traceBin, "task", "show", id],
+      [traceBin, "task", "show", slug],
       {
         encoding: "utf8",
         env,
       },
     );
-    expect(shown).toMatch(new RegExp(`id: ${id}`));
+    expect(shown).toMatch(/slug: checkout/);
+    expect(shown).toMatch(/id: [0-9a-f-]{36}/);
     expect(shown).toMatch(/title: checkout/);
 
     const listed = execFileSync(process.execPath, [traceBin, "task", "list"], {
       encoding: "utf8",
       env,
     });
-    expect(listed).toBe(`${id}\tcheckout\n`);
+    expect(listed).toBe(`${slug}\tcheckout\n`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -400,7 +401,7 @@ test("task timeline --json prints the aggregated task timeline", () => {
         },
       ),
     ) as {
-      task: { id: string; title: string };
+      task: { id: string; slug: string; title: string };
       items: Array<{
         type: string;
         session?: { id: string; model: string | null };
@@ -413,7 +414,8 @@ test("task timeline --json prints the aggregated task timeline", () => {
       };
     };
 
-    expect(timeline.task.id).toBe(taskId);
+    expect(timeline.task.slug).toBe(taskId);
+    expect(timeline.task.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(timeline.task.title).toBe("checkout");
     expect(
       timeline.items.map((item) =>
@@ -439,7 +441,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    const taskId = execFileSync(
+    const slug = execFileSync(
       process.execPath,
       [traceBin, "task", "create", "checkout"],
       {
@@ -450,7 +452,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
 
     execFileSync(
       process.execPath,
-      [traceBin, "task", "add-doc", taskId, "/tmp/spec.md"],
+      [traceBin, "task", "add-doc", slug, "/tmp/spec.md"],
       {
         encoding: "utf8",
         env,
@@ -476,14 +478,14 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     expect(bound).toBe(
       [
         `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl`,
-        `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
+        `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
       ].join("\n"),
     );
 
     const shown = execFileSync(
       process.execPath,
-      [traceBin, "task", "show", taskId],
+      [traceBin, "task", "show", slug],
       {
         encoding: "utf8",
         env,
@@ -501,7 +503,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
         env,
       },
     );
-    expect(context).toMatch(new RegExp(`task:\\n  id: ${taskId}`));
+    expect(context).toMatch(/task:\n {2}id: [0-9a-f-]{36}/);
     expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
     expect(context).toMatch(
       /sessions:\n- id: codex-session-1\n {2}tool: codex\n {2}transcript: \/tmp\/codex-session-1\.jsonl\n {2}mostRecent: true/,
@@ -565,7 +567,7 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
       [traceBin, "skill", "re-enter", "checkout"],
       { encoding: "utf8", env },
     );
-    expect(emptyManifest).toContain(`task:\n  id: ${taskId}\n`);
+    expect(emptyManifest).toMatch(/task:\n {2}id: [0-9a-f-]{36}\n/);
     expect(emptyManifest).toContain("docs: []\n");
     expect(emptyManifest).toContain("sessions: []\n");
 

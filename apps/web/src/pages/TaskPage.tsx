@@ -26,7 +26,7 @@ export function TaskTimelineView({ timeline }: { timeline: TaskTimeline }) {
         <div>
           <p className="eyebrow">Task timeline</p>
           <h1>{timeline.task.title}</h1>
-          <p className="task-id">{timeline.task.id}</p>
+          <p className="task-id">{timeline.task.slug}</p>
         </div>
         <dl className="token-summary" aria-label="Token totals">
           <div><dt>Total</dt><dd>{timeline.tokenTotals.totalTokens}</dd></div>

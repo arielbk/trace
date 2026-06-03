@@ -14,18 +14,21 @@ describe("groupTasksByProject", () => {
       {
         ...baseTask,
         id: "task-1",
+        slug: "cli-work",
         title: "CLI work",
         projectRoot: "/work/trace-v2",
       },
       {
         ...baseTask,
         id: "task-2",
+        slug: "docs-work",
         title: "Docs work",
         projectRoot: "/work/docs",
       },
       {
         ...baseTask,
         id: "task-3",
+        slug: "web-work",
         title: "Web work",
         projectRoot: "/work/trace-v2",
       },
@@ -51,12 +54,14 @@ test("TaskList renders project headings and nested task links", () => {
     {
       ...baseTask,
       id: "task-1",
+      slug: "cli-work",
       title: "CLI work",
       projectRoot: "/work/trace-v2",
     },
     {
       ...baseTask,
       id: "task-2",
+      slug: "docs-work",
       title: "Docs work",
       projectRoot: "/work/docs",
     },
@@ -70,7 +75,8 @@ test("TaskList renders project headings and nested task links", () => {
 
   expect(html).toContain("<h2>trace-v2</h2>");
   expect(html).toContain("/work/trace-v2");
-  expect(html).toContain('href="/task/task-1"');
+  expect(html).toContain('href="/task/cli-work"');
+  expect(html).toContain("cli-work");
   expect(html).toContain("<h2>docs</h2>");
-  expect(html).toContain('href="/task/task-2"');
+  expect(html).toContain('href="/task/docs-work"');
 });

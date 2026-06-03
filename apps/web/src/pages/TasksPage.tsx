@@ -48,9 +48,9 @@ export function TaskList({ tasks }: { tasks: Task[] }) {
           <ul>
             {group.tasks.map((task) => (
               <li key={task.id}>
-                <Link to={`/task/${task.id}`}>
+                <Link to={`/task/${task.slug}`}>
                   <strong>{task.title}</strong>
-                  <span> {task.id}</span>
+                  <span> {task.slug}</span>
                 </Link>
               </li>
             ))}

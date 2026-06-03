@@ -7,6 +7,7 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
+      slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -66,4 +67,5 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
   expect(html).toContain("tool-tag tool-tag-codex");
   expect(html).toContain("claude-opus-4-7");
   expect(html).toContain(">—<");
+  expect(html).toContain("usable-v1");
 });
