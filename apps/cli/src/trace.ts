@@ -15,7 +15,17 @@ import {
 } from "@trace/core";
 import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
-import { realpathSync } from "node:fs";
+import {
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type CommandResult = {
@@ -47,8 +57,56 @@ export function runTraceCli(
   try {
     if (resource === "task") {
       if (action === "create") {
+        if (isHelpFlag(args[0])) {
+          return success(`${taskCreateUsage()}\n`);
+        }
+
+        const titleError = rejectFlagTitle(args[0], "create");
+        if (titleError) return titleError;
+
         const title = args.join(" ");
         const task = store.createTask(title, resolveProjectRoot(cwd));
+
+        return success(`${task.id}\n`);
+      }
+
+      if (action === "capture") {
+        if (isHelpFlag(args[0])) {
+          return success(`${taskCaptureUsage()}\n`);
+        }
+
+        const titleError = rejectFlagTitle(args[0], "capture");
+        if (titleError) return titleError;
+
+        let parsed: { title: string; docPath?: string; link: boolean };
+        try {
+          parsed = parseTaskCaptureArgs(args);
+        } catch (error) {
+          return failure(error instanceof Error ? error.message : String(error));
+        }
+
+        const contents = parsed.docPath
+          ? readFileSync(parsed.docPath, "utf8")
+          : readFileSync(0, "utf8");
+        const docFileName = parsed.docPath
+          ? basename(parsed.docPath)
+          : "capture.md";
+
+        const projectRoot = resolveProjectRoot(cwd);
+        const task = store.createTask(parsed.title, projectRoot);
+
+        const docsDir = resolveTaskDocsDir(databasePath, task.id);
+        mkdirSync(docsDir, { recursive: true });
+        const docPath = join(docsDir, docFileName);
+        if (parsed.docPath) {
+          copyFileSync(parsed.docPath, docPath);
+        } else {
+          writeFileSync(docPath, contents);
+        }
+
+        if (parsed.link) {
+          linkRepoDocs(projectRoot, parsed.title, docsDir);
+        }
 
         return success(`${task.id}\n`);
       }
@@ -264,8 +322,116 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace task <create|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
+    "Usage: trace init | trace task <create|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
   );
+}
+
+function isHelpFlag(token: string | undefined): boolean {
+  return token === "--help" || token === "-h";
+}
+
+function looksLikeFlag(token: string | undefined): boolean {
+  return token !== undefined && token.startsWith("-");
+}
+
+function taskCreateUsage(): string {
+  return "Usage: trace task create <title>";
+}
+
+function taskCaptureUsage(): string {
+  return "Usage: trace task capture <title> [--doc <path>] [--link]";
+}
+
+// Capture takes a free-text title plus optional `--doc <path>` and `--link`
+// flags. The title is the run of leading words before the first flag, so a
+// multi-word title without quotes still works (mirroring `task create`).
+function parseTaskCaptureArgs(args: string[]): {
+  title: string;
+  docPath?: string;
+  link: boolean;
+} {
+  const titleWords: string[] = [];
+  let docPath: string | undefined;
+  let link = false;
+
+  let index = 0;
+  while (index < args.length && !looksLikeFlag(args[index])) {
+    titleWords.push(args[index] as string);
+    index += 1;
+  }
+
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--doc") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      docPath = value;
+      index += 2;
+    } else if (flag === "--link") {
+      link = true;
+      index += 1;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const title = titleWords.join(" ");
+  if (title.length === 0) {
+    throw new Error(taskCaptureUsage());
+  }
+
+  return { title, docPath, link };
+}
+
+function slugify(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "task"
+  );
+}
+
+// Follow the repo `docs/<slug>` → task-docs convention. Idempotent: if a link
+// already sits at the target path it is replaced so re-capture re-points rather
+// than throwing on an existing path.
+function linkRepoDocs(
+  projectRoot: string,
+  title: string,
+  docsDir: string,
+): void {
+  const linkPath = join(projectRoot, "docs", slugify(title));
+  mkdirSync(join(projectRoot, "docs"), { recursive: true });
+
+  let existing: ReturnType<typeof lstatSync> | null = null;
+  try {
+    existing = lstatSync(linkPath);
+  } catch {
+    existing = null;
+  }
+
+  if (existing?.isSymbolicLink()) {
+    if (realpathSync(linkPath) === realpathSync(docsDir)) {
+      return;
+    }
+    rmSync(linkPath);
+  } else if (existing) {
+    throw new Error(`docs path already exists and is not a symlink: ${linkPath}`);
+  }
+
+  symlinkSync(docsDir, linkPath);
+}
+
+// A title that starts with `-` is almost always a mistyped flag rather than the
+// work the user meant to name, so reject it with usage rather than persisting a
+// task titled `--help`. Help flags are handled by the caller before this point.
+function rejectFlagTitle(
+  token: string | undefined,
+  command: string,
+): CommandResult | null {
+  if (!looksLikeFlag(token)) return null;
+  return failure(`Usage: trace task ${command} <title>`);
 }
 
 function formatTask(

@@ -67,3 +67,40 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
   expect(html).toContain("claude-opus-4-7");
   expect(html).toContain(">—<");
 });
+
+test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-2",
+      title: "Captured findings",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-06-03T00:00:00.000Z",
+    },
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-06-03T00:00:00.000Z",
+        doc: {
+          taskId: "task-2",
+          path: "/home/u/.trace/tasks/task-2/docs/findings.md",
+          createdAt: "2026-06-03T00:00:00.000Z",
+        },
+      },
+    ],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+
+  expect(html).toContain("tool-tag tool-tag-doc");
+  expect(html).toContain("findings.md");
+  expect(html).not.toContain("No timeline items found.");
+  // Zero token totals still render (no session rows, no crash).
+  expect(html).toContain("Token totals");
+});
