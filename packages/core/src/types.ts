@@ -49,6 +49,11 @@ export type TaskTimeline = {
   tokenTotals: TokenTotals;
 };
 
+export type TaskSummary = Task & {
+  lastActivityAt: string;
+  tokenTotals: TokenTotals;
+};
+
 export type ReEntryManifestDoc = TaskDoc;
 
 export type ReEntryManifestSession = {
@@ -79,6 +84,7 @@ export type TaskStore = {
   getTask(id: string): Task | null;
   getSession(id: string): Session | null;
   listTasks(): Task[];
+  listTaskSummaries(): TaskSummary[];
   registerSession(input: RegisterSessionInput): Session;
   assignSession(sessionId: string, taskId: string): Session;
   listUnassignedSessions(): Session[];

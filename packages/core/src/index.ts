@@ -11,6 +11,7 @@ export type {
   Task,
   TaskDoc,
   TaskStore,
+  TaskSummary,
   TaskTimeline,
   TaskTimelineItem,
   TokenTotals,
