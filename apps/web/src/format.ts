@@ -27,6 +27,29 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
   return formatAbsoluteDate(then);
 }
 
+type TokenTotalsLike = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  totalTokens: number;
+};
+
+/**
+ * One-line exact breakdown of a token-totals object, for hover tooltips on
+ * compact counts. Plain integers (no locale separators) so the output is
+ * stable across machines.
+ */
+export function formatTokenBreakdown(totals: TokenTotalsLike): string {
+  return [
+    `input ${totals.inputTokens}`,
+    `output ${totals.outputTokens}`,
+    `cache read ${totals.cacheReadInputTokens}`,
+    `cache write ${totals.cacheCreationInputTokens}`,
+    `total ${totals.totalTokens}`,
+  ].join(" · ");
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

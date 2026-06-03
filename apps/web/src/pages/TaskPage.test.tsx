@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import { expect, test } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import { TaskTimelineView } from "./TaskPage.tsx";
@@ -69,7 +70,11 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
   // Each entry type carries an inline SVG icon, not a text tag.
   expect(html).toContain("<svg");
@@ -77,9 +82,12 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   expect(html).toContain("type-icon type-icon-codex");
   expect(html).toContain("type-icon type-icon-doc");
   expect(html).not.toContain("tool-tag");
-  // Model chip still renders, with the em dash fallback for a null model.
+  // Model chip renders only when a model is known — no em dash fallback pill.
   expect(html).toContain("claude-opus-4-7");
-  expect(html).toContain(">—<");
+  expect(html).not.toContain(">—<");
+  // Per-session tokens show the input/output split, not the cache-inflated total.
+  expect(html).toContain("10 in");
+  expect(html).toContain("5 out");
 });
 
 test("TaskTimelineView renders relative timestamps, never raw ISO strings", () => {
@@ -112,7 +120,9 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
   };
 
   const html = renderToStaticMarkup(
-    <TaskTimelineView timeline={timeline} now={now} />,
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} now={now} />
+    </MemoryRouter>,
   );
 
   expect(html).toContain("2m ago");
@@ -165,7 +175,11 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
   // Tails are shown; the full paths are copyable via the chip title.
   expect(html).toContain(">session-abc.jsonl<");
@@ -195,15 +209,19 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
-  // All five totals are labelled, including the cache split that lets the
-  // headline number reconcile.
+  // Total/Input/Output cards plus a combined Cache card whose read value
+  // headlines and whose written value rides as subtext — still reconcilable.
   expect(html).toContain("Total");
   expect(html).toContain("Input");
   expect(html).toContain("Output");
-  expect(html).toContain("Cache read");
-  expect(html).toContain("Cache creation");
+  expect(html).toContain("Cache");
+  expect(html).toContain("+999 written");
 
   // Values render compactly with the exact integer available on hover.
   expect(html).toContain(">16.3M<");
@@ -233,7 +251,11 @@ test("TaskTimelineView header includes the theme toggle", () => {
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
   expect(html).toContain('class="theme-toggle"');
 });
@@ -257,7 +279,11 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
     },
   };
 
-  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
 
   // Truncated 8-char form is shown, full id is copyable via the chip's title.
   expect(html).toContain('class="copy-chip"');

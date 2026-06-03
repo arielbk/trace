@@ -48,6 +48,8 @@
   --color-tag-codex: #1f6f5b;
   --color-tag-doc: #475467;
   --color-tag-text: #ffffff;
+  --color-selection-bg: #bfe3d7;
+  --color-selection-text: #0c2b22;
 }
 
 [data-theme="dark"] {
@@ -66,6 +68,8 @@
   --color-tag-codex: #2f9d7f;
   --color-tag-doc: #6b7685;
   --color-tag-text: #0f1419;
+  --color-selection-bg: #2f6f5d;
+  --color-selection-text: #f2f5f4;
 }
 
 body {
@@ -73,6 +77,11 @@ body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+::selection {
+  background: var(--color-selection-bg);
+  color: var(--color-selection-text);
 }
 
 #root {
@@ -99,13 +108,47 @@ li {
   padding: var(--space-6) var(--space-5);
 }
 
-.page-header {
+.app-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-5);
-  padding-bottom: var(--space-5);
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
+}
+
+.app-header-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.app-wordmark {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.app-wordmark:hover {
+  color: var(--color-accent);
+}
+
+.app-header-sep {
+  color: var(--color-text-muted);
+}
+
+.app-header-context {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.page-header {
+  padding-bottom: var(--space-4);
 }
 
 .page-header h1 {
@@ -120,19 +163,15 @@ li {
 }
 
 .task-header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-5);
-  align-items: flex-start;
   padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
 }
 
-.header-aside {
+.task-heading {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
 }
 
 .theme-toggle {
@@ -155,32 +194,17 @@ li {
   border-color: var(--color-border-strong);
 }
 
-.eyebrow {
-  margin: 0 0 var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .task-header h1 {
   margin: 0;
   font-size: var(--text-xl);
   line-height: 1.1;
 }
 
-.task-id {
-  margin: var(--space-2) 0 0;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-base);
-}
-
 .token-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(4rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   gap: var(--space-3);
-  margin: 0;
+  margin: var(--space-4) 0 0;
 }
 
 .token-summary div {
@@ -200,6 +224,15 @@ li {
   margin: var(--space-1) 0 0;
   font-size: var(--text-lg);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-summary-sub {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
 }
 
 .empty-state {
@@ -242,7 +275,7 @@ li {
 
 .timeline-item {
   display: grid;
-  grid-template-columns: 5.25rem minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
   padding: var(--space-4) 0;
@@ -286,8 +319,11 @@ li {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
 }
 
 .type-icon-claude {
@@ -303,6 +339,7 @@ li {
 }
 
 .timeline-item-time {
+  margin-left: auto;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
@@ -313,27 +350,22 @@ li {
 
 .project-groups {
   display: grid;
-  gap: var(--space-5);
-  margin-top: var(--space-5);
+  gap: var(--space-6);
+  margin-top: var(--space-4);
 }
 
 @media (max-width: 720px) {
-  .task-header,
-  .timeline-item {
-    display: block;
-  }
-
-  .header-aside {
-    margin-top: var(--space-4);
-    align-items: flex-start;
-  }
-
   .token-summary {
-    margin-top: var(--space-4);
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .timeline-item .type-icon {
-    margin-bottom: var(--space-3);
+  .task-row {
+    flex-wrap: wrap;
+  }
+
+  .task-row-tokens,
+  .task-row-time {
+    min-width: 0;
   }
 }
 
@@ -347,10 +379,28 @@ li {
   border-bottom: 1px solid var(--color-border);
 }
 .project-group h2 {
-  font-size: var(--text-lg);
   margin: 0;
+  font-size: 1.3rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
 }
 
+/* The project path is secondary to the project name: render its copy chip as
+   bare muted text so the name carries the header. */
+.project-group header .copy-chip {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.project-group header .copy-chip:hover {
+  color: var(--color-accent);
+}
+
+/* Row order: title + id chip on the left, tokens and relative time pinned to
+   the right edge in fixed-width, right-aligned columns so rows scan cleanly. */
 .task-row {
   display: flex;
   align-items: center;
@@ -358,12 +408,8 @@ li {
 }
 
 .task-row-link {
-  display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
   text-decoration: none;
   color: inherit;
 }
@@ -373,10 +419,9 @@ li {
 }
 
 .task-row-title {
-  flex: 1;
-  min-width: 0;
+  display: block;
   overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -387,15 +432,27 @@ li {
   font-style: italic;
 }
 
-.task-row-meta {
-  display: flex;
+.task-row .copy-chip {
   flex-shrink: 0;
-  align-items: center;
-  gap: var(--space-4);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
 .task-row-tokens {
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  margin-left: auto;
+  color: var(--color-text-muted);
   font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.task-row-time {
+  flex-shrink: 0;
+  min-width: 6rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }

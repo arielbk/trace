@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { SessionTool, TaskTimeline, TokenTotals } from "@trace/core";
+import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
-import { ThemeToggle } from "../components/ThemeToggle.tsx";
 import {
   formatRelativeTime,
+  formatTokenBreakdown,
   formatTokensCompact,
   truncateId,
   truncatePath,
@@ -36,18 +37,13 @@ export function TaskTimelineView({
 }) {
   return (
     <main className="task-page">
+      <AppHeader context={timeline.task.title} />
       <header className="task-header">
-        <div>
-          <p className="eyebrow">Task timeline</p>
+        <div className="task-heading">
           <h1>{timeline.task.title}</h1>
-          <p className="task-id">
-            <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
-          </p>
+          <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
         </div>
-        <div className="header-aside">
-          <ThemeToggle />
-          <TokenSummary totals={timeline.tokenTotals} />
-        </div>
+        <TokenSummary totals={timeline.tokenTotals} />
       </header>
       {timeline.items.length === 0 ? (
         <p className="empty-state">No timeline items found.</p>
@@ -63,12 +59,16 @@ export function TaskTimelineView({
                     display={truncatePath(item.session.transcriptPath)}
                   />
                   <p className="item-meta">
-                    <span className="model-chip">{item.session.model ?? "—"}</span>
+                    {item.session.model ? (
+                      <span className="model-chip">{item.session.model}</span>
+                    ) : null}
                     <span
                       className="item-tokens"
-                      title={String(item.session.tokenTotals.totalTokens)}
+                      title={formatTokenBreakdown(item.session.tokenTotals)}
                     >
-                      {formatTokensCompact(item.session.tokenTotals.totalTokens)} tokens
+                      {formatTokensCompact(item.session.tokenTotals.inputTokens)} in
+                      {" · "}
+                      {formatTokensCompact(item.session.tokenTotals.outputTokens)} out
                     </span>
                     <span className="timeline-item-time">
                       {formatRelativeTime(item.createdAt, now)}
@@ -161,8 +161,6 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Total", value: totals.totalTokens },
     { label: "Input", value: totals.inputTokens },
     { label: "Output", value: totals.outputTokens },
-    { label: "Cache read", value: totals.cacheReadInputTokens },
-    { label: "Cache creation", value: totals.cacheCreationInputTokens },
   ];
   return (
     <dl className="token-summary" aria-label="Token totals">
@@ -172,6 +170,20 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
           <dd title={String(card.value)}>{formatTokensCompact(card.value)}</dd>
         </div>
       ))}
+      <div>
+        <dt>Cache</dt>
+        <dd>
+          <span title={String(totals.cacheReadInputTokens)}>
+            {formatTokensCompact(totals.cacheReadInputTokens)}
+          </span>
+          <span
+            className="token-summary-sub"
+            title={String(totals.cacheCreationInputTokens)}
+          >
+            +{formatTokensCompact(totals.cacheCreationInputTokens)} written
+          </span>
+        </dd>
+      </div>
     </dl>
   );
 }

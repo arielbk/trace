@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { TaskSummary } from "@trace/core";
+import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
-import { ThemeToggle } from "../components/ThemeToggle.tsx";
-import { formatRelativeTime, formatTokensCompact, truncateId } from "../format.ts";
+import {
+  formatRelativeTime,
+  formatTokenBreakdown,
+  formatTokensCompact,
+  truncateId,
+} from "../format.ts";
 
 export type ProjectTaskGroup = {
   projectRoot: string;
@@ -29,13 +34,10 @@ export function TasksPage() {
 
   return (
     <main className="tasks-page">
+      <AppHeader />
       <header className="page-header">
-        <div>
-          <p className="eyebrow">Trace</p>
-          <h1>Tasks</h1>
-          <p className="page-subtitle">{tasks.length} tasks</p>
-        </div>
-        <ThemeToggle />
+        <h1>Tasks</h1>
+        <p className="page-subtitle">{tasks.length} tasks</p>
       </header>
       {tasks.length === 0 ? <p>No tasks found.</p> : <TaskList tasks={tasks} />}
     </main>
@@ -70,19 +72,17 @@ function TaskRow({ task }: { task: TaskSummary }) {
         <span className="task-row-title">
           {untitled ? "Untitled task" : task.title}
         </span>
-        <span className="task-row-meta">
-          <span className="task-row-time">
-            {formatRelativeTime(task.lastActivityAt)}
-          </span>
-          <span
-            className="task-row-tokens"
-            title={String(task.tokenTotals.totalTokens)}
-          >
-            {formatTokensCompact(task.tokenTotals.totalTokens)}
-          </span>
-        </span>
       </Link>
       <CopyChip value={task.id} display={truncateId(task.id)} />
+      <span
+        className="task-row-tokens"
+        title={formatTokenBreakdown(task.tokenTotals)}
+      >
+        {formatTokensCompact(task.tokenTotals.totalTokens)}
+      </span>
+      <span className="task-row-time">
+        {formatRelativeTime(task.lastActivityAt)}
+      </span>
     </li>
   );
 }

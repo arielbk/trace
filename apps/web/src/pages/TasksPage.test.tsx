@@ -105,9 +105,9 @@ describe("TaskList rendering", () => {
     expect(html).toContain('href="/task/task-1"');
     // Relative time (old timestamp falls back to absolute date).
     expect(html).toContain("Mar 15, 2020");
-    // Compact token total with exact integer available on hover.
+    // Compact token total with the exact breakdown available on hover.
     expect(html).toContain("16.3M");
-    expect(html).toContain('title="16317514"');
+    expect(html).toContain("total 16317514");
   });
 
   test("renders the short copyable UUID for a row", () => {

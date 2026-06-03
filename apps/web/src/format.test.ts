@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   formatRelativeTime,
+  formatTokenBreakdown,
   formatTokensCompact,
   truncateId,
   truncatePath,
@@ -110,5 +111,21 @@ describe("truncatePath", () => {
 
   test("returns an empty string unchanged", () => {
     expect(truncatePath("")).toBe("");
+  });
+});
+
+describe("formatTokenBreakdown", () => {
+  test("renders every field as a stable exact-integer line", () => {
+    expect(
+      formatTokenBreakdown({
+        inputTokens: 81123,
+        outputTokens: 5,
+        cacheCreationInputTokens: 999,
+        cacheReadInputTokens: 1_000_000,
+        totalTokens: 16_317_514,
+      }),
+    ).toBe(
+      "input 81123 · output 5 · cache read 1000000 · cache write 999 · total 16317514",
+    );
   });
 });
