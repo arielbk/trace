@@ -34,3 +34,12 @@
 **Summary:** Updated the CLI build to copy the built web SPA from `apps/web/dist` into `bin/web` alongside the plugin `trace.js`, avoiding ignored names like `dist` or `build`. The generated CLI bundle now records its installed bundle directory before extracting temporary modules, and `trace serve` resolves web assets from that bundled `web` directory first, falling back to the repo `apps/web/dist` path for source/dev runs. Added bundle and serve tests covering the copied asset location, gitignore safety, plugin-bundle asset resolution, and bundled CLI execution outside the source tree via `bin/trace.js`.
 **Deviations:** The live `bin/trace.js serve` socket smoke from a directory with no repo checkout still cannot bind in this environment because Node HTTP `listen()` is rejected with `EPERM`, as noted by prior slices. The runtime path resolution and copied assets were structurally verified without a socket.
 **Handoff:** Feedback run: `pnpm --filter @trace/cli test -- src/serve.test.ts` passed 11/11; `pnpm --filter @trace/cli test -- src/bundle.test.ts` passed 3/3; `pnpm --filter @trace/web build` passed; `pnpm --filter @trace/cli build` passed; `pnpm --filter @trace/cli check-types` passed; `pnpm --filter @trace/cli lint` passed; `pnpm --filter @trace/cli test -- src/bundle.test.ts src/serve.test.ts` passed 14/14; `git check-ignore -v -- bin/web/index.html` returned not ignored. `bin/web/index.html`, `bin/web/assets/index-uMq6s6Q7.js`, and `bin/web/assets/index-CnWqnKpM.css` are present for commit.
+
+---
+
+## `serve-skill` — 2026-06-04 00:42:05
+
+**Status:** done
+**Summary:** Updated the bundled Trace skill so requests to open the task board tell the user to run `node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" serve`, surface the printed `trace serve listening on http://...` URL, and leave process ownership to the user's terminal. Added a prose regression test covering the serve instruction, URL handoff, and no-background-process rule.
+**Deviations:** none
+**Handoff:** Feedback run: `pnpm --filter @trace/cli test -- src/repo-skill.test.ts` passed 3/3; `pnpm --filter @trace/cli test -- src/plugin-scaffold.test.ts` passed 1/1; `pnpm --filter @trace/cli check-types` passed; `pnpm --filter @trace/cli lint` passed. The skill intentionally does not hardcode a final port beyond the example URL because `trace serve` may fall back to the next available port.

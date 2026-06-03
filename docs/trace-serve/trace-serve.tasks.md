@@ -44,7 +44,7 @@ Ship the web task board inside the plugin bundle so a plugin user runs `trace se
 
 ### `serve-skill` — Plugin skill points the user at `trace serve`
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A plugin skill instructs the user to run `trace serve` and surfaces the URL. It does not spawn, track, or kill the server — the user runs it in their own terminal and stops it with Ctrl-C.
 

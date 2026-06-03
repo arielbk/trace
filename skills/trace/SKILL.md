@@ -6,7 +6,8 @@ description: Bind the current Claude Code session to a Trace task, or re-enter a
 # Trace
 
 Use this skill when the user says they are working on a task, asks to bind the
-current session to a task, or asks to re-enter a task's context.
+current session to a task, asks to re-enter a task's context, or asks to open
+the Trace task board.
 
 ## Verbs
 
@@ -54,6 +55,22 @@ When re-entering:
 Codex entry point support is deferred. This Claude skill keeps the protocol
 tool-agnostic so a Codex wrapper can follow the same manifest consumption rules
 later.
+
+### Open the task board
+
+Tell the user to run the Trace web server in their own terminal:
+
+```sh
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" serve
+```
+
+The command reads the live store from `~/.trace/trace.sqlite`, starts the board,
+and prints a line like `trace serve listening on http://127.0.0.1:4317`. If that
+port is taken, the CLI picks the next available port. Tell the user the URL from
+that output.
+
+Do not start the server in the background, track its process, or kill it from
+the skill. The user owns that terminal process and stops it with Ctrl-C.
 
 ## CLI Setup
 
