@@ -38,6 +38,18 @@ export function truncateId(id: string): string {
   return UUID_RE.test(id) ? id.slice(0, 8) : id;
 }
 
+/**
+ * Reduce a file path to its tail (final segment) for compact display, e.g.
+ * `"/tmp/session-1.jsonl"` → `"session-1.jsonl"`. Handles both posix (`/`) and
+ * windows (`\`) separators and ignores a trailing separator. A string with no
+ * separator (or an empty string) is returned unchanged. Callers should pass the
+ * full path separately as the copyable value (see `CopyChip`).
+ */
+export function truncatePath(path: string): string {
+  const segments = path.split(/[/\\]/).filter(Boolean);
+  return segments.at(-1) ?? path;
+}
+
 const MONTHS = [
   "Jan",
   "Feb",

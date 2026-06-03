@@ -3,6 +3,7 @@ import {
   formatRelativeTime,
   formatTokensCompact,
   truncateId,
+  truncatePath,
 } from "./format.ts";
 
 describe("formatTokensCompact", () => {
@@ -81,5 +82,33 @@ describe("truncateId", () => {
 
   test("does not truncate a short non-UUID string", () => {
     expect(truncateId("abc")).toBe("abc");
+  });
+});
+
+describe("truncatePath", () => {
+  test("reduces a posix path to its final segment", () => {
+    expect(truncatePath("/tmp/session-1.jsonl")).toBe("session-1.jsonl");
+  });
+
+  test("reduces a deep path to its final segment", () => {
+    expect(
+      truncatePath("/work/trace-v2/docs/web-redesign/web-redesign.tasks.md"),
+    ).toBe("web-redesign.tasks.md");
+  });
+
+  test("reduces a windows path to its final segment", () => {
+    expect(truncatePath("C:\\Users\\foo\\bar.md")).toBe("bar.md");
+  });
+
+  test("ignores a trailing separator", () => {
+    expect(truncatePath("/a/b/")).toBe("b");
+  });
+
+  test("returns a separator-free string unchanged", () => {
+    expect(truncatePath("file.md")).toBe("file.md");
+  });
+
+  test("returns an empty string unchanged", () => {
+    expect(truncatePath("")).toBe("");
   });
 });

@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import { TaskTimelineView } from "./TaskPage.tsx";
 
-test("TaskTimelineView renders colored tool tags and model chips", () => {
+test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
@@ -50,6 +50,15 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
           createdAt: "2026-05-29T00:02:00.000Z",
         },
       },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        doc: {
+          taskId: "task-1",
+          path: "/work/trace-v2/docs/plan.md",
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
+      },
     ],
     tokenTotals: {
       inputTokens: 17,
@@ -62,10 +71,148 @@ test("TaskTimelineView renders colored tool tags and model chips", () => {
 
   const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
 
-  expect(html).toContain("tool-tag tool-tag-claude");
-  expect(html).toContain("tool-tag tool-tag-codex");
+  // Each entry type carries an inline SVG icon, not a text tag.
+  expect(html).toContain("<svg");
+  expect(html).toContain("type-icon type-icon-claude");
+  expect(html).toContain("type-icon type-icon-codex");
+  expect(html).toContain("type-icon type-icon-doc");
+  expect(html).not.toContain("tool-tag");
+  // Model chip still renders, with the em dash fallback for a null model.
   expect(html).toContain("claude-opus-4-7");
   expect(html).toContain(">—<");
+});
+
+test("TaskTimelineView renders relative timestamps, never raw ISO strings", () => {
+  const now = new Date("2026-05-29T00:05:00.000Z");
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+    },
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        doc: {
+          taskId: "task-1",
+          path: "/work/trace-v2/docs/plan.md",
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
+      },
+    ],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <TaskTimelineView timeline={timeline} now={now} />,
+  );
+
+  expect(html).toContain("2m ago");
+  // No raw ISO timestamp leaks into the rendered output.
+  expect(html).not.toContain("2026-05-29T00:03:00.000Z");
+});
+
+test("TaskTimelineView shows transcript and doc paths as truncated copy chips", () => {
+  const transcriptPath = "/Users/me/.trace/sessions/session-abc.jsonl";
+  const docPath = "/work/trace-v2/docs/web-redesign/web-redesign.tasks.md";
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+    },
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        session: {
+          id: "session-1",
+          transcriptPath,
+          tool: "claude",
+          model: "claude-opus-4-7",
+          taskId: "task-1",
+          tokenTotals: {
+            inputTokens: 10,
+            outputTokens: 5,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 15,
+          },
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+      },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        doc: { taskId: "task-1", path: docPath, createdAt: "2026-05-29T00:03:00.000Z" },
+      },
+    ],
+    tokenTotals: {
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 15,
+    },
+  };
+
+  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+
+  // Tails are shown; the full paths are copyable via the chip title.
+  expect(html).toContain(">session-abc.jsonl<");
+  expect(html).toContain(`title="${transcriptPath}"`);
+  expect(html).toContain(">web-redesign.tasks.md<");
+  expect(html).toContain(`title="${docPath}"`);
+  // The full paths never render as bare body text.
+  expect(html).not.toContain(`>${transcriptPath}<`);
+  expect(html).not.toContain(`>${docPath}<`);
+});
+
+test("TaskTimelineView stat cards show the cache split, compact with exact on hover", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 81123,
+      outputTokens: 5,
+      cacheCreationInputTokens: 999,
+      cacheReadInputTokens: 1_000_000,
+      totalTokens: 16_317_514,
+    },
+  };
+
+  const html = renderToStaticMarkup(<TaskTimelineView timeline={timeline} />);
+
+  // All five totals are labelled, including the cache split that lets the
+  // headline number reconcile.
+  expect(html).toContain("Total");
+  expect(html).toContain("Input");
+  expect(html).toContain("Output");
+  expect(html).toContain("Cache read");
+  expect(html).toContain("Cache creation");
+
+  // Values render compactly with the exact integer available on hover.
+  expect(html).toContain(">16.3M<");
+  expect(html).toContain('title="16317514"');
+  expect(html).toContain(">81.1K<");
+  expect(html).toContain(">1.0M<");
+  expect(html).toContain('title="1000000"');
+  // No raw multi-thousand integer is rendered as bare card text.
+  expect(html).not.toContain(">16317514<");
 });
 
 test("TaskTimelineView header includes the theme toggle", () => {

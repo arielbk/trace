@@ -66,7 +66,7 @@ Visual and usability redesign of the two existing web pages (task list, task tim
 
 ### `task-page-redesign` — Timeline with stat cards, cache split, and icons
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** TaskPage header shows title plus copyable short ID; stat cards show Total/Input/Output **and** cache read/cache creation, compact with exact integers on hover, so the headline numbers reconcile. Timeline entries carry inline SVG type icons (claude, codex, doc), readable timestamps (relative when recent), and transcript/doc paths truncated to their tail with full path on hover and click-to-copy.
 
