@@ -18,7 +18,7 @@ Visual and usability redesign of the two existing web pages (task list, task tim
 
 ### `task-summaries-api` — Task list enriched with last activity and token totals
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `GET /api/tasks` returns, per task, the existing fields plus `lastActivityAt` (max of session/doc `createdAt`, falling back to task `createdAt`) and aggregated `tokenTotals`, computed by a new store query (e.g. `listTaskSummaries()`) on the `TaskStore` interface in `packages/core`.
 

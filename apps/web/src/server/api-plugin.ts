@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { getTaskTimeline, listTasks } from "./data.ts";
+import { getTaskTimeline, listTaskSummaries } from "./data.ts";
 
 export function traceApiPlugin(): Plugin {
   return {
@@ -10,7 +10,7 @@ export function traceApiPlugin(): Plugin {
           const url = req.url ?? "/";
           if (url === "/" || url === "") {
             res.setHeader("content-type", "application/json");
-            res.end(JSON.stringify(listTasks()));
+            res.end(JSON.stringify(listTaskSummaries()));
             return;
           }
           const match = /^\/([^/]+)\/timeline\/?$/.exec(url);
