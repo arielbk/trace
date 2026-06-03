@@ -79,7 +79,13 @@ export function parseCodexTranscript(
       continue;
     }
 
-    const event = JSON.parse(line) as CodexJsonlEvent;
+    let event: CodexJsonlEvent;
+    try {
+      event = JSON.parse(line) as CodexJsonlEvent;
+    } catch {
+      // Live transcripts routinely end in a half-written line; skip it.
+      continue;
+    }
 
     if (event.type === "thread.started") {
       id ??= event.thread_id ?? event.threadId ?? event.id;

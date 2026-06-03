@@ -62,7 +62,13 @@ export function parseClaudeCodeTranscript(
       continue;
     }
 
-    const event = JSON.parse(line) as ClaudeJsonlEvent;
+    let event: ClaudeJsonlEvent;
+    try {
+      event = JSON.parse(line) as ClaudeJsonlEvent;
+    } catch {
+      // Live transcripts routinely end in a half-written line; skip it.
+      continue;
+    }
     id ??=
       event.session_id ??
       event.sessionId ??

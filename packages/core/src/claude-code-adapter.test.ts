@@ -24,6 +24,29 @@ test("Claude Code transcript adapter returns session identity and token totals",
   });
 });
 
+test("Claude Code transcript adapter skips unparseable lines and sums the rest", () => {
+  const transcriptPath = fileURLToPath(
+    new URL("./fixtures/claude-code-session.jsonl", import.meta.url),
+  );
+  const transcript =
+    readFileSync(transcriptPath, "utf8").trimEnd() +
+    '\n{"type":"assistant","session_id":"claude-session-1","usage":{"input_tok';
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath })).toEqual({
+    id: "claude-session-1",
+    transcriptPath,
+    tool: "claude",
+    model: "claude-opus-4-7",
+    tokenTotals: {
+      inputTokens: 13,
+      outputTokens: 25,
+      cacheCreationInputTokens: 4,
+      cacheReadInputTokens: 6,
+      totalTokens: 48,
+    },
+  });
+});
+
 test("Claude Code transcript adapter returns null when model is absent", () => {
   const transcriptPath = "/tmp/claude-without-model.jsonl";
   const transcript = [

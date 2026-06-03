@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,6 +11,11 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vitest";
 import { openTraceStore } from "./index.ts";
+
+const CLAUDE_FIXTURE = new URL(
+  "./fixtures/claude-code-session.jsonl",
+  import.meta.url,
+).pathname;
 
 test("@trace/core no longer declares the native sqlite driver", () => {
   const packageJson = JSON.parse(
@@ -625,6 +631,172 @@ test("re-entry manifest returns empty sections for tasks without docs or session
       sessions: [],
     });
     expect(store.getReEntryManifest("missing")).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// refresh-on-read: session reads refresh token totals from transcripts
+// ──────────────────────────────────────────────────────────────────────────────
+
+test("getSession refreshes token totals from transcript and persists them", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  // Write a copy of the claude fixture so we can delete it later
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    // Register with zero totals (simulating registration-time zeros)
+    const session = store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(session.tokenTotals.totalTokens).toBe(0);
+
+    // Read back — should refresh from transcript
+    const refreshed = store.getSession(session.id);
+    expect(refreshed).not.toBeNull();
+    expect(refreshed!.tokenTotals.inputTokens).toBe(13);
+    expect(refreshed!.tokenTotals.outputTokens).toBe(25);
+    expect(refreshed!.tokenTotals.cacheCreationInputTokens).toBe(4);
+    expect(refreshed!.tokenTotals.cacheReadInputTokens).toBe(6);
+    expect(refreshed!.tokenTotals.totalTokens).toBe(48);
+
+    // Delete the transcript — should return the persisted (refreshed) values
+    unlinkSync(transcriptPath);
+    const persisted = store.getSession(session.id);
+    expect(persisted!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession returns stored values when transcript is missing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "nonexistent.jsonl");
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.registerSession({
+      id: "session-missing-transcript",
+      transcriptPath,
+      tool: "claude",
+      tokenTotals: { inputTokens: 5, outputTokens: 10, totalTokens: 15 },
+    });
+
+    const result = store.getSession("session-missing-transcript");
+    expect(result).not.toBeNull();
+    expect(result!.tokenTotals.totalTokens).toBe(15);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession returns stored values when transcript is unparseable and does not write", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "broken.jsonl");
+  // No valid session-id lines → parseFile will throw
+  writeFileSync(transcriptPath, "not-json\nalso-not-json\n");
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.registerSession({
+      id: "session-broken-transcript",
+      transcriptPath,
+      tool: "claude",
+      tokenTotals: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+    });
+
+    const result = store.getSession("session-broken-transcript");
+    expect(result).not.toBeNull();
+    // Should return stored values unchanged
+    expect(result!.tokenTotals.totalTokens).toBe(10);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listSessionsForTask refreshes token totals from transcripts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id);
+
+    const sessions = store.listSessionsForTask(task.id);
+    expect(sessions[0]!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listUnassignedSessions refreshes token totals from transcripts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+
+    const unassigned = store.listUnassignedSessions();
+    expect(unassigned[0]!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task timeline tokenTotals aggregates refreshed per-session values", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id);
+
+    const timeline = store.getTaskTimeline(task.id);
+    expect(timeline).not.toBeNull();
+    expect(timeline!.tokenTotals.totalTokens).toBe(48);
 
     store.close();
   } finally {

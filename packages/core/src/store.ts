@@ -9,6 +9,7 @@ import {
   emptyTokenTotals,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
+import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   RegisterSessionInput,
   ReEntryManifest,
@@ -18,6 +19,7 @@ import type {
   TaskStore,
   TaskTimeline,
   TaskTimelineItem,
+  TokenTotals,
 } from "./types.ts";
 
 export function openTraceStore(databasePath: string): TaskStore {
@@ -179,7 +181,7 @@ class NodeSqliteTaskStore implements TaskStore {
         `,
       )
       .all()
-      .map((row) => sessionFromRow(row as SessionRow));
+      .map((row) => this.#refreshSession(sessionFromRow(row as SessionRow)));
   }
 
   listSessionsForTask(taskId: string): Session[] {
@@ -193,7 +195,7 @@ class NodeSqliteTaskStore implements TaskStore {
         `,
       )
       .all(taskId)
-      .map((row) => sessionFromRow(row as SessionRow));
+      .map((row) => this.#refreshSession(sessionFromRow(row as SessionRow)));
   }
 
   getTaskTimeline(taskId: string): TaskTimeline | null {
@@ -318,7 +320,57 @@ class NodeSqliteTaskStore implements TaskStore {
     const row = this.#sqlite
       .prepare("SELECT * FROM sessions WHERE id = ?")
       .get(id);
-    return row ? sessionFromRow(row as SessionRow) : null;
+    if (!row) return null;
+    return this.#refreshSession(sessionFromRow(row as SessionRow));
+  }
+
+  #refreshSession(session: Session): Session {
+    let fresh: { tokenTotals: TokenTotals; model: string | null } | null = null;
+    try {
+      const adapter = getTranscriptAdapter(session.tool);
+      const parsed = adapter.parseFile(session.transcriptPath, {
+        expectedId: session.id,
+      });
+      fresh = { tokenTotals: parsed.tokenTotals, model: parsed.model };
+    } catch {
+      // Missing file or unparseable transcript — return stored values untouched.
+      return session;
+    }
+
+    const totals = fresh.tokenTotals;
+    const stored = session.tokenTotals;
+    const changed =
+      totals.inputTokens !== stored.inputTokens ||
+      totals.outputTokens !== stored.outputTokens ||
+      totals.cacheCreationInputTokens !== stored.cacheCreationInputTokens ||
+      totals.cacheReadInputTokens !== stored.cacheReadInputTokens ||
+      totals.totalTokens !== stored.totalTokens;
+
+    if (changed) {
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE sessions
+            SET
+              input_tokens = ?,
+              output_tokens = ?,
+              cache_creation_input_tokens = ?,
+              cache_read_input_tokens = ?,
+              total_tokens = ?
+            WHERE id = ?
+          `,
+        )
+        .run(
+          totals.inputTokens,
+          totals.outputTokens,
+          totals.cacheCreationInputTokens,
+          totals.cacheReadInputTokens,
+          totals.totalTokens,
+          session.id,
+        );
+    }
+
+    return { ...session, tokenTotals: totals };
   }
 
   private getTaskDoc(taskId: string, path: string): TaskDoc | null {

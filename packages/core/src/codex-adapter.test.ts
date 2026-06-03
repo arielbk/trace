@@ -32,6 +32,33 @@ test("Codex transcript adapter validates identity and returns token totals", () 
   });
 });
 
+test("Codex transcript adapter skips unparseable lines and sums the rest", () => {
+  const transcriptPath = codexFixture;
+  const transcript =
+    readFileSync(transcriptPath, "utf8").trimEnd() +
+    '\n{"type":"turn.completed","usage":{"input_tok';
+
+  expect(
+    parseCodexTranscript({
+      transcript,
+      transcriptPath,
+      expectedThreadId: "codex-thread-1",
+    }),
+  ).toEqual({
+    id: "codex-thread-1",
+    transcriptPath,
+    tool: "codex",
+    model: "gpt-5-codex",
+    tokenTotals: {
+      inputTokens: 17,
+      outputTokens: 29,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 11,
+      totalTokens: 57,
+    },
+  });
+});
+
 test("Codex transcript adapter rejects mismatched live thread identity", () => {
   const transcriptPath = codexFixture;
   const transcript = readFileSync(transcriptPath, "utf8");
