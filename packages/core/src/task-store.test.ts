@@ -1,9 +1,27 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vitest";
-import Database from "better-sqlite3";
 import { openTraceStore } from "./index.ts";
+
+test("@trace/core no longer declares the native sqlite driver", () => {
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+
+  expect(packageJson.dependencies).not.toHaveProperty("better-sqlite3");
+  expect(packageJson.devDependencies).not.toHaveProperty("@types/better-sqlite3");
+});
 
 test("task entity persists and reads back through the store interface", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
@@ -52,7 +70,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
     const reopened = openTraceStore(databasePath);
     reopened.close();
 
-    const database = new Database(databasePath);
+    const database = new DatabaseSync(databasePath);
 
     try {
       const journalMode = database.prepare("PRAGMA journal_mode").get() as {
@@ -169,7 +187,7 @@ test("migration keeps existing session rows readable with a null model", () => {
   const databasePath = join(dir, "trace.sqlite");
 
   try {
-    const database = new Database(databasePath);
+    const database = new DatabaseSync(databasePath);
     database.exec(`
       CREATE TABLE "__drizzle_migrations" (
         id SERIAL PRIMARY KEY,
@@ -252,6 +270,79 @@ test("migration keeps existing session rows readable with a null model", () => {
         },
       },
     ]);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("store reads and writes a database created with the old schema through node sqlite", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL
+      );
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        task_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root)
+        VALUES ('task-1', 'checkout', '2026-05-29T00:00:00.000Z', '/repo');
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    expect(store.getTask("task-1")).toEqual({
+      id: "task-1",
+      title: "checkout",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      projectRoot: "/repo",
+    });
+
+    const created = store.createTask("review", "/repo");
+    const session = store.registerSession({
+      id: "session-1",
+      transcriptPath: "/tmp/session-1.jsonl",
+      tool: "codex",
+      tokenTotals: { inputTokens: 1, outputTokens: 2 },
+    });
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      "task-1",
+      created.id,
+    ]);
+    expect(store.listUnassignedSessions()).toEqual([session]);
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -549,7 +640,7 @@ function waitForNextMillisecond(): void {
   }
 }
 
-function tableNames(database: Database.Database): string[] {
+function tableNames(database: DatabaseSync): string[] {
   return database
     .prepare(
       "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name ASC",
@@ -558,14 +649,14 @@ function tableNames(database: Database.Database): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
-function sessionColumnNames(database: Database.Database): string[] {
+function sessionColumnNames(database: DatabaseSync): string[] {
   return database
     .prepare("PRAGMA table_info(sessions)")
     .all()
     .map((row) => (row as { name: string }).name);
 }
 
-function taskColumnNames(database: Database.Database): string[] {
+function taskColumnNames(database: DatabaseSync): string[] {
   return database
     .prepare("PRAGMA table_info(tasks)")
     .all()

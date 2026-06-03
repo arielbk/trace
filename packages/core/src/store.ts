@@ -1,14 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import Database from "better-sqlite3";
-import { and, asc, eq, isNull } from "drizzle-orm";
-import {
-  drizzle,
-  type BetterSQLite3Database,
-} from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { sessions, taskDocs, tasks } from "./schema.ts";
+import { mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { migrationsDir } from "./migrations-path.ts";
 import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
 import {
@@ -28,25 +21,23 @@ import type {
 } from "./types.ts";
 
 export function openTraceStore(databasePath: string): TaskStore {
-  return new DrizzleTaskStore(databasePath);
+  return new NodeSqliteTaskStore(databasePath);
 }
 
 export { resolveTaskDocsDir } from "./task-docs.ts";
 
-class DrizzleTaskStore implements TaskStore {
-  readonly #sqlite: Database.Database;
-  readonly #db: BetterSQLite3Database;
+class NodeSqliteTaskStore implements TaskStore {
+  readonly #sqlite: DatabaseSync;
   readonly #databasePath: string;
 
   constructor(databasePath: string) {
     const resolvedPath = resolve(databasePath);
     this.#databasePath = resolvedPath;
     mkdirSync(dirname(resolvedPath), { recursive: true });
-    this.#sqlite = new Database(resolvedPath);
-    this.#sqlite.pragma("journal_mode = WAL");
-    this.#sqlite.pragma("foreign_keys = ON");
-    this.#db = drizzle(this.#sqlite);
-    migrate(this.#db, { migrationsFolder: migrationsDir });
+    this.#sqlite = new DatabaseSync(resolvedPath);
+    this.#sqlite.exec("PRAGMA journal_mode = WAL");
+    this.#sqlite.exec("PRAGMA foreign_keys = ON");
+    applyMigrations(this.#sqlite);
   }
 
   createTask(title: string, projectRoot = ""): Task {
@@ -64,22 +55,38 @@ class DrizzleTaskStore implements TaskStore {
       projectRoot: normalizedProjectRoot,
     };
 
-    this.#db.insert(tasks).values(task).run();
+    this.#sqlite
+      .prepare(
+        `
+          INSERT INTO tasks (id, title, created_at, project_root)
+          VALUES (?, ?, ?, ?)
+        `,
+      )
+      .run(task.id, task.title, task.createdAt, task.projectRoot);
 
     return task;
   }
 
   getTask(id: string): Task | null {
-    const row = this.#db.select().from(tasks).where(eq(tasks.id, id)).get();
-    return row ?? null;
+    const row = this.#sqlite
+      .prepare(
+        "SELECT id, title, created_at, project_root FROM tasks WHERE id = ?",
+      )
+      .get(id);
+    return row ? taskFromRow(row as TaskRow) : null;
   }
 
   listTasks(): Task[] {
-    return this.#db
-      .select()
-      .from(tasks)
-      .orderBy(asc(tasks.createdAt), asc(tasks.id))
-      .all();
+    return this.#sqlite
+      .prepare(
+        `
+          SELECT id, title, created_at, project_root
+          FROM tasks
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
+      .all()
+      .map((row) => taskFromRow(row as TaskRow));
   }
 
   registerSession(input: RegisterSessionInput): Session {
@@ -111,22 +118,38 @@ class DrizzleTaskStore implements TaskStore {
       tokenTotals: totals,
     };
 
-    this.#db
-      .insert(sessions)
-      .values({
-        id: session.id,
-        transcriptPath: session.transcriptPath,
-        tool: session.tool,
-        model: session.model,
-        taskId: session.taskId,
-        createdAt: session.createdAt,
-        inputTokens: totals.inputTokens,
-        outputTokens: totals.outputTokens,
-        cacheCreationInputTokens: totals.cacheCreationInputTokens,
-        cacheReadInputTokens: totals.cacheReadInputTokens,
-        totalTokens: totals.totalTokens,
-      })
-      .run();
+    this.#sqlite
+      .prepare(
+        `
+          INSERT INTO sessions (
+            id,
+            transcript_path,
+            tool,
+            model,
+            task_id,
+            created_at,
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            total_tokens
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        session.id,
+        session.transcriptPath,
+        session.tool,
+        session.model,
+        session.taskId,
+        session.createdAt,
+        totals.inputTokens,
+        totals.outputTokens,
+        totals.cacheCreationInputTokens,
+        totals.cacheReadInputTokens,
+        totals.totalTokens,
+      );
 
     return session;
   }
@@ -138,33 +161,39 @@ class DrizzleTaskStore implements TaskStore {
     const task = this.getTask(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
-    this.#db
-      .update(sessions)
-      .set({ taskId: task.id })
-      .where(eq(sessions.id, session.id))
-      .run();
+    this.#sqlite
+      .prepare("UPDATE sessions SET task_id = ? WHERE id = ?")
+      .run(task.id, session.id);
 
     return { ...session, taskId: task.id };
   }
 
   listUnassignedSessions(): Session[] {
-    return this.#db
-      .select()
-      .from(sessions)
-      .where(isNull(sessions.taskId))
-      .orderBy(asc(sessions.createdAt), asc(sessions.id))
+    return this.#sqlite
+      .prepare(
+        `
+          SELECT *
+          FROM sessions
+          WHERE task_id IS NULL
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
       .all()
-      .map(sessionFromRow);
+      .map((row) => sessionFromRow(row as SessionRow));
   }
 
   listSessionsForTask(taskId: string): Session[] {
-    return this.#db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.taskId, taskId))
-      .orderBy(asc(sessions.createdAt), asc(sessions.id))
-      .all()
-      .map(sessionFromRow);
+    return this.#sqlite
+      .prepare(
+        `
+          SELECT *
+          FROM sessions
+          WHERE task_id = ?
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
+      .all(taskId)
+      .map((row) => sessionFromRow(row as SessionRow));
   }
 
   getTaskTimeline(taskId: string): TaskTimeline | null {
@@ -245,17 +274,29 @@ class DrizzleTaskStore implements TaskStore {
       createdAt: new Date().toISOString(),
     };
 
-    this.#db.insert(taskDocs).values(doc).run();
+    this.#sqlite
+      .prepare(
+        `
+          INSERT INTO task_docs (task_id, path, created_at)
+          VALUES (?, ?, ?)
+        `,
+      )
+      .run(doc.taskId, doc.path, doc.createdAt);
     return doc;
   }
 
   listDocsForTask(taskId: string): TaskDoc[] {
-    const registeredDocs = this.#db
-      .select()
-      .from(taskDocs)
-      .where(eq(taskDocs.taskId, taskId))
-      .orderBy(asc(taskDocs.createdAt), asc(taskDocs.path))
-      .all();
+    const registeredDocs = this.#sqlite
+      .prepare(
+        `
+          SELECT task_id, path, created_at
+          FROM task_docs
+          WHERE task_id = ?
+          ORDER BY created_at ASC, path ASC
+        `,
+      )
+      .all(taskId)
+      .map((row) => taskDocFromRow(row as TaskDocRow));
 
     return mergeTaskDocs(
       registeredDocs,
@@ -264,10 +305,9 @@ class DrizzleTaskStore implements TaskStore {
   }
 
   removeTaskDoc(taskId: string, path: string): void {
-    this.#db
-      .delete(taskDocs)
-      .where(and(eq(taskDocs.taskId, taskId), eq(taskDocs.path, path.trim())))
-      .run();
+    this.#sqlite
+      .prepare("DELETE FROM task_docs WHERE task_id = ? AND path = ?")
+      .run(taskId, path.trim());
   }
 
   close(): void {
@@ -275,41 +315,161 @@ class DrizzleTaskStore implements TaskStore {
   }
 
   getSession(id: string): Session | null {
-    const row = this.#db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.id, id))
-      .get();
-    return row ? sessionFromRow(row) : null;
+    const row = this.#sqlite
+      .prepare("SELECT * FROM sessions WHERE id = ?")
+      .get(id);
+    return row ? sessionFromRow(row as SessionRow) : null;
   }
 
   private getTaskDoc(taskId: string, path: string): TaskDoc | null {
-    const row = this.#db
-      .select()
-      .from(taskDocs)
-      .where(and(eq(taskDocs.taskId, taskId), eq(taskDocs.path, path)))
-      .get();
-    return row ?? null;
+    const row = this.#sqlite
+      .prepare(
+        `
+          SELECT task_id, path, created_at
+          FROM task_docs
+          WHERE task_id = ? AND path = ?
+        `,
+      )
+      .get(taskId, path);
+    return row ? taskDocFromRow(row as TaskDocRow) : null;
   }
 }
 
-type SessionRow = typeof sessions.$inferSelect;
+type MigrationJournal = {
+  entries: {
+    when: number;
+    tag: string;
+    breakpoints: boolean;
+  }[];
+};
+
+function applyMigrations(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at numeric
+    )
+  `);
+
+  const lastMigration = database
+    .prepare(
+      `
+        SELECT created_at
+        FROM "__drizzle_migrations"
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+    )
+    .get() as { created_at: number | null } | undefined;
+  const lastAppliedAt = Number(lastMigration?.created_at ?? 0);
+  const journal = JSON.parse(
+    readFileSync(join(migrationsDir, "meta", "_journal.json"), "utf8"),
+  ) as MigrationJournal;
+
+  database.exec("BEGIN");
+  try {
+    for (const entry of journal.entries) {
+      if (lastAppliedAt >= entry.when) continue;
+
+      const migrationSql = readFileSync(
+        join(migrationsDir, `${entry.tag}.sql`),
+        "utf8",
+      );
+      for (const statement of splitMigrationStatements(
+        migrationSql,
+        entry.breakpoints,
+      )) {
+        database.exec(statement);
+      }
+      database
+        .prepare(
+          'INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES (?, ?)',
+        )
+        .run(hashMigration(migrationSql), entry.when);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function splitMigrationStatements(sql: string, breakpoints: boolean): string[] {
+  if (breakpoints) {
+    return sql
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0);
+  }
+
+  const statement = sql.trim();
+  return statement.length > 0 ? [statement] : [];
+}
+
+function hashMigration(sql: string): string {
+  return `${sql.length}:${sql}`;
+}
+
+type TaskRow = {
+  id: string;
+  title: string;
+  created_at: string;
+  project_root: string;
+};
+
+type SessionRow = {
+  id: string;
+  transcript_path: string;
+  tool: "claude" | "codex";
+  model: string | null;
+  task_id: string | null;
+  created_at: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+  total_tokens: number;
+};
+
+type TaskDocRow = {
+  task_id: string;
+  path: string;
+  created_at: string;
+};
+
+function taskFromRow(row: TaskRow): Task {
+  return {
+    id: row.id,
+    title: row.title,
+    createdAt: row.created_at,
+    projectRoot: row.project_root,
+  };
+}
 
 function sessionFromRow(row: SessionRow): Session {
   return {
     id: row.id,
-    transcriptPath: row.transcriptPath,
+    transcriptPath: row.transcript_path,
     tool: row.tool,
     model: row.model,
-    taskId: row.taskId,
-    createdAt: row.createdAt,
+    taskId: row.task_id,
+    createdAt: row.created_at,
     tokenTotals: {
-      inputTokens: row.inputTokens,
-      outputTokens: row.outputTokens,
-      cacheCreationInputTokens: row.cacheCreationInputTokens,
-      cacheReadInputTokens: row.cacheReadInputTokens,
-      totalTokens: row.totalTokens,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      cacheCreationInputTokens: row.cache_creation_input_tokens,
+      cacheReadInputTokens: row.cache_read_input_tokens,
+      totalTokens: row.total_tokens,
     },
+  };
+}
+
+function taskDocFromRow(row: TaskDocRow): TaskDoc {
+  return {
+    taskId: row.task_id,
+    path: row.path,
+    createdAt: row.created_at,
   };
 }
 
