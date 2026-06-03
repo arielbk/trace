@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { migrationsDir } from "./migrations-path.ts";
+import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
 import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
 import {
   addTokenTotals,
@@ -335,14 +335,6 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 }
 
-type MigrationJournal = {
-  entries: {
-    when: number;
-    tag: string;
-    breakpoints: boolean;
-  }[];
-};
-
 function applyMigrations(database: DatabaseSync): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
@@ -363,19 +355,15 @@ function applyMigrations(database: DatabaseSync): void {
     )
     .get() as { created_at: number | null } | undefined;
   const lastAppliedAt = Number(lastMigration?.created_at ?? 0);
-  const journal = JSON.parse(
-    readFileSync(join(migrationsDir, "meta", "_journal.json"), "utf8"),
-  ) as MigrationJournal;
-
   database.exec("BEGIN");
   try {
-    for (const entry of journal.entries) {
+    for (const entry of migrationJournal.entries) {
       if (lastAppliedAt >= entry.when) continue;
 
-      const migrationSql = readFileSync(
-        join(migrationsDir, `${entry.tag}.sql`),
-        "utf8",
-      );
+      const migrationSql = migrationSqlByTag[entry.tag];
+      if (!migrationSql) {
+        throw new Error(`Missing migration SQL for ${entry.tag}`);
+      }
       for (const statement of splitMigrationStatements(
         migrationSql,
         entry.breakpoints,

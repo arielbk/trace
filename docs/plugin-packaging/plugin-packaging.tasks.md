@@ -24,7 +24,7 @@ and no `trace init`.
 
 ### `cli-bundle` — Bundle CLI + hook to self-contained JS
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** A build command emits self-contained JS artifacts for the `trace` CLI and the SessionStart hook with `@trace/core` inlined, no remaining native dependency, and migration SQL travelling with the bundle.
 
