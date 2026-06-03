@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { Session, TaskTimeline } from "@trace/core";
+import { CopyChip } from "../components/CopyChip.tsx";
+import { truncateId } from "../format.ts";
 
 export function TaskPage() {
   const { id } = useParams();
@@ -26,7 +28,9 @@ export function TaskTimelineView({ timeline }: { timeline: TaskTimeline }) {
         <div>
           <p className="eyebrow">Task timeline</p>
           <h1>{timeline.task.title}</h1>
-          <p className="task-id">{timeline.task.id}</p>
+          <p className="task-id">
+            <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
+          </p>
         </div>
         <dl className="token-summary" aria-label="Token totals">
           <div><dt>Total</dt><dd>{timeline.tokenTotals.totalTokens}</dd></div>

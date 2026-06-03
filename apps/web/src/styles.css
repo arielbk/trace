@@ -89,6 +89,36 @@ li {
   color: #667085;
 }
 
+.copy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+  color: #475467;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.copy-chip:hover {
+  border-color: #98a2b3;
+}
+
+.copy-chip-status {
+  color: #1f6f5b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.copy-chip-status:empty {
+  display: none;
+}
+
 .timeline-list {
   margin: 1.5rem 0 0;
 }

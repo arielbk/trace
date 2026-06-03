@@ -42,7 +42,7 @@ Visual and usability redesign of the two existing web pages (task list, task tim
 
 ### `copy-chip` — Shared click-to-copy component
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** `<CopyChip value={full} display={truncated} />` component: renders the truncated form, full value in `title`, copies the full value to the clipboard on click with a brief confirmation affordance. First landed on the TaskPage header replacing the raw 36-char task UUID with its 8-char form.
 
