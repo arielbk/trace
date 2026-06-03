@@ -177,6 +177,17 @@ test("resolveWebAssetsDir finds the built web app relative to the cli module", (
   expect(resolveWebAssetsDir(moduleDir)).toBe(webDist);
 });
 
+test("resolveWebAssetsDir finds web assets beside the plugin bundle", () => {
+  const moduleDir = join(dir, "extracted", "bundle");
+  const bundleDir = join(dir, "plugin", "bin");
+  const pluginWeb = join(bundleDir, "web");
+  mkdirSync(moduleDir, { recursive: true });
+  mkdirSync(pluginWeb, { recursive: true });
+  writeFileSync(join(pluginWeb, "index.html"), "<!doctype html>");
+
+  expect(resolveWebAssetsDir(moduleDir, bundleDir)).toBe(pluginWeb);
+});
+
 test("resolveWebAssetsDir returns undefined when no built web app exists", () => {
   const moduleDir = join(dir, "apps", "cli", "src");
   mkdirSync(moduleDir, { recursive: true });

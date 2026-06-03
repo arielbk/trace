@@ -2,8 +2,11 @@ import { stripTypeScriptTypes } from "node:module";
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
+  existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -13,6 +16,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
 const distDir = resolve(here, "../dist");
 const pluginBinDir = resolve(repoRoot, "bin");
+const pluginWebAssetsDir = resolve(pluginBinDir, "web");
+const webDistDir = resolve(repoRoot, "apps/web/dist");
 const coreEntry = resolve(repoRoot, "packages/core/src/index.ts");
 const moduleSpecifierPattern =
   /(?:import|export)\s+(?:[^"']*?\s+from\s+)?["']([^"']+)["']/g;
@@ -25,6 +30,7 @@ type CollectedModule = {
 
 mkdirSync(distDir, { recursive: true });
 mkdirSync(pluginBinDir, { recursive: true });
+copyWebAssets();
 
 writeBundle({
   entryPath: resolve(here, "trace.ts"),
@@ -79,8 +85,10 @@ process.exitCode = result.exitCode;`;
     `#!/usr/bin/env node
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+globalThis.__TRACE_BUNDLE_DIR__ ??= dirname(fileURLToPath(import.meta.url));
 
 const modules = ${JSON.stringify(moduleSources, null, 2)};
 const bundleDir = mkdtempSync(join(tmpdir(), "trace-bundle-"));
@@ -94,6 +102,17 @@ ${runner}
   chmodSync(options.outputPath, 0o755);
   copyFileSync(options.outputPath, options.pluginOutputPath);
   chmodSync(options.pluginOutputPath, 0o755);
+}
+
+function copyWebAssets(): void {
+  if (!existsSync(resolve(webDistDir, "index.html"))) {
+    throw new Error(
+      `Web assets are missing at ${relative(repoRoot, webDistDir)}. Run the web build before the CLI build.`,
+    );
+  }
+
+  rmSync(pluginWebAssetsDir, { recursive: true, force: true });
+  cpSync(webDistDir, pluginWebAssetsDir, { recursive: true });
 }
 
 function collectModules(entryPath: string): CollectedModule[] {

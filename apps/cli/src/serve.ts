@@ -44,6 +44,12 @@ const CONTENT_TYPES: Record<string, string> = {
   ".txt": "text/plain",
 };
 
+declare global {
+  // Set by the generated CLI bundle before temporary module extraction.
+  // Source builds leave it undefined and fall back to apps/web/dist.
+  var __TRACE_BUNDLE_DIR__: string | undefined;
+}
+
 /** Resolve a request path to a file inside `assetsDir`, or null if it escapes
  * the directory or doesn't exist as a file. */
 function resolveAssetFile(assetsDir: string, urlPath: string): string | null {
@@ -154,7 +160,13 @@ export function openBrowser(
  */
 export function resolveWebAssetsDir(
   moduleDir: string = dirname(fileURLToPath(import.meta.url)),
+  bundleDir: string | undefined = globalThis.__TRACE_BUNDLE_DIR__,
 ): string | undefined {
+  if (bundleDir) {
+    const bundledAssets = resolve(bundleDir, "web");
+    if (existsSync(join(bundledAssets, "index.html"))) return bundledAssets;
+  }
+
   const candidate = resolve(moduleDir, "../../web/dist");
   return existsSync(join(candidate, "index.html")) ? candidate : undefined;
 }

@@ -30,7 +30,7 @@ Ship the web task board inside the plugin bundle so a plugin user runs `trace se
 
 ### `bundle-assets` — Web assets ship in the plugin bundle
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** The CLI build (`apps/cli/src/build.ts`) copies `apps/web/dist` into the plugin alongside the bundled `trace.js`; `serve` resolves the assets relative to its own bundle directory at runtime (not the repo).
 
