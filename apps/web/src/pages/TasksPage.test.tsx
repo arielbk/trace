@@ -6,6 +6,7 @@ import {
   archiveTask,
   groupTasksByProject,
   TaskList,
+  unarchiveTask,
   visibleTasks,
 } from "./TasksPage.tsx";
 
@@ -112,6 +113,21 @@ describe("visibleTasks", () => {
 
     expect(visibleTasks(tasks).map((task) => task.id)).toEqual(["active"]);
   });
+
+  test("includes archived tasks when requested", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "active", title: "Active work", archivedAt: null }),
+      summary({
+        id: "archived",
+        title: "Archived work",
+        archivedAt: "2026-06-04T20:00:00.000Z",
+      }),
+    ];
+
+    expect(
+      visibleTasks(tasks, { showArchived: true }).map((task) => task.id),
+    ).toEqual(["active", "archived"]);
+  });
 });
 
 describe("archiveTask", () => {
@@ -136,6 +152,33 @@ describe("archiveTask", () => {
       archivedAt: "2026-06-04T20:00:00.000Z",
     });
     expect(calls).toEqual([["/api/tasks/task-1/archive", { method: "POST" }]]);
+  });
+});
+
+describe("unarchiveTask", () => {
+  test("posts to the unarchive endpoint for the task slug", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const fetcher = async (
+      input: string | URL | globalThis.Request,
+      init?: RequestInit,
+    ) => {
+      calls.push([String(input), init]);
+      return new Response(
+        JSON.stringify({
+          id: "task-1",
+          archivedAt: null,
+        }),
+        { status: 200 },
+      );
+    };
+
+    await expect(unarchiveTask("task-1", fetcher)).resolves.toMatchObject({
+      id: "task-1",
+      archivedAt: null,
+    });
+    expect(calls).toEqual([
+      ["/api/tasks/task-1/unarchive", { method: "POST" }],
+    ]);
   });
 });
 
@@ -272,5 +315,26 @@ describe("TaskList rendering", () => {
     );
 
     expect(html).toContain('aria-label="Archive CLI work"');
+  });
+
+  test("renders archived rows muted with an unarchive button", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        archivedAt: "2026-06-04T20:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onUnarchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("task-row-archived");
+    expect(html).toContain('aria-label="Unarchive CLI work"');
+    expect(html).not.toContain('aria-label="Archive CLI work"');
   });
 });

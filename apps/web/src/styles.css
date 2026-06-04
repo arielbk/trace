@@ -162,6 +162,23 @@ li {
   color: var(--color-text-muted);
 }
 
+.show-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.show-archived-toggle input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+
 .task-header {
   padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
@@ -437,6 +454,18 @@ li {
   color: var(--color-text-muted);
   font-weight: 400;
   font-style: italic;
+}
+
+.task-row-archived .task-row-title {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.task-row-archived .task-row-slug,
+.task-row-archived .task-row-tokens,
+.task-row-archived .task-row-time,
+.task-row-archived .copy-chip {
+  opacity: 0.72;
 }
 
 .task-row-slug {

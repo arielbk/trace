@@ -33,7 +33,7 @@ an agent resumes work on an archived task via `work-on-task`. See
 
 ### `ui-show-archived` — Show-archived toggle with unarchive
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** A "Show archived" toggle on the tasks page reveals archived tasks greyed out (reuse the muted-row treatment used for untitled tasks); each archived row gets an unarchive button that POSTs to the unarchive endpoint and restores the row to the active view.
 
