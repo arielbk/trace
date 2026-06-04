@@ -139,6 +139,77 @@ test("create then show round-trips a persisted task", () => {
   }
 });
 
+test("task create --description persists the description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "create",
+        "Checkout flow",
+        "--description",
+        "Rework the checkout into a multi-step wizard",
+      ],
+      { encoding: "utf8", env },
+    ).trim();
+
+    expect(slug).toBe("checkout-flow");
+
+    const store = openTraceStore(databasePath);
+    const task = store.getTaskByRef(slug);
+    store.close();
+
+    expect(task?.title).toBe("Checkout flow");
+    expect(task?.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill work-on-task --description sets the description on create", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        "Checkout flow",
+        "--id",
+        "codex-session-1",
+        "--transcript",
+        "/tmp/codex-session-1.jsonl",
+        "--tool",
+        "codex",
+        "--description",
+        "Rework the checkout into a multi-step wizard",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const store = openTraceStore(databasePath);
+    const task = store.getTaskByRef("checkout-flow");
+    store.close();
+
+    expect(task?.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("register then assign session attaches it to task show", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, "trace.sqlite");

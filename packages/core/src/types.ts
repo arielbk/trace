@@ -5,6 +5,8 @@ export type Task = {
   createdAt: string;
   projectRoot: string;
   archivedAt: string | null;
+  // Optional agent-authored summary; absent on tasks created without one.
+  description?: string;
 };
 
 export type SessionTool = "claude" | "codex";
@@ -82,7 +84,7 @@ export type RegisterSessionInput = {
 };
 
 export type TaskStore = {
-  createTask(title: string, projectRoot?: string): Task;
+  createTask(title: string, projectRoot?: string, description?: string): Task;
   getTask(id: string): Task | null;
   getTaskByRef(ref: string): Task | null;
   getSession(id: string): Session | null;

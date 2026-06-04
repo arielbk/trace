@@ -98,6 +98,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "project_root",
         "slug",
         "archived_at",
+        "description",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -1081,6 +1082,114 @@ function waitForNextMillisecond(): void {
     // ordering assertion needs distinct timestamps without relying on timers.
   }
 }
+
+test("createTask persists and reads back a description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask(
+      "Checkout flow",
+      "/repo",
+      "Rework the checkout into a multi-step wizard",
+    );
+
+    expect(created.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+    expect(store.getTask(created.id)).toEqual(created);
+    store.close();
+
+    const reopened = openTraceStore(databasePath);
+    expect(reopened.getTask(created.id)).toEqual(created);
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("tasks created without a description read back with description absent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("checkout");
+
+    expect(created).not.toHaveProperty("description");
+    expect(store.getTask(created.id)).not.toHaveProperty("description");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("description migration applies to an existing pre-description database", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000),
+        ('415565e0a40c61e50a92f6774d3421e49f978ca93b897581c32fc975ec1fc41a', 1780019700000),
+        ('0003-task-slug', 1780099700000),
+        ('0004-task-archive', 1780119700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL,
+        slug text,
+        archived_at text
+      );
+      CREATE UNIQUE INDEX tasks_slug_unique ON tasks (slug);
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        model text,
+        task_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root, slug)
+        VALUES ('task-1', 'checkout', '2026-05-29T00:00:00.000Z', '', 'checkout');
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    // The pre-existing row survives the ALTER and reads back without a description.
+    expect(store.getTask("task-1")).not.toHaveProperty("description");
+    // New rows can store a description through the migrated column.
+    const created = store.createTask("review", "/repo", "Tidy the review flow");
+    expect(store.getTask(created.id)?.description).toBe("Tidy the review flow");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("createTask derives a slug from the title", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));

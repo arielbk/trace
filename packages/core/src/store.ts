@@ -45,9 +45,10 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#backfillSlugs();
   }
 
-  createTask(title: string, projectRoot = ""): Task {
+  createTask(title: string, projectRoot = "", description?: string): Task {
     const normalizedTitle = title.trim();
     const normalizedProjectRoot = projectRoot.trim();
+    const normalizedDescription = description?.trim() || undefined;
 
     const id = randomUUID();
     const task: Task = {
@@ -58,12 +59,13 @@ class NodeSqliteTaskStore implements TaskStore {
       projectRoot: normalizedProjectRoot,
       archivedAt: null,
     };
+    if (normalizedDescription) task.description = normalizedDescription;
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at, description)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -73,6 +75,7 @@ class NodeSqliteTaskStore implements TaskStore {
         task.createdAt,
         task.projectRoot,
         task.archivedAt,
+        task.description ?? null,
       );
 
     return task;
@@ -81,7 +84,7 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE id = ?",
       )
       .get(id);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -96,7 +99,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE slug = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE slug = ?",
       )
       .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -106,7 +109,7 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root, archived_at
+          SELECT id, title, slug, created_at, project_root, archived_at, description
           FROM tasks
           ORDER BY created_at ASC, id ASC
         `,
@@ -585,6 +588,7 @@ type TaskRow = {
   created_at: string;
   project_root: string;
   archived_at: string | null;
+  description: string | null;
 };
 
 type SessionRow = {
@@ -608,7 +612,7 @@ type TaskDocRow = {
 };
 
 function taskFromRow(row: TaskRow): Task {
-  return {
+  const task: Task = {
     id: row.id,
     title: row.title,
     slug: row.slug,
@@ -616,6 +620,10 @@ function taskFromRow(row: TaskRow): Task {
     projectRoot: row.project_root,
     archivedAt: row.archived_at,
   };
+  // A null column means the task was created without a description; keep the
+  // field absent rather than carrying a null so round-trips stay clean.
+  if (row.description != null) task.description = row.description;
+  return task;
 }
 
 function sessionFromRow(row: SessionRow): Session {

@@ -86,8 +86,20 @@ export function runTraceCli(
         const titleError = rejectFlagTitle(args[0], "create");
         if (titleError) return titleError;
 
-        const title = args.join(" ");
-        const task = store.createTask(title, resolveProjectRoot(cwd));
+        let parsedCreate: { title: string; description?: string };
+        try {
+          parsedCreate = parseTaskCreateArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        const task = store.createTask(
+          parsedCreate.title,
+          resolveProjectRoot(cwd),
+          parsedCreate.description,
+        );
 
         return success(`${task.slug}\n`);
       }
@@ -306,13 +318,18 @@ export function runTraceCli(
           return failure("Task title is required");
         }
 
+        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
+        const { description, ...registerInput } = parsed;
+
         // The skill's contract is title-based: resolve the exact title, or
         // create the task when absent. Keeping this in the CLI means the skill
         // is pure prose and any other tool wrapper inherits the same behaviour.
+        // A `--description` only seeds a freshly created task; tending an
+        // existing task's description is the creation-descriptions slice's job.
         const existingId = findTaskIdByTitle(store.listTasks(), title);
         const resolvedTask = existingId
           ? store.getTask(existingId)
-          : store.createTask(title, resolveProjectRoot(cwd));
+          : store.createTask(title, resolveProjectRoot(cwd), description);
 
         if (!resolvedTask) {
           return failure(`Task not found: ${title}`, 1);
@@ -321,8 +338,7 @@ export function runTraceCli(
           ? store.unarchiveTask(resolvedTask.id)
           : resolvedTask;
 
-        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
-        const session = store.registerSession(parsed);
+        const session = store.registerSession(registerInput);
 
         const assigned = store.assignSession(session.id, task.id);
 
@@ -391,7 +407,43 @@ function looksLikeFlag(token: string | undefined): boolean {
 }
 
 function taskCreateUsage(): string {
-  return "Usage: trace task create <title>";
+  return "Usage: trace task create <title> [--description <text>]";
+}
+
+// Create takes a free-text title plus an optional `--description <text>` flag.
+// The title is the run of leading words before the first flag, so a multi-word
+// title without quotes still works (mirroring `task capture`).
+function parseTaskCreateArgs(args: string[]): {
+  title: string;
+  description?: string;
+} {
+  const titleWords: string[] = [];
+  let description: string | undefined;
+
+  let index = 0;
+  while (index < args.length && !looksLikeFlag(args[index])) {
+    titleWords.push(args[index] as string);
+    index += 1;
+  }
+
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--description") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCreateUsage());
+      description = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const title = titleWords.join(" ");
+  if (title.length === 0) {
+    throw new Error(taskCreateUsage());
+  }
+
+  return { title, description };
 }
 
 function taskCaptureUsage(): string {
@@ -743,11 +795,13 @@ function parseSkillWorkOnTaskArgs(
   tool: SessionTool;
   model?: string;
   tokenTotals: Partial<TokenTotals>;
+  description?: string;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
   let model: string | undefined;
+  let description: string | undefined;
 
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -755,7 +809,7 @@ function parseSkillWorkOnTaskArgs(
 
     if (!flag || !value) {
       throw new Error(
-        "Skill work-on-task accepts --id, --transcript, --tool, and --model",
+        "Skill work-on-task accepts --id, --transcript, --tool, --model, and --description",
       );
     }
 
@@ -767,6 +821,8 @@ function parseSkillWorkOnTaskArgs(
       tool = value;
     } else if (flag === "--model") {
       model = value;
+    } else if (flag === "--description") {
+      description = value;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -804,6 +860,7 @@ function parseSkillWorkOnTaskArgs(
     tool: identity.tool,
     model,
     tokenTotals: {},
+    description,
   };
 }
 
