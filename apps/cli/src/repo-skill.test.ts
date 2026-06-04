@@ -97,3 +97,17 @@ test("repo skill prose carries the re-entry consumption protocol", () => {
   expect(prose).toContain("taskDocsDir");
   expect(prose).toContain("Codex entry point");
 });
+
+test("repo skill prose points users at trace serve without managing the server", () => {
+  const prose = execFileSync("sed", ["-n", "1,260p", skillReadme], {
+    encoding: "utf8",
+  });
+
+  expect(prose).toContain(
+    'node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" serve',
+  );
+  expect(prose).toContain("trace serve listening on http://");
+  expect(prose).toContain("Tell the user the URL");
+  expect(prose).toContain("Do not start the server in the background");
+  expect(prose).toContain("stops it with Ctrl-C");
+});

@@ -20,7 +20,7 @@ type TestHandler = (
 type TestPlugin = {
   configureServer(server: {
     middlewares: {
-      use(path: string, registered: TestHandler): void;
+      use(registered: TestHandler): void;
     };
   }): void;
 };
@@ -36,7 +36,7 @@ test("task archive endpoint archives by slug", () => {
     const task = store.createTask("checkout");
     store.close();
 
-    const response = invokeTasksApi("POST", `/${task.slug}/archive`);
+    const response = invokeApi("POST", `/api/tasks/${task.slug}/archive`);
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({
@@ -61,7 +61,7 @@ test("task unarchive endpoint unarchives by id", () => {
     const task = store.archiveTask(store.createTask("checkout").id);
     store.close();
 
-    const response = invokeTasksApi("POST", `/${task.id}/unarchive`);
+    const response = invokeApi("POST", `/api/tasks/${task.id}/unarchive`);
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({
@@ -81,9 +81,15 @@ test("task archive endpoints return 404 for unknown refs and 405 for non-POST", 
   process.env.TRACE_DB = databasePath;
 
   try {
-    expect(invokeTasksApi("POST", "/missing/archive").statusCode).toBe(404);
-    expect(invokeTasksApi("GET", "/missing/archive").statusCode).toBe(405);
-    expect(invokeTasksApi("DELETE", "/missing/unarchive").statusCode).toBe(405);
+    expect(invokeApi("POST", "/api/tasks/missing/archive").statusCode).toBe(
+      404,
+    );
+    expect(invokeApi("GET", "/api/tasks/missing/archive").statusCode).toBe(
+      405,
+    );
+    expect(
+      invokeApi("DELETE", "/api/tasks/missing/unarchive").statusCode,
+    ).toBe(405);
   } finally {
     restoreTraceDb(originalTraceDb);
     rmSync(dir, { recursive: true, force: true });
@@ -101,7 +107,7 @@ test("task list payload includes archivedAt", () => {
     const task = store.archiveTask(store.createTask("checkout").slug);
     store.close();
 
-    const response = invokeTasksApi("GET", "/");
+    const response = invokeApi("GET", "/api/tasks");
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject([
@@ -116,31 +122,47 @@ test("task list payload includes archivedAt", () => {
   }
 });
 
-function invokeTasksApi(method: string, url: string): CapturedResponse {
+test("non-API requests fall through to the next middleware", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-web-api-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const originalTraceDb = process.env.TRACE_DB;
+  process.env.TRACE_DB = databasePath;
+
+  try {
+    const response = invokeApi("GET", "/tasks/abc");
+    expect(response.statusCode).toBe(404);
+    expect(response.fellThrough).toBe(true);
+  } finally {
+    restoreTraceDb(originalTraceDb);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function invokeApi(
+  method: string,
+  url: string,
+): CapturedResponse & { fellThrough: boolean } {
   const plugin = traceApiPlugin() as unknown as TestPlugin;
-  let registeredHandler = false;
   let handler: TestHandler = () => {
     throw new Error("API handler was not registered");
   };
 
   plugin.configureServer({
     middlewares: {
-      use(path: string, registered) {
-        expect(path).toBe("/api/tasks");
-        registeredHandler = true;
+      use(registered) {
         handler = registered;
       },
     },
   });
 
-  if (!registeredHandler) throw new Error("API handler was not registered");
-
   const response = new TestResponse();
+  let fellThrough = false;
   handler({ method, url }, response, () => {
+    fellThrough = true;
     response.statusCode = 404;
     response.end();
   });
-  return response.capture();
+  return { ...response.capture(), fellThrough };
 }
 
 class TestResponse {
