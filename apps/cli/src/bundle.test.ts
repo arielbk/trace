@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -16,6 +16,8 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const traceBundle = join(appRoot, "dist", "trace.js");
 const hookBundle = join(appRoot, "dist", "claude-session-start-hook.js");
+const pluginTraceBundle = join(repoRoot, "bin", "trace.js");
+const pluginWebAssetsDir = join(repoRoot, "bin", "web");
 
 describe("CLI bundle", () => {
   it("build emits self-contained CLI and hook JS bundles", () => {
@@ -36,6 +38,24 @@ describe("CLI bundle", () => {
     }
   });
 
+  it("build copies web assets into a tracked plugin asset directory", () => {
+    execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    const indexPath = join(pluginWebAssetsDir, "index.html");
+    assert.equal(existsSync(indexPath), true);
+    assert.equal(readFileSync(indexPath, "utf8").includes("<!doctype html"), true);
+
+    const ignoreCheck = spawnSync(
+      "git",
+      ["check-ignore", "-v", "--", "bin/web/index.html"],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    assert.equal(ignoreCheck.status, 1, ignoreCheck.stdout + ignoreCheck.stderr);
+  });
+
   it("bundled CLI runs outside the source tree and applies migrations", () => {
     const fakeHome = mkdtempSync(join(tmpdir(), "trace-bundle-home-"));
     const outsideDir = mkdtempSync(join(tmpdir(), "trace-bundle-outside-"));
@@ -45,7 +65,7 @@ describe("CLI bundle", () => {
       const output = execFileSync(
         process.execPath,
         [
-          traceBundle,
+          pluginTraceBundle,
           "skill",
           "work-on-task",
           "bundle smoke task",

@@ -16,6 +16,7 @@ import {
 } from "@trace/core";
 import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
+import { openBrowser, startTraceServe } from "./serve.ts";
 import {
   copyFileSync,
   lstatSync,
@@ -44,6 +45,26 @@ export function runTraceCli(
 
   if (resource === "init") {
     return success(runInit(env, cwd));
+  }
+
+  if (resource === "serve") {
+    // Long-running: the HTTP server keeps the event loop alive after we return,
+    // so the process stays up until Ctrl-C. We resolve the URL asynchronously
+    // and print it; the empty CommandResult just lets the caller fall through.
+    startTraceServe(env)
+      .then(({ url }) => {
+        process.stdout.write(`trace serve listening on ${url}\n`);
+        openBrowser(url);
+      })
+      .catch((error) => {
+        process.stderr.write(
+          `trace serve failed: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
+        process.exitCode = 1;
+      });
+    return success("");
   }
 
   let databasePath: string;
@@ -352,7 +373,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace task <create|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
+    "Usage: trace init | trace serve | trace task <create|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
   );
 }
 
