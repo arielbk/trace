@@ -173,6 +173,70 @@ test("task create --description persists the description", () => {
   }
 });
 
+test("task update --description sets the description by id and by slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-update-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "Checkout flow"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const store = openTraceStore(databasePath);
+    const id = store.getTaskByRef(slug)?.id as string;
+    store.close();
+
+    const bySlug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", slug, "--description", "First pass"],
+      { encoding: "utf8", env },
+    );
+    expect(bySlug).toMatch(/slug: checkout-flow/);
+    expect(bySlug).toMatch(/description: First pass/);
+
+    const byId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", id, "--description", "Second pass"],
+      { encoding: "utf8", env },
+    );
+    expect(byId).toMatch(/description: Second pass/);
+
+    const verifyStore = openTraceStore(databasePath);
+    expect(verifyStore.getTaskByRef(slug)?.description).toBe("Second pass");
+    verifyStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task update on an unknown ref exits non-zero", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-update-missing-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    let error: { status?: number; stderr?: string } | undefined;
+    try {
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "update", "missing", "--description", "text"],
+        { encoding: "utf8", env },
+      );
+    } catch (caught) {
+      error = caught as { status?: number; stderr?: string };
+    }
+
+    expect(error).toBeDefined();
+    expect(error?.status).not.toBe(0);
+    expect(error?.stderr).toContain("Task not found: missing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill work-on-task --description sets the description on create", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
   const databasePath = join(dir, "trace.sqlite");

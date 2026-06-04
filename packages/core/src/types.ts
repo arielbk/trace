@@ -90,6 +90,7 @@ export type TaskStore = {
   getSession(id: string): Session | null;
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
+  updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;

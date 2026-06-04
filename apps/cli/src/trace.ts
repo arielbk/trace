@@ -104,6 +104,42 @@ export function runTraceCli(
         return success(`${task.slug}\n`);
       }
 
+      if (action === "update") {
+        if (isHelpFlag(args[0])) {
+          return success(`${taskUpdateUsage()}\n`);
+        }
+
+        let parsedUpdate: { ref: string; description: string };
+        try {
+          parsedUpdate = parseTaskUpdateArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        let task: Task;
+        try {
+          task = store.updateTaskDescription(
+            parsedUpdate.ref,
+            parsedUpdate.description,
+          );
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+            1,
+          );
+        }
+
+        return success(
+          formatTask(
+            task,
+            store.listSessionsForTask(task.id),
+            store.listDocsForTask(task.id),
+          ),
+        );
+      }
+
       if (action === "capture") {
         if (isHelpFlag(args[0])) {
           return success(`${taskCaptureUsage()}\n`);
@@ -394,7 +430,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
+    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
   );
 }
 
@@ -444,6 +480,46 @@ function parseTaskCreateArgs(args: string[]): {
   }
 
   return { title, description };
+}
+
+function taskUpdateUsage(): string {
+  return "Usage: trace task update <ref> --description <text>";
+}
+
+// Update takes a single ref (id or slug) followed by a required
+// `--description <text>` flag. The ref is the run of leading words before the
+// first flag, mirroring `task create`.
+function parseTaskUpdateArgs(args: string[]): {
+  ref: string;
+  description: string;
+} {
+  const refWords: string[] = [];
+  let description: string | undefined;
+
+  let index = 0;
+  while (index < args.length && !looksLikeFlag(args[index])) {
+    refWords.push(args[index] as string);
+    index += 1;
+  }
+
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--description") {
+      const value = args[index + 1];
+      if (value === undefined) throw new Error(taskUpdateUsage());
+      description = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const ref = refWords.join(" ");
+  if (ref.length === 0 || description === undefined) {
+    throw new Error(taskUpdateUsage());
+  }
+
+  return { ref, description };
 }
 
 function taskCaptureUsage(): string {
@@ -553,6 +629,7 @@ function formatTask(
     `slug: ${task.slug}`,
     `id: ${task.id}`,
     `title: ${task.title}`,
+    ...(task.description ? [`description: ${task.description}`] : []),
     `createdAt: ${task.createdAt}`,
     `projectRoot: ${task.projectRoot}`,
   ];

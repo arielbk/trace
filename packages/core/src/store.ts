@@ -140,6 +140,21 @@ class NodeSqliteTaskStore implements TaskStore {
     });
   }
 
+  updateTaskDescription(ref: string, description: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    const normalizedDescription = description.trim() || undefined;
+    this.#sqlite
+      .prepare("UPDATE tasks SET description = ? WHERE id = ?")
+      .run(normalizedDescription ?? null, task.id);
+
+    const updated: Task = { ...task };
+    if (normalizedDescription) updated.description = normalizedDescription;
+    else delete updated.description;
+    return updated;
+  }
+
   archiveTask(ref: string): Task {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);

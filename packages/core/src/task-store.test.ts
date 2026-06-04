@@ -1191,6 +1191,51 @@ test("description migration applies to an existing pre-description database", ()
   }
 });
 
+test("updateTaskDescription sets and replaces a task's description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("checkout");
+    expect(created).not.toHaveProperty("description");
+
+    const set = store.updateTaskDescription(created.id, "Rework the checkout");
+    expect(set.description).toBe("Rework the checkout");
+    expect(store.getTask(created.id)).toEqual(set);
+
+    const replaced = store.updateTaskDescription(
+      created.slug,
+      "Now a multi-step wizard",
+    );
+    expect(replaced.description).toBe("Now a multi-step wizard");
+    expect(store.getTask(created.id)?.description).toBe(
+      "Now a multi-step wizard",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDescription rejects an unknown ref", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+
+    expect(() => store.updateTaskDescription("missing", "text")).toThrow(
+      "Task not found: missing",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("createTask derives a slug from the title", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
