@@ -104,7 +104,9 @@ export function runTraceCli(
         try {
           parsed = parseTaskCaptureArgs(args);
         } catch (error) {
-          return failure(error instanceof Error ? error.message : String(error));
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         const contents = parsed.docPath
@@ -308,13 +310,16 @@ export function runTraceCli(
         // create the task when absent. Keeping this in the CLI means the skill
         // is pure prose and any other tool wrapper inherits the same behaviour.
         const existingId = findTaskIdByTitle(store.listTasks(), title);
-        const task = existingId
+        const resolvedTask = existingId
           ? store.getTask(existingId)
           : store.createTask(title, resolveProjectRoot(cwd));
 
-        if (!task) {
+        if (!resolvedTask) {
           return failure(`Task not found: ${title}`, 1);
         }
+        const task = resolvedTask.archivedAt
+          ? store.unarchiveTask(resolvedTask.id)
+          : resolvedTask;
 
         const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
         const session = store.registerSession(parsed);
@@ -468,7 +473,9 @@ function linkRepoDocs(
     }
     rmSync(linkPath);
   } else if (existing) {
-    throw new Error(`docs path already exists and is not a symlink: ${linkPath}`);
+    throw new Error(
+      `docs path already exists and is not a symlink: ${linkPath}`,
+    );
   }
 
   symlinkSync(docsDir, linkPath);
@@ -707,7 +714,9 @@ function parseClaudeScanArgs(
   // config home is ~/.claude, but alternate homes (e.g. ~/.claude-infinum) are
   // common — pass --projects-root explicitly to scan those.
   if (!env.HOME) {
-    throw new Error("Claude scan requires --projects-root when HOME is not set");
+    throw new Error(
+      "Claude scan requires --projects-root when HOME is not set",
+    );
   }
 
   return `${env.HOME}/.claude/projects`;

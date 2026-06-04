@@ -56,16 +56,24 @@ class NodeSqliteTaskStore implements TaskStore {
       slug: this.#allocateSlug(slugify(normalizedTitle), id),
       createdAt: new Date().toISOString(),
       projectRoot: normalizedProjectRoot,
+      archivedAt: null,
     };
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at)
+          VALUES (?, ?, ?, ?, ?, ?)
         `,
       )
-      .run(task.id, task.title, task.slug, task.createdAt, task.projectRoot);
+      .run(
+        task.id,
+        task.title,
+        task.slug,
+        task.createdAt,
+        task.projectRoot,
+        task.archivedAt,
+      );
 
     return task;
   }
@@ -73,7 +81,7 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE id = ?",
       )
       .get(id);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -88,7 +96,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root FROM tasks WHERE slug = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE slug = ?",
       )
       .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -98,7 +106,7 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root
+          SELECT id, title, slug, created_at, project_root, archived_at
           FROM tasks
           ORDER BY created_at ASC, id ASC
         `,
@@ -127,6 +135,29 @@ class NodeSqliteTaskStore implements TaskStore {
 
       return { ...task, lastActivityAt, tokenTotals };
     });
+  }
+
+  archiveTask(ref: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    const archivedAt = new Date().toISOString();
+    this.#sqlite
+      .prepare("UPDATE tasks SET archived_at = ? WHERE id = ?")
+      .run(archivedAt, task.id);
+
+    return { ...task, archivedAt };
+  }
+
+  unarchiveTask(ref: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    this.#sqlite
+      .prepare("UPDATE tasks SET archived_at = NULL WHERE id = ?")
+      .run(task.id);
+
+    return { ...task, archivedAt: null };
   }
 
   registerSession(input: RegisterSessionInput): Session {
@@ -553,6 +584,7 @@ type TaskRow = {
   slug: string;
   created_at: string;
   project_root: string;
+  archived_at: string | null;
 };
 
 type SessionRow = {
@@ -582,6 +614,7 @@ function taskFromRow(row: TaskRow): Task {
     slug: row.slug,
     createdAt: row.created_at,
     projectRoot: row.project_root,
+    archivedAt: row.archived_at,
   };
 }
 

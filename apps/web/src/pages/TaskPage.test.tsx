@@ -12,6 +12,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [
       {
@@ -100,6 +101,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [
       {
@@ -142,6 +144,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [
       {
@@ -166,7 +169,11 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
       {
         type: "doc",
         createdAt: "2026-05-29T00:03:00.000Z",
-        doc: { taskId: "task-1", path: docPath, createdAt: "2026-05-29T00:03:00.000Z" },
+        doc: {
+          taskId: "task-1",
+          path: docPath,
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
       },
     ],
     tokenTotals: {
@@ -202,6 +209,7 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [],
     tokenTotals: {
@@ -245,6 +253,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [],
     tokenTotals: {
@@ -274,6 +283,7 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
       title: "usable v1",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [],
     tokenTotals: {
@@ -309,6 +319,7 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
       title: "Captured findings",
       projectRoot: "/work/trace-v2",
       createdAt: "2026-06-03T00:00:00.000Z",
+      archivedAt: null,
     },
     items: [
       {

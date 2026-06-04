@@ -75,6 +75,82 @@ test("GET /api/tasks/:id/timeline returns 404 for an unknown task", () => {
   }
 });
 
+test("POST /api/tasks/:ref/archive archives the task and returns it", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskId}/archive`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/json");
+    const task = JSON.parse(response!.body);
+    expect(task.id).toBe(taskId);
+    expect(task.archivedAt).not.toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/unarchive clears archivedAt", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+    store.archiveTask(taskId);
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskId}/unarchive`,
+    );
+    expect(response!.status).toBe(200);
+    const task = JSON.parse(response!.body);
+    expect(task.archivedAt).toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
+test("archive routes reject non-POST methods", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskId}/archive`,
+    );
+    expect(response!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/archive returns 404 for an unknown task", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/tasks/does-not-exist/archive",
+    );
+    expect(response!.status).toBe(404);
+  } finally {
+    cleanup();
+  }
+});
+
 test("non-API requests return null so the host can fall through", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 

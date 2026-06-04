@@ -10,6 +10,12 @@ import {
   truncateId,
 } from "../format.ts";
 
+type ArchiveTaskResult = Pick<TaskSummary, "id" | "archivedAt">;
+type FetchTask = typeof fetch;
+type VisibilityOptions = {
+  showArchived?: boolean;
+};
+
 export type ProjectTaskGroup = {
   projectRoot: string;
   displayName: string;
@@ -18,6 +24,7 @@ export type ProjectTaskGroup = {
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     fetch("/api/tasks")
@@ -32,19 +39,69 @@ export function TasksPage() {
       </main>
     );
 
+  const displayedTasks = visibleTasks(tasks, { showArchived });
+  async function handleArchive(task: TaskSummary): Promise<void> {
+    const archived = await archiveTask(task.slug);
+    setTasks(
+      (current) =>
+        current?.map((existing) =>
+          existing.id === archived.id
+            ? { ...existing, archivedAt: archived.archivedAt }
+            : existing,
+        ) ?? current,
+    );
+  }
+  async function handleUnarchive(task: TaskSummary): Promise<void> {
+    const unarchived = await unarchiveTask(task.slug);
+    setTasks(
+      (current) =>
+        current?.map((existing) =>
+          existing.id === unarchived.id
+            ? { ...existing, archivedAt: unarchived.archivedAt }
+            : existing,
+        ) ?? current,
+    );
+  }
+
   return (
     <main className="tasks-page">
       <AppHeader />
-      <header className="page-header">
-        <h1>Tasks</h1>
-        <p className="page-subtitle">{tasks.length} tasks</p>
+      <header className="page-header tasks-page-header">
+        <div>
+          <h1>Tasks</h1>
+          <p className="page-subtitle">{displayedTasks.length} tasks</p>
+        </div>
+        <label className="show-archived-toggle">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(event) => setShowArchived(event.currentTarget.checked)}
+          />
+          <span>Show archived</span>
+        </label>
       </header>
-      {tasks.length === 0 ? <p>No tasks found.</p> : <TaskList tasks={tasks} />}
+      {displayedTasks.length === 0 ? (
+        <p>No tasks found.</p>
+      ) : (
+        <TaskList
+          tasks={displayedTasks}
+          onArchive={handleArchive}
+          onUnarchive={handleUnarchive}
+        />
+      )}
     </main>
   );
 }
 
-export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
+export function TaskList({
+  tasks,
+  onArchive,
+  onUnarchive,
+}: {
+  tasks: TaskSummary[];
+  onArchive?: (task: TaskSummary) => void | Promise<void>;
+  onUnarchive?: (task: TaskSummary) => void | Promise<void>;
+}) {
   return (
     <div className="project-groups">
       {groupTasksByProject(tasks).map((group) => (
@@ -55,7 +112,12 @@ export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
           </header>
           <ul>
             {group.tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
+              <TaskRow
+                key={task.id}
+                task={task}
+                onArchive={onArchive}
+                onUnarchive={onUnarchive}
+              />
             ))}
           </ul>
         </section>
@@ -64,10 +126,28 @@ export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
   );
 }
 
-function TaskRow({ task }: { task: TaskSummary }) {
+function TaskRow({
+  task,
+  onArchive,
+  onUnarchive,
+}: {
+  task: TaskSummary;
+  onArchive?: (task: TaskSummary) => void | Promise<void>;
+  onUnarchive?: (task: TaskSummary) => void | Promise<void>;
+}) {
   const untitled = isUntitled(task.title);
+  const archived = task.archivedAt !== null;
+  const rowClasses = [
+    "task-row",
+    untitled ? "task-row-untitled" : null,
+    archived ? "task-row-archived" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const archiveLabel = `Archive ${untitled ? "untitled task" : task.title}`;
+  const unarchiveLabel = `Unarchive ${untitled ? "untitled task" : task.title}`;
   return (
-    <li className={untitled ? "task-row task-row-untitled" : "task-row"}>
+    <li className={rowClasses}>
       <Link to={`/task/${task.slug}`} className="task-row-link">
         <span className="task-row-title">
           {untitled ? "Untitled task" : task.title}
@@ -84,7 +164,69 @@ function TaskRow({ task }: { task: TaskSummary }) {
       <span className="task-row-time">
         {formatRelativeTime(task.lastActivityAt)}
       </span>
+      {archived && onUnarchive ? (
+        <button
+          type="button"
+          className="task-row-action"
+          aria-label={unarchiveLabel}
+          title={unarchiveLabel}
+          onClick={() => void onUnarchive(task)}
+        >
+          <UnarchiveIcon />
+        </button>
+      ) : onArchive ? (
+        <button
+          type="button"
+          className="task-row-action"
+          aria-label={archiveLabel}
+          title={archiveLabel}
+          onClick={() => void onArchive(task)}
+        >
+          <ArchiveIcon />
+        </button>
+      ) : null}
     </li>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+function UnarchiveIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="m9.5 15 2.5-2.5L14.5 15" />
+      <path d="M12 12.5V18" />
+    </svg>
   );
 }
 
@@ -126,11 +268,53 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
     group.tasks.sort(byActivityDesc);
   }
   ordered.sort(
-    (a, b) =>
-      activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
+    (a, b) => activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
   );
 
   return ordered;
+}
+
+export function visibleTasks(
+  tasks: TaskSummary[],
+  options: VisibilityOptions = {},
+): TaskSummary[] {
+  if (options.showArchived) {
+    return tasks;
+  }
+
+  return tasks.filter((task) => task.archivedAt === null);
+}
+
+export async function archiveTask(
+  ref: string,
+  fetcher: FetchTask = fetch,
+): Promise<ArchiveTaskResult> {
+  const response = await fetcher(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to archive task ${ref}`);
+  }
+
+  return (await response.json()) as ArchiveTaskResult;
+}
+
+export async function unarchiveTask(
+  ref: string,
+  fetcher: FetchTask = fetch,
+): Promise<ArchiveTaskResult> {
+  const response = await fetcher(
+    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to unarchive task ${ref}`);
+  }
+
+  return (await response.json()) as ArchiveTaskResult;
 }
 
 function byActivityDesc(a: TaskSummary, b: TaskSummary): number {

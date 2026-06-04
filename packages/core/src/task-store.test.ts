@@ -26,7 +26,9 @@ test("@trace/core no longer declares the native sqlite driver", () => {
   };
 
   expect(packageJson.dependencies).not.toHaveProperty("better-sqlite3");
-  expect(packageJson.devDependencies).not.toHaveProperty("@types/better-sqlite3");
+  expect(packageJson.devDependencies).not.toHaveProperty(
+    "@types/better-sqlite3",
+  );
 });
 
 test("task entity persists and reads back through the store interface", () => {
@@ -95,6 +97,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "created_at",
         "project_root",
         "slug",
+        "archived_at",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -113,6 +116,137 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
     } finally {
       database.close();
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("archive and unarchive round-trip by id and slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const archived = store.archiveTask(task.id);
+    expect(archived.archivedAt).toEqual(expect.any(String));
+    expect(store.getTask(task.id)).toEqual(archived);
+
+    const unarchived = store.unarchiveTask(task.slug);
+    expect(unarchived).toEqual({ ...archived, archivedAt: null });
+    expect(store.getTaskByRef(task.slug)).toEqual(unarchived);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task summaries include archivedAt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const active = store.createTask("checkout");
+    const archived = store.archiveTask(store.createTask("review").slug);
+
+    const archivedAtByTaskId = new Map(
+      store
+        .listTaskSummaries()
+        .map((summary) => [summary.id, summary.archivedAt]),
+    );
+    expect(archivedAtByTaskId.get(active.id)).toBe(null);
+    expect(archivedAtByTaskId.get(archived.id)).toBe(archived.archivedAt);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("archive operations reject unknown refs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+
+    expect(() => store.archiveTask("missing")).toThrow(
+      "Task not found: missing",
+    );
+    expect(() => store.unarchiveTask("missing")).toThrow(
+      "Task not found: missing",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("archive migration applies to an existing database", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000),
+        ('415565e0a40c61e50a92f6774d3421e49f978ca93b897581c32fc975ec1fc41a', 1780019700000),
+        ('0003-task-slug', 1780099700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL,
+        slug text
+      );
+      CREATE UNIQUE INDEX tasks_slug_unique ON tasks (slug);
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        task_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        model text,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root, slug)
+        VALUES ('task-1', 'checkout', '2026-05-29T00:00:00.000Z', '', 'checkout');
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    expect(store.getTask("task-1")).toMatchObject({
+      id: "task-1",
+      archivedAt: null,
+    });
+    expect(store.archiveTask("checkout").archivedAt).toEqual(
+      expect.any(String),
+    );
+    store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -337,6 +471,7 @@ test("store reads and writes a database created with the old schema through node
       slug: "checkout",
       createdAt: "2026-05-29T00:00:00.000Z",
       projectRoot: "/repo",
+      archivedAt: null,
     });
 
     const created = store.createTask("review", "/repo");

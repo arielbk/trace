@@ -48,6 +48,24 @@ export function handleTraceApiRequest(
       }
     }
 
+    const archiveMatch = /^\/api\/tasks\/([^/]+)\/(archive|unarchive)\/?$/.exec(
+      path,
+    );
+    if (archiveMatch?.[1] && archiveMatch[2]) {
+      if (method !== "POST") return methodNotAllowed();
+      const store = openTraceStore(databasePath);
+      try {
+        const ref = decodeURIComponent(archiveMatch[1]);
+        const task =
+          archiveMatch[2] === "archive"
+            ? store.archiveTask(ref)
+            : store.unarchiveTask(ref);
+        return json(task);
+      } finally {
+        store.close();
+      }
+    }
+
     const match = /^\/api\/tasks\/([^/]+)\/timeline\/?$/.exec(path);
     if (match?.[1]) {
       if (method !== "GET") return methodNotAllowed();
@@ -62,6 +80,12 @@ export function handleTraceApiRequest(
 
     return notFound();
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Task not found:")
+    ) {
+      return { status: 404, body: error.message };
+    }
     return {
       status: 500,
       body: error instanceof Error ? error.message : String(error),
