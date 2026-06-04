@@ -363,6 +363,9 @@ class NodeSqliteTaskStore implements TaskStore {
         id: task.id,
         title: task.title,
         projectRoot: task.projectRoot,
+        // Description stays optional/absent (never null), matching the Task
+        // convention — only surface the key when the task actually has one.
+        ...(task.description ? { description: task.description } : {}),
       },
       docs: this.listDocsForTask(task.id),
       sessions,

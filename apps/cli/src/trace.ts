@@ -693,6 +693,9 @@ function formatReEntryManifest(manifest: ReEntryManifest): string {
     "task:",
     `  id: ${manifest.task.id}`,
     `  title: ${manifest.task.title}`,
+    ...(manifest.task.description
+      ? [`  description: ${manifest.task.description}`]
+      : []),
     `  projectRoot: ${manifest.task.projectRoot}`,
   ];
 

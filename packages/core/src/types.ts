@@ -74,7 +74,7 @@ export type ReEntryManifestSession = {
 };
 
 export type ReEntryManifest = {
-  task: Pick<Task, "id" | "title" | "projectRoot">;
+  task: Pick<Task, "id" | "title" | "projectRoot" | "description">;
   docs: ReEntryManifestDoc[];
   sessions: ReEntryManifestSession[];
 };

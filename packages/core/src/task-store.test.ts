@@ -838,6 +838,40 @@ test("re-entry manifest returns empty sections for tasks without docs or session
   }
 });
 
+test("re-entry manifest surfaces the task description when present, omits it when absent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const described = store.createTask(
+      "archive",
+      "/repo",
+      "Move finished tasks out of the active board",
+    );
+    const plain = store.createTask("plain", "/repo");
+
+    expect(store.getReEntryManifest(described.id)?.task).toEqual({
+      id: described.id,
+      title: "archive",
+      projectRoot: "/repo",
+      description: "Move finished tasks out of the active board",
+    });
+
+    const plainTask = store.getReEntryManifest(plain.id)?.task;
+    expect(plainTask).toEqual({
+      id: plain.id,
+      title: "plain",
+      projectRoot: "/repo",
+    });
+    expect(plainTask && "description" in plainTask).toBe(false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("listTaskSummaries reports last activity and aggregated token totals", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

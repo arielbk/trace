@@ -923,6 +923,49 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
   }
 });
 
+test("skill re-enter surfaces the task description in the manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "create",
+        "archive",
+        "--description",
+        "Move finished tasks out of the active board",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const describedManifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "archive"],
+      { encoding: "utf8", env },
+    );
+    expect(describedManifest).toMatch(
+      /title: archive\n {2}description: Move finished tasks out of the active board\n {2}projectRoot:/,
+    );
+
+    execFileSync(process.execPath, [traceBin, "task", "create", "plain"], {
+      encoding: "utf8",
+      env,
+    });
+    const plainManifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "plain"],
+      { encoding: "utf8", env },
+    );
+    expect(plainManifest).not.toContain("description:");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill work-on-task --model persists the session model", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-model-"));
   const databasePath = join(dir, "trace.sqlite");
