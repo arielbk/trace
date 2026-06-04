@@ -10,6 +10,9 @@ import {
   truncateId,
 } from "../format.ts";
 
+type ArchiveTaskResult = Pick<TaskSummary, "id" | "archivedAt">;
+type FetchTask = typeof fetch;
+
 export type ProjectTaskGroup = {
   projectRoot: string;
   displayName: string;
@@ -32,19 +35,42 @@ export function TasksPage() {
       </main>
     );
 
+  const displayedTasks = visibleTasks(tasks);
+  async function handleArchive(task: TaskSummary): Promise<void> {
+    const archived = await archiveTask(task.slug);
+    setTasks(
+      (current) =>
+        current?.map((existing) =>
+          existing.id === archived.id
+            ? { ...existing, archivedAt: archived.archivedAt }
+            : existing,
+        ) ?? current,
+    );
+  }
+
   return (
     <main className="tasks-page">
       <AppHeader />
       <header className="page-header">
         <h1>Tasks</h1>
-        <p className="page-subtitle">{tasks.length} tasks</p>
+        <p className="page-subtitle">{displayedTasks.length} tasks</p>
       </header>
-      {tasks.length === 0 ? <p>No tasks found.</p> : <TaskList tasks={tasks} />}
+      {displayedTasks.length === 0 ? (
+        <p>No tasks found.</p>
+      ) : (
+        <TaskList tasks={displayedTasks} onArchive={handleArchive} />
+      )}
     </main>
   );
 }
 
-export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
+export function TaskList({
+  tasks,
+  onArchive,
+}: {
+  tasks: TaskSummary[];
+  onArchive?: (task: TaskSummary) => void | Promise<void>;
+}) {
   return (
     <div className="project-groups">
       {groupTasksByProject(tasks).map((group) => (
@@ -55,7 +81,7 @@ export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
           </header>
           <ul>
             {group.tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
+              <TaskRow key={task.id} task={task} onArchive={onArchive} />
             ))}
           </ul>
         </section>
@@ -64,8 +90,15 @@ export function TaskList({ tasks }: { tasks: TaskSummary[] }) {
   );
 }
 
-function TaskRow({ task }: { task: TaskSummary }) {
+function TaskRow({
+  task,
+  onArchive,
+}: {
+  task: TaskSummary;
+  onArchive?: (task: TaskSummary) => void | Promise<void>;
+}) {
   const untitled = isUntitled(task.title);
+  const archiveLabel = `Archive ${untitled ? "untitled task" : task.title}`;
   return (
     <li className={untitled ? "task-row task-row-untitled" : "task-row"}>
       <Link to={`/task/${task.slug}`} className="task-row-link">
@@ -84,6 +117,17 @@ function TaskRow({ task }: { task: TaskSummary }) {
       <span className="task-row-time">
         {formatRelativeTime(task.lastActivityAt)}
       </span>
+      {onArchive ? (
+        <button
+          type="button"
+          className="task-row-action"
+          aria-label={archiveLabel}
+          title={archiveLabel}
+          onClick={() => void onArchive(task)}
+        >
+          Archive
+        </button>
+      ) : null}
     </li>
   );
 }
@@ -126,11 +170,30 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
     group.tasks.sort(byActivityDesc);
   }
   ordered.sort(
-    (a, b) =>
-      activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
+    (a, b) => activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
   );
 
   return ordered;
+}
+
+export function visibleTasks(tasks: TaskSummary[]): TaskSummary[] {
+  return tasks.filter((task) => task.archivedAt === null);
+}
+
+export async function archiveTask(
+  ref: string,
+  fetcher: FetchTask = fetch,
+): Promise<ArchiveTaskResult> {
+  const response = await fetcher(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to archive task ${ref}`);
+  }
+
+  return (await response.json()) as ArchiveTaskResult;
 }
 
 function byActivityDesc(a: TaskSummary, b: TaskSummary): number {

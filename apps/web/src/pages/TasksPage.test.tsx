@@ -2,7 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
-import { groupTasksByProject, TaskList } from "./TasksPage.tsx";
+import {
+  archiveTask,
+  groupTasksByProject,
+  TaskList,
+  visibleTasks,
+} from "./TasksPage.tsx";
 
 function tokens(totalTokens: number): TokenTotals {
   return {
@@ -91,6 +96,46 @@ describe("groupTasksByProject", () => {
       "trace-v2",
       "docs",
     ]);
+  });
+});
+
+describe("visibleTasks", () => {
+  test("hides archived tasks by default", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "active", title: "Active work", archivedAt: null }),
+      summary({
+        id: "archived",
+        title: "Archived work",
+        archivedAt: "2026-06-04T20:00:00.000Z",
+      }),
+    ];
+
+    expect(visibleTasks(tasks).map((task) => task.id)).toEqual(["active"]);
+  });
+});
+
+describe("archiveTask", () => {
+  test("posts to the archive endpoint for the task slug", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const fetcher = async (
+      input: string | URL | globalThis.Request,
+      init?: RequestInit,
+    ) => {
+      calls.push([String(input), init]);
+      return new Response(
+        JSON.stringify({
+          id: "task-1",
+          archivedAt: "2026-06-04T20:00:00.000Z",
+        }),
+        { status: 200 },
+      );
+    };
+
+    await expect(archiveTask("task-1", fetcher)).resolves.toMatchObject({
+      id: "task-1",
+      archivedAt: "2026-06-04T20:00:00.000Z",
+    });
+    expect(calls).toEqual([["/api/tasks/task-1/archive", { method: "POST" }]]);
   });
 });
 
@@ -209,5 +254,23 @@ describe("TaskList rendering", () => {
     );
     // The slug renders as a visible handle in the row.
     expect(html).toContain("manual-break-start-sounds");
+  });
+
+  test("renders an archive button for each active row", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Archive CLI work"');
   });
 });

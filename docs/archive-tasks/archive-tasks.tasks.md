@@ -21,7 +21,7 @@ an agent resumes work on an archived task via `work-on-task`. See
 
 ### `ui-hide-and-archive` — Hide archived by default, archive button on rows
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** The tasks page (`/`) renders only tasks with `archivedAt === null`; each active task row gets an archive button that POSTs to the archive endpoint and removes the row from view.
 
