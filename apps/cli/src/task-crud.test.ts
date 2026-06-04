@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { openTraceStore } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
@@ -30,7 +31,9 @@ test("init reports plugin setup without writing Claude settings", () => {
       env,
     });
 
-    expect(output).toContain("trace is now installed through the Claude Code plugin");
+    expect(output).toContain(
+      "trace is now installed through the Claude Code plugin",
+    );
     expect(output).toContain("/plugin marketplace add arielbk/trace-v2");
     expect(output).toContain("/plugin install trace@trace-v2");
     expect(output).toContain("trace skill: found");
@@ -76,7 +79,9 @@ test("init preserves existing Claude settings without adding SessionStart hooks"
       env,
     });
 
-    expect(secondOutput).toContain("trace is now installed through the Claude Code plugin");
+    expect(secondOutput).toContain(
+      "trace is now installed through the Claude Code plugin",
+    );
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       permissions?: { allow?: string[] };
@@ -515,6 +520,95 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
   }
 });
 
+test("skill work-on-task resurrects an archived task by exact title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-unarchive-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
+    const setupStore = openTraceStore(databasePath);
+    const archived = setupStore.archiveTask(slug);
+    setupStore.close();
+
+    expect(archived.archivedAt).not.toBeNull();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        "checkout",
+        "--id",
+        "codex-session-1",
+        "--transcript",
+        "/tmp/codex-session-1.jsonl",
+        "--tool",
+        "codex",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const verifyStore = openTraceStore(databasePath);
+    const tasks = verifyStore.listTaskSummaries();
+    verifyStore.close();
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({
+      id: archived.id,
+      title: "checkout",
+      archivedAt: null,
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter leaves archived tasks archived", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-reenter-archive-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    ).trim();
+    const setupStore = openTraceStore(databasePath);
+    const archived = setupStore.archiveTask(slug);
+    setupStore.close();
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "checkout"],
+      {
+        encoding: "utf8",
+        env,
+      },
+    );
+
+    const verifyStore = openTraceStore(databasePath);
+    const task = verifyStore.getTask(archived.id);
+    verifyStore.close();
+
+    expect(task?.archivedAt).toBe(archived.archivedAt);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION_ID", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-infer-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -760,7 +854,14 @@ test("task capture --doc creates a task with one doc and zero token totals", () 
 
     const taskId = execFileSync(
       process.execPath,
-      [traceBin, "task", "capture", "Fix flaky checkout test", "--doc", findingsPath],
+      [
+        traceBin,
+        "task",
+        "capture",
+        "Fix flaky checkout test",
+        "--doc",
+        findingsPath,
+      ],
       { encoding: "utf8", env },
     ).trim();
     expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
@@ -774,7 +875,9 @@ test("task capture --doc creates a task with one doc and zero token totals", () 
       "findings.md",
     );
     expect(existsSync(copiedPath)).toBe(true);
-    expect(readFileSync(copiedPath, "utf8")).toContain("Flaky test in checkout");
+    expect(readFileSync(copiedPath, "utf8")).toContain(
+      "Flaky test in checkout",
+    );
 
     const timeline = JSON.parse(
       execFileSync(

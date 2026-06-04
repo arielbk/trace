@@ -45,7 +45,7 @@ an agent resumes work on an archived task via `work-on-task`. See
 
 ### `auto-unarchive` — Resumed work resurrects archived tasks
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace skill work-on-task "<title>"` resolving an existing archived task by exact title clears `archived_at` before binding the session — no duplicate task, and the task reappears in the default web list. `trace skill re-enter` does NOT unarchive.
 

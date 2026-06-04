@@ -18,3 +18,10 @@
 **Summary:** Added the tasks-page show-archived checkbox, extended the pure `visibleTasks` helper to include archived rows when requested, and wired archived rows to render muted with an unarchive action. Added `unarchiveTask` for `POST /api/tasks/{slug}/unarchive` and local state updates so unarchived rows return to the default active list after the toggle is turned off.
 **Deviations:** The slice explicitly has a human checkpoint, so the automated work is marked `needs-review` for the later browser UX pass rather than `done`.
 **Handoff:** Verified red/green with focused `TasksPage` tests for show-archived filtering, unarchive POST coverage, and archived muted-row/unarchive rendering. Final checks: `pnpm --filter @trace/web test -- TasksPage.test.tsx`; full `pnpm --filter @trace/web test`; `pnpm --filter @trace/web check-types`; `pnpm --filter @trace/web lint`; `pnpm exec prettier --write apps/web/src/pages/TasksPage.tsx apps/web/src/pages/TasksPage.test.tsx apps/web/src/styles.css docs/archive-tasks/archive-tasks.tasks.md`; and `git diff --check`.
+
+## `auto-unarchive` — 2026-06-04 22:08:03
+
+**Status:** done
+**Summary:** Updated `trace skill work-on-task` so resolving an existing archived task by exact title clears `archivedAt` before session binding. Added CLI coverage proving the resumed task is not duplicated and reappears in task summaries, while `trace skill re-enter` leaves archived tasks untouched.
+**Deviations:** none.
+**Handoff:** Verified red/green with focused archived-task CLI tests, then full `@trace/cli` tests, `@trace/cli` typecheck, `@trace/cli` lint, and Prettier on touched files. The only behavior change is in the title-resolved `work-on-task` path; `re-enter` remains read-only for archive state.
