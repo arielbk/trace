@@ -14,7 +14,9 @@ function tokens(totalTokens: number): TokenTotals {
   };
 }
 
-function summary(overrides: Partial<TaskSummary> & Pick<TaskSummary, "id">): TaskSummary {
+function summary(
+  overrides: Partial<TaskSummary> & Pick<TaskSummary, "id">,
+): TaskSummary {
   return {
     // Slug defaults to the id so existing id-based route assertions stay valid;
     // tests that exercise slug routing pass an explicit slug.
@@ -22,6 +24,7 @@ function summary(overrides: Partial<TaskSummary> & Pick<TaskSummary, "id">): Tas
     title: "Untitled",
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
+    archivedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
     tokenTotals: tokens(0),
     ...overrides,
@@ -31,9 +34,17 @@ function summary(overrides: Partial<TaskSummary> & Pick<TaskSummary, "id">): Tas
 describe("groupTasksByProject", () => {
   test("derives the basename display name and groups by project root", () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work", projectRoot: "/work/trace-v2" }),
+      summary({
+        id: "task-1",
+        title: "CLI work",
+        projectRoot: "/work/trace-v2",
+      }),
       summary({ id: "task-2", title: "Docs work", projectRoot: "/work/docs" }),
-      summary({ id: "task-3", title: "Web work", projectRoot: "/work/trace-v2" }),
+      summary({
+        id: "task-3",
+        title: "Web work",
+        projectRoot: "/work/trace-v2",
+      }),
     ];
 
     const groups = groupTasksByProject(tasks);
@@ -59,9 +70,21 @@ describe("groupTasksByProject", () => {
 
   test("orders groups by their most recent activity first", () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "docs-old", projectRoot: "/work/docs", lastActivityAt: "2020-01-01T00:00:00.000Z" }),
-      summary({ id: "trace-new", projectRoot: "/work/trace-v2", lastActivityAt: "2020-05-01T00:00:00.000Z" }),
-      summary({ id: "trace-mid", projectRoot: "/work/trace-v2", lastActivityAt: "2020-03-01T00:00:00.000Z" }),
+      summary({
+        id: "docs-old",
+        projectRoot: "/work/docs",
+        lastActivityAt: "2020-01-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "trace-new",
+        projectRoot: "/work/trace-v2",
+        lastActivityAt: "2020-05-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "trace-mid",
+        projectRoot: "/work/trace-v2",
+        lastActivityAt: "2020-03-01T00:00:00.000Z",
+      }),
     ];
 
     expect(groupTasksByProject(tasks).map((g) => g.displayName)).toEqual([
@@ -74,7 +97,11 @@ describe("groupTasksByProject", () => {
 describe("TaskList rendering", () => {
   test("renders project heading with a copyable muted path", () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work", projectRoot: "/work/trace-v2" }),
+      summary({
+        id: "task-1",
+        title: "CLI work",
+        projectRoot: "/work/trace-v2",
+      }),
     ];
 
     const html = renderToStaticMarkup(
@@ -144,7 +171,10 @@ describe("TaskList rendering", () => {
 
   test("does not flag a human-authored title as untitled", () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "550e8400-e29b-41d4-a716-446655440000", title: "Refactor the store" }),
+      summary({
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        title: "Refactor the store",
+      }),
     ];
 
     const html = renderToStaticMarkup(
@@ -174,7 +204,9 @@ describe("TaskList rendering", () => {
 
     // Route is the human-readable slug, not the UUID.
     expect(html).toContain('href="/task/manual-break-start-sounds"');
-    expect(html).not.toContain('href="/task/550e8400-e29b-41d4-a716-446655440000"');
+    expect(html).not.toContain(
+      'href="/task/550e8400-e29b-41d4-a716-446655440000"',
+    );
     // The slug renders as a visible handle in the row.
     expect(html).toContain("manual-break-start-sounds");
   });

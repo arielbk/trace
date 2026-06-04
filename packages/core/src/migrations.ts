@@ -20,6 +20,11 @@ export const migrationJournal = {
       tag: "0003_task_slug",
       breakpoints: true,
     },
+    {
+      when: 1780119700000,
+      tag: "0004_task_archive",
+      breakpoints: false,
+    },
   ],
 } as const;
 
@@ -34,4 +39,5 @@ export const migrationSqlByTag: Record<string, string> = {
   // guards uniqueness for backfilled and freshly created tasks alike.
   "0003_task_slug":
     "ALTER TABLE `tasks` ADD `slug` text;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `tasks_slug_unique` ON `tasks` (`slug`);\n",
+  "0004_task_archive": "ALTER TABLE `tasks` ADD `archived_at` text;\n",
 };

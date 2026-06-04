@@ -4,6 +4,7 @@ export type Task = {
   slug: string;
   createdAt: string;
   projectRoot: string;
+  archivedAt: string | null;
 };
 
 export type SessionTool = "claude" | "codex";
@@ -87,6 +88,8 @@ export type TaskStore = {
   getSession(id: string): Session | null;
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
+  archiveTask(ref: string): Task;
+  unarchiveTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;
   assignSession(sessionId: string, taskId: string): Session;
   listUnassignedSessions(): Session[];

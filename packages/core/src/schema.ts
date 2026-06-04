@@ -12,6 +12,7 @@ export const tasks = sqliteTable("tasks", {
   slug: text("slug").notNull().unique(),
   createdAt: text("created_at").notNull(),
   projectRoot: text("project_root").notNull().default(""),
+  archivedAt: text("archived_at"),
 });
 
 export const sessions = sqliteTable("sessions", {

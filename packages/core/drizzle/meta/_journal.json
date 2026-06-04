@@ -22,6 +22,20 @@
       "when": 1780019700000,
       "tag": "0002_session_model",
       "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780099700000,
+      "tag": "0003_task_slug",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1780119700000,
+      "tag": "0004_task_archive",
+      "breakpoints": false
     }
   ]
 }

@@ -24,6 +24,24 @@ export function listTaskSummaries(): TaskSummary[] {
   }
 }
 
+export function archiveTask(ref: string): Task {
+  const store = openTraceStore(getDatabasePath());
+  try {
+    return store.archiveTask(ref);
+  } finally {
+    store.close();
+  }
+}
+
+export function unarchiveTask(ref: string): Task {
+  const store = openTraceStore(getDatabasePath());
+  try {
+    return store.unarchiveTask(ref);
+  } finally {
+    store.close();
+  }
+}
+
 export function getTaskTimeline(id: string): TaskTimeline | null {
   const store = openTraceStore(getDatabasePath());
   try {

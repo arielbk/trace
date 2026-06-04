@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore } from "@trace/core";
 import {
+  archiveTask,
   getDatabasePath,
   getTaskTimeline,
   listTaskSummaries,
   listTasks,
+  unarchiveTask,
 } from "../server/data.ts";
 
 test("web data adapter lists tasks and returns the same task timeline as core", () => {
@@ -87,12 +89,41 @@ test("web data adapter exposes task summaries with last activity and token total
     expect(summary.title).toBe(task.title);
     expect(summary.projectRoot).toBe(task.projectRoot);
     expect(summary.createdAt).toBe(task.createdAt);
+    expect(summary.archivedAt).toBe(null);
     expect(summary.tokenTotals.totalTokens).toBe(20);
     // last activity is the max of session/doc createdAt — never before the task.
     expect(summary.lastActivityAt >= task.createdAt).toBe(true);
     expect(summary.lastActivityAt).toBe(
       [session.createdAt, doc.createdAt].sort().at(-1),
     );
+  } finally {
+    if (originalTraceDb === undefined) {
+      delete process.env.TRACE_DB;
+    } else {
+      process.env.TRACE_DB = originalTraceDb;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("web data adapter archives and unarchives tasks by ref", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-web-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const originalTraceDb = process.env.TRACE_DB;
+  process.env.TRACE_DB = databasePath;
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.close();
+
+    const archived = archiveTask(task.slug);
+    expect(archived.id).toBe(task.id);
+    expect(archived.archivedAt).toEqual(expect.any(String));
+    expect(listTaskSummaries()[0]?.archivedAt).toBe(archived.archivedAt);
+
+    const unarchived = unarchiveTask(task.id);
+    expect(unarchived).toEqual({ ...archived, archivedAt: null });
   } finally {
     if (originalTraceDb === undefined) {
       delete process.env.TRACE_DB;
