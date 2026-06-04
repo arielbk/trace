@@ -144,6 +144,41 @@ test("archive and unarchive round-trip by id and slug", () => {
   }
 });
 
+test("recallCandidates scopes to project, excludes archived, keeps description-less tasks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const withDescription = store.createTask(
+      "Checkout flow",
+      "/repo-a",
+      "Rework the checkout into a wizard",
+    );
+    const withoutDescription = store.createTask("Loose end", "/repo-a");
+    store.createTask("Other project", "/repo-b", "elsewhere");
+    const archived = store.createTask("Old work", "/repo-a", "shipped");
+    store.archiveTask(archived.id);
+
+    const candidates = store
+      .recallCandidates("/repo-a")
+      .sort((a, b) => a.title.localeCompare(b.title));
+
+    expect(candidates).toEqual([
+      {
+        title: "Checkout flow",
+        slug: withDescription.slug,
+        description: "Rework the checkout into a wizard",
+      },
+      { title: "Loose end", slug: withoutDescription.slug },
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task summaries include archivedAt", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

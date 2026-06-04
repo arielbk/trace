@@ -12,6 +12,7 @@ import {
 } from "./token-totals.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
+  RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
   Session,
@@ -137,6 +138,29 @@ class NodeSqliteTaskStore implements TaskStore {
       );
 
       return { ...task, lastActivityAt, tokenTotals };
+    });
+  }
+
+  recallCandidates(projectRoot: string): RecallCandidate[] {
+    const rows = this.#sqlite
+      .prepare(
+        `
+          SELECT title, slug, description
+          FROM tasks
+          WHERE project_root = ? AND archived_at IS NULL
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
+      .all(projectRoot.trim()) as Array<{
+      title: string;
+      slug: string;
+      description: string | null;
+    }>;
+
+    return rows.map((row) => {
+      const candidate: RecallCandidate = { title: row.title, slug: row.slug };
+      if (row.description != null) candidate.description = row.description;
+      return candidate;
     });
   }
 

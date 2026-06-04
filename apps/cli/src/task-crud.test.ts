@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, resolveProjectRoot } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
@@ -269,6 +269,54 @@ test("skill work-on-task --description sets the description on create", () => {
     expect(task?.description).toBe(
       "Rework the checkout into a multi-step wizard",
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill recall-candidates prints the project's unarchived tasks as JSON", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-recall-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+  // The child resolves its project root from process.cwd(), which on macOS
+  // canonicalises symlinks (/var/folders → /private/var/folders); match it.
+  const projectRoot = resolveProjectRoot(realpathSync(dir));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const described = store.createTask(
+      "Checkout flow",
+      projectRoot,
+      "Rework the checkout into a wizard",
+    );
+    const bare = store.createTask("Loose end", projectRoot);
+    store.createTask("Elsewhere", "/some/other/project", "off topic");
+    const archived = store.createTask("Old work", projectRoot, "shipped");
+    store.archiveTask(archived.id);
+    store.close();
+
+    const output = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "recall-candidates"],
+      { encoding: "utf8", env, cwd: dir },
+    );
+
+    const candidates = (
+      JSON.parse(output) as Array<{
+        title: string;
+        slug: string;
+        description?: string;
+      }>
+    ).sort((a, b) => a.title.localeCompare(b.title));
+
+    expect(candidates).toEqual([
+      {
+        title: "Checkout flow",
+        slug: described.slug,
+        description: "Rework the checkout into a wizard",
+      },
+      { title: "Loose end", slug: bare.slug },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

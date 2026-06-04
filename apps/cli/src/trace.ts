@@ -383,6 +383,14 @@ export function runTraceCli(
         );
       }
 
+      if (action === "recall-candidates") {
+        // The candidate pool the recall skill resolves a vague reference
+        // against: the current project's unarchived tasks, emitted as JSON so
+        // the skill hands it straight to the agent.
+        const candidates = store.recallCandidates(resolveProjectRoot(cwd));
+        return success(`${JSON.stringify(candidates)}\n`);
+      }
+
       if (action === "re-enter") {
         const title = args[0];
 
@@ -430,7 +438,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
+    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates> ...",
   );
 }
 

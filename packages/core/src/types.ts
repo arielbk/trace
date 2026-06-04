@@ -9,6 +9,10 @@ export type Task = {
   description?: string;
 };
 
+// The minimal shape the recall skill hands to the agent to resolve a vague
+// reference. `description` is absent on tasks created without one.
+export type RecallCandidate = Pick<Task, "title" | "slug" | "description">;
+
 export type SessionTool = "claude" | "codex";
 
 export type Session = {
@@ -90,6 +94,7 @@ export type TaskStore = {
   getSession(id: string): Session | null;
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
+  recallCandidates(projectRoot: string): RecallCandidate[];
   updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;
