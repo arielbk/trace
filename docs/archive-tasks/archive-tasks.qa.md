@@ -46,7 +46,7 @@ The Vite dev server is configured in `apps/web/vite.config.ts` to serve the app 
 - [ ] **Show archived and unarchive browser loop** (slice `ui-show-archived`, `Status: needs-review`, `Human checkpoint: yes`)
   - Run: use the server from Setup.
   - Open: `http://localhost:3000/`.
-  - Do: find the row titled `archive tasks QA active task`; click its `Archive` button; confirm the row disappears and the task count decrements; reload `http://localhost:3000/`; confirm the archived row is still hidden; check `Show archived`; confirm the archived row appears muted/greyed with an `Unarchive` button; click `Unarchive`; uncheck `Show archived`.
+  - Do: find the row titled `archive tasks QA active task`; hover the row and confirm the relative time swaps to an archive icon at the row's right edge (rows show no archive control at rest); click the archive icon; confirm the row disappears and the task count decrements; reload `http://localhost:3000/`; confirm the archived row is still hidden; check `Show archived` (top-right of the page header); confirm the archived row appears muted/greyed; hover it and click the unarchive icon; uncheck `Show archived`.
   - Expect: the active row is hidden by default after archive, stays hidden after reload, appears only when `Show archived` is checked, uses the muted archived-row treatment, and returns to the default active list after unarchive with no duplicate row.
 
 ## Watch closely
