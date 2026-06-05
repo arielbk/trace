@@ -1,6 +1,6 @@
 ---
 name: trace-recall
-description: Resolve a vague reference to prior work ("let's get back to that archiving thing", "what was that task about checkout", "pick up where we left off on the wizard") against the current project's tasks, then re-enter and bind the right one. Use whenever the user gestures at earlier work without naming an exact task title.
+description: Resolve a vague reference to prior work ("let's get back to that archiving thing", "what was that task about checkout", "pick up where we left off on the wizard") against the current project's tasks, then re-enter and bind the right one. Use when the user gestures at earlier work without naming an exact task title.
 ---
 
 # Trace recall
@@ -44,24 +44,32 @@ Read the user's reference and compare it against each candidate's `title` and
 When unsure between confident and ambiguous, treat it as ambiguous and ask. A
 wrong silent bind is worse than one clarifying question.
 
-### 3. Confident match → announce and bind
+### 3. Confident match → announce, re-enter, bind
 
-State the match, then bind the current session to it via the existing
-work-on-task path. Announce in this shape (use the task's stored description
+State the match. Announce in this shape (use the task's stored description
 when present):
 
 > Re-entering **{title}** — {description}
 
-Then bind by exact title:
+Fetch the task's re-entry manifest — its decision docs and prior session
+references — **before** binding, so the manifest's `mostRecent: true` session
+is the prior session, not this one:
+
+```sh
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "{title}"
+```
+
+Then bind the current session by exact title:
 
 ```sh
 node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "{title}"
 ```
 
-After binding, follow the `trace` skill's **Re-enter X** consumption rules:
-read the task's decision docs from its `taskDocsDir` first, and only fall back
-to the session transcript tail if the docs do not cover current state. Never
-re-ask the user for context the docs already hold.
+Consume the manifest: read the decision docs first, in the listed order; only
+fall back to the transcript tail of the `mostRecent: true` session (via
+`trace session tail <session-id>`) when the docs do not cover current state.
+Never paste raw transcripts into the chat, and never re-ask the user for
+context the manifest or docs already hold.
 
 ### 4. Ambiguous or no match → ask, never auto-create
 
@@ -81,6 +89,3 @@ flow with a description drawn from the conversation.
 - The candidate pool is scoped to the current project root (where the user is
   working) and excludes archived tasks — so recall never surfaces finished or
   unrelated work.
-- Codex entry point support is deferred, matching the `trace` skill. The
-  protocol here is tool-agnostic so a Codex wrapper can follow the same
-  fetch → match → bind / ask rules later.

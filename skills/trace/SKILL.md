@@ -1,6 +1,6 @@
 ---
 name: trace
-description: Bind the current Claude Code session to a Trace task, or re-enter a task with its docs and prior session references.
+description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, asks to bind the session to a task, asks to re-enter a task by its exact title, or asks to open the Trace board.
 ---
 
 # Trace
@@ -26,23 +26,15 @@ user for it.
 node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X" --description "Rework the checkout into a multi-step wizard"
 ```
 
-`--description` only seeds a freshly created task; on an already-existing task
-the flag is ignored (tending an existing description is handled under
-**Re-enter X** below). When the task already exists, drop the flag:
-
-```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X"
-```
+`--description` only seeds a freshly created task; when the task already
+exists, drop the flag (tending an existing description is handled under
+**Re-enter X** below).
 
 The CLI resolves the title (creating the task when absent) and infers the
 current Claude Code session from `CLAUDE_CODE_SESSION_ID` (the variable live
 Claude Code sessions export; `CLAUDE_SESSION_ID` / `session_id` are also
 accepted), and the transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass
-`--model <name>` when the model is known to record it on the session:
-
-```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X" --model claude-opus-4-7
-```
+`--model <name>` when the model is known to record it on the session.
 
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
 plans, handoffs, and notes in that directory so future re-entry sees them
@@ -102,25 +94,7 @@ the skill. The user owns that terminal process and stops it with Ctrl-C.
 
 ## CLI Setup
 
-Install Trace as a Claude Code plugin. First add this repo as a marketplace:
-
-```sh
-/plugin marketplace add arielbk/trace-v2
-```
-
-Then, as a separate command, install the plugin:
-
-```sh
-/plugin install trace@trace-v2
-```
-
-When installed, this skill invokes the bundled Trace CLI from the plugin root;
-no global `trace` command is required and hook registration is declared by the
-plugin.
-
-For local debugging without a global link, invoke the CLI entry point directly,
-for example:
-
-```sh
-node apps/cli/src/trace.ts skill re-enter "checkout"
-```
+This skill invokes the bundled Trace CLI from the plugin root; no global
+`trace` command is required and hook registration is declared by the plugin.
+If the plugin is not installed, or you need to run the CLI outside the plugin,
+see [SETUP.md](SETUP.md).
