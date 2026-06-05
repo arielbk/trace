@@ -162,9 +162,23 @@ export function runTraceCli(
         const titleError = rejectFlagTitle(args[0], "capture");
         if (titleError) return titleError;
 
-        let parsed: { title: string; docPath?: string; link: boolean };
+        let parsed: {
+          title: string;
+          docPath?: string;
+          link: boolean;
+          project?: string;
+        };
         try {
           parsed = parseTaskCaptureArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        let projectRoot: string;
+        try {
+          projectRoot = resolveProjectRootArg(parsed.project, cwd);
         } catch (error) {
           return failure(
             error instanceof Error ? error.message : String(error),
@@ -178,7 +192,6 @@ export function runTraceCli(
           ? basename(parsed.docPath)
           : "capture.md";
 
-        const projectRoot = resolveProjectRoot(cwd);
         const task = store.createTask(parsed.title, projectRoot);
 
         const docsDir = resolveTaskDocsDir(databasePath, task.id);
@@ -368,8 +381,24 @@ export function runTraceCli(
           return failure("Task title is required");
         }
 
-        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
-        const { description, ...registerInput } = parsed;
+        let parsedWorkOnTask: ReturnType<typeof parseSkillWorkOnTaskArgs>;
+        try {
+          parsedWorkOnTask = parseSkillWorkOnTaskArgs(args.slice(1), env);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+        const { description, project, ...registerInput } = parsedWorkOnTask;
+
+        let workOnTaskProjectRoot: string;
+        try {
+          workOnTaskProjectRoot = resolveProjectRootArg(project, cwd);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
 
         // The skill's contract is title-based: resolve the exact title, or
         // create the task when absent. Keeping this in the CLI means the skill
@@ -379,7 +408,7 @@ export function runTraceCli(
         const existingId = findTaskIdByTitle(store.listTasks(), title);
         const resolvedTask = existingId
           ? store.getTask(existingId)
-          : store.createTask(title, resolveProjectRoot(cwd), description);
+          : store.createTask(title, workOnTaskProjectRoot, description);
 
         if (!resolvedTask) {
           return failure(`Task not found: ${title}`, 1);
@@ -554,20 +583,24 @@ function parseTaskUpdateArgs(args: string[]): {
 }
 
 function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--link]";
+  return "Usage: trace task capture <title> [--doc <path>] [--link] [--project <dir>]";
 }
 
-// Capture takes a free-text title plus optional `--doc <path>` and `--link`
-// flags. The title is the run of leading words before the first flag, so a
-// multi-word title without quotes still works (mirroring `task create`).
+// Capture takes a free-text title plus optional `--doc <path>`, `--link`, and
+// `--project <dir>` flags. The title is the run of leading words before the
+// first flag, so a multi-word title without quotes still works (mirroring
+// `task create`). `--project` overrides where the task's project root is
+// resolved from; see `resolveProjectRootArg`.
 function parseTaskCaptureArgs(args: string[]): {
   title: string;
   docPath?: string;
   link: boolean;
+  project?: string;
 } {
   const titleWords: string[] = [];
   let docPath: string | undefined;
   let link = false;
+  let project: string | undefined;
 
   let index = 0;
   while (index < args.length && !looksLikeFlag(args[index])) {
@@ -585,6 +618,11 @@ function parseTaskCaptureArgs(args: string[]): {
     } else if (flag === "--link") {
       link = true;
       index += 1;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      project = value;
+      index += 2;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -595,7 +633,7 @@ function parseTaskCaptureArgs(args: string[]): {
     throw new Error(taskCaptureUsage());
   }
 
-  return { title, docPath, link };
+  return { title, docPath, link, project };
 }
 
 function slugify(title: string): string {
@@ -907,12 +945,14 @@ function parseSkillWorkOnTaskArgs(
   model?: string;
   tokenTotals: Partial<TokenTotals>;
   description?: string;
+  project?: string;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
   let model: string | undefined;
   let description: string | undefined;
+  let project: string | undefined;
 
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -920,7 +960,7 @@ function parseSkillWorkOnTaskArgs(
 
     if (!flag || !value) {
       throw new Error(
-        "Skill work-on-task accepts --id, --transcript, --tool, --model, and --description",
+        "Skill work-on-task accepts --id, --transcript, --tool, --model, --description, and --project",
       );
     }
 
@@ -934,6 +974,8 @@ function parseSkillWorkOnTaskArgs(
       model = value;
     } else if (flag === "--description") {
       description = value;
+    } else if (flag === "--project") {
+      project = value;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -972,6 +1014,7 @@ function parseSkillWorkOnTaskArgs(
     model,
     tokenTotals: {},
     description,
+    project,
   };
 }
 

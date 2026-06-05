@@ -18,7 +18,7 @@ Add a `--project <dir>` flag to every project-resolving trace CLI command (defau
 
 ### `capture-and-bind-with-project-flag` — `--project` on task capture and work-on-task
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace task capture ... --project <dir>` and `trace skill work-on-task "Title" --project <dir>` key the task to `<dir>`'s git root instead of cwd's.
 
