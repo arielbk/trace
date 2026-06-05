@@ -42,7 +42,7 @@ Add a `--project <dir>` flag to every project-resolving trace CLI command (defau
 
 ### `skill-docs-project-guidance` — Skill docs teach the agent to pass --project
 
-**Status:** not-started
+**Status:** needs-review
 
 **Outside-in:** `skills/trace/SKILL.md` and `skills/recall/SKILL.md` instruct the agent: default to cwd; when the work clearly lives in a different project than the CLI's working directory, pass `--project <dir of that project>`. Example invocations show the flag.
 
