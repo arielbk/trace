@@ -7,7 +7,7 @@ export type {
   TraceApiResponse,
   TraceApiResponseSink,
 } from "./api-handler.ts";
-export { resolveProjectRoot } from "./project-root.ts";
+export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export type {

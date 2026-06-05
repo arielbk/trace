@@ -5,6 +5,7 @@ import {
   openTraceStore,
   type ReEntryManifest,
   resolveProjectRoot,
+  resolveProjectRootArg,
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
@@ -86,7 +87,11 @@ export function runTraceCli(
         const titleError = rejectFlagTitle(args[0], "create");
         if (titleError) return titleError;
 
-        let parsedCreate: { title: string; description?: string };
+        let parsedCreate: {
+          title: string;
+          description?: string;
+          project?: string;
+        };
         try {
           parsedCreate = parseTaskCreateArgs(args);
         } catch (error) {
@@ -95,9 +100,18 @@ export function runTraceCli(
           );
         }
 
+        let createProjectRoot: string;
+        try {
+          createProjectRoot = resolveProjectRootArg(parsedCreate.project, cwd);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
         const task = store.createTask(
           parsedCreate.title,
-          resolveProjectRoot(cwd),
+          createProjectRoot,
           parsedCreate.description,
         );
 
@@ -451,18 +465,22 @@ function looksLikeFlag(token: string | undefined): boolean {
 }
 
 function taskCreateUsage(): string {
-  return "Usage: trace task create <title> [--description <text>]";
+  return "Usage: trace task create <title> [--description <text>] [--project <dir>]";
 }
 
-// Create takes a free-text title plus an optional `--description <text>` flag.
-// The title is the run of leading words before the first flag, so a multi-word
-// title without quotes still works (mirroring `task capture`).
+// Create takes a free-text title plus optional `--description <text>` and
+// `--project <dir>` flags. The title is the run of leading words before the
+// first flag, so a multi-word title without quotes still works (mirroring
+// `task capture`). `--project` overrides where the task's project root is
+// resolved from; see `resolveProjectRootArg`.
 function parseTaskCreateArgs(args: string[]): {
   title: string;
   description?: string;
+  project?: string;
 } {
   const titleWords: string[] = [];
   let description: string | undefined;
+  let project: string | undefined;
 
   let index = 0;
   while (index < args.length && !looksLikeFlag(args[index])) {
@@ -477,6 +495,11 @@ function parseTaskCreateArgs(args: string[]): {
       if (!value) throw new Error(taskCreateUsage());
       description = value;
       index += 2;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCreateUsage());
+      project = value;
+      index += 2;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -487,7 +510,7 @@ function parseTaskCreateArgs(args: string[]): {
     throw new Error(taskCreateUsage());
   }
 
-  return { title, description };
+  return { title, description, project };
 }
 
 function taskUpdateUsage(): string {
