@@ -5,7 +5,13 @@ export type Task = {
   createdAt: string;
   projectRoot: string;
   archivedAt: string | null;
+  // Optional agent-authored summary; absent on tasks created without one.
+  description?: string;
 };
+
+// The minimal shape the recall skill hands to the agent to resolve a vague
+// reference. `description` is absent on tasks created without one.
+export type RecallCandidate = Pick<Task, "title" | "slug" | "description">;
 
 export type SessionTool = "claude" | "codex";
 
@@ -68,7 +74,7 @@ export type ReEntryManifestSession = {
 };
 
 export type ReEntryManifest = {
-  task: Pick<Task, "id" | "title" | "projectRoot">;
+  task: Pick<Task, "id" | "title" | "projectRoot" | "description">;
   docs: ReEntryManifestDoc[];
   sessions: ReEntryManifestSession[];
 };
@@ -82,12 +88,14 @@ export type RegisterSessionInput = {
 };
 
 export type TaskStore = {
-  createTask(title: string, projectRoot?: string): Task;
+  createTask(title: string, projectRoot?: string, description?: string): Task;
   getTask(id: string): Task | null;
   getTaskByRef(ref: string): Task | null;
   getSession(id: string): Session | null;
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
+  recallCandidates(projectRoot: string): RecallCandidate[];
+  updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;

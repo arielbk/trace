@@ -41,6 +41,9 @@ export function TaskTimelineView({
       <header className="task-header">
         <div className="task-heading">
           <h1>{timeline.task.title}</h1>
+          {timeline.task.description ? (
+            <p className="task-description">{timeline.task.description}</p>
+          ) : null}
           <p className="task-slug">{timeline.task.slug}</p>
           <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
         </div>

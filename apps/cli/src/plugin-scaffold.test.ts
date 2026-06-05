@@ -11,6 +11,7 @@ const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 const rootPackage = join(repoRoot, "package.json");
 const hooksConfig = join(repoRoot, "hooks", "hooks.json");
 const traceSkill = join(repoRoot, "skills", "trace", "SKILL.md");
+const recallSkill = join(repoRoot, "skills", "recall", "SKILL.md");
 const pluginTraceBundle = join(repoRoot, "bin", "trace.js");
 const pluginHookBundle = join(repoRoot, "bin", "claude-session-start-hook.js");
 
@@ -78,5 +79,32 @@ describe("plugin scaffold", () => {
       assert.equal(source.includes("@trace/core"), false);
       assert.equal(source.includes("better-sqlite3"), false);
     }
+  });
+
+  it("ships a trigger-tuned recall skill that resolves vague references via the candidate pool", () => {
+    assert.equal(existsSync(recallSkill), true);
+
+    const source = readFileSync(recallSkill, "utf8");
+
+    // Frontmatter: a distinct skill name and a trigger description tuned for
+    // vague references to prior work (so the model fires it on "that thing").
+    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+    const meta = frontmatter?.[1];
+    assert.equal(typeof meta, "string");
+    assert.match(meta as string, /^name:\s*trace-recall\s*$/m);
+    assert.match(meta as string, /^description:\s*.+$/m);
+
+    // It fetches the candidate pool from the bundled CLI, never invents matches.
+    assert.equal(
+      source.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"),
+      true,
+    );
+    assert.equal(source.includes("skill recall-candidates"), true);
+
+    // Confident match announces and binds via the existing work-on-task path.
+    assert.equal(source.includes("work-on-task"), true);
+
+    // Ambiguity/no-match asks with near-misses; failed recall never auto-creates.
+    assert.match(source, /never\s+(auto-?create|create)/i);
   });
 });

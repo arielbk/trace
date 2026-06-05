@@ -311,6 +311,67 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
   expect(html).toContain("usable-v1");
 });
 
+test("TaskTimelineView renders the task description under the title when present", () => {
+  const description = "Rework the checkout into a multi-step wizard";
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+      description,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain('class="task-description"');
+  expect(html).toContain(description);
+});
+
+test("TaskTimelineView omits the description block when absent", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).not.toContain("task-description");
+});
+
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
   const timeline: TaskTimeline = {
     task: {

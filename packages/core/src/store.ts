@@ -12,6 +12,7 @@ import {
 } from "./token-totals.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
+  RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
   Session,
@@ -45,9 +46,10 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#backfillSlugs();
   }
 
-  createTask(title: string, projectRoot = ""): Task {
+  createTask(title: string, projectRoot = "", description?: string): Task {
     const normalizedTitle = title.trim();
     const normalizedProjectRoot = projectRoot.trim();
+    const normalizedDescription = description?.trim() || undefined;
 
     const id = randomUUID();
     const task: Task = {
@@ -58,12 +60,13 @@ class NodeSqliteTaskStore implements TaskStore {
       projectRoot: normalizedProjectRoot,
       archivedAt: null,
     };
+    if (normalizedDescription) task.description = normalizedDescription;
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at, description)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -73,6 +76,7 @@ class NodeSqliteTaskStore implements TaskStore {
         task.createdAt,
         task.projectRoot,
         task.archivedAt,
+        task.description ?? null,
       );
 
     return task;
@@ -81,7 +85,7 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE id = ?",
       )
       .get(id);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -96,7 +100,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at FROM tasks WHERE slug = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE slug = ?",
       )
       .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -106,7 +110,7 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root, archived_at
+          SELECT id, title, slug, created_at, project_root, archived_at, description
           FROM tasks
           ORDER BY created_at ASC, id ASC
         `,
@@ -135,6 +139,44 @@ class NodeSqliteTaskStore implements TaskStore {
 
       return { ...task, lastActivityAt, tokenTotals };
     });
+  }
+
+  recallCandidates(projectRoot: string): RecallCandidate[] {
+    const rows = this.#sqlite
+      .prepare(
+        `
+          SELECT title, slug, description
+          FROM tasks
+          WHERE project_root = ? AND archived_at IS NULL
+          ORDER BY created_at ASC, id ASC
+        `,
+      )
+      .all(projectRoot.trim()) as Array<{
+      title: string;
+      slug: string;
+      description: string | null;
+    }>;
+
+    return rows.map((row) => {
+      const candidate: RecallCandidate = { title: row.title, slug: row.slug };
+      if (row.description != null) candidate.description = row.description;
+      return candidate;
+    });
+  }
+
+  updateTaskDescription(ref: string, description: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    const normalizedDescription = description.trim() || undefined;
+    this.#sqlite
+      .prepare("UPDATE tasks SET description = ? WHERE id = ?")
+      .run(normalizedDescription ?? null, task.id);
+
+    const updated: Task = { ...task };
+    if (normalizedDescription) updated.description = normalizedDescription;
+    else delete updated.description;
+    return updated;
   }
 
   archiveTask(ref: string): Task {
@@ -321,6 +363,9 @@ class NodeSqliteTaskStore implements TaskStore {
         id: task.id,
         title: task.title,
         projectRoot: task.projectRoot,
+        // Description stays optional/absent (never null), matching the Task
+        // convention — only surface the key when the task actually has one.
+        ...(task.description ? { description: task.description } : {}),
       },
       docs: this.listDocsForTask(task.id),
       sessions,
@@ -585,6 +630,7 @@ type TaskRow = {
   created_at: string;
   project_root: string;
   archived_at: string | null;
+  description: string | null;
 };
 
 type SessionRow = {
@@ -608,7 +654,7 @@ type TaskDocRow = {
 };
 
 function taskFromRow(row: TaskRow): Task {
-  return {
+  const task: Task = {
     id: row.id,
     title: row.title,
     slug: row.slug,
@@ -616,6 +662,10 @@ function taskFromRow(row: TaskRow): Task {
     projectRoot: row.project_root,
     archivedAt: row.archived_at,
   };
+  // A null column means the task was created without a description; keep the
+  // field absent rather than carrying a null so round-trips stay clean.
+  if (row.description != null) task.description = row.description;
+  return task;
 }
 
 function sessionFromRow(row: SessionRow): Session {

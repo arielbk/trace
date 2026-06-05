@@ -60,6 +60,42 @@ test("GET /api/tasks/:id/timeline returns the live timeline as JSON", () => {
   }
 });
 
+test("GET /api/tasks/:id/timeline includes the task description when present", () => {
+  let withId = "";
+  let withoutId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    withId = store.createTask(
+      "checkout",
+      undefined,
+      "Rework the checkout into a multi-step wizard",
+    ).id;
+    withoutId = store.createTask("billing").id;
+  });
+
+  try {
+    const withResponse = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${withId}/timeline`,
+    );
+    const withTimeline = JSON.parse(withResponse!.body);
+    expect(withTimeline.task.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+
+    // A description-less task carries no description key, not null.
+    const withoutResponse = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${withoutId}/timeline`,
+    );
+    const withoutTimeline = JSON.parse(withoutResponse!.body);
+    expect("description" in withoutTimeline.task).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
 test("GET /api/tasks/:id/timeline returns 404 for an unknown task", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 

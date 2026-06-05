@@ -13,6 +13,7 @@ export const tasks = sqliteTable("tasks", {
   createdAt: text("created_at").notNull(),
   projectRoot: text("project_root").notNull().default(""),
   archivedAt: text("archived_at"),
+  description: text("description"),
 });
 
 export const sessions = sqliteTable("sessions", {

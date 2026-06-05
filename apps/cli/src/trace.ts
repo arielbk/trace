@@ -86,10 +86,58 @@ export function runTraceCli(
         const titleError = rejectFlagTitle(args[0], "create");
         if (titleError) return titleError;
 
-        const title = args.join(" ");
-        const task = store.createTask(title, resolveProjectRoot(cwd));
+        let parsedCreate: { title: string; description?: string };
+        try {
+          parsedCreate = parseTaskCreateArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        const task = store.createTask(
+          parsedCreate.title,
+          resolveProjectRoot(cwd),
+          parsedCreate.description,
+        );
 
         return success(`${task.slug}\n`);
+      }
+
+      if (action === "update") {
+        if (isHelpFlag(args[0])) {
+          return success(`${taskUpdateUsage()}\n`);
+        }
+
+        let parsedUpdate: { ref: string; description: string };
+        try {
+          parsedUpdate = parseTaskUpdateArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        let task: Task;
+        try {
+          task = store.updateTaskDescription(
+            parsedUpdate.ref,
+            parsedUpdate.description,
+          );
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+            1,
+          );
+        }
+
+        return success(
+          formatTask(
+            task,
+            store.listSessionsForTask(task.id),
+            store.listDocsForTask(task.id),
+          ),
+        );
       }
 
       if (action === "capture") {
@@ -306,13 +354,18 @@ export function runTraceCli(
           return failure("Task title is required");
         }
 
+        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
+        const { description, ...registerInput } = parsed;
+
         // The skill's contract is title-based: resolve the exact title, or
         // create the task when absent. Keeping this in the CLI means the skill
         // is pure prose and any other tool wrapper inherits the same behaviour.
+        // A `--description` only seeds a freshly created task; tending an
+        // existing task's description is the creation-descriptions slice's job.
         const existingId = findTaskIdByTitle(store.listTasks(), title);
         const resolvedTask = existingId
           ? store.getTask(existingId)
-          : store.createTask(title, resolveProjectRoot(cwd));
+          : store.createTask(title, resolveProjectRoot(cwd), description);
 
         if (!resolvedTask) {
           return failure(`Task not found: ${title}`, 1);
@@ -321,14 +374,21 @@ export function runTraceCli(
           ? store.unarchiveTask(resolvedTask.id)
           : resolvedTask;
 
-        const parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
-        const session = store.registerSession(parsed);
+        const session = store.registerSession(registerInput);
 
         const assigned = store.assignSession(session.id, task.id);
 
         return success(
           formatSkillWorkOnTaskResult(assigned, task, databasePath),
         );
+      }
+
+      if (action === "recall-candidates") {
+        // The candidate pool the recall skill resolves a vague reference
+        // against: the current project's unarchived tasks, emitted as JSON so
+        // the skill hands it straight to the agent.
+        const candidates = store.recallCandidates(resolveProjectRoot(cwd));
+        return success(`${JSON.stringify(candidates)}\n`);
       }
 
       if (action === "re-enter") {
@@ -378,7 +438,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter> ...",
+    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates> ...",
   );
 }
 
@@ -391,7 +451,83 @@ function looksLikeFlag(token: string | undefined): boolean {
 }
 
 function taskCreateUsage(): string {
-  return "Usage: trace task create <title>";
+  return "Usage: trace task create <title> [--description <text>]";
+}
+
+// Create takes a free-text title plus an optional `--description <text>` flag.
+// The title is the run of leading words before the first flag, so a multi-word
+// title without quotes still works (mirroring `task capture`).
+function parseTaskCreateArgs(args: string[]): {
+  title: string;
+  description?: string;
+} {
+  const titleWords: string[] = [];
+  let description: string | undefined;
+
+  let index = 0;
+  while (index < args.length && !looksLikeFlag(args[index])) {
+    titleWords.push(args[index] as string);
+    index += 1;
+  }
+
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--description") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCreateUsage());
+      description = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const title = titleWords.join(" ");
+  if (title.length === 0) {
+    throw new Error(taskCreateUsage());
+  }
+
+  return { title, description };
+}
+
+function taskUpdateUsage(): string {
+  return "Usage: trace task update <ref> --description <text>";
+}
+
+// Update takes a single ref (id or slug) followed by a required
+// `--description <text>` flag. The ref is the run of leading words before the
+// first flag, mirroring `task create`.
+function parseTaskUpdateArgs(args: string[]): {
+  ref: string;
+  description: string;
+} {
+  const refWords: string[] = [];
+  let description: string | undefined;
+
+  let index = 0;
+  while (index < args.length && !looksLikeFlag(args[index])) {
+    refWords.push(args[index] as string);
+    index += 1;
+  }
+
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--description") {
+      const value = args[index + 1];
+      if (value === undefined) throw new Error(taskUpdateUsage());
+      description = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  const ref = refWords.join(" ");
+  if (ref.length === 0 || description === undefined) {
+    throw new Error(taskUpdateUsage());
+  }
+
+  return { ref, description };
 }
 
 function taskCaptureUsage(): string {
@@ -501,6 +637,7 @@ function formatTask(
     `slug: ${task.slug}`,
     `id: ${task.id}`,
     `title: ${task.title}`,
+    ...(task.description ? [`description: ${task.description}`] : []),
     `createdAt: ${task.createdAt}`,
     `projectRoot: ${task.projectRoot}`,
   ];
@@ -556,6 +693,9 @@ function formatReEntryManifest(manifest: ReEntryManifest): string {
     "task:",
     `  id: ${manifest.task.id}`,
     `  title: ${manifest.task.title}`,
+    ...(manifest.task.description
+      ? [`  description: ${manifest.task.description}`]
+      : []),
     `  projectRoot: ${manifest.task.projectRoot}`,
   ];
 
@@ -743,11 +883,13 @@ function parseSkillWorkOnTaskArgs(
   tool: SessionTool;
   model?: string;
   tokenTotals: Partial<TokenTotals>;
+  description?: string;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
   let model: string | undefined;
+  let description: string | undefined;
 
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -755,7 +897,7 @@ function parseSkillWorkOnTaskArgs(
 
     if (!flag || !value) {
       throw new Error(
-        "Skill work-on-task accepts --id, --transcript, --tool, and --model",
+        "Skill work-on-task accepts --id, --transcript, --tool, --model, and --description",
       );
     }
 
@@ -767,6 +909,8 @@ function parseSkillWorkOnTaskArgs(
       tool = value;
     } else if (flag === "--model") {
       model = value;
+    } else if (flag === "--description") {
+      description = value;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -804,6 +948,7 @@ function parseSkillWorkOnTaskArgs(
     tool: identity.tool,
     model,
     tokenTotals: {},
+    description,
   };
 }
 

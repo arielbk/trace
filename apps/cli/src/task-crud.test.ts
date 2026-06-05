@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, resolveProjectRoot } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
@@ -134,6 +134,189 @@ test("create then show round-trips a persisted task", () => {
       env,
     });
     expect(listed).toBe(`${slug}\tcheckout\n`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task create --description persists the description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "create",
+        "Checkout flow",
+        "--description",
+        "Rework the checkout into a multi-step wizard",
+      ],
+      { encoding: "utf8", env },
+    ).trim();
+
+    expect(slug).toBe("checkout-flow");
+
+    const store = openTraceStore(databasePath);
+    const task = store.getTaskByRef(slug);
+    store.close();
+
+    expect(task?.title).toBe("Checkout flow");
+    expect(task?.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task update --description sets the description by id and by slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-update-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "Checkout flow"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const store = openTraceStore(databasePath);
+    const id = store.getTaskByRef(slug)?.id as string;
+    store.close();
+
+    const bySlug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", slug, "--description", "First pass"],
+      { encoding: "utf8", env },
+    );
+    expect(bySlug).toMatch(/slug: checkout-flow/);
+    expect(bySlug).toMatch(/description: First pass/);
+
+    const byId = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", id, "--description", "Second pass"],
+      { encoding: "utf8", env },
+    );
+    expect(byId).toMatch(/description: Second pass/);
+
+    const verifyStore = openTraceStore(databasePath);
+    expect(verifyStore.getTaskByRef(slug)?.description).toBe("Second pass");
+    verifyStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task update on an unknown ref exits non-zero", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-update-missing-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    let error: { status?: number; stderr?: string } | undefined;
+    try {
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "update", "missing", "--description", "text"],
+        { encoding: "utf8", env },
+      );
+    } catch (caught) {
+      error = caught as { status?: number; stderr?: string };
+    }
+
+    expect(error).toBeDefined();
+    expect(error?.status).not.toBe(0);
+    expect(error?.stderr).toContain("Task not found: missing");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill work-on-task --description sets the description on create", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        "Checkout flow",
+        "--id",
+        "codex-session-1",
+        "--transcript",
+        "/tmp/codex-session-1.jsonl",
+        "--tool",
+        "codex",
+        "--description",
+        "Rework the checkout into a multi-step wizard",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const store = openTraceStore(databasePath);
+    const task = store.getTaskByRef("checkout-flow");
+    store.close();
+
+    expect(task?.description).toBe(
+      "Rework the checkout into a multi-step wizard",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill recall-candidates prints the project's unarchived tasks as JSON", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-recall-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+  // The child resolves its project root from process.cwd(), which on macOS
+  // canonicalises symlinks (/var/folders → /private/var/folders); match it.
+  const projectRoot = resolveProjectRoot(realpathSync(dir));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const described = store.createTask(
+      "Checkout flow",
+      projectRoot,
+      "Rework the checkout into a wizard",
+    );
+    const bare = store.createTask("Loose end", projectRoot);
+    store.createTask("Elsewhere", "/some/other/project", "off topic");
+    const archived = store.createTask("Old work", projectRoot, "shipped");
+    store.archiveTask(archived.id);
+    store.close();
+
+    const output = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "recall-candidates"],
+      { encoding: "utf8", env, cwd: dir },
+    );
+
+    const candidates = (
+      JSON.parse(output) as Array<{
+        title: string;
+        slug: string;
+        description?: string;
+      }>
+    ).sort((a, b) => a.title.localeCompare(b.title));
+
+    expect(candidates).toEqual([
+      {
+        title: "Checkout flow",
+        slug: described.slug,
+        description: "Rework the checkout into a wizard",
+      },
+      { title: "Loose end", slug: bare.slug },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -735,6 +918,49 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
     expect(manifest).toMatch(
       /- id: older-session\n {2}tool: claude\n {2}transcript: \/tmp\/older\.jsonl\n {2}mostRecent: false/,
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter surfaces the task description in the manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "create",
+        "archive",
+        "--description",
+        "Move finished tasks out of the active board",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const describedManifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "archive"],
+      { encoding: "utf8", env },
+    );
+    expect(describedManifest).toMatch(
+      /title: archive\n {2}description: Move finished tasks out of the active board\n {2}projectRoot:/,
+    );
+
+    execFileSync(process.execPath, [traceBin, "task", "create", "plain"], {
+      encoding: "utf8",
+      env,
+    });
+    const plainManifest = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "plain"],
+      { encoding: "utf8", env },
+    );
+    expect(plainManifest).not.toContain("description:");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
