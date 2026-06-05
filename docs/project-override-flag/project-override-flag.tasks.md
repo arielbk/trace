@@ -30,7 +30,7 @@ Add a `--project <dir>` flag to every project-resolving trace CLI command (defau
 
 ### `recall-with-project-flag` — `--project` on recall-candidates
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `trace skill recall-candidates --project <dir>` scopes the candidate pool to `<dir>`'s git root instead of cwd's.
 

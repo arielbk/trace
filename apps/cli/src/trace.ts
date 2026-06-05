@@ -4,7 +4,6 @@ import {
   inferSessionIdentity,
   openTraceStore,
   type ReEntryManifest,
-  resolveProjectRoot,
   resolveProjectRootArg,
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
@@ -427,10 +426,29 @@ export function runTraceCli(
       }
 
       if (action === "recall-candidates") {
+        let recallProject: string | undefined;
+        try {
+          recallProject = parseRecallCandidatesArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        let recallProjectRoot: string;
+        try {
+          recallProjectRoot = resolveProjectRootArg(recallProject, cwd);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
         // The candidate pool the recall skill resolves a vague reference
-        // against: the current project's unarchived tasks, emitted as JSON so
-        // the skill hands it straight to the agent.
-        const candidates = store.recallCandidates(resolveProjectRoot(cwd));
+        // against: the resolved project's unarchived tasks, emitted as JSON so
+        // the skill hands it straight to the agent. `--project` overrides where
+        // that project root is resolved from; see `resolveProjectRootArg`.
+        const candidates = store.recallCandidates(recallProjectRoot);
         return success(`${JSON.stringify(candidates)}\n`);
       }
 
@@ -634,6 +652,32 @@ function parseTaskCaptureArgs(args: string[]): {
   }
 
   return { title, docPath, link, project };
+}
+
+function recallCandidatesUsage(): string {
+  return "Usage: trace skill recall-candidates [--project <dir>]";
+}
+
+// Recall-candidates takes no positional args — only an optional `--project
+// <dir>` flag that overrides where the candidate pool's project root is
+// resolved from; see `resolveProjectRootArg`.
+function parseRecallCandidatesArgs(args: string[]): string | undefined {
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(recallCandidatesUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  return project;
 }
 
 function slugify(title: string): string {
