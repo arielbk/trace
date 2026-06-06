@@ -399,6 +399,12 @@ export function runTraceCli(
           );
         }
 
+        // Register the session before touching tasks: create-or-bind must be
+        // atomic, and an unbound session is a normal state to leave behind on
+        // failure where an unbound (orphan) task is not. Registration is
+        // idempotent, so a retry after a task-side failure is harmless.
+        const session = store.registerSession(registerInput);
+
         // The skill resolves the ref like re-enter does (slug-first, then
         // normalized title), and creates the task only when nothing matches.
         // Keeping this in the CLI means the skill is pure prose and any other
@@ -414,8 +420,6 @@ export function runTraceCli(
         const task = resolvedTask.archivedAt
           ? store.unarchiveTask(resolvedTask.id)
           : resolvedTask;
-
-        const session = store.registerSession(registerInput);
 
         const assigned = store.assignSession(session.id, task.id);
 

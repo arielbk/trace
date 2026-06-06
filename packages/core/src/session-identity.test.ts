@@ -68,6 +68,56 @@ test("ignores the other tool's transcript-path env var", () => {
   ).toBe("claude:s1");
 });
 
+test("treats blank session-id env values as absent", () => {
+  // A hook can export CLAUDE_CODE_SESSION_ID with an empty or whitespace-only
+  // value; that must read as "no session" here, not survive to registration
+  // (which trims and rejects it after callers have already mutated state).
+  for (const blank of ["", "   "]) {
+    expect(inferSessionIdentity({ CLAUDE_CODE_SESSION_ID: blank })).toEqual({
+      tool: "claude",
+      id: undefined,
+      transcriptPath: undefined,
+    });
+  }
+});
+
+test("trims surrounding whitespace from inferred ids", () => {
+  // Registration trims before storing, so the inferred id must match what
+  // would be persisted — including in the synthesized transcript path.
+  expect(inferSessionIdentity({ CLAUDE_CODE_SESSION_ID: " s1 " })).toEqual({
+    tool: "claude",
+    id: "s1",
+    transcriptPath: "claude:s1",
+  });
+});
+
+test("a blank id override falls back to env inference", () => {
+  const identity = inferSessionIdentity(
+    { CLAUDE_CODE_SESSION_ID: "env-id" },
+    { id: "   " },
+  );
+
+  expect(identity.id).toBe("env-id");
+});
+
+test("a blank CLAUDE_TRANSCRIPT_PATH falls back to synthesis", () => {
+  expect(
+    inferSessionIdentity({
+      CLAUDE_CODE_SESSION_ID: "s1",
+      CLAUDE_TRANSCRIPT_PATH: "   ",
+    }).transcriptPath,
+  ).toBe("claude:s1");
+});
+
+test("a blank CODEX_THREAD_ID does not select the codex tool", () => {
+  expect(
+    inferSessionIdentity({
+      CODEX_THREAD_ID: "   ",
+      CLAUDE_CODE_SESSION_ID: "c1",
+    }).tool,
+  ).toBe("claude");
+});
+
 test("leaves id and transcriptPath undefined when no session env is set", () => {
   const identity = inferSessionIdentity({});
 
