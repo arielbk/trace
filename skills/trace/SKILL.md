@@ -1,13 +1,13 @@
 ---
 name: trace
-description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, asks to bind the session to a task, asks to re-enter a task by its slug or exact title, or asks to open the Trace board.
+description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, starts scoping or defining a piece of work (a feature, a fix, a plan), asks to bind the session to a task, asks to re-enter a task by its slug or exact title, or asks to open the Trace board.
 ---
 
 # Trace
 
-Use this skill when the user says they are working on a task, asks to bind the
-current session to a task, asks to re-enter a task's context, or asks to open
-the Trace task board.
+Use this skill when the user says they are working on a task, starts scoping
+or defining a piece of work, asks to bind the current session to a task, asks
+to re-enter a task's context, or asks to open the Trace task board.
 
 ## Verbs
 
@@ -17,6 +17,13 @@ Resolve an existing task by slug or title `X`, or create one when absent, then
 bind the current Claude Code session to it. New task titles should be
 human-readable sentence case ("Break stop and stale expiry"), not kebab-case —
 the slug is derived automatically.
+
+Starting to **scope or define** a piece of work counts as working on it: when
+the user begins scoping, speccing, or defining a feature (e.g. "let's define
+X", "let's scope X", or invoking a scoping/spec skill on X), run this same verb
+with the feature as the title. The printed `taskDocsDir:` is then in
+conversation for downstream skills that produce planning artifacts, so they
+know where to write without any extra wiring.
 
 When this **creates** a new task, write a one-line `--description` from the
 conversation context — what the work actually is, in the user's terms — so the
