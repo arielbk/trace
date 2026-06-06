@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildReEnterPrompt,
+  collapseHomePath,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -111,6 +113,38 @@ describe("truncatePath", () => {
 
   test("returns an empty string unchanged", () => {
     expect(truncatePath("")).toBe("");
+  });
+});
+
+describe("buildReEnterPrompt", () => {
+  test("produces the canonical re-enter prompt string", () => {
+    expect(buildReEnterPrompt("Break stop and stale expiry", "break-stop-and-stale-expiry")).toBe(
+      'Re-enter the trace task "Break stop and stale expiry" (break-stop-and-stale-expiry)',
+    );
+  });
+
+  test("preserves special characters in title and slug", () => {
+    expect(buildReEnterPrompt("Task: edge-case #1", "task-edge-case-1")).toBe(
+      'Re-enter the trace task "Task: edge-case #1" (task-edge-case-1)',
+    );
+  });
+});
+
+describe("collapseHomePath", () => {
+  test("replaces a home-directory prefix with ~", () => {
+    expect(collapseHomePath("/Users/alice/Projects/trace-v2", "/Users/alice")).toBe(
+      "~/Projects/trace-v2",
+    );
+  });
+
+  test("leaves paths outside home unchanged", () => {
+    expect(collapseHomePath("/work/shared/project", "/Users/alice")).toBe(
+      "/work/shared/project",
+    );
+  });
+
+  test("returns home itself as ~", () => {
+    expect(collapseHomePath("/Users/alice", "/Users/alice")).toBe("~");
   });
 });
 

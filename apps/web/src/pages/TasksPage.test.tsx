@@ -228,7 +228,7 @@ describe("TaskList rendering", () => {
     expect(html).toContain("total 16317514");
   });
 
-  test("renders the short copyable UUID for a row", () => {
+  test("does not render a UUID copy chip on a row", () => {
     const id = "550e8400-e29b-41d4-a716-446655440000";
     const tasks: TaskSummary[] = [summary({ id, title: "Real title" })];
 
@@ -238,9 +238,8 @@ describe("TaskList rendering", () => {
       </MemoryRouter>,
     );
 
-    // Copy chip shows the truncated form but carries the full id.
-    expect(html).toContain("550e8400");
-    expect(html).toContain(`aria-label="Copy ${id}"`);
+    // UUID chip is gone — no copy button carrying the id.
+    expect(html).not.toContain(`aria-label="Copy ${id}"`);
   });
 
   test("renders a distinct untitled fallback when the title is a raw UUID", () => {
@@ -275,7 +274,7 @@ describe("TaskList rendering", () => {
     expect(html).toContain("Refactor the store");
   });
 
-  test("links a row by its slug and shows the slug as a readable handle", () => {
+  test("links a row by its slug; slug is not shown as text in the row", () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "550e8400-e29b-41d4-a716-446655440000",
@@ -295,8 +294,63 @@ describe("TaskList rendering", () => {
     expect(html).not.toContain(
       'href="/task/550e8400-e29b-41d4-a716-446655440000"',
     );
-    // The slug renders as a visible handle in the row.
-    expect(html).toContain("manual-break-start-sounds");
+    // The slug is NOT visible as text — identifiers are gone from the row.
+    expect(html).not.toContain("task-row-slug");
+  });
+
+  test("renders a one-line description below the title when present", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        title: "CLI work",
+        description: "Improve the CLI startup time",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("CLI work");
+    expect(html).toContain("Improve the CLI startup time");
+    expect(html).toContain("task-row-description");
+  });
+
+  test("renders no description element when description is absent", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain("task-row-description");
+  });
+
+  test("group header chip displays tilde-collapsed path when home is provided", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        title: "CLI work",
+        projectRoot: "/Users/alice/Projects/trace-v2",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} home="/Users/alice" />
+      </MemoryRouter>,
+    );
+
+    // Chip display uses collapsed path.
+    expect(html).toContain("~/Projects/trace-v2");
+    // Chip value (for copying) still has the full path.
+    expect(html).toContain('aria-label="Copy /Users/alice/Projects/trace-v2"');
   });
 
   test("renders an archive button for each active row", () => {
@@ -315,6 +369,46 @@ describe("TaskList rendering", () => {
     );
 
     expect(html).toContain('aria-label="Archive CLI work"');
+  });
+
+  test("renders a copy re-enter prompt action carrying the built prompt", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    // The action is labelled for screen readers...
+    expect(html).toContain('aria-label="Copy re-enter prompt"');
+    // ...and carries the exact builder output as its copyable value (the
+    // title tooltip mirrors the detail page's copy button).
+    expect(html).toContain(
+      "Re-enter the trace task &quot;CLI work&quot; (cli-work)",
+    );
+  });
+
+  test("shows the copy-prompt action on archived rows too", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        archivedAt: "2026-06-04T20:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onUnarchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Copy re-enter prompt"');
+    expect(html).toContain('aria-label="Unarchive CLI work"');
   });
 
   test("renders archived rows muted with an unarchive button", () => {

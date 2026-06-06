@@ -274,7 +274,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
   expect(html).toContain('class="theme-toggle"');
 });
 
-test("TaskTimelineView header shows the task id as a truncated copy chip", () => {
+test("TaskTimelineView header has a copy re-enter prompt button, no slug text, no UUID chip", () => {
   const fullId = "0e1d2c3b-4a59-6879-8a7b-6c5d4e3f2a1b";
   const timeline: TaskTimeline = {
     task: {
@@ -301,14 +301,14 @@ test("TaskTimelineView header shows the task id as a truncated copy chip", () =>
     </MemoryRouter>,
   );
 
-  // Truncated 8-char form is shown, full id is copyable via the chip's title.
-  expect(html).toContain('class="copy-chip"');
-  expect(html).toContain(`title="${fullId}"`);
-  expect(html).toContain(">0e1d2c3b<");
-  // The raw 36-char id is no longer rendered as bare body text.
-  expect(html).not.toContain(`>${fullId}<`);
-  // The human-readable slug is shown alongside the id chip.
-  expect(html).toContain("usable-v1");
+  // Copy re-enter prompt button is present; title attribute HTML-encodes the inner quotes.
+  expect(html).toContain('title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"');
+  expect(html).toContain("Copy re-enter prompt");
+  // No raw UUID chip in the header.
+  expect(html).not.toContain(`title="${fullId}"`);
+  expect(html).not.toContain(">0e1d2c3b<");
+  // Slug is not rendered as visible text in the header.
+  expect(html).not.toContain('class="task-slug"');
 });
 
 test("TaskTimelineView renders the task description under the title when present", () => {

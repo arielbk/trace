@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
-import { generatePlaceholderSlug, slugify } from "./slug.ts";
+import {
+  generatePlaceholderSlug,
+  humanizeSlug,
+  looksLikeSlug,
+  slugify,
+} from "./slug.ts";
 
 test("lowercases and hyphenates words", () => {
   expect(slugify("Manual Break Start")).toBe("manual-break-start");
@@ -40,6 +45,24 @@ test("caps the slug length at the word boundary", () => {
 test("returns empty string when nothing slug-worthy remains", () => {
   expect(slugify("!!! ??? ---")).toBe("");
   expect(slugify("   ")).toBe("");
+});
+
+test("looksLikeSlug accepts kebab-case with at least one dash", () => {
+  expect(looksLikeSlug("break-stop-and-stale-expiry")).toBe(true);
+  expect(looksLikeSlug("release-v2-build-17")).toBe(true);
+});
+
+test("looksLikeSlug rejects single words, mixed case, and UUIDs", () => {
+  expect(looksLikeSlug("checkout")).toBe(false);
+  expect(looksLikeSlug("Fix-the-Bug")).toBe(false);
+  expect(looksLikeSlug("fix the bug")).toBe(false);
+  expect(looksLikeSlug("271d0e57-0f84-4eaa-91f9-2b55570a898b")).toBe(false);
+});
+
+test("humanizeSlug spaces the dashes and capitalizes the first letter", () => {
+  expect(humanizeSlug("break-stop-and-stale-expiry")).toBe(
+    "Break stop and stale expiry",
+  );
 });
 
 test("placeholder slug derives a short stable handle from an id", () => {

@@ -88,6 +88,37 @@ const MONTHS = [
   "Dec",
 ];
 
+/**
+ * Build the canonical re-enter prompt for a task. The slug rides along as
+ * the exact resolution hook even though it is not displayed in the UI.
+ *
+ * Example output: `Re-enter the trace task "Break stop and stale expiry" (break-stop-and-stale-expiry)`
+ */
+export function buildReEnterPrompt(title: string, slug: string): string {
+  return `Re-enter the trace task "${title}" (${slug})`;
+}
+
+/**
+ * Replace the user's home directory prefix with `~` for compact display.
+ * The `home` parameter defaults to `""` — with no home, the path is returned
+ * unchanged, so the function is always safe to call. Callers supply the real
+ * home directory at runtime (the board fetches it from `/api/config`).
+ *
+ * Examples:
+ *   "/Users/alice/Projects/trace" → "~/Projects/trace"
+ *   "/work/shared"               → "/work/shared"
+ *   "/Users/alice"               → "~"
+ */
+export function collapseHomePath(path: string, home: string = ""): string {
+  if (!home) return path;
+  const normalized = home.replace(/[/\\]+$/, "");
+  if (path === normalized) return "~";
+  if (path.startsWith(normalized + "/") || path.startsWith(normalized + "\\")) {
+    return "~" + path.slice(normalized.length);
+  }
+  return path;
+}
+
 /** `"May 20, 2026"` — UTC-based so output is stable regardless of machine timezone. */
 function formatAbsoluteDate(epochMs: number): string {
   const d = new Date(epochMs);

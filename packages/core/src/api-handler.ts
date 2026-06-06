@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { openTraceStore } from "./store.ts";
 
 export type TraceApiResponse = {
@@ -32,6 +33,11 @@ export function handleTraceApiRequest(
   rawUrl: string,
 ): TraceApiResponse | null {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+
+  if (path === "/api/config") {
+    if (method !== "GET") return methodNotAllowed();
+    return json({ home: homedir() });
+  }
 
   if (path !== "/api/tasks" && !path.startsWith("/api/tasks/")) {
     return path.startsWith("/api/") ? notFound() : null;

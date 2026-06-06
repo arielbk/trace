@@ -399,19 +399,18 @@ export function runTraceCli(
           );
         }
 
-        // The skill's contract is title-based: resolve the exact title, or
-        // create the task when absent. Keeping this in the CLI means the skill
-        // is pure prose and any other tool wrapper inherits the same behaviour.
-        // A `--description` only seeds a freshly created task; tending an
-        // existing task's description is the creation-descriptions slice's job.
-        const existingId = findTaskIdByTitle(store.listTasks(), title);
-        const resolvedTask = existingId
-          ? store.getTask(existingId)
-          : store.createTask(title, workOnTaskProjectRoot, description);
+        // The skill resolves the ref like re-enter does (slug-first, then
+        // normalized title), and creates the task only when nothing matches.
+        // Keeping this in the CLI means the skill is pure prose and any other
+        // tool wrapper inherits the same behaviour. A `--description` only
+        // seeds a freshly created task; tending an existing task's
+        // description is the re-enter drift protocol's job. New tasks land in
+        // the resolved project root, which honours the `--project` override.
+        const resolvedTask =
+          resolveSkillTaskRef(store.listTasks(), title, (id) =>
+            store.getTask(id),
+          ) ?? store.createTask(title, workOnTaskProjectRoot, description);
 
-        if (!resolvedTask) {
-          return failure(`Task not found: ${title}`, 1);
-        }
         const task = resolvedTask.archivedAt
           ? store.unarchiveTask(resolvedTask.id)
           : resolvedTask;
@@ -453,20 +452,23 @@ export function runTraceCli(
       }
 
       if (action === "re-enter") {
-        const title = args[0];
+        const ref = args[0];
 
-        if (!title) {
-          return failure("Task title is required");
+        if (!ref) {
+          return failure("Task slug or title is required");
         }
 
-        const taskId = findTaskIdByTitle(store.listTasks(), title);
-        if (!taskId) {
-          return failure(`Task not found: ${title}`, 1);
+        const tasks = store.listTasks();
+        const resolved = resolveSkillTaskRef(tasks, ref, (id) =>
+          store.getTask(id),
+        );
+        if (!resolved) {
+          return failure(taskNotFoundMessage(tasks, ref), 1);
         }
 
-        const manifest = store.getReEntryManifest(taskId);
+        const manifest = store.getReEntryManifest(resolved.id);
         if (!manifest) {
-          return failure(`Task not found: ${title}`, 1);
+          return failure(taskNotFoundMessage(tasks, ref), 1);
         }
 
         return success(formatReEntryManifest(manifest));
@@ -483,10 +485,53 @@ export function runTraceCli(
   }
 }
 
-function findTaskIdByTitle(tasks: Task[], title: string): string | null {
-  const normalized = title.trim();
-  const match = tasks.find((task) => task.title === normalized);
-  return match ? match.id : null;
+// Skill verbs resolve a ref slug-first (ids too — agents occasionally hand
+// back a task id from docs paths or handoff notes), then fall back to a
+// normalized-exact title match (trimmed, case-insensitive). Anything vaguer
+// is the recall skill's job.
+function resolveSkillTaskRef(
+  tasks: Task[],
+  ref: string,
+  getById: (id: string) => Task | null,
+): Task | null {
+  const trimmed = ref.trim();
+  if (trimmed.length === 0) return null;
+
+  const byId = getById(trimmed);
+  if (byId) return byId;
+
+  const bySlug = tasks.find((task) => task.slug === trimmed);
+  if (bySlug) return bySlug;
+
+  const normalized = trimmed.toLowerCase();
+  const byTitle = tasks.find(
+    (task) => task.title.trim().toLowerCase() === normalized,
+  );
+  return byTitle ?? null;
+}
+
+// A miss lists near candidates — tasks whose slug or title contains the
+// query (plain containment, no fuzzy semantics) — so the caller can correct
+// the ref without a separate lookup.
+function taskNotFoundMessage(tasks: Task[], ref: string): string {
+  const needle = ref.trim().toLowerCase();
+  const near = tasks
+    .filter(
+      (task) =>
+        needle.length > 0 &&
+        (task.slug.includes(needle) ||
+          task.title.toLowerCase().includes(needle)),
+    )
+    .slice(0, 5);
+
+  const lines = [`Task not found: ${ref}`];
+  if (near.length > 0) {
+    lines.push("Near candidates:");
+    for (const task of near) {
+      lines.push(`  ${task.slug} — ${task.title}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function success(stdout: string): CommandResult {
