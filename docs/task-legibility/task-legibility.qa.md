@@ -19,6 +19,8 @@ These were run during implementation and passed. Listed for confidence, not acti
 
 One slice carries `Human checkpoint: yes` (`board-declutter`). The `board-copy-action` slice also explicitly flags that clipboard click interactions have no automated coverage and require a human eye.
 
+**Verified by the user 2026-06-06 — all items below passed.**
+
 ### Setup
 
 Start the Trace board server once; all items below share it.
@@ -33,32 +35,32 @@ Leave this running in its own terminal for the duration of verification.
 
 ---
 
-- [ ] **Board rows show descriptions, not identifiers**
+- [x] **Board rows show descriptions, not identifiers**
   - Open: `http://127.0.0.1:4317` (or the port printed by `trace serve`)
   - Do: Look at the task rows in the board. For any task that has a description, confirm a one-line muted description renders beneath the title and is clamped (trailing ellipsis if long). For any task without a description, confirm only the title shows — no second line.
   - Expect: No kebab-slug text (e.g. `break-stop-and-stale-expiry`) visible anywhere in a row. No UUID chip on any row. Rows with descriptions show them; rows without do not show a blank line.
 
-- [ ] **Repo group headers show `~`-collapsed paths; chip copies the full path**
+- [x] **Repo group headers show `~`-collapsed paths; chip copies the full path**
   - Open: `http://127.0.0.1:4317`
   - Do: Look at the group header(s) for tasks that belong to a repo. Confirm the path shown starts with `~` (e.g. `~/Projects/side/trace-v2`) rather than the raw absolute path (e.g. `/Users/yourname/...`). Click the path chip to copy it, then paste into a text editor.
   - Expect: The header displays a `~`-collapsed path. The pasted value is the full absolute path (e.g. `/Users/yourname/Projects/side/trace-v2`), not the tilde form.
 
-- [ ] **Board hover row-action: copy re-enter prompt**
+- [x] **Board hover row-action: copy re-enter prompt**
   - Open: `http://127.0.0.1:4317`
   - Do: Hover over a task row. Confirm a copy icon appears (alongside the archive icon) in the right-hand action area without shifting the row's layout (no reserved space when not hovering). Click the copy icon. Paste the clipboard contents into a text editor.
   - Expect: The copy icon and archive icon appear together on hover with no layout jump. The pasted text is exactly: `Re-enter the trace task "Title" (slug)` — where Title and slug match that task. The icon briefly swaps to a check-mark after clicking to confirm the copy.
 
-- [ ] **Archive action still works alongside copy action**
+- [x] **Archive action still works alongside copy action**
   - Open: `http://127.0.0.1:4317`
   - Do: Hover a task row. Click the archive icon (not the copy icon). Confirm the task is archived (disappears from the active board or moves to an archived section).
   - Expect: Archiving still works as before; the copy action's presence does not break it.
 
-- [ ] **Detail page: copy re-enter prompt button**
+- [x] **Detail page: copy re-enter prompt button**
   - Open: `http://127.0.0.1:4317`
   - Do: Click through to any task's detail page. Look at the header area.
   - Expect: The header shows: title on the left with "Copy re-enter prompt" chip on the same row (right-aligned), description directly below the title (when present), and token summary beneath. No slug text. No UUID chip. Click "Copy re-enter prompt" and paste into a text editor — the text must be `Re-enter the trace task "Title" (slug)`.
 
-- [ ] **Re-enter prompt binds to the correct task in a Claude session**
+- [x] **Re-enter prompt binds to the correct task in a Claude session**
   - Open: `http://127.0.0.1:4317`, navigate to any task with a recognizable title
   - Do: Copy the re-enter prompt from either the board hover action or the detail page header. Open a fresh Claude session (new conversation). Paste the prompt and send it.
   - Expect: The agent recognizes the task reference and binds to the correct task (asks about or resumes that specific task by title/slug). This verifies the prompt format is functional end-to-end, not just cosmetically correct.
