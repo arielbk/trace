@@ -1,6 +1,6 @@
 ---
 name: trace
-description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, asks to bind the session to a task, asks to re-enter a task by its exact title, or asks to open the Trace board.
+description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, asks to bind the session to a task, asks to re-enter a task by its slug or exact title, or asks to open the Trace board.
 ---
 
 # Trace
@@ -13,8 +13,10 @@ the Trace task board.
 
 ### We're working on X
 
-Resolve an existing task with the exact title `X`, or create one when absent,
-then bind the current Claude Code session to it.
+Resolve an existing task by slug or title `X`, or create one when absent, then
+bind the current Claude Code session to it. New task titles should be
+human-readable sentence case ("Break stop and stale expiry"), not kebab-case —
+the slug is derived automatically.
 
 When this **creates** a new task, write a one-line `--description` from the
 conversation context — what the work actually is, in the user's terms — so the
@@ -42,12 +44,16 @@ without a separate registration step.
 
 ### Re-enter X
 
-Resolve an existing task with the exact title `X`, then print its docs and prior
+Resolve an existing task — the slug is the canonical ref; an exact title
+(trimmed, case-insensitive) also resolves — then print its docs and prior
 session references:
 
 ```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "X"
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "break-stop-and-stale-expiry"
 ```
+
+A miss exits non-zero and lists near candidates (slug — title) on stderr; pick
+the right slug from that list rather than guessing variants.
 
 When re-entering:
 
