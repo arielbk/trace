@@ -196,8 +196,15 @@ li {
 
 .task-heading {
   display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.task-title-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 
@@ -235,7 +242,6 @@ li {
 }
 
 .task-description {
-  flex-basis: 100%;
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -246,7 +252,7 @@ li {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   gap: var(--space-3);
-  margin: var(--space-4) 0 0;
+  margin: var(--space-5) 0 0;
 }
 
 .token-summary div {
@@ -479,21 +485,20 @@ li {
   font-weight: 400;
 }
 
-.task-row-archived .task-row-slug,
 .task-row-archived .task-row-tokens,
 .task-row-archived .task-row-time,
 .task-row-archived .copy-chip {
   opacity: 0.72;
 }
 
-.task-row-slug {
-  display: block;
+.task-row-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   color: var(--color-text-muted);
-  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 .task-row .copy-chip {
@@ -521,22 +526,38 @@ li {
   text-align: right;
 }
 
-/* Archive/unarchive is a rare, secondary action: render it as a quiet icon
-   that only surfaces while the row is hovered (always visible on archived
-   rows and on touch devices, where there is no hover to reveal it). */
-/* Archive/unarchive is a rare, secondary action: keep it out of the row flow
-   and swap it in over the relative-time slot while the row is hovered, so
-   rows stay clean at rest and nothing shifts on hover. Touch devices have no
-   hover, so there the button sits in flow and stays visible. */
+/* Row actions (copy re-enter prompt, archive/unarchive) are secondary: keep
+   them out of the row flow and swap them in over the relative-time slot while
+   the row is hovered, so rows stay clean at rest and nothing shifts on hover.
+   Touch devices have no hover, so there the actions sit in flow and stay
+   visible. */
 .task-row {
   position: relative;
 }
 
-.task-row-action {
+.task-row-actions {
   display: inline-flex;
   position: absolute;
   top: 50%;
   right: 0;
+  align-items: center;
+  gap: var(--space-1);
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.task-row:hover .task-row-actions,
+.task-row:focus-within .task-row-actions {
+  opacity: 1;
+}
+
+.task-row:has(.task-row-actions):hover .task-row-time,
+.task-row:has(.task-row-actions):focus-within .task-row-time {
+  opacity: 0;
+}
+
+.task-row-action {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 1.8rem;
@@ -546,19 +567,7 @@ li {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-muted);
-  transform: translateY(-50%);
   cursor: pointer;
-  opacity: 0;
-}
-
-.task-row:hover .task-row-action,
-.task-row:focus-within .task-row-action {
-  opacity: 1;
-}
-
-.task-row:has(.task-row-action):hover .task-row-time,
-.task-row:has(.task-row-action):focus-within .task-row-time {
-  opacity: 0;
 }
 
 .task-row-action:hover {
@@ -567,7 +576,7 @@ li {
 }
 
 @media (hover: none) {
-  .task-row-action {
+  .task-row-actions {
     position: static;
     transform: none;
     opacity: 1;

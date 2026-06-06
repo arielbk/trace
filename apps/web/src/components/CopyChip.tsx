@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useClipboardCopy } from "./useClipboardCopy.ts";
 
 /**
  * Click-to-copy chip: renders a compact `display` form (e.g. a truncated UUID),
@@ -9,26 +9,7 @@ import { useEffect, useRef, useState } from "react";
  * this component never derives the display from the value.
  */
 export function CopyChip({ value, display }: { value: string; display: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Clipboard may be unavailable (insecure context, denied permission);
-      // still surface the confirmation so the interaction feels responsive.
-    }
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), 1200);
-  }
+  const { copied, copy } = useClipboardCopy();
 
   return (
     <button
@@ -36,7 +17,7 @@ export function CopyChip({ value, display }: { value: string; display: string })
       className="copy-chip"
       title={value}
       aria-label={`Copy ${value}`}
-      onClick={handleCopy}
+      onClick={() => void copy(value)}
     >
       <span className="copy-chip-value">{display}</span>
       <span className="copy-chip-status" aria-live="polite">

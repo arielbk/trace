@@ -4,10 +4,10 @@ import type { SessionTool, TaskTimeline, TokenTotals } from "@trace/core";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import {
+  buildReEnterPrompt,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
-  truncateId,
   truncatePath,
 } from "../format.ts";
 
@@ -40,12 +40,16 @@ export function TaskTimelineView({
       <AppHeader context={timeline.task.title} />
       <header className="task-header">
         <div className="task-heading">
-          <h1>{timeline.task.title}</h1>
+          <div className="task-title-row">
+            <h1>{timeline.task.title}</h1>
+            <CopyChip
+              value={buildReEnterPrompt(timeline.task.title, timeline.task.slug)}
+              display="Copy re-enter prompt"
+            />
+          </div>
           {timeline.task.description ? (
             <p className="task-description">{timeline.task.description}</p>
           ) : null}
-          <p className="task-slug">{timeline.task.slug}</p>
-          <CopyChip value={timeline.task.id} display={truncateId(timeline.task.id)} />
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
       </header>

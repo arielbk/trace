@@ -3,7 +3,10 @@ import { Link } from "react-router-dom";
 import type { TaskSummary } from "@trace/core";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { useClipboardCopy } from "../components/useClipboardCopy.ts";
 import {
+  buildReEnterPrompt,
+  collapseHomePath,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -25,11 +28,15 @@ export type ProjectTaskGroup = {
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [home, setHome] = useState("");
 
   useEffect(() => {
     fetch("/api/tasks")
       .then((res) => res.json())
       .then(setTasks);
+    fetch("/api/config")
+      .then((res) => res.json())
+      .then((config: { home: string }) => setHome(config.home));
   }, []);
 
   if (tasks === null)
@@ -87,6 +94,7 @@ export function TasksPage() {
           tasks={displayedTasks}
           onArchive={handleArchive}
           onUnarchive={handleUnarchive}
+          home={home}
         />
       )}
     </main>
@@ -97,10 +105,13 @@ export function TaskList({
   tasks,
   onArchive,
   onUnarchive,
+  home = "",
 }: {
   tasks: TaskSummary[];
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
+  /** User home directory; when provided, project paths are displayed as ~-collapsed. */
+  home?: string;
 }) {
   return (
     <div className="project-groups">
@@ -108,7 +119,10 @@ export function TaskList({
         <section className="project-group" key={group.projectRoot}>
           <header>
             <h2>{group.displayName}</h2>
-            <CopyChip value={group.projectRoot} display={group.projectRoot} />
+            <CopyChip
+              value={group.projectRoot}
+              display={collapseHomePath(group.projectRoot, home)}
+            />
           </header>
           <ul>
             {group.tasks.map((task) => (
@@ -152,9 +166,10 @@ function TaskRow({
         <span className="task-row-title">
           {untitled ? "Untitled task" : task.title}
         </span>
-        <span className="task-row-slug">{task.slug}</span>
+        {!untitled && task.description ? (
+          <span className="task-row-description">{task.description}</span>
+        ) : null}
       </Link>
-      <CopyChip value={task.id} display={truncateId(task.id)} />
       <span
         className="task-row-tokens"
         title={formatTokenBreakdown(task.tokenTotals)}
@@ -164,28 +179,89 @@ function TaskRow({
       <span className="task-row-time">
         {formatRelativeTime(task.lastActivityAt)}
       </span>
-      {archived && onUnarchive ? (
-        <button
-          type="button"
-          className="task-row-action"
-          aria-label={unarchiveLabel}
-          title={unarchiveLabel}
-          onClick={() => void onUnarchive(task)}
-        >
-          <UnarchiveIcon />
-        </button>
-      ) : onArchive ? (
-        <button
-          type="button"
-          className="task-row-action"
-          aria-label={archiveLabel}
-          title={archiveLabel}
-          onClick={() => void onArchive(task)}
-        >
-          <ArchiveIcon />
-        </button>
-      ) : null}
+      <div className="task-row-actions">
+        <CopyPromptAction title={task.title} slug={task.slug} />
+        {archived && onUnarchive ? (
+          <button
+            type="button"
+            className="task-row-action"
+            aria-label={unarchiveLabel}
+            title={unarchiveLabel}
+            onClick={() => void onUnarchive(task)}
+          >
+            <UnarchiveIcon />
+          </button>
+        ) : onArchive ? (
+          <button
+            type="button"
+            className="task-row-action"
+            aria-label={archiveLabel}
+            title={archiveLabel}
+            onClick={() => void onArchive(task)}
+          >
+            <ArchiveIcon />
+          </button>
+        ) : null}
+      </div>
     </li>
+  );
+}
+
+/**
+ * Quiet icon action that copies the task's re-enter prompt — the same builder
+ * output as the detail page's copy button. The full prompt rides along as the
+ * `title` tooltip; the icon swaps to a check for a beat after a copy.
+ */
+function CopyPromptAction({ title, slug }: { title: string; slug: string }) {
+  const { copied, copy } = useClipboardCopy();
+  const prompt = buildReEnterPrompt(title, slug);
+  return (
+    <button
+      type="button"
+      className="task-row-action"
+      aria-label="Copy re-enter prompt"
+      title={prompt}
+      onClick={() => void copy(prompt)}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 
