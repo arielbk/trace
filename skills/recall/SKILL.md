@@ -29,6 +29,22 @@ It prints a JSON array of the project's unarchived tasks, each
 index. Match against it yourself; never invent a task that is not in the array.
 An empty array means there is nothing to recall (go straight to step 4).
 
+By default the pool is scoped to the project root resolved from the CLI's
+working directory. When the user is recalling work that clearly lives in a
+**different** project than where the CLI is running — e.g. you are in a
+multi-project sandbox or wrapper directory but the recalled work belongs to a
+specific repo — pass `--project <dir>` pointing at that project so the candidate
+pool is scoped to its git root instead of cwd's:
+
+```sh
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill recall-candidates --project /path/to/that/repo
+```
+
+Default to cwd (omit the flag) unless you have a concrete reason the recalled
+work belongs to another project. A nonexistent `--project` path is a hard error.
+When you re-enter and bind the match in step 3, pass the same `--project <dir>`
+to `work-on-task` so the bound task keys to the same project root.
+
 ### 2. Match the reference against the pool
 
 Read the user's reference and compare it against each candidate's `title` and

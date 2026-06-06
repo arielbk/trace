@@ -38,6 +38,21 @@ Claude Code sessions export; `CLAUDE_SESSION_ID` / `session_id` are also
 accepted), and the transcript from `CLAUDE_TRANSCRIPT_PATH` when present. Pass
 `--model <name>` when the model is known to record it on the session.
 
+By default the task keys to the project root resolved from the CLI's working
+directory. When the work clearly lives in a **different** project than where the
+CLI is running — e.g. you are in a multi-project sandbox or wrapper directory but
+the task belongs to a specific repo — pass `--project <dir>` pointing at that
+project so the task keys to its git root instead of cwd's:
+
+```sh
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "X" --project /path/to/that/repo
+```
+
+Default to cwd (omit the flag) unless you have a concrete reason the work belongs
+to another project. A nonexistent `--project` path is a hard error. The same
+`--project <dir>` flag is accepted by `trace task create` and `trace task
+capture` for the same reason.
+
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
 plans, handoffs, and notes in that directory so future re-entry sees them
 without a separate registration step.
