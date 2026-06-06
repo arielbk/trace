@@ -829,6 +829,49 @@ test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION
   }
 });
 
+test("skill work-on-task with a blank session id fails without creating the task", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-blank-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    TRACE_DB: databasePath,
+    // The observed failure mode: a hook exports the var with a blank value, so
+    // the id is defined-but-unusable. Create-or-bind must reject it before any
+    // store mutation — a failed bind must not leave an orphan task behind.
+    CLAUDE_CODE_SESSION_ID: "   ",
+  };
+  delete env.CLAUDE_SESSION_ID;
+  delete env.session_id;
+  delete env.CODEX_THREAD_ID;
+  delete env.CLAUDE_TRANSCRIPT_PATH;
+
+  try {
+    let failed: { status: number | null; stderr: string } | null = null;
+    try {
+      execFileSync(
+        process.execPath,
+        [traceBin, "skill", "work-on-task", "checkout"],
+        { encoding: "utf8", env },
+      );
+    } catch (error) {
+      const e = error as { status: number | null; stderr: string };
+      failed = { status: e.status, stderr: e.stderr };
+    }
+
+    expect(failed?.status).toBe(2);
+    expect(failed?.stderr).toContain(
+      "requires --id or a current session env var",
+    );
+
+    const store = openTraceStore(databasePath);
+    const tasks = store.listTasks();
+    store.close();
+    expect(tasks).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("skill re-enter prints an ordered manifest with empty sections", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-manifest-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
