@@ -187,6 +187,38 @@ test("POST /api/tasks/:ref/archive returns 404 for an unknown task", () => {
   }
 });
 
+test("GET /api/config returns { home } as JSON with status 200", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/config");
+    expect(response).not.toBeNull();
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/json");
+    const config = JSON.parse(response!.body);
+    expect(typeof config.home).toBe("string");
+    expect(config.home.length).toBeGreaterThan(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("non-GET /api/config is rejected with 405", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/config",
+    );
+    expect(response).not.toBeNull();
+    expect(response!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
 test("non-API requests return null so the host can fall through", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 
