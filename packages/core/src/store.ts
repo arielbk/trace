@@ -3,7 +3,13 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
-import { generatePlaceholderSlug, slugify } from "./slug.ts";
+import {
+  generatePlaceholderSlug,
+  humanizeSlug,
+  looksLikeSlug,
+  looksLikeTaskId,
+  slugify,
+} from "./slug.ts";
 import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
 import {
   addTokenTotals,
@@ -47,7 +53,13 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   createTask(title: string, projectRoot = "", description?: string): Task {
-    const normalizedTitle = title.trim();
+    const trimmedTitle = title.trim();
+    // A title that reads as a slug ("break-stop-and-stale-expiry") becomes a
+    // readable title; slugify round-trips it back, so the original string
+    // still serves as the slug.
+    const normalizedTitle = looksLikeSlug(trimmedTitle)
+      ? humanizeSlug(trimmedTitle)
+      : trimmedTitle;
     const normalizedProjectRoot = projectRoot.trim();
     const normalizedDescription = description?.trim() || undefined;
 
@@ -495,10 +507,14 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left
-  // nothing slug-worthy) falls back to a placeholder derived from the id;
-  // otherwise collisions get a numeric suffix.
+  // nothing slug-worthy) falls back to a placeholder derived from the id, as
+  // does a base that reads as a UUID (it would shadow id lookups in
+  // getTaskByRef); otherwise collisions get a numeric suffix.
   #allocateSlug(base: string, id: string): string {
-    const candidate = base.length > 0 ? base : generatePlaceholderSlug(id);
+    const candidate =
+      base.length > 0 && !looksLikeTaskId(base)
+        ? base
+        : generatePlaceholderSlug(id);
 
     if (!this.#slugExists(candidate)) {
       return candidate;

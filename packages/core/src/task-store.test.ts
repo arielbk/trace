@@ -144,6 +144,70 @@ test("archive and unarchive round-trip by id and slug", () => {
   }
 });
 
+test("a slug-shaped title is humanized and kept verbatim as the slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("break-stop-and-stale-expiry");
+
+    expect(task.title).toBe("Break stop and stale expiry");
+    expect(task.slug).toBe("break-stop-and-stale-expiry");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("ordinary titles pass through createTask unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+
+    const sentence = store.createTask("Fix the checkout bug");
+    expect(sentence.title).toBe("Fix the checkout bug");
+    expect(sentence.slug).toBe("fix-the-checkout-bug");
+
+    // A single lowercase word is an ordinary title, not a slug.
+    const word = store.createTask("checkout");
+    expect(word.title).toBe("checkout");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a UUID title gets a placeholder slug so it cannot shadow another task's id", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const original = store.createTask("checkout");
+
+    // A task titled with another task's id used to slugify verbatim; archive
+    // by that slug then resolved the *original* task (getTaskByRef checks ids
+    // before slugs) and the duplicate was unarchivable.
+    const duplicate = store.createTask(original.id);
+    expect(duplicate.slug).toBe(`task-${duplicate.id.split("-")[0]}`);
+    // UUIDs are kebab-shaped but are not humanized like slug titles.
+    expect(duplicate.title).toBe(original.id);
+
+    expect(store.getTaskByRef(original.id)).toEqual(original);
+    expect(store.archiveTask(duplicate.slug).id).toBe(duplicate.id);
+    expect(store.getTask(original.id)?.archivedAt).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("recallCandidates scopes to project, excludes archived, keeps description-less tasks", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
