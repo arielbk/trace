@@ -528,6 +528,71 @@ export function runTraceCli(
         return success(formatReEntryManifest(manifest));
       }
 
+      if (action === "docs-dir") {
+        if (isHelpFlag(args[0])) {
+          return success(`${skillDocsDirUsage()}\n`);
+        }
+
+        let parsedDocsDir: { id?: string; project?: string };
+        try {
+          parsedDocsDir = parseSkillDocsDirArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        // The session is inferred the same way the binding verbs infer it, so
+        // an agent running inside a live session can omit --id; the env→session
+        // contract lives in @trace/core. docs-dir only reads, so it needs the
+        // id alone (no transcript path).
+        const identity = inferSessionIdentity(env, { id: parsedDocsDir.id });
+        if (identity.id === undefined) {
+          return failure(
+            "Skill docs-dir requires --id or a current session env var",
+          );
+        }
+
+        let docsDirProjectRoot: string;
+        try {
+          docsDirProjectRoot = resolveProjectRootArg(parsedDocsDir.project, cwd);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        // Resolve the docs dir from the live session→task binding rather than
+        // anything in the conversation: only a bound session has a settled
+        // home. An unbound session is not an error to swallow — it needs a
+        // bind decision first, so we exit non-zero with the actionable next
+        // step (re-enter the offered task, or create one with work-on-task).
+        const activeTask = store.resolveActiveTask(
+          identity.id,
+          docsDirProjectRoot,
+        );
+
+        if (activeTask.kind === "bound") {
+          return success(
+            `taskDocsDir: ${
+              resolveTaskDocsDir(databasePath, activeTask.task.slug)
+            }\n`,
+          );
+        }
+
+        if (activeTask.kind === "re-enter") {
+          return failure(
+            `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
+            1,
+          );
+        }
+
+        return failure(
+          "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
+          1,
+        );
+      }
+
       return usage();
     }
 
@@ -598,7 +663,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates> ...",
+    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...",
   );
 }
 
@@ -616,6 +681,41 @@ function skillWorkOnTaskUsage(): string {
 
 function skillReEnterUsage(): string {
   return "Usage: trace skill re-enter <ref>";
+}
+
+function skillDocsDirUsage(): string {
+  return "Usage: trace skill docs-dir [--id <session>] [--project <dir>]";
+}
+
+// Docs-dir takes no positional args — only an optional `--id <session>` (which
+// inferSessionIdentity layers over the env) and a `--project <dir>` override
+// (resolved via resolveProjectRootArg).
+function parseSkillDocsDirArgs(args: string[]): {
+  id?: string;
+  project?: string;
+} {
+  let id: string | undefined;
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--id") {
+      const value = args[index + 1];
+      if (!value) throw new Error(skillDocsDirUsage());
+      id = value;
+      index += 2;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(skillDocsDirUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  return { id, project };
 }
 
 function taskCreateUsage(): string {

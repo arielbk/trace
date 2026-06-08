@@ -535,3 +535,165 @@ test("session active-task requires --id", () => {
     rmSync(sandbox, { recursive: true, force: true });
   }
 });
+
+test("skill docs-dir prints the bound task's slug docs dir", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const bound = runTraceCli(
+      [
+        "skill",
+        "work-on-task",
+        "Checkout flow",
+        "--id",
+        "session-1",
+        "--transcript",
+        join(repo, "s1.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+    expect(bound.exitCode).toBe(0);
+
+    const result = runTraceCli(
+      ["skill", "docs-dir", "--id", "session-1"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(
+      `taskDocsDir: ${join(home, "tasks", "checkout-flow", "docs")}\n`,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("skill docs-dir exits non-zero when the session can only re-enter", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    runTraceCli(["task", "create", "Prior work"], env, repo);
+    runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "session-2",
+        "--transcript",
+        join(repo, "s2.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+
+    const result = runTraceCli(
+      ["skill", "docs-dir", "--id", "session-2"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("re-enter");
+    expect(result.stderr).toContain("prior-work");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("skill docs-dir exits non-zero when there is no task to bind", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "session-3",
+        "--transcript",
+        join(repo, "s3.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+
+    const result = runTraceCli(
+      ["skill", "docs-dir", "--id", "session-3"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("work-on-task");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("skill docs-dir infers the session from the env when --id is omitted", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const transcript = join(repo, "env-session.jsonl");
+    const baseEnv = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+    const bound = runTraceCli(
+      [
+        "skill",
+        "work-on-task",
+        "Env bound work",
+        "--id",
+        "env-session",
+        "--transcript",
+        transcript,
+        "--tool",
+        "claude",
+      ],
+      baseEnv,
+      repo,
+    );
+    expect(bound.exitCode).toBe(0);
+
+    const result = runTraceCli(
+      ["skill", "docs-dir"],
+      { ...baseEnv, CLAUDE_SESSION_ID: "env-session" },
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(
+      `taskDocsDir: ${join(home, "tasks", "env-bound-work", "docs")}\n`,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
