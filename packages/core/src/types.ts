@@ -13,6 +13,15 @@ export type Task = {
 // reference. `description` is absent on tasks created without one.
 export type RecallCandidate = Pick<Task, "title" | "slug" | "description">;
 
+// The active task for a session/project, resolved by `resolveActiveTask`.
+// `bound` — the session is already assigned to this (unarchived) task. `re-enter`
+// — the session is unbound but the project has a most-recent unarchived task to
+// offer. `none` — nothing to bind to yet.
+export type ActiveTask =
+  | { kind: "bound"; task: Task }
+  | { kind: "re-enter"; task: Task }
+  | { kind: "none" };
+
 export type SessionTool = "claude" | "codex";
 
 export type Session = {
@@ -95,6 +104,7 @@ export type TaskStore = {
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
   recallCandidates(projectRoot: string): RecallCandidate[];
+  resolveActiveTask(sessionId: string, projectRoot: string): ActiveTask;
   updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;

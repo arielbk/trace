@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  type ActiveTask,
   getTranscriptAdapter,
   inferSessionIdentity,
   openTraceStore,
@@ -306,6 +307,41 @@ export function runTraceCli(
         return success(formatSessionSummary(session));
       }
 
+      if (action === "active-task") {
+        let parsedActiveTask: { id: string; project?: string };
+        try {
+          parsedActiveTask = parseSessionActiveTaskArgs(args);
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        let activeTaskProjectRoot: string;
+        try {
+          activeTaskProjectRoot = resolveProjectRootArg(
+            parsedActiveTask.project,
+            cwd,
+          );
+        } catch (error) {
+          return failure(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+
+        // The read-side query the SessionStart hook calls to decide its nudge:
+        // the session's bound task, else the project's most recent unarchived
+        // task to re-enter, else none. Emitted as JSON — the hook's only caller
+        // — reduced to the title/slug the nudge needs. `--project` overrides
+        // where the project root resolves from; see `resolveProjectRootArg`.
+        const activeTask = store.resolveActiveTask(
+          parsedActiveTask.id,
+          activeTaskProjectRoot,
+        );
+
+        return success(`${JSON.stringify(formatActiveTask(activeTask))}\n`);
+      }
+
       if (action === "list" && args[0] === "--unassigned") {
         return success(
           store.listUnassignedSessions().map(formatSessionSummary).join(""),
@@ -562,7 +598,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates> ...",
+    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates> ...",
   );
 }
 
@@ -971,6 +1007,59 @@ function parseNonNegativeInteger(value: string, flag: string): number {
   }
 
   return parsed;
+}
+
+function sessionActiveTaskUsage(): string {
+  return "Usage: trace session active-task --id <session-id> [--project <dir>]";
+}
+
+// Active-task takes a required `--id <session-id>` and an optional `--project
+// <dir>` override (resolved via resolveProjectRootArg). The hook passes the
+// session id it just registered and lets the project root resolve from cwd.
+function parseSessionActiveTaskArgs(args: string[]): {
+  id: string;
+  project?: string;
+} {
+  let id: string | undefined;
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--id") {
+      const value = args[index + 1];
+      if (!value) throw new Error(sessionActiveTaskUsage());
+      id = value;
+      index += 2;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(sessionActiveTaskUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (!id) {
+    throw new Error(sessionActiveTaskUsage());
+  }
+
+  return { id, project };
+}
+
+function formatActiveTask(
+  activeTask: ActiveTask,
+):
+  | { kind: "none" }
+  | { kind: "bound" | "re-enter"; task: { title: string; slug: string } } {
+  if (activeTask.kind === "none") {
+    return { kind: "none" };
+  }
+  return {
+    kind: activeTask.kind,
+    task: { title: activeTask.task.title, slug: activeTask.task.slug },
+  };
 }
 
 function parseCodexScanArgs(

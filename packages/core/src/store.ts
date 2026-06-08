@@ -18,6 +18,7 @@ import {
 } from "./token-totals.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
+  ActiveTask,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -174,6 +175,41 @@ class NodeSqliteTaskStore implements TaskStore {
       if (row.description != null) candidate.description = row.description;
       return candidate;
     });
+  }
+
+  // Resolve the active task for a session in a project, encapsulating the
+  // "session binding first, project recency fallback" rule behind one call so
+  // the SessionStart hook stays a thin caller. A session already bound to an
+  // unarchived task wins (positive case). Otherwise — unbound, or bound to a
+  // task that has since been archived or deleted — the project's most recent
+  // unarchived task is offered for re-entry, falling through to `none` when the
+  // project has no task to bind to yet.
+  resolveActiveTask(sessionId: string, projectRoot: string): ActiveTask {
+    const session = this.getSession(sessionId);
+    if (session?.taskId) {
+      const bound = this.getTask(session.taskId);
+      if (bound && !bound.archivedAt) {
+        return { kind: "bound", task: bound };
+      }
+    }
+
+    const recent = this.#mostRecentTask(projectRoot);
+    return recent ? { kind: "re-enter", task: recent } : { kind: "none" };
+  }
+
+  #mostRecentTask(projectRoot: string): Task | null {
+    const row = this.#sqlite
+      .prepare(
+        `
+          SELECT id, title, slug, created_at, project_root, archived_at, description
+          FROM tasks
+          WHERE project_root = ? AND archived_at IS NULL
+          ORDER BY created_at DESC, rowid DESC
+          LIMIT 1
+        `,
+      )
+      .get(projectRoot.trim());
+    return row ? taskFromRow(row as TaskRow) : null;
   }
 
   updateTaskDescription(ref: string, description: string): Task {
