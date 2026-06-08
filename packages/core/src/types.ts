@@ -53,6 +53,7 @@ export type TaskTimelineItem =
       type: "session";
       createdAt: string;
       session: Session;
+      sessionName: string | null;
     }
   | {
       type: "doc";

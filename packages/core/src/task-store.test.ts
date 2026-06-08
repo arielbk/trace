@@ -775,12 +775,14 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
           type: "session",
           createdAt: claudeSession.createdAt,
           session: { ...claudeSession, taskId: task.id },
+          sessionName: null,
         },
         { type: "doc", createdAt: doc.createdAt, doc },
         {
           type: "session",
           createdAt: codexSession.createdAt,
           session: { ...codexSession, taskId: task.id },
+          sessionName: null,
         },
       ],
       tokenTotals: {

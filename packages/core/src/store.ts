@@ -16,6 +16,7 @@ import {
   emptyTokenTotals,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
+import { readSessionName } from "./session-name.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   ActiveTask,
@@ -369,6 +370,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "session",
           createdAt: session.createdAt,
           session,
+          sessionName: readSessionName(session.transcriptPath),
         }),
       ),
       ...docs.map(

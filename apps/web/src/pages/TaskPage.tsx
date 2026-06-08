@@ -64,7 +64,7 @@ export function TaskTimelineView({
                 <div className="timeline-item-body">
                   <CopyChip
                     value={item.session.transcriptPath}
-                    display={truncatePath(item.session.transcriptPath)}
+                    display={item.sessionName ?? truncatePath(item.session.transcriptPath)}
                   />
                   <p className="item-meta">
                     {item.session.model ? (

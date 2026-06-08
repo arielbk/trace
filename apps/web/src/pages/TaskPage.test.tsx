@@ -33,6 +33,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "session",
@@ -52,6 +53,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           },
           createdAt: "2026-05-29T00:02:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "doc",
@@ -165,6 +167,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
           },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "doc",

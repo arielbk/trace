@@ -52,6 +52,7 @@ export {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";
+export { deriveSessionName, readSessionName } from "./session-name.ts";
 export { inferSessionIdentity } from "./session-identity.ts";
 export type {
   SessionIdentity,
