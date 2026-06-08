@@ -248,6 +248,18 @@ li {
   line-height: 1.5;
 }
 
+.task-project-label {
+  display: inline-block;
+  padding: 0.15em 0.55em;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
 .token-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));

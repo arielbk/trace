@@ -408,6 +408,67 @@ test("TokenSummary de-emphasizes the cache card relative to input/output", () =>
   expect(html).toContain("+999 written");
 });
 
+test("TaskTimelineView shows the project display name as a label when projectRoot is set", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/Users/me/Projects/my-cool-app",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain('class="task-project-label"');
+  expect(html).toContain("my-cool-app");
+  // Full path must not render as bare visible text.
+  expect(html).not.toContain(">/Users/me/Projects/my-cool-app<");
+});
+
+test("TaskTimelineView omits the project label when projectRoot is empty", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).not.toContain("task-project-label");
+});
+
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
   const timeline: TaskTimeline = {
     task: {

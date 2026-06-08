@@ -50,6 +50,9 @@ export function TaskTimelineView({
           {timeline.task.description ? (
             <p className="task-description">{timeline.task.description}</p>
           ) : null}
+          {timeline.task.projectRoot ? (
+            <span className="task-project-label">{truncatePath(timeline.task.projectRoot)}</span>
+          ) : null}
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
       </header>
