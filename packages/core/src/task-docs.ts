@@ -9,23 +9,14 @@ export function resolveTaskDocsDir(databasePath: string, ref: string): string {
   return join(dirname(resolve(databasePath)), "tasks", ref, "docs");
 }
 
-// List trace-native docs for a task, preferring the first directory ref whose
-// docs directory actually has files. New tasks live under their slug; passing
-// the legacy UUID as a later ref keeps historical UUID-named directories
-// resolvable without migrating them on disk. Returned docs always carry the
-// canonical task id, independent of which directory ref they came from.
+// List trace-native docs for a task from its slug directory. Returned docs
+// carry the canonical task id.
 export function listNativeTaskDocs(
   databasePath: string,
   taskId: string,
-  dirRefs: string[] = [taskId],
+  slug: string,
 ): TaskDoc[] {
-  for (const ref of dirRefs) {
-    const docs = readNativeTaskDocs(databasePath, taskId, ref);
-    if (docs.length > 0) {
-      return docs;
-    }
-  }
-  return [];
+  return readNativeTaskDocs(databasePath, taskId, slug);
 }
 
 function readNativeTaskDocs(

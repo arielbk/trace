@@ -465,13 +465,11 @@ class NodeSqliteTaskStore implements TaskStore {
       .all(id)
       .map((row) => taskDocFromRow(row as TaskDocRow));
 
-    // New tasks store docs under their slug directory; the UUID directory is the
-    // legacy fallback so docs written before slugs existed still surface.
-    const dirRefs = task?.slug ? [task.slug, id] : [id];
-
     return mergeTaskDocs(
       registeredDocs,
-      listNativeTaskDocs(this.#databasePath, id, dirRefs),
+      task?.slug
+        ? listNativeTaskDocs(this.#databasePath, id, task.slug)
+        : [],
     );
   }
 

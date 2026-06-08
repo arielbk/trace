@@ -622,7 +622,7 @@ test("task docs include files written to the task docs directory without registr
   try {
     const store = openTraceStore(databasePath);
     const task = store.createTask("checkout");
-    const docsDir = join(dir, ".trace", "tasks", task.id, "docs");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
     const nativeDocPath = join(docsDir, "decision.md");
     mkdirSync(docsDir, { recursive: true });
     writeFileSync(nativeDocPath, "# Decision\n");
@@ -817,7 +817,7 @@ test("re-entry manifest includes task docs and newest-first session pointers", (
   try {
     const store = openTraceStore(databasePath);
     const task = store.createTask("checkout", "/repo");
-    const docsDir = join(dir, ".trace", "tasks", task.id, "docs");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
     const nativeDocPath = join(docsDir, "decision.md");
     const externalDocPath = join(dir, "external.md");
     mkdirSync(docsDir, { recursive: true });
