@@ -375,6 +375,39 @@ test("TaskTimelineView omits the description block when absent", () => {
   expect(html).not.toContain("task-description");
 });
 
+test("TokenSummary de-emphasizes the cache card relative to input/output", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "cache-heavy",
+      title: "cache heavy",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 81123,
+      outputTokens: 5,
+      cacheCreationInputTokens: 999,
+      cacheReadInputTokens: 1_000_000,
+      totalTokens: 16_317_514,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // Cache card is wrapped in the de-emphasis class.
+  expect(html).toContain('class="token-summary-dim"');
+  // Cache data is still visible (not hidden).
+  expect(html).toContain("1.0M");
+  expect(html).toContain("+999 written");
+});
+
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
   const timeline: TaskTimeline = {
     task: {

@@ -178,7 +178,7 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
           <dd title={String(card.value)}>{formatTokensCompact(card.value)}</dd>
         </div>
       ))}
-      <div>
+      <div className="token-summary-dim">
         <dt>Cache</dt>
         <dd>
           <span title={String(totals.cacheReadInputTokens)}>
