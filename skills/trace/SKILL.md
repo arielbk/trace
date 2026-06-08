@@ -1,13 +1,44 @@
 ---
 name: trace
-description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, starts scoping or defining a piece of work (a feature, a fix, a plan), asks to bind the session to a task, asks to re-enter a task by its slug or exact title, or asks to open the Trace board.
+description: Bind the current Claude Code session to a Trace task, re-enter a task's context from its docs and prior session references, or open the Trace task board. Use when the user says they are working on a task, starts scoping or defining a piece of work (a feature, a fix, a plan), asks to bind the session to a task, asks to re-enter a task by its slug or exact title, asks to open the Trace board, or when session-start context reports that no Trace task is bound to this session and the user is doing real project work.
 ---
 
 # Trace
 
 Use this skill when the user says they are working on a task, starts scoping
 or defining a piece of work, asks to bind the current session to a task, asks
-to re-enter a task's context, or asks to open the Trace task board.
+to re-enter a task's context, asks to open the Trace task board, or when
+session-start context reports there is no active task for this session.
+
+## No active task for this session
+
+At session start, Trace injects one line of context about this session's task
+state. When that line says a task is being tracked (`✓ Trace tracking: <title>`),
+the session is already bound — do nothing; do not re-offer to bind it.
+
+When instead it reports that **no task is bound to this session** — or you
+otherwise notice the session is doing real project work with nothing tracking
+it — follow through rather than letting the signal pass:
+
+- If the line names the project's most recent task ("the most recent task in
+  this project is `<title>`"), and the work in this session is continuing that
+  task, **offer to re-enter it** (the **Re-enter X** verb) rather than creating
+  a near-duplicate. Prefer re-entry whenever a fitting recent task exists.
+- If there is no such task, or the work is plainly new, **offer to start
+  tracking it** (the **We're working on X** verb), drafting the title and
+  description yourself from the conversation.
+
+Guardrails — the lean-in is toward responding to the no-task signal, not toward
+eagerly creating tasks:
+
+- **Offer, don't auto-bind.** Surface the offer and bind only once the user
+  agrees (or has clearly already asked to track this work). Never silently
+  create or bind a task on the strength of the nudge alone.
+- **Prefer re-entry over duplication.** When a recent task plausibly covers the
+  work, re-enter it instead of spawning a parallel near-duplicate.
+- **Skip throwaway sessions.** Don't offer to bind quick questions, one-off
+  exploration, or scratch sessions the user never meant to track. Wait for real
+  project work, or the user's nod, before offering.
 
 ## Verbs
 

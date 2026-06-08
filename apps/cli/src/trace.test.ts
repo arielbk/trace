@@ -55,7 +55,15 @@ test("task capture --project keys the task to the override repo's git root", () 
     writeFileSync(docPath, "# Captured\n");
 
     const captured = runTraceCli(
-      ["task", "capture", "Captured task", "--doc", docPath, "--project", nested],
+      [
+        "task",
+        "capture",
+        "Captured task",
+        "--doc",
+        docPath,
+        "--project",
+        nested,
+      ],
       env,
       sandbox,
     );
@@ -82,7 +90,15 @@ test("task capture with a nonexistent --project exits non-zero naming the path",
     writeFileSync(docPath, "# Captured\n");
 
     const result = runTraceCli(
-      ["task", "capture", "Doomed capture", "--doc", docPath, "--project", missing],
+      [
+        "task",
+        "capture",
+        "Doomed capture",
+        "--doc",
+        docPath,
+        "--project",
+        missing,
+      ],
       env,
       sandbox,
     );
@@ -209,11 +225,7 @@ test("skill recall-candidates --project scopes the pool to the override repo's g
 
     // A plain run from the sandbox cwd resolves a different project root, so
     // the task is absent.
-    const plain = runTraceCli(
-      ["skill", "recall-candidates"],
-      env,
-      sandbox,
-    );
+    const plain = runTraceCli(["skill", "recall-candidates"], env, sandbox);
     expect(plain.exitCode).toBe(0);
     const plainCandidates = JSON.parse(plain.stdout) as Array<{
       title: string;
@@ -383,6 +395,141 @@ test("skill work-on-task with a flag first arg exits non-zero and creates no tas
     );
     expect(candidates.exitCode).toBe(0);
     expect(JSON.parse(candidates.stdout)).toEqual([]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("session active-task reports a bound session's task as JSON", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const bound = runTraceCli(
+      [
+        "skill",
+        "work-on-task",
+        "Checkout flow",
+        "--id",
+        "session-1",
+        "--transcript",
+        join(repo, "s1.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+    expect(bound.exitCode).toBe(0);
+
+    const result = runTraceCli(
+      ["session", "active-task", "--id", "session-1"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      kind: "bound",
+      task: { title: "Checkout flow", slug: "checkout-flow" },
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("session active-task offers re-entry for an unbound session in a known project", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    runTraceCli(["task", "create", "Prior work"], env, repo);
+    runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "session-2",
+        "--transcript",
+        join(repo, "s2.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+
+    const result = runTraceCli(
+      ["session", "active-task", "--id", "session-2"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      kind: "re-enter",
+      task: { title: "Prior work", slug: "prior-work" },
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("session active-task reports none for an unbound session in a fresh project", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "session-3",
+        "--transcript",
+        join(repo, "s3.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      repo,
+    );
+
+    const result = runTraceCli(
+      ["session", "active-task", "--id", "session-3"],
+      env,
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ kind: "none" });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("session active-task requires --id", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    const result = runTraceCli(["session", "active-task"], env, sandbox);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--id");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });
