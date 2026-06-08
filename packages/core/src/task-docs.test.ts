@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
-import { mergeTaskDocs } from "./task-docs.ts";
+import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
 import type { TaskDoc } from "./types.ts";
 
 const doc = (path: string, createdAt: string): TaskDoc => ({
@@ -41,4 +44,46 @@ test("mergeTaskDocs dedups by path, keeping the registered doc", () => {
   expect(mergeTaskDocs(registered, native)).toEqual([
     doc("/shared.md", "2026-01-01T00:00:00.000Z"),
   ]);
+});
+
+// Helper: create a temp db dir and place a file in tasks/<ref>/docs/
+function makeDocsFixture(ref: string, filename: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "trace-test-"));
+  const dbPath = join(dir, "trace.db");
+  const docsDir = join(dir, "tasks", ref, "docs");
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, filename), "content");
+  return dbPath;
+}
+
+test("listNativeTaskDocs resolves docs from the slug directory", () => {
+  const slug = "my-task-slug";
+  const taskId = "00000000-0000-0000-0000-000000000001";
+  const dbPath = makeDocsFixture(slug, "plan.md");
+
+  const docs = listNativeTaskDocs(dbPath, taskId, slug);
+
+  expect(docs).toHaveLength(1);
+  expect(docs[0]?.taskId).toBe(taskId);
+  expect(docs[0]?.path).toContain("plan.md");
+});
+
+test("listNativeTaskDocs returns empty array when slug directory does not exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-test-"));
+  const dbPath = join(dir, "trace.db");
+
+  const docs = listNativeTaskDocs(dbPath, "some-id", "nonexistent-slug");
+
+  expect(docs).toEqual([]);
+});
+
+test("listNativeTaskDocs does not fall back to UUID directory", () => {
+  const taskId = "00000000-0000-0000-0000-000000000002";
+  const slug = "my-new-slug";
+  // File exists only in the UUID directory, not the slug directory
+  const dbPath = makeDocsFixture(taskId, "legacy.md");
+
+  const docs = listNativeTaskDocs(dbPath, taskId, slug);
+
+  expect(docs).toEqual([]);
 });
