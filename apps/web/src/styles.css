@@ -46,7 +46,7 @@
   --color-accent: #1f6f5b;
   --color-tag-claude: #b94700;
   --color-tag-codex: #1f6f5b;
-  --color-tag-doc: #475467;
+  --color-tag-doc: #2f5fa8;
   --color-tag-text: #ffffff;
   --color-selection-bg: #bfe3d7;
   --color-selection-text: #0c2b22;
@@ -66,7 +66,7 @@
   --color-accent: #3ba88c;
   --color-tag-claude: #e2620f;
   --color-tag-codex: #2f9d7f;
-  --color-tag-doc: #6b7685;
+  --color-tag-doc: #6a9fd8;
   --color-tag-text: #0f1419;
   --color-selection-bg: #2f6f5d;
   --color-selection-text: #f2f5f4;
@@ -394,14 +394,20 @@ li {
 
 .type-icon-claude {
   color: var(--color-tag-claude);
+  background: color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border));
 }
 
 .type-icon-codex {
   color: var(--color-tag-codex);
+  background: color-mix(in srgb, var(--color-tag-codex) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border));
 }
 
 .type-icon-doc {
   color: var(--color-tag-doc);
+  background: color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border));
 }
 
 .timeline-item-time {
