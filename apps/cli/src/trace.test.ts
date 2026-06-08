@@ -288,3 +288,103 @@ test("task create with a nonexistent --project exits non-zero naming the path", 
     rmSync(sandbox, { recursive: true, force: true });
   }
 });
+
+test("skill work-on-task --help prints usage and creates no task", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    for (const flag of ["--help", "-h"]) {
+      const result = runTraceCli(["skill", "work-on-task", flag], env, sandbox);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Usage: trace skill work-on-task");
+    }
+
+    // The help flag must never be persisted as a task title.
+    const candidates = runTraceCli(
+      ["skill", "recall-candidates"],
+      env,
+      sandbox,
+    );
+    expect(candidates.exitCode).toBe(0);
+    expect(JSON.parse(candidates.stdout)).toEqual([]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter --help prints usage and exits 0", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    for (const flag of ["--help", "-h"]) {
+      const result = runTraceCli(["skill", "re-enter", flag], env, sandbox);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Usage: trace skill re-enter");
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter with a flag ref exits non-zero with usage", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    const result = runTraceCli(["skill", "re-enter", "--bogus"], env, sandbox);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Usage: trace skill re-enter");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("task create with a flag title still rejects with its original usage", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    const result = runTraceCli(["task", "create", "--bogus"], env, sandbox);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Usage: trace task create <title>");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("skill work-on-task with a flag first arg exits non-zero and creates no task", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    const result = runTraceCli(
+      ["skill", "work-on-task", "--bogus"],
+      env,
+      sandbox,
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Usage: trace skill work-on-task");
+
+    const candidates = runTraceCli(
+      ["skill", "recall-candidates"],
+      env,
+      sandbox,
+    );
+    expect(candidates.exitCode).toBe(0);
+    expect(JSON.parse(candidates.stdout)).toEqual([]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});

@@ -83,7 +83,7 @@ export function runTraceCli(
           return success(`${taskCreateUsage()}\n`);
         }
 
-        const titleError = rejectFlagTitle(args[0], "create");
+        const titleError = rejectFlagTitle(args[0], "task create");
         if (titleError) return titleError;
 
         let parsedCreate: {
@@ -158,7 +158,7 @@ export function runTraceCli(
           return success(`${taskCaptureUsage()}\n`);
         }
 
-        const titleError = rejectFlagTitle(args[0], "capture");
+        const titleError = rejectFlagTitle(args[0], "task capture");
         if (titleError) return titleError;
 
         let parsed: {
@@ -374,6 +374,13 @@ export function runTraceCli(
 
     if (resource === "skill") {
       if (action === "work-on-task") {
+        if (isHelpFlag(args[0])) {
+          return success(`${skillWorkOnTaskUsage()}\n`);
+        }
+
+        const titleError = rejectFlagTitle(args[0], "skill work-on-task");
+        if (titleError) return titleError;
+
         const title = args[0];
 
         if (!title) {
@@ -456,6 +463,13 @@ export function runTraceCli(
       }
 
       if (action === "re-enter") {
+        if (isHelpFlag(args[0])) {
+          return success(`${skillReEnterUsage()}\n`);
+        }
+
+        const refError = rejectFlagTitle(args[0], "skill re-enter", "ref");
+        if (refError) return refError;
+
         const ref = args[0];
 
         if (!ref) {
@@ -558,6 +572,14 @@ function isHelpFlag(token: string | undefined): boolean {
 
 function looksLikeFlag(token: string | undefined): boolean {
   return token !== undefined && token.startsWith("-");
+}
+
+function skillWorkOnTaskUsage(): string {
+  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex>] [--model <name>] [--description <text>] [--project <dir>]";
+}
+
+function skillReEnterUsage(): string {
+  return "Usage: trace skill re-enter <ref>";
 }
 
 function taskCreateUsage(): string {
@@ -771,15 +793,19 @@ function linkRepoDocs(
   symlinkSync(docsDir, linkPath);
 }
 
-// A title that starts with `-` is almost always a mistyped flag rather than the
-// work the user meant to name, so reject it with usage rather than persisting a
-// task titled `--help`. Help flags are handled by the caller before this point.
+// A title (or ref) that starts with `-` is almost always a mistyped flag rather
+// than the work the user meant to name, so reject it with usage rather than
+// persisting a task titled `--help` or running a junk ref through resolution.
+// `command` is the full sub-command label (e.g. `task create`, `skill
+// work-on-task`); `noun` is what the positional argument is called. Help flags
+// are handled by the caller before this point.
 function rejectFlagTitle(
   token: string | undefined,
   command: string,
+  noun = "title",
 ): CommandResult | null {
   if (!looksLikeFlag(token)) return null;
-  return failure(`Usage: trace task ${command} <title>`);
+  return failure(`Usage: trace ${command} <${noun}>`);
 }
 
 function formatTask(
