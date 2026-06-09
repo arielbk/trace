@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import type { SessionTool, TaskTimeline, TokenTotals } from "@trace/core";
+import {
+  freshTokenTotal,
+  type SessionTool,
+  type TaskTimeline,
+  type TokenTotals,
+} from "@trace/core";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import {
@@ -197,12 +202,11 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
 }
 
 function TokenSummary({ totals }: { totals: TokenTotals }) {
-  // "Total" is fresh spend — input + output — the figures billed at full rate.
-  // Cache reads are cheap context replay, so they ride below as a separate,
-  // clearly-labeled stat rather than inflating the headline.
-  const freshTotal = totals.inputTokens + totals.outputTokens;
+  // "Total" is fresh spend — input + output — matching the figure on the main
+  // task list so the number is consistent across both views. Cache reads are
+  // cheap context replay, so they ride below as a separate, labeled stat.
   const cards: { label: string; value: number }[] = [
-    { label: "Total", value: freshTotal },
+    { label: "Total", value: freshTokenTotal(totals) },
     { label: "Input", value: totals.inputTokens },
     { label: "Output", value: totals.outputTokens },
   ];

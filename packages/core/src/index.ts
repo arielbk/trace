@@ -49,6 +49,7 @@ export type {
 export {
   addTokenTotals,
   emptyTokenTotals,
+  freshTokenTotal,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";

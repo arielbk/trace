@@ -13,6 +13,15 @@ export type RawTokenUsage = {
   totalTokens?: number;
 };
 
+/**
+ * Fresh token spend: input + output only, excluding cache creation/read. This
+ * is the headline figure surfaced in the UI — cache reads are cheap context
+ * replay and would otherwise dominate the total without reflecting real spend.
+ */
+export function freshTokenTotal(totals: TokenTotals): number {
+  return totals.inputTokens + totals.outputTokens;
+}
+
 export function emptyTokenTotals(): TokenTotals {
   return {
     inputTokens: 0,

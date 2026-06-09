@@ -209,7 +209,13 @@ describe("TaskList rendering", () => {
         id: "task-1",
         title: "CLI work",
         lastActivityAt: "2020-03-15T00:00:00.000Z",
-        tokenTotals: tokens(16_317_514),
+        tokenTotals: {
+          inputTokens: 81123,
+          outputTokens: 5,
+          cacheCreationInputTokens: 999,
+          cacheReadInputTokens: 1_000_000,
+          totalTokens: 16_317_514,
+        },
       }),
     ];
 
@@ -223,8 +229,11 @@ describe("TaskList rendering", () => {
     expect(html).toContain('href="/task/task-1"');
     // Relative time (old timestamp falls back to absolute date).
     expect(html).toContain("Mar 15, 2020");
-    // Compact token total with the exact breakdown available on hover.
-    expect(html).toContain("16.3M");
+    // The visible figure is fresh spend (input + output), matching the detail
+    // page — not the cache-inflated grand total.
+    expect(html).toContain("81.1K");
+    expect(html).not.toContain("16.3M");
+    // The full breakdown, including the grand total, is available on hover.
     expect(html).toContain("total 16317514");
   });
 

@@ -233,8 +233,8 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
     </MemoryRouter>,
   );
 
-  // Total/Input/Output cards headline fresh spend; cache reads/writes ride on
-  // a secondary line below, labeled and without the old "+" subtext styling.
+  // Total/Input/Output cards plus a cache split on a secondary line below,
+  // labeled and without the old "+" subtext styling.
   expect(html).toContain("Total");
   expect(html).toContain("Input");
   expect(html).toContain("Output");
@@ -243,8 +243,8 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
   expect(html).toContain("999 written");
   expect(html).not.toContain("+999");
 
-  // "Total" is fresh spend (input + output), not the cache-inflated grand
-  // total — the cache-heavy figure no longer headlines the summary.
+  // "Total" is fresh spend (input + output), matching the main task list — the
+  // cache-inflated grand total does not headline the summary.
   expect(html).toContain('title="81128"'); // 81123 + 5
   expect(html).not.toContain(">16.3M<");
   expect(html).not.toContain('title="16317514"');
