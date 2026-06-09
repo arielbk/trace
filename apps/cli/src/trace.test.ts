@@ -853,3 +853,31 @@ test("skill re-enter output is unchanged when no state.md exists", () => {
     rmSync(repoParent, { recursive: true, force: true });
   }
 });
+
+test("skill re-enter output includes taskDocsDir even when the task has no docs", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const created = runTraceCli(["task", "create", "Zero docs task"], env, repo);
+    expect(created.exitCode).toBe(0);
+    const slug = created.stdout.trim();
+
+    const reentered = runTraceCli(
+      ["skill", "re-enter", "Zero docs task"],
+      env,
+      repo,
+    );
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).toContain(
+      `taskDocsDir: ${join(home, "tasks", slug, "docs")}`,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});

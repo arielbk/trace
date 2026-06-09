@@ -849,6 +849,7 @@ test("re-entry manifest includes task docs and newest-first session pointers", (
         title: "checkout",
         projectRoot: "/repo",
       },
+      taskDocsDir: join(dir, ".trace", "tasks", task.slug, "docs"),
       docs: expect.arrayContaining([
         expect.objectContaining({ path: nativeDocPath }),
         expect.objectContaining({ path: externalDocPath }),
@@ -893,6 +894,7 @@ test("re-entry manifest returns empty sections for tasks without docs or session
         title: "empty",
         projectRoot: "",
       },
+      taskDocsDir: join(dir, ".trace", "tasks", task.slug, "docs"),
       docs: [],
       sessions: [],
     });
@@ -958,6 +960,26 @@ test("re-entry manifest puts state.md in state: field and excludes it from docs:
     const docPaths = manifest?.docs.map((d) => d.path) ?? [];
     expect(docPaths).not.toContain(statePath);
     expect(docPaths).toContain(otherDocPath);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest carries taskDocsDir derived from the database path and task slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("docs-dir-feature", "/repo");
+
+    const manifest = store.getReEntryManifest(task.id);
+
+    expect(manifest?.taskDocsDir).toBe(
+      join(dir, ".trace", "tasks", task.slug, "docs"),
+    );
 
     store.close();
   } finally {

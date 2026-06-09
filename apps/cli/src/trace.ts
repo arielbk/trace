@@ -1042,6 +1042,8 @@ function formatReEntryManifest(manifest: ReEntryManifest): string {
     lines.push("state:", `  path: ${manifest.state.path}`);
   }
 
+  lines.push(`taskDocsDir: ${manifest.taskDocsDir}`);
+
   if (manifest.docs.length === 0) {
     lines.push("docs: []");
   } else {

@@ -10,7 +10,11 @@ import {
   looksLikeTaskId,
   slugify,
 } from "./slug.ts";
-import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
+import {
+  listNativeTaskDocs,
+  mergeTaskDocs,
+  resolveTaskDocsDir,
+} from "./task-docs.ts";
 import {
   addTokenTotals,
   emptyTokenTotals,
@@ -37,7 +41,7 @@ export function openTraceStore(databasePath: string): TaskStore {
   return new NodeSqliteTaskStore(databasePath);
 }
 
-export { resolveTaskDocsDir } from "./task-docs.ts";
+export { resolveTaskDocsDir };
 
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
@@ -422,6 +426,7 @@ class NodeSqliteTaskStore implements TaskStore {
         // convention — only surface the key when the task actually has one.
         ...(task.description ? { description: task.description } : {}),
       },
+      taskDocsDir: resolveTaskDocsDir(this.#databasePath, task.slug),
       ...(stateDoc ? { state: stateDoc } : {}),
       docs,
       sessions,
