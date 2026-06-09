@@ -53,11 +53,14 @@ export type TaskTimelineItem =
       type: "session";
       createdAt: string;
       session: Session;
+      sessionName: string | null;
     }
   | {
       type: "doc";
       createdAt: string;
       doc: TaskDoc;
+      /** File size on disk in bytes, or null when the file can't be stat'd. */
+      sizeBytes: number | null;
     };
 
 export type TaskTimeline = {

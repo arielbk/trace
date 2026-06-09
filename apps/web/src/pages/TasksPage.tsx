@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { TaskSummary } from "@trace/core";
+import { freshTokenTotal, type TaskSummary } from "@trace/core";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { useClipboardCopy } from "../components/useClipboardCopy.ts";
@@ -174,7 +174,7 @@ function TaskRow({
         className="task-row-tokens"
         title={formatTokenBreakdown(task.tokenTotals)}
       >
-        {formatTokensCompact(task.tokenTotals.totalTokens)}
+        {formatTokensCompact(freshTokenTotal(task.tokenTotals))}
       </span>
       <span className="task-row-time">
         {formatRelativeTime(task.lastActivityAt)}

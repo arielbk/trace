@@ -11,6 +11,17 @@ export function formatTokensCompact(n: number): string {
 }
 
 /**
+ * Render a byte count as a compact file size: `812` → `"812 B"`,
+ * `12544` → `"12.3 KB"`, `2_300_000` → `"2.2 MB"`. Sub-kilobyte sizes keep
+ * their exact byte count; larger sizes round to one decimal place.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
  * Render an ISO timestamp relative to `now`: `"just now"`, `"3m ago"`, `"5h ago"`,
  * `"2d ago"`, falling back to a readable absolute date beyond ~a week.
  */

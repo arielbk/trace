@@ -46,7 +46,7 @@
   --color-accent: #1f6f5b;
   --color-tag-claude: #b94700;
   --color-tag-codex: #1f6f5b;
-  --color-tag-doc: #475467;
+  --color-tag-doc: #2f5fa8;
   --color-tag-text: #ffffff;
   --color-selection-bg: #bfe3d7;
   --color-selection-text: #0c2b22;
@@ -66,7 +66,7 @@
   --color-accent: #3ba88c;
   --color-tag-claude: #e2620f;
   --color-tag-codex: #2f9d7f;
-  --color-tag-doc: #6b7685;
+  --color-tag-doc: #6a9fd8;
   --color-tag-text: #0f1419;
   --color-selection-bg: #2f6f5d;
   --color-selection-text: #f2f5f4;
@@ -248,6 +248,20 @@ li {
   line-height: 1.5;
 }
 
+/* Project segment of the header breadcrumb (Trace / project / task). Carries
+   page orientation — which project the current task belongs to — so it reads
+   as a quiet anchor, not a competing label. */
+.app-header-project {
+  flex-shrink: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .token-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
@@ -275,12 +289,29 @@ li {
   font-variant-numeric: tabular-nums;
 }
 
-.token-summary-sub {
-  display: block;
-  margin-top: var(--space-1);
+/* Cache reads/writes ride below the Total/Input/Output cards as a single
+   secondary line — clearly a separate, supporting metric (cheap context
+   replay), not a dimmed/disabled card competing with fresh spend. */
+.token-summary-cache {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
   color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.token-summary-cache-label {
   font-size: var(--text-xs);
-  font-weight: 400;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.token-summary-cache-sep {
+  opacity: 0.6;
 }
 
 .empty-state {
@@ -341,11 +372,25 @@ li {
   overflow-wrap: anywhere;
 }
 
+/* A derived, human-readable session name reads as the item's title — plain
+   prose weight, not the mono chip treatment of an unnamed transcript path. */
+.session-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
 .item-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* Doc file size gets the same meta treatment as a session row's in/out token
+   stat — mono, muted, tabular — so the two row types read as siblings. */
+.doc-size {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .model-chip {
@@ -376,14 +421,20 @@ li {
 
 .type-icon-claude {
   color: var(--color-tag-claude);
+  background: color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border));
 }
 
 .type-icon-codex {
   color: var(--color-tag-codex);
+  background: color-mix(in srgb, var(--color-tag-codex) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border));
 }
 
 .type-icon-doc {
   color: var(--color-tag-doc);
+  background: color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border));
 }
 
 .timeline-item-time {
@@ -469,6 +520,7 @@ li {
 .task-row-title {
   display: block;
   overflow: hidden;
+  font-size: var(--text-base);
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -496,6 +548,7 @@ li {
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  max-width: 55ch;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   line-height: 1.4;

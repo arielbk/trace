@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   addTokenTotals,
   emptyTokenTotals,
+  freshTokenTotal,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 
@@ -13,6 +14,18 @@ test("emptyTokenTotals returns an all-zero totals value", () => {
     cacheReadInputTokens: 0,
     totalTokens: 0,
   });
+});
+
+test("freshTokenTotal sums input and output, excluding cache", () => {
+  expect(
+    freshTokenTotal({
+      inputTokens: 81123,
+      outputTokens: 5,
+      cacheCreationInputTokens: 999,
+      cacheReadInputTokens: 1_000_000,
+      totalTokens: 16_317_514,
+    }),
+  ).toBe(81128);
 });
 
 test("addTokenTotals sums every field of two totals", () => {

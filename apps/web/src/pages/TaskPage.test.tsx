@@ -33,6 +33,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "session",
@@ -52,6 +53,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           },
           createdAt: "2026-05-29T00:02:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "doc",
@@ -61,6 +63,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           path: "/work/trace-v2/docs/plan.md",
           createdAt: "2026-05-29T00:03:00.000Z",
         },
+        sizeBytes: null,
       },
     ],
     tokenTotals: {
@@ -112,6 +115,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
           path: "/work/trace-v2/docs/plan.md",
           createdAt: "2026-05-29T00:03:00.000Z",
         },
+        sizeBytes: null,
       },
     ],
     tokenTotals: {
@@ -165,6 +169,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
           },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
+        sessionName: null,
       },
       {
         type: "doc",
@@ -174,6 +179,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
           path: docPath,
           createdAt: "2026-05-29T00:03:00.000Z",
         },
+        sizeBytes: null,
       },
     ],
     tokenTotals: {
@@ -227,19 +233,24 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
     </MemoryRouter>,
   );
 
-  // Total/Input/Output cards plus a combined Cache card whose read value
-  // headlines and whose written value rides as subtext — still reconcilable.
+  // Total/Input/Output cards plus a cache split on a secondary line below,
+  // labeled and without the old "+" subtext styling.
   expect(html).toContain("Total");
   expect(html).toContain("Input");
   expect(html).toContain("Output");
   expect(html).toContain("Cache");
-  expect(html).toContain("+999 written");
+  expect(html).toContain("1.0M read");
+  expect(html).toContain("999 written");
+  expect(html).not.toContain("+999");
+
+  // "Total" is fresh spend (input + output), matching the main task list — the
+  // cache-inflated grand total does not headline the summary.
+  expect(html).toContain('title="81128"'); // 81123 + 5
+  expect(html).not.toContain(">16.3M<");
+  expect(html).not.toContain('title="16317514"');
 
   // Values render compactly with the exact integer available on hover.
-  expect(html).toContain(">16.3M<");
-  expect(html).toContain('title="16317514"');
   expect(html).toContain(">81.1K<");
-  expect(html).toContain(">1.0M<");
   expect(html).toContain('title="1000000"');
   // No raw multi-thousand integer is rendered as bare card text.
   expect(html).not.toContain(">16317514<");
@@ -372,6 +383,101 @@ test("TaskTimelineView omits the description block when absent", () => {
   expect(html).not.toContain("task-description");
 });
 
+test("TokenSummary renders cache reads/writes as a secondary line below the cards", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "cache-heavy",
+      title: "cache heavy",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 81123,
+      outputTokens: 5,
+      cacheCreationInputTokens: 999,
+      cacheReadInputTokens: 1_000_000,
+      totalTokens: 16_317_514,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // Cache reads/writes render on the dedicated secondary line, not as a card.
+  expect(html).toContain('class="token-summary-cache"');
+  // Cache data is still visible (not hidden), labeled, without the old "+".
+  expect(html).toContain("1.0M read");
+  expect(html).toContain("999 written");
+  expect(html).not.toContain("+999");
+});
+
+test("TaskTimelineView shows the project display name in the header breadcrumb when projectRoot is set", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/Users/me/Projects/my-cool-app",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain('class="app-header-project"');
+  expect(html).toContain("my-cool-app");
+  // Full path must not render as bare visible text.
+  expect(html).not.toContain(">/Users/me/Projects/my-cool-app<");
+});
+
+test("TaskTimelineView omits the breadcrumb project segment when projectRoot is empty", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).not.toContain("app-header-project");
+});
+
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
   const timeline: TaskTimeline = {
     task: {
@@ -391,6 +497,7 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
           path: "/home/u/.trace/tasks/task-2/docs/findings.md",
           createdAt: "2026-06-03T00:00:00.000Z",
         },
+        sizeBytes: 12544,
       },
     ],
     tokenTotals: {
@@ -410,6 +517,8 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
 
   expect(html).toContain("type-icon type-icon-doc");
   expect(html).toContain("findings.md");
+  // The doc's on-disk size renders as a compact, human-readable detail.
+  expect(html).toContain("12.3 KB");
   expect(html).not.toContain("No timeline items found.");
   // Zero token totals still render (no session rows, no crash).
   expect(html).toContain("Token totals");
