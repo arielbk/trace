@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
@@ -378,6 +378,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "doc",
           createdAt: doc.createdAt,
           doc,
+          sizeBytes: readFileSizeBytes(doc.path),
         }),
       ),
     ].sort(compareTimelineItems);
@@ -750,7 +751,9 @@ function compareTimelineItems(
   left: TaskTimelineItem,
   right: TaskTimelineItem,
 ): number {
-  const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
+  // Newest first, matching the reverse-chronological project list on the main
+  // page — the most recent session/doc surfaces at the top of the timeline.
+  const byCreatedAt = right.createdAt.localeCompare(left.createdAt);
   if (byCreatedAt !== 0) return byCreatedAt;
 
   const leftKey =
@@ -761,7 +764,16 @@ function compareTimelineItems(
     right.type === "session"
       ? `session:${right.session.id}`
       : `doc:${right.doc.path}`;
-  return leftKey.localeCompare(rightKey);
+  return rightKey.localeCompare(leftKey);
+}
+
+/** File size in bytes for a doc path, or null when it can't be stat'd. */
+function readFileSizeBytes(path: string): number | null {
+  try {
+    return statSync(path).size;
+  } catch {
+    return null;
+  }
 }
 
 function compareSessionsNewestFirst(left: Session, right: Session): number {

@@ -5,6 +5,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import {
   buildReEnterPrompt,
+  formatBytes,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -37,7 +38,14 @@ export function TaskTimelineView({
 }) {
   return (
     <main className="task-page">
-      <AppHeader context={timeline.task.title} />
+      <AppHeader
+        project={
+          timeline.task.projectRoot
+            ? truncatePath(timeline.task.projectRoot)
+            : undefined
+        }
+        context={timeline.task.title}
+      />
       <header className="task-header">
         <div className="task-heading">
           <div className="task-title-row">
@@ -49,9 +57,6 @@ export function TaskTimelineView({
           </div>
           {timeline.task.description ? (
             <p className="task-description">{timeline.task.description}</p>
-          ) : null}
-          {timeline.task.projectRoot ? (
-            <span className="task-project-label">{truncatePath(timeline.task.projectRoot)}</span>
           ) : null}
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
@@ -65,10 +70,14 @@ export function TaskTimelineView({
               <li className="timeline-item" key={`session:${item.session.id}`}>
                 <TypeIcon type={item.session.tool} />
                 <div className="timeline-item-body">
-                  <CopyChip
-                    value={item.session.transcriptPath}
-                    display={item.sessionName ?? truncatePath(item.session.transcriptPath)}
-                  />
+                  {item.sessionName ? (
+                    <span className="session-name">{item.sessionName}</span>
+                  ) : (
+                    <CopyChip
+                      value={item.session.transcriptPath}
+                      display={truncatePath(item.session.transcriptPath)}
+                    />
+                  )}
                   <p className="item-meta">
                     {item.session.model ? (
                       <span className="model-chip">{item.session.model}</span>
@@ -96,6 +105,9 @@ export function TaskTimelineView({
                     display={truncatePath(item.doc.path)}
                   />
                   <p className="item-meta">
+                    {item.sizeBytes !== null ? (
+                      <span className="doc-size">{formatBytes(item.sizeBytes)}</span>
+                    ) : null}
                     <span className="timeline-item-time">
                       {formatRelativeTime(item.createdAt, now)}
                     </span>
@@ -125,11 +137,28 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
       aria-label={TYPE_LABELS[type]}
     >
       {type === "claude" ? (
+        // Claude's sunburst/spark mark: radiating tapered spokes from a center,
+        // rendered as round-capped strokes. Recognizably Claude rather than a
+        // generic 4-point sparkle.
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-          <path
-            d="M12 2C12 7 7 12 2 12C7 12 12 17 12 22C12 17 17 12 22 12C17 12 12 7 12 2Z"
-            fill="currentColor"
-          />
+          <g
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+          >
+            <line x1="12" y1="12" x2="21" y2="12" />
+            <line x1="12" y1="12" x2="19.79" y2="16.5" />
+            <line x1="12" y1="12" x2="16.5" y2="19.79" />
+            <line x1="12" y1="12" x2="12" y2="21" />
+            <line x1="12" y1="12" x2="7.5" y2="19.79" />
+            <line x1="12" y1="12" x2="4.21" y2="16.5" />
+            <line x1="12" y1="12" x2="3" y2="12" />
+            <line x1="12" y1="12" x2="4.21" y2="7.5" />
+            <line x1="12" y1="12" x2="7.5" y2="4.21" />
+            <line x1="12" y1="12" x2="12" y2="3" />
+            <line x1="12" y1="12" x2="16.5" y2="4.21" />
+            <line x1="12" y1="12" x2="19.79" y2="7.5" />
+          </g>
         </svg>
       ) : type === "codex" ? (
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
@@ -168,33 +197,40 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
 }
 
 function TokenSummary({ totals }: { totals: TokenTotals }) {
+  // "Total" is fresh spend — input + output — the figures billed at full rate.
+  // Cache reads are cheap context replay, so they ride below as a separate,
+  // clearly-labeled stat rather than inflating the headline.
+  const freshTotal = totals.inputTokens + totals.outputTokens;
   const cards: { label: string; value: number }[] = [
-    { label: "Total", value: totals.totalTokens },
+    { label: "Total", value: freshTotal },
     { label: "Input", value: totals.inputTokens },
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <dl className="token-summary" aria-label="Token totals">
-      {cards.map((card) => (
-        <div key={card.label}>
-          <dt>{card.label}</dt>
-          <dd title={String(card.value)}>{formatTokensCompact(card.value)}</dd>
-        </div>
-      ))}
-      <div className="token-summary-dim">
-        <dt>Cache</dt>
-        <dd>
-          <span title={String(totals.cacheReadInputTokens)}>
-            {formatTokensCompact(totals.cacheReadInputTokens)}
-          </span>
-          <span
-            className="token-summary-sub"
-            title={String(totals.cacheCreationInputTokens)}
-          >
-            +{formatTokensCompact(totals.cacheCreationInputTokens)} written
-          </span>
-        </dd>
-      </div>
-    </dl>
+    <div className="token-summary-wrap">
+      <dl className="token-summary" aria-label="Token totals">
+        {cards.map((card) => (
+          <div key={card.label}>
+            <dt>{card.label}</dt>
+            <dd title={String(card.value)}>{formatTokensCompact(card.value)}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="token-summary-cache">
+        <span className="token-summary-cache-label">Cache</span>
+        <span title={String(totals.cacheReadInputTokens)}>
+          {formatTokensCompact(totals.cacheReadInputTokens)} read
+        </span>
+        <span
+          className="token-summary-cache-sep"
+          aria-hidden="true"
+        >
+          ·
+        </span>
+        <span title={String(totals.cacheCreationInputTokens)}>
+          {formatTokensCompact(totals.cacheCreationInputTokens)} written
+        </span>
+      </p>
+    </div>
   );
 }

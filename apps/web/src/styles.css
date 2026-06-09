@@ -248,16 +248,18 @@ li {
   line-height: 1.5;
 }
 
-.task-project-label {
-  display: inline-block;
-  padding: 0.15em 0.55em;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
+/* Project segment of the header breadcrumb (Trace / project / task). Carries
+   page orientation — which project the current task belongs to — so it reads
+   as a quiet anchor, not a competing label. */
+.app-header-project {
+  flex-shrink: 0;
+  max-width: 16ch;
+  overflow: hidden;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.4;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .token-summary {
@@ -287,18 +289,29 @@ li {
   font-variant-numeric: tabular-nums;
 }
 
-.token-summary-sub {
-  display: block;
-  margin-top: var(--space-1);
+/* Cache reads/writes ride below the Total/Input/Output cards as a single
+   secondary line — clearly a separate, supporting metric (cheap context
+   replay), not a dimmed/disabled card competing with fresh spend. */
+.token-summary-cache {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
   color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  font-weight: 400;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
-.token-summary-dim dd {
-  font-size: var(--text-md);
-  font-weight: 500;
-  color: var(--color-text-muted);
+.token-summary-cache-label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.token-summary-cache-sep {
+  opacity: 0.6;
 }
 
 .empty-state {
@@ -359,11 +372,25 @@ li {
   overflow-wrap: anywhere;
 }
 
+/* A derived, human-readable session name reads as the item's title — plain
+   prose weight, not the mono chip treatment of an unnamed transcript path. */
+.session-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
 .item-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
+}
+
+/* Doc file size gets the same meta treatment as a session row's in/out token
+   stat — mono, muted, tabular — so the two row types read as siblings. */
+.doc-size {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .model-chip {

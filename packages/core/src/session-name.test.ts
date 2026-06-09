@@ -57,6 +57,31 @@ test("skips system-reminder noise and returns the first real message", () => {
   expect(deriveSessionName(transcript)).toBe("Fix the auth bug");
 });
 
+test("surfaces the args of a slash-command invocation, not the command tags", () => {
+  const transcript = makeTranscript([
+    {
+      role: "user",
+      content:
+        "<command-message>scope</command-message>\n<command-name>/scope</command-name>\n<command-args>Improve the UX of the web platform</command-args>",
+    },
+  ]);
+  expect(deriveSessionName(transcript)).toBe(
+    "Improve the UX of the web platform",
+  );
+});
+
+test("skips a bare slash-command invocation with no args", () => {
+  const transcript = makeTranscript([
+    {
+      role: "user",
+      content:
+        "<command-message>clear</command-message>\n<command-name>/clear</command-name>\n<command-args></command-args>",
+    },
+    { role: "user", content: "Build the settings page" },
+  ]);
+  expect(deriveSessionName(transcript)).toBe("Build the settings page");
+});
+
 test("returns null when all user messages are noise", () => {
   const transcript = makeTranscript([
     { role: "user", content: "/implement feature-x" },
