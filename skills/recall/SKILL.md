@@ -81,9 +81,19 @@ Then bind the current session by exact title:
 node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "{title}"
 ```
 
-Consume the manifest: read the decision docs first, in the listed order; only
-fall back to the transcript tail of the `mostRecent: true` session (via
-`trace session tail <session-id>`) when the docs do not cover current state.
+Consume the manifest:
+
+- If the manifest carries a `state:` field, read that file first — it is the
+  living state file written by the `handoff` skill (one summary line, decisions
+  made, current state, next step, open questions) and is the authoritative
+  snapshot of where the task stands. Open with a recap drawn from it; pull
+  other docs from `docs:` only when `state.md` links to them or the current
+  work explicitly needs them.
+- When no `state:` field is present, read the decision docs first, in the
+  listed order, then fall back to the transcript tail of the `mostRecent: true`
+  session (via `trace session tail <session-id>`) only when the docs do not
+  cover current state.
+
 Never paste raw transcripts into the chat, and never re-ask the user for
 context the manifest or docs already hold.
 

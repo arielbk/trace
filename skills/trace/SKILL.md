@@ -121,10 +121,18 @@ When re-entering:
 1. Call the command above and treat its output as a manifest. When it carries a
    `description:` line, that is the task's stored summary — use it to orient and
    to confirm you have the right task; don't re-derive it.
-2. Read the decision docs first, in the listed order.
-3. Only if those docs do not cover the current state, read the transcript tail
-   for the `mostRecent: true` session with `trace session tail <session-id>`.
-4. Never paste raw transcripts into the chat, and never ask the user to
+2. If the manifest carries a `state:` field, read that file first and treat it
+   as the authoritative snapshot of where the task stands. It is the living
+   state file written by the `handoff` skill — one summary line, decisions made,
+   current state, next step, and open questions. Open with a recap drawn from it.
+3. After reading `state.md`, pull other docs from `docs:` only when `state.md`
+   links to them or the current work explicitly needs them. Do not read every
+   sibling doc by default.
+4. When no `state:` field is present, read the decision docs first, in the
+   listed order, then fall back to the transcript tail for the `mostRecent: true`
+   session with `trace session tail <session-id>` only if those docs do not cover
+   the current state.
+5. Never paste raw transcripts into the chat, and never ask the user to
    re-explain context that the manifest, docs, or transcript tail already cover.
 
 If, once you are oriented, the work has visibly drifted from the stored
