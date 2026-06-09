@@ -761,3 +761,95 @@ test("skill docs-dir infers the session from the env when --id is omitted", () =
     rmSync(repoParent, { recursive: true, force: true });
   }
 });
+
+test("skill re-enter renders state: above docs: when a state.md doc exists", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const created = runTraceCli(
+      ["task", "create", "State doc task"],
+      env,
+      repo,
+    );
+    expect(created.exitCode).toBe(0);
+    const slug = created.stdout.trim();
+
+    const stateDocPath = join(repo, "state.md");
+    writeFileSync(stateDocPath, "# State\nCurrent state.\n");
+
+    const addedState = runTraceCli(
+      ["task", "add-doc", slug, stateDocPath],
+      env,
+      repo,
+    );
+    expect(addedState.exitCode).toBe(0);
+
+    const otherDocPath = join(repo, "notes.md");
+    writeFileSync(otherDocPath, "# Notes\n");
+    const addedOther = runTraceCli(
+      ["task", "add-doc", slug, otherDocPath],
+      env,
+      repo,
+    );
+    expect(addedOther.exitCode).toBe(0);
+
+    const reentered = runTraceCli(
+      ["skill", "re-enter", "State doc task"],
+      env,
+      repo,
+    );
+    expect(reentered.exitCode).toBe(0);
+
+    const output = reentered.stdout;
+    // state: block must appear and precede docs:
+    expect(output).toContain("state:");
+    expect(output.indexOf("state:")).toBeLessThan(output.indexOf("docs:"));
+    // state.md must not appear in docs:
+    const docsSection = output.slice(output.indexOf("docs:"));
+    expect(docsSection).not.toContain("state.md");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter output is unchanged when no state.md exists", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const created = runTraceCli(
+      ["task", "create", "No state doc task"],
+      env,
+      repo,
+    );
+    expect(created.exitCode).toBe(0);
+    const slug = created.stdout.trim();
+
+    const notesPath = join(repo, "notes.md");
+    writeFileSync(notesPath, "# Notes\n");
+    runTraceCli(["task", "add-doc", slug, notesPath], env, repo);
+
+    const reentered = runTraceCli(
+      ["skill", "re-enter", "No state doc task"],
+      env,
+      repo,
+    );
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).not.toContain("state:");
+    expect(reentered.stdout).toContain("docs:");
+    expect(reentered.stdout).toContain("notes.md");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
