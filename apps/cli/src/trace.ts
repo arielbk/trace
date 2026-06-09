@@ -525,6 +525,29 @@ export function runTraceCli(
           return failure(taskNotFoundMessage(tasks, ref), 1);
         }
 
+        // Re-entry binds the current session to the task it re-enters, so a
+        // session that goes back to real work no longer stays silently unbound
+        // (before, only work-on-task bound). The session is inferred from the
+        // env the same way the binding verbs infer it. Binding happens after
+        // the manifest is built so the manifest reflects prior sessions, not
+        // the freshly-bound current one. When no live session is present — a
+        // human running re-enter at a bare terminal to read the docs — there is
+        // nothing to bind, so we skip it and still print the manifest rather
+        // than erroring; binding is an additive side effect of re-entry, not
+        // its purpose.
+        const identity = inferSessionIdentity(env, {});
+        if (
+          identity.id !== undefined &&
+          identity.transcriptPath !== undefined
+        ) {
+          const session = store.registerSession({
+            id: identity.id,
+            transcriptPath: identity.transcriptPath,
+            tool: identity.tool,
+          });
+          store.assignSession(session.id, resolved.id);
+        }
+
         return success(formatReEntryManifest(manifest));
       }
 

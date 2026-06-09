@@ -359,6 +359,70 @@ test("skill re-enter with a flag ref exits non-zero with usage", () => {
   }
 });
 
+test("skill re-enter binds the current session to the task it re-enters", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const created = runTraceCli(["task", "create", "Reentry binds"], env, repo);
+    expect(created.exitCode).toBe(0);
+
+    // Re-enter from a live session: the env carries the session id the way
+    // Claude Code exports it. Re-entry must bind that session, not just print
+    // docs — that is the whole point of this task.
+    const reentered = runTraceCli(
+      ["skill", "re-enter", "Reentry binds"],
+      { ...env, CLAUDE_CODE_SESSION_ID: "reenter-sess" },
+      repo,
+    );
+    expect(reentered.exitCode).toBe(0);
+
+    const active = runTraceCli(
+      ["session", "active-task", "--id", "reenter-sess"],
+      env,
+      repo,
+    );
+    expect(JSON.parse(active.stdout)).toEqual({
+      kind: "bound",
+      task: { title: "Reentry binds", slug: "reentry-binds" },
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
+test("skill re-enter without a session env prints the manifest and binds nothing", () => {
+  const home = tmp("trace-cli-home-");
+  const repoParent = tmp("trace-cli-repo-");
+  const repo = join(repoParent, "repo");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    mkdirSync(join(repo, ".git"), { recursive: true });
+
+    const created = runTraceCli(["task", "create", "Manual read"], env, repo);
+    expect(created.exitCode).toBe(0);
+
+    // A human running re-enter at a bare terminal to read the docs: no session
+    // env. The manifest still prints, and with no live session there is nothing
+    // to bind, so no session row is fabricated.
+    const reentered = runTraceCli(["skill", "re-enter", "Manual read"], env, repo);
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).toContain("title: Manual read");
+
+    const sessions = runTraceCli(["session", "list", "--unassigned"], env, repo);
+    expect(sessions.stdout).toBe("");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repoParent, { recursive: true, force: true });
+  }
+});
+
 test("task create with a flag title still rejects with its original usage", () => {
   const home = tmp("trace-cli-home-");
   const sandbox = tmp("trace-cli-sandbox-");

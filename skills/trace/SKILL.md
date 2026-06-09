@@ -98,12 +98,20 @@ without a separate registration step.
 ### Re-enter X
 
 Resolve an existing task — the slug is the canonical ref; an exact title
-(trimmed, case-insensitive) also resolves — then print its docs and prior
-session references:
+(trimmed, case-insensitive) also resolves — then bind the current session to it
+and print its docs and prior session references:
 
 ```sh
 node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "break-stop-and-stale-expiry"
 ```
+
+Re-entry binds the current Claude Code session to the resolved task, just as
+**We're working on X** does — going back to a task is itself working on it, so a
+re-entered session no longer stays silently unbound. Binding is inferred from
+the live session in the environment; when the command is run outside a session
+(a human at a bare terminal reading the docs) there is nothing to bind, so it
+just prints the manifest. Either way you do not need a separate bind step after
+re-entering.
 
 A miss exits non-zero and lists near candidates (slug — title) on stderr; pick
 the right slug from that list rather than guessing variants.
