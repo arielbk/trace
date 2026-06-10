@@ -11,8 +11,9 @@ the checkout work", "pick up that wizard task again". The job is to turn the
 vague reference into the right existing task and re-enter it, or — when nothing
 matches confidently — to ask rather than guess.
 
-Do **not** use this skill when the user names an exact title, starts genuinely
-new work, or asks to open the board — those are the `trace` skill's verbs.
+Do **not** use this skill when the user names an exact slug or title (that is
+the `trace-reenter` skill), starts genuinely new work (the `trace` skill), or
+asks to open the board (the `trace-board` skill).
 
 ## Flow
 
@@ -42,8 +43,9 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill recall-candidates --project /pat
 
 Default to cwd (omit the flag) unless you have a concrete reason the recalled
 work belongs to another project. A nonexistent `--project` path is a hard error.
-When you re-enter and bind the match in step 3, pass the same `--project <dir>`
-to `work-on-task` so the bound task keys to the same project root.
+`--project` scopes only this candidate-pool lookup; the re-entry in step 3
+resolves the already-matched task by its slug and binds to it directly, so no
+`--project` is needed there.
 
 ### 2. Match the reference against the pool
 
@@ -60,42 +62,29 @@ Read the user's reference and compare it against each candidate's `title` and
 When unsure between confident and ambiguous, treat it as ambiguous and ask. A
 wrong silent bind is worse than one clarifying question.
 
-### 3. Confident match → announce, re-enter, bind
+### 3. Confident match → announce, then delegate to `trace-reenter`
 
 State the match. Announce in this shape (use the task's stored description
 when present):
 
 > Re-entering **{title}** — {description}
 
-Fetch the task's re-entry manifest — its decision docs and prior session
-references — **before** binding, so the manifest's `mostRecent: true` session
-is the prior session, not this one:
+Recall's job ends at _resolving identity_. Once you have a confident match,
+hand off to the **`trace-reenter` skill** — it owns the re-entry flow. Re-enter
+the resolved task by its slug (the canonical ref):
 
 ```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "{title}"
+node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill re-enter "{slug}"
 ```
 
-Then bind the current session by exact title:
-
-```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" skill work-on-task "{title}"
-```
-
-Consume the manifest:
-
-- If the manifest carries a `state:` field, read that file first — it is the
-  living state file written by the `handoff` skill (one summary line, decisions
-  made, current state, next step, open questions) and is the authoritative
-  snapshot of where the task stands. Open with a recap drawn from it; pull
-  other docs from `docs:` only when `state.md` links to them or the current
-  work explicitly needs them.
-- When no `state:` field is present, read the decision docs first, in the
-  listed order, then fall back to the transcript tail of the `mostRecent: true`
-  session (via `trace session tail <session-id>`) only when the docs do not
-  cover current state.
-
-Never paste raw transcripts into the chat, and never re-ask the user for
-context the manifest or docs already hold.
+This single command both fetches the re-entry manifest **and** binds the
+current session to the task, atomically — there is no separate `work-on-task`
+bind step. Then consume the manifest exactly as the `trace-reenter` skill
+documents (read `state.md` first as authoritative, then `docs:` as linked, then
+the `mostRecent: true` transcript tail only as a fallback; never paste raw
+transcripts; never re-ask for context the manifest already covers). The
+manifest-consumption protocol lives in one place — `trace-reenter` — so recall
+does not restate it here.
 
 ### 4. Ambiguous or no match → ask, never auto-create
 
