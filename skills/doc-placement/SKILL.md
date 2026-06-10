@@ -1,6 +1,6 @@
 ---
 name: trace-doc-placement
-description: Place a document (spec, PRD, plan, handoff, note) in the correct docs directory for the current Trace task. Use when the user is creating any task-level document and wants it saved in the right place, or when another skill (scope, spec, slice, implement) is about to write a planning artifact and needs to know where to put it.
+description: Place a document (spec, PRD, plan, handoff, note) in the correct docs directory for the current Trace task. Use when the user is creating any task-level document and wants it saved in the right place, or when another planning or spec-driven workflow (writing a spec, PRD, brainstorm, design doc, or task breakdown) is about to write a planning artifact and needs to know where to put it.
 ---
 
 # Trace doc placement
@@ -58,6 +58,6 @@ After writing, report the full path so the user sees where it landed.
   path yourself from prior messages.
 - `taskDocsDir` is slug-keyed: `~/.trace/tasks/<slug>/docs/`. UUID-based
   paths do not exist in this system.
-- When called from another skill (scope, spec, slice, implement), simply
-  return the resolved path for the caller to use — no need to re-confirm
-  with the user if the session is already bound.
+- When called from another planning skill (a spec, PRD, brainstorm, design, or
+  task-breakdown workflow), simply return the resolved path for the caller to
+  use — no need to re-confirm with the user if the session is already bound.

@@ -92,10 +92,3 @@ capture` for the same reason.
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,
 plans, handoffs, and notes in that directory so future re-entry sees them
 without a separate registration step.
-
-## CLI Setup
-
-This skill invokes the bundled Trace CLI from the plugin root; no global
-`trace` command is required and hook registration is declared by the plugin.
-If the plugin is not installed, or you need to run the CLI outside the plugin,
-see [SETUP.md](SETUP.md).

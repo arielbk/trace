@@ -83,10 +83,3 @@ on every re-entry.
 Codex entry point support is deferred. This Claude skill keeps the protocol
 tool-agnostic so a Codex wrapper can follow the same manifest-consumption rules
 later.
-
-## CLI Setup
-
-This skill invokes the bundled Trace CLI from the plugin root; no global
-`trace` command is required and hook registration is declared by the plugin.
-If the plugin is not installed, or you need to run the CLI outside the plugin,
-see [SETUP.md](SETUP.md).

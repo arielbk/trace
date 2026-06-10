@@ -23,10 +23,3 @@ that output.
 
 Do not start the server in the background, track its process, or kill it from
 the skill. The user owns that terminal process and stops it with Ctrl-C.
-
-## CLI Setup
-
-This skill invokes the bundled Trace CLI from the plugin root; no global
-`trace` command is required and hook registration is declared by the plugin.
-If the plugin is not installed, or you need to run the CLI outside the plugin,
-see [SETUP.md](SETUP.md).
