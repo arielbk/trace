@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
 import {
@@ -10,7 +10,11 @@ import {
   looksLikeTaskId,
   slugify,
 } from "./slug.ts";
-import { listNativeTaskDocs, mergeTaskDocs } from "./task-docs.ts";
+import {
+  listNativeTaskDocs,
+  mergeTaskDocs,
+  resolveTaskDocsDir,
+} from "./task-docs.ts";
 import {
   addTokenTotals,
   emptyTokenTotals,
@@ -37,7 +41,7 @@ export function openTraceStore(databasePath: string): TaskStore {
   return new NodeSqliteTaskStore(databasePath);
 }
 
-export { resolveTaskDocsDir } from "./task-docs.ts";
+export { resolveTaskDocsDir };
 
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
@@ -409,6 +413,10 @@ class NodeSqliteTaskStore implements TaskStore {
         isMostRecent: index === 0,
       }));
 
+    const allDocs = this.listDocsForTask(task.id);
+    const stateDoc = allDocs.find((d) => basename(d.path) === "state.md");
+    const docs = allDocs.filter((d) => basename(d.path) !== "state.md");
+
     return {
       task: {
         id: task.id,
@@ -418,7 +426,9 @@ class NodeSqliteTaskStore implements TaskStore {
         // convention — only surface the key when the task actually has one.
         ...(task.description ? { description: task.description } : {}),
       },
-      docs: this.listDocsForTask(task.id),
+      taskDocsDir: resolveTaskDocsDir(this.#databasePath, task.slug),
+      ...(stateDoc ? { state: stateDoc } : {}),
+      docs,
       sessions,
     };
   }

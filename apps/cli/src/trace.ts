@@ -1038,6 +1038,12 @@ function formatReEntryManifest(manifest: ReEntryManifest): string {
     `  projectRoot: ${manifest.task.projectRoot}`,
   ];
 
+  if (manifest.state) {
+    lines.push("state:", `  path: ${manifest.state.path}`);
+  }
+
+  lines.push(`taskDocsDir: ${manifest.taskDocsDir}`);
+
   if (manifest.docs.length === 0) {
     lines.push("docs: []");
   } else {

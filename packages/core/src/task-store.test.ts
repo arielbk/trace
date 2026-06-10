@@ -849,6 +849,7 @@ test("re-entry manifest includes task docs and newest-first session pointers", (
         title: "checkout",
         projectRoot: "/repo",
       },
+      taskDocsDir: join(dir, ".trace", "tasks", task.slug, "docs"),
       docs: expect.arrayContaining([
         expect.objectContaining({ path: nativeDocPath }),
         expect.objectContaining({ path: externalDocPath }),
@@ -893,6 +894,7 @@ test("re-entry manifest returns empty sections for tasks without docs or session
         title: "empty",
         projectRoot: "",
       },
+      taskDocsDir: join(dir, ".trace", "tasks", task.slug, "docs"),
       docs: [],
       sessions: [],
     });
@@ -931,6 +933,75 @@ test("re-entry manifest surfaces the task description when present, omits it whe
       projectRoot: "/repo",
     });
     expect(plainTask && "description" in plainTask).toBe(false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest puts state.md in state: field and excludes it from docs:", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("my-feature", "/repo");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const statePath = join(docsDir, "state.md");
+    const otherDocPath = join(docsDir, "notes.md");
+    writeFileSync(statePath, "# State\n");
+    writeFileSync(otherDocPath, "# Notes\n");
+
+    const manifest = store.getReEntryManifest(task.id);
+
+    expect(manifest?.state).toEqual(expect.objectContaining({ path: statePath }));
+    const docPaths = manifest?.docs.map((d) => d.path) ?? [];
+    expect(docPaths).not.toContain(statePath);
+    expect(docPaths).toContain(otherDocPath);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest carries taskDocsDir derived from the database path and task slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("docs-dir-feature", "/repo");
+
+    const manifest = store.getReEntryManifest(task.id);
+
+    expect(manifest?.taskDocsDir).toBe(
+      join(dir, ".trace", "tasks", task.slug, "docs"),
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest omits state: field when no state.md exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("no-state", "/repo");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(join(docsDir, "plan.md"), "# Plan\n");
+
+    const manifest = store.getReEntryManifest(task.id);
+
+    expect("state" in (manifest ?? {})).toBe(false);
+    expect(manifest?.docs.map((d) => d.path)).toContain(join(docsDir, "plan.md"));
 
     store.close();
   } finally {
