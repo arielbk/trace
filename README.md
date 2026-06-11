@@ -38,8 +38,8 @@ offers to bind it — so you don't have to remember to.
 
 ## The skills
 
-Trace is a set of focused Claude Code skills. Each fires on one kind of intent, so
-routing stays predictable:
+Trace ships focused Claude Code skills for the full same-tool loop. Each fires
+on one kind of intent, so routing stays predictable:
 
 | Skill                   | Fires when you…                                       | What it does                                                                                                 |
 | ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -53,6 +53,10 @@ routing stays predictable:
 Two front doors resolve a task's _identity_ differently — `trace-reenter` (you
 name it exactly) and `trace-recall` (you gesture at it) — and both pour into one
 shared re-entry core that loads context the same way.
+
+Codex support ships as a Codex `trace` skill. It uses the same CLI and re-entry
+manifest, but captures Codex sessions by running `trace session scan --codex`
+before binding or re-entering rather than using a live session-start hook.
 
 ## What's underneath
 
@@ -90,14 +94,26 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" session list --unassigned
 
 The new session should appear.
 
+For Codex, this repo also includes Codex plugin metadata and a local user-skill
+installer. From a checkout, run:
+
+```sh
+node bin/trace.js init
+```
+
+That keeps the Claude plugin diagnostic output and installs a Codex skill at
+`~/.agents/skills/trace/SKILL.md` with this checkout's bundled CLI path rendered
+in. The skill backfills Codex sessions from `~/.codex/session_index.jsonl` and
+`~/.codex/sessions/` via `trace session scan --codex` before it binds or
+re-enters a task.
+
 ## Status
 
 Same-tool re-entry — work in Claude Code, clear, re-enter, keep going — is the
-core loop and works today. Cross-tool re-entry is the next increment: the store,
-transcript adapters, and re-entry manifest are already tool-agnostic (`trace
-session tail` reads both Claude and Codex transcripts), so the remaining work is a
-Codex-side entry point that lets a task worked in Claude be re-entered in Codex
-and back.
+core loop and works today. Cross-tool re-entry is now covered by the shared
+manifest path: a task worked in Claude can be re-entered from Codex, and a
+Codex-created task can be re-entered from Claude. Codex capture is intentionally
+backfill-based; no live Codex hook is installed.
 
 ## Development
 
@@ -111,4 +127,5 @@ pnpm check-types    # typecheck all packages
 
 - `apps/cli` — the `trace` CLI
 - `packages/core` — the store, transcript adapters, and re-entry manifest
-- `skills/` — the Claude Code skills, auto-discovered by the plugin
+- `skills/` — the Claude Code skills, auto-discovered by the Claude plugin
+- `codex/skills/` — the Codex skills, bundled by the Codex plugin metadata
