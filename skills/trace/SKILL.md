@@ -1,6 +1,6 @@
 ---
 name: trace
-description: Bind the current Claude Code session to a Trace task. Use when the user names a specific piece of work they are starting or about to do — including "scope out X", "define a new X", "plan the work for X", "build X", "tackle X", "time to tackle X", "add X to Y", or "work on X". Covers features, bugs, and refactors. Trace always fires first when the user names a feature, bug, or task to start; scope/spec/slice/implement then do the planning or execution. Does NOT apply when the user is actively debugging a running system ("this endpoint is throwing errors", "help me debug X") — use diagnose for that. Also use when explicitly asked to bind a session to a task, or when session-start context reports no active task during real project work.
+description: Bind the current Claude Code session to a Trace task. Use when the user names a specific piece of work they are starting or about to do — including "scope out X", "define a new X", "plan the work for X", "build X", "tackle X", "time to tackle X", "add X to Y", or "work on X". Covers features, bugs, and refactors. Trace always fires first when the user names a feature, bug, or task to start; other skills then do the planning or execution. Does NOT apply when the user is actively debugging or investigating a running system ("this endpoint is throwing errors", "help me debug X") — that is not starting a new piece of work. Also use when explicitly asked to bind a session to a task, or when session-start context reports no active task during real project work.
 ---
 
 # Trace
@@ -8,7 +8,7 @@ description: Bind the current Claude Code session to a Trace task. Use when the 
 Use this skill when the user names a specific feature, fix, or task they are
 starting or about to do — even when phrased as "scope out X", "define a new X",
 "plan the work for X", "build X from scratch", "tackle X", or "add X to Y".
-Trace binds the session before any planning skill runs; scope/spec/slice/implement
+Trace binds the session before any planning skill runs; other skills
 do the subsequent planning or execution. Also use when the user asks to bind the
 current session to a task, or when session-start context reports there is no
 active task for this session.
@@ -53,7 +53,7 @@ the slug is derived automatically.
 
 Starting to **scope or define** a piece of work counts as working on it: when
 the user begins scoping, speccing, or defining a feature (e.g. "let's define
-X", "let's scope X", or invoking a scoping/spec skill on X), run this same verb
+X", "let's scope X", or invoking a planning skill on X), run this same verb
 with the feature as the title. The printed `taskDocsDir:` is then in
 conversation for downstream skills that produce planning artifacts, so they
 know where to write without any extra wiring.
