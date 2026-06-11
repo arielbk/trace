@@ -7,6 +7,7 @@
  */
 import { invoke, resolveConfigDir } from "./src/invoker.ts";
 import { corpus } from "./corpus.ts";
+import { formatReport, formatSummary } from "./src/reporter.ts";
 
 export interface EvalResult {
   utterance: string;
@@ -41,16 +42,11 @@ async function main() {
       pass,
       note: c.note,
     });
-    const verdict = pass ? "PASS" : "FAIL";
-    console.log(`[${verdict}] ${c.utterance}`);
-    if (!pass) {
-      console.log(`       expected=${c.expectedSkill}  fired=${fired}`);
-    }
   }
 
-  const passed = results.filter((r) => r.pass).length;
-  const failed = results.length - passed;
-  console.log(`\n${passed}/${results.length} passed${failed > 0 ? `, ${failed} failed` : ""}`);
+  console.log(formatReport(results));
+  const summary = formatSummary(results);
+  console.log(`\n${summary}`);
 
   process.exit(failed > 0 ? 1 : 0);
 }
