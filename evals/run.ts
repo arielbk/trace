@@ -14,7 +14,15 @@ const UTTERANCE = "I'm starting work on the checkout-flow feature";
 const EXPECTED = "trace";
 
 async function main() {
-  console.log(`config dir: ${resolveConfigDir()}`);
+  let configDir: string;
+  try {
+    configDir = resolveConfigDir();
+  } catch (err) {
+    console.error(`\nError: ${(err as Error).message}\n`);
+    process.exit(1);
+  }
+
+  console.log(`config dir: ${configDir}`);
   console.log(`utterance:  ${UTTERANCE}`);
 
   const { firedSkills } = await invoke(UTTERANCE);

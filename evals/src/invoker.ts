@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 import { parse } from "./parser.ts";
 
@@ -11,12 +11,34 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_DIR = resolve(__dirname, "..", "fixture");
 
 /**
- * Resolve the authed clean base (`CLAUDE_CONFIG_DIR`). Walking-skeleton uses the
- * documented default; the config-isolation slice hardens this into a fail-fast
- * requirement.
+ * Resolve and validate the authed clean base (`CLAUDE_CONFIG_DIR`).
+ *
+ * Documented default: ~/.claude-sandbox — set CLAUDE_CONFIG_DIR explicitly to
+ * override. Fails fast when unset, non-existent, or not a logged-in config so
+ * the maintainer's real config never silently bleeds in.
  */
 export function resolveConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR ?? resolve(homedir(), ".claude-sandbox");
+  const configDir = process.env.CLAUDE_CONFIG_DIR;
+  if (!configDir) {
+    throw new Error(
+      "CLAUDE_CONFIG_DIR is not set.\n" +
+        "Set it to a logged-in claude config directory, e.g.:\n" +
+        "  CLAUDE_CONFIG_DIR=~/.claude-sandbox pnpm eval",
+    );
+  }
+  if (!existsSync(configDir)) {
+    throw new Error(
+      `CLAUDE_CONFIG_DIR=${configDir} does not exist.\n` +
+        "Create the directory and run 'claude login' in it once to initialize a logged-in config.",
+    );
+  }
+  if (!existsSync(join(configDir, ".claude.json"))) {
+    throw new Error(
+      `CLAUDE_CONFIG_DIR=${configDir} is not a logged-in claude config (no .claude.json found).\n` +
+        "Run 'claude' in that directory once to log in and initialize it.",
+    );
+  }
+  return configDir;
 }
 
 export interface InvokeResult {
