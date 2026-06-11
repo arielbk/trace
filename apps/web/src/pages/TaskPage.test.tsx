@@ -93,6 +93,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   // Codex uses the product color mark, not the old angle-bracket code glyph.
   expect(html).toContain("codex-icon-gradient");
   expect(html).toContain("#3941ff");
+  expect(html).not.toContain("M19.503 0H4.496");
   expect(html).not.toContain("points=&quot;9 8 5 12 9 16&quot;");
   // Model chip renders only when a model is known — no em dash fallback pill.
   expect(html).toContain("claude-opus-4-7");
