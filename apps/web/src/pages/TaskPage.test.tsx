@@ -87,6 +87,9 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   expect(html).toContain("type-icon type-icon-codex");
   expect(html).toContain("type-icon type-icon-doc");
   expect(html).not.toContain("tool-tag");
+  // Claude uses its product color mark, not the old hand-drawn spoke glyph.
+  expect(html).toContain("M4.709 15.955");
+  expect(html).not.toContain('x2="21"');
   // Codex uses the product color mark, not the old angle-bracket code glyph.
   expect(html).toContain("codex-icon-gradient");
   expect(html).toContain("#3941ff");
