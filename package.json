@@ -11,7 +11,8 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "eval": "node evals/run.ts"
+    "eval": "node evals/run.ts",
+    "test:evals": "vitest run evals/src"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.7",
