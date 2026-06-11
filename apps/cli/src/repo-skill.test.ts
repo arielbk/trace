@@ -276,39 +276,23 @@ test("work-on-task resolves an existing slug instead of creating a duplicate", (
   }
 });
 
-test("repo skill prose carries the re-entry consumption protocol", () => {
-  const prose = execFileSync("sed", ["-n", "1,220p", skillReadme], {
+test("repo skill prose is pruned to the bind verb and the nudge", () => {
+  const prose = execFileSync("sed", ["-n", "1,260p", skillReadme], {
     encoding: "utf8",
   });
 
-  const normalizedProse = prose.toLowerCase();
-
-  expect(normalizedProse).toContain("read the decision docs first");
-  expect(prose).toContain("transcript tail");
-  expect(normalizedProse).toContain("never paste raw transcripts");
+  // What trace keeps: the We're-working-on-X bind verb and the no-task nudge.
+  expect(prose).toContain("skill work-on-task");
   expect(prose).toContain("taskDocsDir");
-  expect(prose).toContain("Codex entry point");
-});
-
-test("repo skill prose treats the slug as the canonical re-enter ref", () => {
-  const prose = execFileSync("sed", ["-n", "1,260p", skillReadme], {
-    encoding: "utf8",
-  });
-
-  expect(prose).toContain('skill re-enter "break-stop-and-stale-expiry"');
   expect(prose.toLowerCase()).toContain("sentence case");
-});
+  expect(prose).toContain("No active task for this session");
 
-test("repo skill prose points users at trace serve without managing the server", () => {
-  const prose = execFileSync("sed", ["-n", "1,260p", skillReadme], {
-    encoding: "utf8",
-  });
-
-  expect(prose).toContain(
-    'node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" serve',
-  );
-  expect(prose).toContain("trace serve listening on http://");
-  expect(prose).toContain("Tell the user the URL");
-  expect(prose).toContain("Do not start the server in the background");
-  expect(prose).toContain("stops it with Ctrl-C");
+  // The re-entry protocol and the board verb have moved to their own skills.
+  // The nudge's re-entry door now hands off to the trace-reenter skill rather
+  // than restating the protocol here.
+  expect(prose).toContain("trace-reenter");
+  expect(prose.toLowerCase()).not.toContain("never paste raw transcripts");
+  expect(prose).not.toContain("skill re-enter");
+  expect(prose).not.toContain("trace serve listening on http://");
+  expect(prose).not.toContain("Open the task board");
 });
