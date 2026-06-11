@@ -100,3 +100,13 @@ test("returns null for transcript with no user messages", () => {
   ]);
   expect(deriveSessionName(transcript)).toBeNull();
 });
+
+test("names a Codex session from its first prompt turn", () => {
+  const transcript = [
+    JSON.stringify({ type: "thread.started", thread_id: "t1" }),
+    JSON.stringify({ type: "turn.started", prompt: "Inspect failing test" }),
+    JSON.stringify({ type: "agent_message", message: "On it." }),
+    JSON.stringify({ type: "user_message", message: "Run tests" }),
+  ].join("\n");
+  expect(deriveSessionName(transcript, "codex")).toBe("Inspect failing test");
+});

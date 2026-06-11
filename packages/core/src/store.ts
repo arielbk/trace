@@ -383,7 +383,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "session",
           createdAt: session.createdAt,
           session,
-          sessionName: readSessionName(session.transcriptPath),
+          sessionName: readSessionName(session.transcriptPath, session.tool),
         }),
       ),
       ...docs.map(

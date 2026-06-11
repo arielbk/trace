@@ -42,6 +42,48 @@ export function collectTranscriptTail(
   return messages.slice(-normalizedLimit);
 }
 
+/**
+ * Shared head harness: the counterpart to `collectTranscriptTail`. Walk a JSONL
+ * transcript from the top, extract one message per event with the tool-specific
+ * `extract` strategy, and return the first `limit` **user** messages in order —
+ * short-circuiting once the cap is reached so a large transcript isn't parsed to
+ * completion. Same "best effort, never throw → empty result" contract as the
+ * tail harness.
+ */
+export function collectTranscriptHead(
+  transcript: string,
+  limit: number | undefined,
+  extract: (event: JsonObject) => TranscriptMessage | null,
+): TranscriptMessage[] {
+  const normalizedLimit = normalizeLimit(limit);
+  const messages: TranscriptMessage[] = [];
+
+  try {
+    for (const line of transcript.split(/\r?\n/)) {
+      if (line.trim().length === 0) {
+        continue;
+      }
+
+      const event = JSON.parse(line) as unknown;
+      if (!isObject(event)) {
+        continue;
+      }
+
+      const message = extract(event);
+      if (message?.role === "user") {
+        messages.push(message);
+        if (messages.length >= normalizedLimit) {
+          break;
+        }
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return messages;
+}
+
 function normalizeLimit(limit: number | undefined): number {
   return Number.isInteger(limit) && limit !== undefined && limit > 0
     ? limit

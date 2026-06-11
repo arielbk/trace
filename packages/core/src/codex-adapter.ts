@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
+  collectTranscriptHead,
   collectTranscriptTail,
   normalizeRole,
   textFromContent,
@@ -188,6 +189,17 @@ export function tailCodexTranscript(input: {
   limit?: number | undefined;
 }): TranscriptMessage[] {
   return collectTranscriptTail(
+    input.transcript,
+    input.limit,
+    messageFromCodexEvent,
+  );
+}
+
+export function headCodexTranscript(input: {
+  transcript: string;
+  limit?: number | undefined;
+}): TranscriptMessage[] {
+  return collectTranscriptHead(
     input.transcript,
     input.limit,
     messageFromCodexEvent,
