@@ -4,14 +4,17 @@
  * Drives user utterances through a real `claude -p` against the pinned fixture
  * and asserts which skill the agent routed to. Deliberately OFF the test/CI
  * path: non-deterministic, quota-costing, read as a report.
- *
- * Walking-skeleton: one hardcoded utterance, one PASS/FAIL line. Later slices
- * replace the hardcoded case with the full corpus and a formatted report.
  */
 import { invoke, resolveConfigDir } from "./src/invoker.ts";
+import { corpus } from "./corpus.ts";
 
-const UTTERANCE = "I'm starting work on the checkout-flow feature";
-const EXPECTED = "trace";
+export interface EvalResult {
+  utterance: string;
+  expected: string;
+  fired: string;
+  pass: boolean;
+  note: string;
+}
 
 async function main() {
   let configDir: string;
@@ -23,17 +26,33 @@ async function main() {
   }
 
   console.log(`config dir: ${configDir}`);
-  console.log(`utterance:  ${UTTERANCE}`);
+  console.log(`cases:      ${corpus.length}\n`);
 
-  const { firedSkills } = await invoke(UTTERANCE);
-  const fired = firedSkills[0] ?? "<none>";
-  const verdict = fired === EXPECTED ? "PASS" : "FAIL";
+  const results: EvalResult[] = [];
 
-  console.log(`expected:   ${EXPECTED}`);
-  console.log(`fired:      ${fired}${firedSkills.length > 1 ? ` (chain: ${firedSkills.join(" → ")})` : ""}`);
-  console.log(`\n${verdict}`);
+  for (const c of corpus) {
+    const { firedSkills } = await invoke(c.utterance);
+    const fired = firedSkills[0] ?? "<none>";
+    const pass = fired === c.expectedSkill;
+    results.push({
+      utterance: c.utterance,
+      expected: c.expectedSkill,
+      fired,
+      pass,
+      note: c.note,
+    });
+    const verdict = pass ? "PASS" : "FAIL";
+    console.log(`[${verdict}] ${c.utterance}`);
+    if (!pass) {
+      console.log(`       expected=${c.expectedSkill}  fired=${fired}`);
+    }
+  }
 
-  process.exit(verdict === "PASS" ? 0 : 1);
+  const passed = results.filter((r) => r.pass).length;
+  const failed = results.length - passed;
+  console.log(`\n${passed}/${results.length} passed${failed > 0 ? `, ${failed} failed` : ""}`);
+
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
