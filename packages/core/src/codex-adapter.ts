@@ -174,11 +174,17 @@ export function scanCodexSessions(codexHome: string): ParsedCodexSession[] {
       ? indexedPaths
       : findJsonlFiles(join(root, "sessions"));
 
-  return transcriptPaths.map((entry) =>
-    parseCodexTranscriptFile(entry.transcriptPath, {
-      expectedThreadId: entry.expectedThreadId,
-    }),
-  );
+  return transcriptPaths.flatMap((entry) => {
+    try {
+      return [
+        parseCodexTranscriptFile(entry.transcriptPath, {
+          expectedThreadId: entry.expectedThreadId,
+        }),
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 function readCodexSessionIndex(
@@ -193,7 +199,7 @@ function readCodexSessionIndex(
   return readFileSync(indexPath, "utf8")
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line) => {
+    .flatMap((line) => {
       const entry = JSON.parse(line) as CodexSessionIndexEntry;
       const rawPath =
         entry.path ??
@@ -203,15 +209,15 @@ function readCodexSessionIndex(
         entry.rolloutPath;
 
       if (!rawPath) {
-        throw new Error(
-          "Codex session index entry is missing a transcript path",
-        );
+        return [];
       }
 
-      return {
-        transcriptPath: resolve(codexHome, rawPath),
-        expectedThreadId: entry.thread_id ?? entry.threadId ?? entry.id,
-      };
+      return [
+        {
+          transcriptPath: resolve(codexHome, rawPath),
+          expectedThreadId: entry.thread_id ?? entry.threadId ?? entry.id,
+        },
+      ];
     });
 }
 

@@ -1,7 +1,15 @@
-import { readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { parseCodexTranscript } from "./codex-adapter.ts";
+import { parseCodexTranscript, scanCodexSessions } from "./codex-adapter.ts";
 
 const codexFixture = fileURLToPath(
   new URL("./fixtures/codex-thread-1.jsonl", import.meta.url),
@@ -82,4 +90,62 @@ test("Codex transcript adapter returns null when model is absent", () => {
   ].join("\n");
 
   expect(parseCodexTranscript({ transcript, transcriptPath }).model).toBe(null);
+});
+
+test("Codex scan falls back to sessions when index entries have no transcript paths", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-codex-pathless-index-"));
+  const sessionsDir = join(dir, "sessions");
+  const transcriptPath = join(sessionsDir, "codex-thread-1.jsonl");
+
+  try {
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(
+      join(dir, "session_index.jsonl"),
+      `${JSON.stringify({ id: "metadata-only", thread_name: "No path" })}\n`,
+    );
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),
+    );
+
+    expect(scanCodexSessions(dir)).toEqual([
+      {
+        id: "codex-thread-1",
+        transcriptPath,
+        tool: "codex",
+        model: null,
+        tokenTotals: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          totalTokens: 0,
+        },
+      },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex scan skips unparseable transcript files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-codex-skip-bad-"));
+  const sessionsDir = join(dir, "sessions");
+  const validPath = join(sessionsDir, "codex-thread-1.jsonl");
+  const invalidPath = join(sessionsDir, "bad.jsonl");
+
+  try {
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(
+      validPath,
+      JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),
+    );
+    writeFileSync(invalidPath, JSON.stringify({ type: "turn.completed" }));
+
+    expect(scanCodexSessions(dir).map((session) => session.id)).toEqual([
+      "codex-thread-1",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
