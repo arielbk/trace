@@ -128,6 +128,92 @@ test("Codex scan falls back to sessions when index entries have no transcript pa
   }
 });
 
+test("Codex Desktop transcript: parses session_meta id and token_count totals", () => {
+  const transcriptPath =
+    "/tmp/rollout-2026-06-11T17-42-35-019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 19728,
+            cached_input_tokens: 4992,
+            output_tokens: 396,
+            total_tokens: 20124,
+          },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 42028,
+            cached_input_tokens: 24320,
+            output_tokens: 725,
+            total_tokens: 42753,
+          },
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseCodexTranscript({ transcript, transcriptPath })).toEqual({
+    id: "019eb759-7cb3-7700-9370-77db8da46f94",
+    transcriptPath,
+    tool: "codex",
+    model: null,
+    tokenTotals: {
+      inputTokens: 42028,
+      outputTokens: 725,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 24320,
+      totalTokens: 42753,
+    },
+  });
+});
+
+test("Codex Desktop transcript: uses last token_count as cumulative total", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        },
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { input_tokens: 200, output_tokens: 80, total_tokens: 280 },
+        },
+      },
+    }),
+  ].join("\n");
+
+  const result = parseCodexTranscript({ transcript, transcriptPath });
+  expect(result.tokenTotals.inputTokens).toBe(200);
+  expect(result.tokenTotals.outputTokens).toBe(80);
+  expect(result.tokenTotals.totalTokens).toBe(280);
+});
+
 test("Codex scan skips unparseable transcript files", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-codex-skip-bad-"));
   const sessionsDir = join(dir, "sessions");
