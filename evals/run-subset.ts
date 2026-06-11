@@ -43,7 +43,10 @@ async function main() {
     process.stdout.write(`  ${c.utterance.slice(0, 60).padEnd(62)} `);
     const { firedSkills } = await invoke(c.utterance);
     const fired = firedSkills[0] ?? "<none>";
-    const pass = fired === c.expectedSkill;
+    const pass =
+      c.expectedSkill === "<not-trace>"
+        ? !fired.startsWith("trace")
+        : fired === c.expectedSkill;
     results.push({ utterance: c.utterance, expected: c.expectedSkill, fired, pass, note: c.note });
     console.log(pass ? "✓" : `✗  (expected ${c.expectedSkill}, got ${fired})`);
   }
