@@ -233,8 +233,8 @@ export const corpus: Case[] = [
   },
   {
     utterance: "turn this conversation into a PRD document",
-    expectedSkill: "create-prd",
-    note: "negative: PRD-generation trigger (spec is a near-twin — either decoy proves no over-capture; create-prd wins in practice)",
+    expectedSkill: "spec",
+    note: "negative: spec trigger (create-prd is a near-twin — a decoy firing either way still proves no over-capture)",
   },
   {
     utterance: "write product requirements for a referral program",
@@ -243,8 +243,8 @@ export const corpus: Case[] = [
   },
   {
     utterance: "implement the remaining slices and TDD each one",
-    expectedSkill: "<none>",
-    note: "negative: code-execution request — model responds directly (can't use file tools); expected <none> proves trace didn't over-capture; a trace fire would be a FAIL",
+    expectedSkill: "implement",
+    note: "negative: execute-the-DAG trigger (tdd is a near-twin); no binding/recall language — trace must not over-capture",
   },
   {
     utterance: "break this PRD into separate tickets on the tracker",

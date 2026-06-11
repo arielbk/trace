@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Turn the current conversation context into a PRD written to {feature}.prd.md in the feature's docs directory. Always invoke when the user says "turn this conversation into a PRD", "turn this into a spec", or wants to document the current conversation as a PRD or spec.
+description: Turn the current conversation context into a PRD written to {feature}.prd.md in the feature's docs directory. Use when user wants to create a spec or PRD from the current context.
 ---
 
 Decoy stub — routing test only.
