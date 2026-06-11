@@ -16,10 +16,10 @@
  *  - Trace under-trigger: keyword-free "starting work" utterances with no
  *    "task"/"feature" words, probing trace's tendency to fail to fire (live
  *    finding: "help me plan the work…" routed to <none>).
- *  - Negative / over-capture: genuine decoy utterances asserting a decoy fires
- *    and NO trace skill over-captures, across the broadened decoy field
- *    (scope, spec, slice, implement, create-prd, to-issues, tdd, diagnose,
- *    verify, brainstorming, writing-plans, progress).
+ *  - Negative / over-capture: utterances that must NOT route to any trace-*
+ *    skill. Marked expectedSkill: "<not-trace>" — passes when anything other
+ *    than a trace skill fires (including <none>). Tests trace non-invocation,
+ *    not which specific decoy wins.
  *
  * NB: assertions are honest, not tuned to pass. Do not flip a steal-boundary
  * case to the decoy to make the report green — the design intent is that trace
@@ -218,62 +218,65 @@ export const corpus: Case[] = [
     note: "UNDER-TRIGGER: 'add X to Y' — new work, near brainstorming ('adding functionality')",
   },
 
-  // ── Negative / over-capture: a decoy fires, NO trace skill ──────────────────
-  //    (utterances chosen decoy-exclusive — no task/feature/binding language)
+  // ── Negative / over-capture: NO trace skill fires ────────────────────────────
+  //    "<not-trace>" passes when any non-trace skill fires OR the model responds
+  //    with text (<none>). Fails only if a trace-* skill fires. The design goal
+  //    is to prove trace doesn't over-capture these utterances — we don't assert
+  //    which specific decoy wins (that would test the decoys, not trace).
 
   {
     utterance: "grill me on this plan and tell me what I should cut",
-    expectedSkill: "scope",
+    expectedSkill: "<not-trace>",
     note: "negative: pure scope interview, no work-binding — trace must not over-capture",
   },
   {
     utterance: "break this design into vertical tracer-bullet slices with dependencies",
-    expectedSkill: "slice",
+    expectedSkill: "<not-trace>",
     note: "negative: pure slice trigger",
   },
   {
     utterance: "turn this conversation into a PRD document",
-    expectedSkill: "spec",
-    note: "negative: spec trigger (create-prd is a near-twin — a decoy firing either way still proves no over-capture)",
+    expectedSkill: "<not-trace>",
+    note: "negative: PRD-generation trigger — trace must not fire",
   },
   {
     utterance: "write product requirements for a referral program",
-    expectedSkill: "create-prd",
-    note: "negative: pure PRD generation, no placement question",
+    expectedSkill: "<not-trace>",
+    note: "negative: pure PRD generation, no placement question — trace must not fire",
   },
   {
     utterance: "implement the remaining slices and TDD each one",
-    expectedSkill: "implement",
-    note: "negative: execute-the-DAG trigger (tdd is a near-twin); no binding/recall language — trace must not over-capture",
+    expectedSkill: "<not-trace>",
+    note: "negative: code-execution request — trace must not over-capture",
   },
   {
     utterance: "break this PRD into separate tickets on the tracker",
-    expectedSkill: "to-issues",
-    note: "negative: pure to-issues trigger (plan → tickets), no work-binding",
+    expectedSkill: "<not-trace>",
+    note: "negative: plan → tickets, no work-binding — trace must not fire",
   },
   {
     utterance: "let's write the test first and red-green-refactor this parser",
-    expectedSkill: "tdd",
-    note: "negative: pure tdd trigger — trace must not over-capture a coding workflow",
+    expectedSkill: "<not-trace>",
+    note: "negative: TDD coding workflow — trace must not over-capture",
   },
   {
     utterance: "the checkout endpoint is throwing 500s — help me debug it",
-    expectedSkill: "diagnose",
-    note: "negative: bug report → diagnose; 'something is throwing' must not bind a trace task",
+    expectedSkill: "<not-trace>",
+    note: "negative: active debugging, not starting a task — trace must not bind",
   },
   {
     utterance: "confirm this fix works by running the app and checking the behavior",
-    expectedSkill: "verify",
-    note: "negative: pure verify trigger, no task reference",
+    expectedSkill: "<not-trace>",
+    note: "negative: pure verification request — trace must not fire",
   },
   {
     utterance: "before we build anything, let's explore the design space for search",
-    expectedSkill: "brainstorming",
-    note: "negative: pure ideation — explore-before-build with no work-binding intent",
+    expectedSkill: "<not-trace>",
+    note: "negative: ideation/exploration with no work-binding intent — trace must not fire",
   },
   {
     utterance: "I have the spec — write the implementation plan before we touch code",
-    expectedSkill: "writing-plans",
-    note: "negative: spec-in-hand → plan (writing-plans); slice is a near-twin, either proves no over-capture",
+    expectedSkill: "<not-trace>",
+    note: "negative: planning request, spec already in hand — trace must not over-capture",
   },
 ];
