@@ -1,0 +1,8 @@
+# Override root .claude/ exclusion for this fixture directory
+!.claude/
+!.claude/**
+
+# Ignore runtime cruft that must not be committed
+.claude/settings.local.json
+.claude/projects/
+.claude/sessions/

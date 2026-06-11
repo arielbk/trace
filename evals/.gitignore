@@ -1,0 +1,6 @@
+# Un-ignore the fixture skill field so it can be tracked
+!fixture/.claude/
+!fixture/.claude/**
+
+# Eval run output — not committed
+out/
