@@ -87,12 +87,68 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   expect(html).toContain("type-icon type-icon-codex");
   expect(html).toContain("type-icon type-icon-doc");
   expect(html).not.toContain("tool-tag");
+  // Codex uses the product color mark, not the old angle-bracket code glyph.
+  expect(html).toContain("codex-icon-gradient");
+  expect(html).toContain("#3941ff");
+  expect(html).not.toContain("points=&quot;9 8 5 12 9 16&quot;");
   // Model chip renders only when a model is known — no em dash fallback pill.
   expect(html).toContain("claude-opus-4-7");
   expect(html).not.toContain(">—<");
   // Per-session tokens show the input/output split, not the cache-inflated total.
   expect(html).toContain("10 in");
   expect(html).toContain("5 out");
+});
+
+test("TaskTimelineView labels uncaptured session token totals as unavailable", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "codex-re-entry-support",
+      title: "Codex re-entry support",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-06-11T00:01:00.000Z",
+        session: {
+          id: "codex-session",
+          transcriptPath: "codex:codex-session",
+          tool: "codex",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 0,
+          },
+          createdAt: "2026-06-11T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+    ],
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("tokens unavailable");
+  expect(html).not.toContain("0 in");
+  expect(html).not.toContain("0 out");
 });
 
 test("TaskTimelineView renders relative timestamps, never raw ISO strings", () => {
@@ -313,7 +369,9 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
   );
 
   // Copy re-enter prompt button is present; title attribute HTML-encodes the inner quotes.
-  expect(html).toContain('title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"');
+  expect(html).toContain(
+    'title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"',
+  );
   expect(html).toContain("Copy re-enter prompt");
   // No raw UUID chip in the header.
   expect(html).not.toContain(`title="${fullId}"`);
