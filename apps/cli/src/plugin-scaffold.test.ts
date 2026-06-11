@@ -8,9 +8,17 @@ import { fileURLToPath } from "node:url";
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
+const codexPluginManifest = join(repoRoot, ".codex-plugin", "plugin.json");
+const codexMarketplaceManifest = join(
+  repoRoot,
+  ".agents",
+  "plugins",
+  "marketplace.json",
+);
 const rootPackage = join(repoRoot, "package.json");
 const hooksConfig = join(repoRoot, "hooks", "hooks.json");
 const traceSkill = join(repoRoot, "skills", "trace", "SKILL.md");
+const codexTraceSkill = join(repoRoot, "codex", "skills", "trace", "SKILL.md");
 const recallSkill = join(repoRoot, "skills", "recall", "SKILL.md");
 const reenterSkill = join(repoRoot, "skills", "reenter", "SKILL.md");
 const boardSkill = join(repoRoot, "skills", "board", "SKILL.md");
@@ -84,6 +92,49 @@ describe("plugin scaffold", () => {
       assert.equal(source.includes("@trace/core"), false);
       assert.equal(source.includes("better-sqlite3"), false);
     }
+  });
+
+  it("ships a Codex plugin manifest and Codex-specific trace skill", () => {
+    const manifest = JSON.parse(readFileSync(codexPluginManifest, "utf8")) as {
+      name?: string;
+      version?: string;
+      description?: string;
+      skills?: string;
+    };
+    assert.equal(manifest.name, "trace");
+    assert.equal(typeof manifest.version, "string");
+    assert.equal(typeof manifest.description, "string");
+    assert.equal(manifest.skills, "./codex/skills/");
+
+    const marketplace = JSON.parse(
+      readFileSync(codexMarketplaceManifest, "utf8"),
+    ) as {
+      name?: string;
+      plugins?: Array<{
+        name?: string;
+        source?: { source?: string; path?: string };
+      }>;
+    };
+    assert.equal(marketplace.name, "trace-v2");
+    assert.equal(marketplace.plugins?.length, 1);
+    assert.equal(marketplace.plugins?.[0]?.name, "trace");
+    assert.equal(marketplace.plugins?.[0]?.source?.source, "local");
+    assert.equal(marketplace.plugins?.[0]?.source?.path, "./");
+
+    const source = readFileSync(codexTraceSkill, "utf8");
+    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+    const meta = frontmatter?.[1];
+    assert.equal(typeof meta, "string");
+    assert.match(meta as string, /^name:\s*trace\s*$/m);
+    assert.match(meta as string, /^description:\s*.+Codex.+Trace.+$/m);
+    assert.match(source, /session scan --codex/);
+    assert.match(source, /skill work-on-task/);
+    assert.match(source, /skill re-enter/);
+    assert.match(source, /CODEX_THREAD_ID/);
+    assert.match(source, /CODEX_TRANSCRIPT_PATH/);
+    assert.match(source, /never paste raw transcripts/i);
+    assert.equal(source.includes("CLAUDE_PLUGIN_ROOT"), false);
+    assert.equal(source.includes("CLAUDE_CODE_SESSION_ID"), false);
   });
 
   it("ships a trigger-tuned recall skill that resolves vague references via the candidate pool", () => {
