@@ -4,10 +4,19 @@
  * (frontmatter `name:` value) and a short note explaining intent.
  *
  * Composition:
- *  - All 6 trace skills: ≥1 clear utterance each
- *  - Steal-boundary: trace-adjacent phrasing where a decoy could steal the route
- *  - Intra-trace boundary: distinguishes trace / trace-recall / trace-reenter
- *  - Negative/over-capture: genuine decoy utterances where no trace skill should fire
+ *  - Clear coverage: all 6 trace skills, ≥1 unambiguous utterance each
+ *  - Intra-trace boundary: distinguishes trace / trace-recall / trace-reenter,
+ *    including a genuinely-contested vague-vs-exact case
+ *  - Steal-boundary: trace-legit phrasing sitting in a planning decoy's
+ *    territory, asserting the trace skill wins — trace binds the session FIRST,
+ *    then scope/spec/slice/implement do the work. These are the cases most
+ *    likely to FAIL today; a failure is the signal we work toward, not a bug.
+ *  - Negative / over-capture: genuine decoy utterances asserting a decoy fires
+ *    and NO trace skill over-captures.
+ *
+ * NB: assertions are honest, not tuned to pass. Do not flip a steal-boundary
+ * case to the decoy to make the report green — the design intent is that trace
+ * wins because it binds before the planning skill runs.
  */
 
 export interface Case {
@@ -17,12 +26,12 @@ export interface Case {
 }
 
 export const corpus: Case[] = [
-  // ── trace (bind / start new work) ──────────────────────────────────────────
+  // ── Clear coverage: trace (bind / start new work) ───────────────────────────
 
   {
-    utterance: "I'm starting work on the checkout-flow feature",
+    utterance: "I'm starting work on a new rate-limiting feature for the API",
     expectedSkill: "trace",
-    note: "clear new-work binding — the canonical walking-skeleton case",
+    note: "clear new-work binding",
   },
   {
     utterance: "Let's create a new task for the auth refactor",
@@ -30,7 +39,7 @@ export const corpus: Case[] = [
     note: "new work with explicit task mention",
   },
 
-  // ── trace-recall (vague reference to prior work) ───────────────────────────
+  // ── Clear coverage: trace-recall (vague reference to prior work) ────────────
 
   {
     utterance: "let's get back to that archiving thing we were working on",
@@ -43,20 +52,20 @@ export const corpus: Case[] = [
     note: "pick-up with topic hint, no exact slug",
   },
 
-  // ── trace-reenter (exact slug or title) ────────────────────────────────────
+  // ── Clear coverage: trace-reenter (exact slug or title) ─────────────────────
 
   {
-    utterance: "re-enter the break-stop-and-stale-expiry task",
+    utterance: "re-enter the checkout-flow task",
     expectedSkill: "trace-reenter",
     note: "exact slug — the canonical reenter trigger",
   },
   {
-    utterance: "resume skill-routing-eval",
+    utterance: "resume the task called user-onboarding-revamp",
     expectedSkill: "trace-reenter",
-    note: "exact slug, short-form — should reenter not recall",
+    note: "exact title with resume verb",
   },
 
-  // ── trace-handoff (wrapping up / end of session) ───────────────────────────
+  // ── Clear coverage: trace-handoff (wrapping up / end of session) ────────────
 
   {
     utterance: "let's hand this off, I'm moving to a new chat",
@@ -69,12 +78,12 @@ export const corpus: Case[] = [
     note: "end-of-session wrap-up with save-state phrase",
   },
 
-  // ── trace-doc-placement (save a document in the task's docs dir) ───────────
+  // ── Clear coverage: trace-doc-placement (where a doc belongs) ───────────────
 
   {
-    utterance: "where should I save this spec in the task docs?",
+    utterance: "I've got a design doc for the current task — where should I save it?",
     expectedSkill: "trace-doc-placement",
-    note: "doc placement intent for a spec",
+    note: "explicit doc-placement question",
   },
   {
     utterance: "place my PRD in the current task's docs directory",
@@ -82,77 +91,87 @@ export const corpus: Case[] = [
     note: "explicit doc-placement request for a PRD",
   },
 
-  // ── trace-board (open the task board UI) ──────────────────────────────────
+  // ── Clear coverage: trace-board (open the task board UI) ────────────────────
 
   {
-    utterance: "open the task board",
+    utterance: "open the trace task board in my browser",
     expectedSkill: "trace-board",
     note: "canonical open-board phrase",
   },
   {
-    utterance: "show me the trace board in the browser",
+    utterance: "show me my tasks in the web UI",
     expectedSkill: "trace-board",
     note: "browser/UI phrasing for the task board",
   },
 
-  // ── steal-boundary: trace wins over decoys ─────────────────────────────────
+  // ── Intra-trace boundary: the trace / recall / reenter triangle ─────────────
 
   {
-    utterance:
-      "I need to save this PRD to the current task's docs — where does it go?",
-    expectedSkill: "trace-doc-placement",
-    note: "steal-boundary: trace-doc-placement wins over create-prd decoy",
-  },
-  {
-    utterance:
-      "bind this session to the login-page feature I'm about to work on",
-    expectedSkill: "trace",
-    note: "steal-boundary: trace wins over scope decoy (scope-adjacent phrasing)",
-  },
-
-  // ── intra-trace boundary ───────────────────────────────────────────────────
-
-  {
-    utterance: "pick up where we left off on the wizard feature",
+    utterance: "pick up where we left off on the wizard",
     expectedSkill: "trace-recall",
-    note: "intra-trace: vague → trace-recall, not trace-reenter",
+    note: "vague, no exact name → recall (not reenter)",
   },
   {
-    utterance: "re-enter user-auth",
-    expectedSkill: "trace-reenter",
-    note: "intra-trace: exact slug → trace-reenter, not trace-recall",
+    utterance: "I want to get back into the payments work from last week",
+    expectedSkill: "trace-recall",
+    note: "CONTESTED: vague reference ('the payments work') → recall, but 'get back into' may mis-route to reenter",
   },
   {
-    utterance: "I want to start a brand-new bug-fix task",
+    utterance: "I want to start a brand-new bug-fix for the flaky login redirect",
     expectedSkill: "trace",
-    note: "intra-trace: new work → trace, not trace-recall or trace-reenter",
+    note: "new work → trace (not recall or reenter)",
   },
 
-  // ── negative / over-capture: decoy fires, no trace skill ──────────────────
+  // ── Steal-boundary: trace should win over a near planning decoy ─────────────
+  //    (most likely to fail today — that failure is the deliverable)
 
   {
-    utterance: "scope this feature for me",
+    utterance: "I want to scope out a brand-new search feature",
+    expectedSkill: "trace",
+    note: "STEAL: near `scope`; trace should bind the work before scope interviews",
+  },
+  {
+    utterance: "let's define a new billing feature",
+    expectedSkill: "trace",
+    note: "STEAL: near `create-prd` ('define a new feature'); starting work → trace binds first",
+  },
+  {
+    utterance: "help me plan the work for the dashboard redesign",
+    expectedSkill: "trace",
+    note: "STEAL: near `scope`/`slice`; new piece of work → trace binds first",
+  },
+  {
+    utterance: "I'm about to write a PRD for this task — where should it live?",
+    expectedSkill: "trace-doc-placement",
+    note: "STEAL: near `create-prd`/`spec`; the placement intent should win over PRD-generation",
+  },
+
+  // ── Negative / over-capture: a decoy fires, NO trace skill ──────────────────
+  //    (utterances chosen decoy-exclusive — no task/feature/binding language)
+
+  {
+    utterance: "grill me on this plan and tell me what I should cut",
     expectedSkill: "scope",
-    note: "negative: decoy scope should win, no trace skill",
+    note: "negative: pure scope interview, no work-binding — trace must not over-capture",
   },
   {
-    utterance: "slice this into implementable tasks",
+    utterance: "break this design into vertical tracer-bullet slices with dependencies",
     expectedSkill: "slice",
-    note: "negative: decoy slice should win",
+    note: "negative: pure slice trigger",
   },
   {
-    utterance: "write a spec from our current conversation",
+    utterance: "turn this conversation into a PRD document",
     expectedSkill: "spec",
-    note: "negative: decoy spec should win",
+    note: "negative: spec trigger (create-prd is a near-twin — a decoy firing either way still proves no over-capture)",
   },
   {
-    utterance: "implement this feature, drive the task DAG to completion",
+    utterance: "implement a debounce on the search input handler",
     expectedSkill: "implement",
-    note: "negative: decoy implement should win",
+    note: "negative: pure coding task, no task reference — trace must not over-capture",
   },
   {
-    utterance: "create a PRD for the new dashboard feature",
+    utterance: "write product requirements for a referral program",
     expectedSkill: "create-prd",
-    note: "negative: decoy create-prd should win",
+    note: "negative: pure PRD generation, no placement question",
   },
 ];

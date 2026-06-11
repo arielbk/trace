@@ -48,6 +48,7 @@ async function main() {
   const summary = formatSummary(results);
   console.log(`\n${summary}`);
 
+  const failed = results.filter((r) => !r.pass).length;
   process.exit(failed > 0 ? 1 : 0);
 }
 
