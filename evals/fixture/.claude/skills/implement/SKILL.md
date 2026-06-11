@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Drive a feature's task DAG to completion — picks unblocked slices, TDDs each one, commits, and loops until done. Use when the user says "/implement", "implement this", "drive this to completion", or wants to run a feature's task DAG.
+description: Execute a feature's task slices end-to-end using TDD, writing a log as it goes and generating a QA plan at the end. Reads {feature}.tasks.md from the feature's docs directory. Use when user says "/implement", "implement this", or "start building". Pass the feature name as an argument, e.g. /implement checkout-flow.
 ---
 
 Decoy stub — routing test only.
