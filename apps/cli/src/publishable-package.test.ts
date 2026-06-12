@@ -22,7 +22,7 @@ describe("publishable CLI package", () => {
     assert.equal(packageJson.name, "@arielbk/trace");
     assert.equal(packageJson.version, "0.1.0");
     assert.notEqual(packageJson.private, true);
-    assert.equal(packageJson.bin?.trace, "./dist/trace.js");
+    assert.equal(packageJson.bin?.trace, "dist/trace.js");
     assert.equal(packageJson.publishConfig?.access, "public");
     assert.deepEqual(packageJson.files, [
       "dist/trace.js",

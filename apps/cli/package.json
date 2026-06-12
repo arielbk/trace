@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "trace": "./dist/trace.js"
+    "trace": "dist/trace.js"
   },
   "files": [
     "dist/trace.js",
