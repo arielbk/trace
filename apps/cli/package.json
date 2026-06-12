@@ -1,10 +1,17 @@
 {
-  "name": "@trace/cli",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@arielbk/trace",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
-    "trace": "./src/trace.ts"
+    "trace": "./dist/trace.js"
+  },
+  "files": [
+    "dist/trace.js",
+    "dist/claude-session-start-hook.js",
+    "dist/web/**"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts",
@@ -13,12 +20,10 @@
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
-  "dependencies": {
-    "@trace/core": "workspace:*"
-  },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@trace/core": "workspace:*",
     "@trace/web": "workspace:*",
     "@types/node": "^22.15.3",
     "eslint": "^9.39.1",

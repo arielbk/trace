@@ -24,7 +24,7 @@ describe("CLI bundle", () => {
   it("build emits tsup-generated self-contained CLI and hook JS bundles", () => {
     rmSync(join(appRoot, "dist"), { recursive: true, force: true });
 
-    execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
+    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
@@ -51,7 +51,7 @@ describe("CLI bundle", () => {
   });
 
   it("build copies web assets next to the CLI bundle", () => {
-    execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
+    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });

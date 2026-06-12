@@ -25,10 +25,6 @@ importers:
         version: 4.1.7(@types/node@22.15.3)(@vitest/coverage-v8@4.1.7)(vite@8.0.14(@types/node@22.15.3)(esbuild@0.28.0)(tsx@4.22.3))
 
   apps/cli:
-    dependencies:
-      '@trace/core':
-        specifier: workspace:*
-        version: link:../../packages/core
     devDependencies:
       '@repo/eslint-config':
         specifier: workspace:*
@@ -36,6 +32,9 @@ importers:
       '@repo/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
+      '@trace/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@trace/web':
         specifier: workspace:*
         version: link:../web
@@ -3407,7 +3406,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.7(@types/node@22.15.3)(@vitest/coverage-v8@4.1.7)(vite@8.0.14(@types/node@22.15.3)(esbuild@0.27.7)(tsx@4.22.3))
+      vitest: 4.1.7(@types/node@22.15.3)(@vitest/coverage-v8@4.1.7)(vite@8.0.14(@types/node@22.15.3)(esbuild@0.28.0)(tsx@4.22.3))
 
   '@vitest/expect@4.1.7':
     dependencies:

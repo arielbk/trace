@@ -31,7 +31,7 @@ describe("plugin scaffold", () => {
     rmSync(pluginTraceBundle, { force: true });
     rmSync(pluginHookBundle, { force: true });
 
-    execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
+    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
