@@ -271,7 +271,16 @@ class NodeSqliteTaskStore implements TaskStore {
     }
 
     const existing = this.getSession(id);
-    if (existing) return existing;
+    if (existing) {
+      // Upgrade a virtual codex: URI to a real file path when scan now has one.
+      if (existing.transcriptPath.startsWith("codex:") && !transcriptPath.startsWith("codex:")) {
+        this.#sqlite
+          .prepare("UPDATE sessions SET transcript_path = ? WHERE id = ?")
+          .run(transcriptPath, id);
+        return this.#refreshSession({ ...existing, transcriptPath });
+      }
+      return existing;
+    }
 
     const totals = tokenTotalsFromUsage(input.tokenTotals);
     const session: Session = {
@@ -374,7 +383,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "session",
           createdAt: session.createdAt,
           session,
-          sessionName: readSessionName(session.transcriptPath),
+          sessionName: readSessionName(session.transcriptPath, session.tool),
         }),
       ),
       ...docs.map(

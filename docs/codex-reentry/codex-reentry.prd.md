@@ -22,11 +22,11 @@ CLI underneath:
 2. **Capture of the current Codex session** so a task started or continued in Codex lands
    in the store — done by backfill (`session scan --codex`) triggered from the skill, not a
    live hook.
-3. **`trace init` wiring** to install the Codex skill idempotently, the way it already
-   confirms the Claude skill and registers the Claude `SessionStart` hook.
+3. **`trace init` wiring** to install the Codex skill idempotently while keeping the
+   Claude setup path plugin-owned.
 
-The direction is **Claude → Codex only**. The reverse ("vice versa") is a follow-up that
-mostly already works via backfill.
+The primary direction is **Claude → Codex**. The reverse path is smoke-tested because the
+existing manifest and binding code already support it.
 
 ## User Stories
 
@@ -49,13 +49,15 @@ mostly already works via backfill.
 `re-enter`, `work-on-task`, `session scan --codex`, and `CODEX_THREAD_ID` tool inference all
 already exist and are tool-agnostic. No new store/adapter/manifest/CLI-verb code.
 
-**Codex `trace` skill (new artifact).** A `SKILL.md` in the Codex skills format, installed
-to the Codex skills directory (`~/.codex/skills/trace/`). It is *not* a verbatim copy of the
-Claude skill — that one is Claude-specific in prose and references `CLAUDE_*` env vars. The
-Codex skill instead:
+**Codex `trace` skill (new artifact).** A `SKILL.md` in the Codex skills format, bundled
+under `codex/skills/trace/` for the Codex plugin and installed locally to
+`~/.agents/skills/trace/` by `trace init`. It is _not_ a verbatim copy of the Claude skill —
+that one is Claude-specific in prose and references `CLAUDE_*` env vars. The Codex skill
+instead:
+
 - carries the same consumption protocol (re-enter → docs first → transcript tail fallback →
   never paste raw transcripts);
-- invokes the global `trace` bin's `skill work-on-task` / `skill re-enter` verbs (the same
+- invokes the bundled Trace CLI's `skill work-on-task` / `skill re-enter` verbs (the same
   title-based commands the Claude skill calls), which already infer the Codex session from
   `CODEX_THREAD_ID` and the transcript from `CODEX_TRANSCRIPT_PATH` when present;
 - runs `trace session scan --codex` on invocation so the current Codex-started session is
@@ -69,10 +71,10 @@ backfill reliably captures every Codex session including fresh ones. The archite
 deliberately asymmetric: **Claude captures live via a hook; Codex captures by backfill.**
 The store is identical either way.
 
-**`trace init` extension.** `runInit` currently registers the Claude `SessionStart` hook
-and reports whether the Claude skill is present. Extend it to also install the Codex skill
-into the Codex skills directory (resolved from a Codex home env var with a `~/.codex`
-default) and report its status — idempotently, matching the existing no-duplicate behavior.
+**`trace init` extension.** `runInit` stays a Claude plugin diagnostic and does not write
+Claude settings. It also installs or refreshes the Codex skill into the user skill
+directory (`$HOME/.agents/skills/trace/SKILL.md`) with an absolute path to this checkout's
+bundled `bin/trace.js`, and reports whether it installed or found an already-current copy.
 
 ## Testing Decisions
 
@@ -87,7 +89,8 @@ sessions directory + `session_index.jsonl`. Mirror both.
   present and bound in the store.
 - **Cross-tool re-entry:** seed a task with a Claude session + docs, then re-enter as Codex
   (`CODEX_THREAD_ID` set) and assert the manifest surfaces the Claude docs and Claude
-  session pointers — proving the consume path is genuinely tool-agnostic.
+  session pointers — proving the consume path is genuinely tool-agnostic. Also smoke-test
+  Codex-created work re-entered from Claude, because that path requires no extra core code.
 - **`trace init` idempotency for Codex:** running init installs the Codex skill into a temp
   Codex home; running it a second time reports "already present" and does not duplicate.
 
@@ -96,8 +99,8 @@ Claude `SKILL.md`).
 
 ## Out of Scope
 
-- **Codex → Claude / "vice versa" re-entry** — a follow-up; mostly already works via
-  backfill and is not exercised here.
+- **A separate Codex → Claude implementation** — not needed for this increment; the existing
+  manifest path is smoke-tested instead.
 - **A live Codex session-start hook or `notify` shim** — explicitly rejected in favor of
   backfill; not built.
 - **New store, adapter, transcript-tail, manifest, or CLI verb code** — all already exists

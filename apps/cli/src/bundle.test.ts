@@ -46,14 +46,21 @@ describe("CLI bundle", () => {
 
     const indexPath = join(pluginWebAssetsDir, "index.html");
     assert.equal(existsSync(indexPath), true);
-    assert.equal(readFileSync(indexPath, "utf8").includes("<!doctype html"), true);
+    assert.equal(
+      readFileSync(indexPath, "utf8").includes("<!doctype html"),
+      true,
+    );
 
     const ignoreCheck = spawnSync(
       "git",
       ["check-ignore", "-v", "--", "bin/web/index.html"],
       { cwd: repoRoot, encoding: "utf8" },
     );
-    assert.equal(ignoreCheck.status, 1, ignoreCheck.stdout + ignoreCheck.stderr);
+    assert.equal(
+      ignoreCheck.status,
+      1,
+      ignoreCheck.stdout + ignoreCheck.stderr,
+    );
   });
 
   it("bundled CLI runs outside the source tree and applies migrations", () => {
@@ -96,6 +103,43 @@ describe("CLI bundle", () => {
         },
       );
       assert.equal(listed.includes("bundle smoke task"), true);
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("bundled init installs the Codex skill from the plugin root", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "trace-bundle-init-home-"));
+    const outsideDir = mkdtempSync(
+      join(tmpdir(), "trace-bundle-init-outside-"),
+    );
+    const skillPath = join(fakeHome, ".agents", "skills", "trace", "SKILL.md");
+
+    try {
+      execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+
+      const output = execFileSync(
+        process.execPath,
+        [pluginTraceBundle, "init"],
+        {
+          cwd: outsideDir,
+          encoding: "utf8",
+          env: { ...process.env, HOME: fakeHome },
+        },
+      );
+
+      assert.equal(
+        output.includes(`Codex trace skill: installed at ${skillPath}`),
+        true,
+      );
+      assert.equal(existsSync(skillPath), true);
+      const source = readFileSync(skillPath, "utf8");
+      assert.equal(source.includes(`node "${pluginTraceBundle}"`), true);
+      assert.equal(source.includes("<trace-plugin-root>"), false);
     } finally {
       rmSync(fakeHome, { recursive: true, force: true });
       rmSync(outsideDir, { recursive: true, force: true });

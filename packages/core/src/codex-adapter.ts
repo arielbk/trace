@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
+  collectTranscriptHead,
   collectTranscriptTail,
   normalizeRole,
   textFromContent,
@@ -43,6 +44,14 @@ type CodexUsage = {
   totalTokens?: number;
 };
 
+// Codex Desktop (OpenAI) per-turn cumulative usage — emitted via event_msg/token_count
+type CodexDesktopUsage = {
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+};
+
 type CodexJsonlEvent = {
   type?: string;
   thread_id?: string;
@@ -52,6 +61,14 @@ type CodexJsonlEvent = {
   usage?: CodexUsage;
   turn?: {
     usage?: CodexUsage;
+  };
+  // Codex Desktop payload wrapper
+  payload?: {
+    id?: string;
+    type?: string;
+    info?: {
+      total_token_usage?: CodexDesktopUsage;
+    };
   };
 };
 
@@ -72,7 +89,10 @@ export function parseCodexTranscript(
   let id: string | undefined;
   let model: string | undefined;
   const filenameId = codexThreadIdFromPath(input.transcriptPath);
-  let tokenTotals = emptyTokenTotals();
+  let turnCompletedTotals = emptyTokenTotals();
+  // Desktop format: each token_count event carries cumulative session totals;
+  // we keep the last one so a live transcript gives the freshest count.
+  let lastDesktopTotals: TokenTotals | null = null;
 
   for (const line of input.transcript.split(/\r?\n/)) {
     if (line.trim().length === 0) {
@@ -87,16 +107,31 @@ export function parseCodexTranscript(
       continue;
     }
 
+    // Codex CLI format: thread identity in thread.started
     if (event.type === "thread.started") {
       id ??= event.thread_id ?? event.threadId ?? event.id;
       model ??= event.model;
     }
 
+    // Codex Desktop format: session identity in session_meta payload
+    if (event.type === "session_meta") {
+      id ??= event.payload?.id;
+    }
+
+    // Codex CLI format: per-turn usage in turn.completed
     if (event.type === "turn.completed") {
-      tokenTotals = addTokenTotals(
-        tokenTotals,
+      turnCompletedTotals = addTokenTotals(
+        turnCompletedTotals,
         tokenTotalsFromUsage(event.usage ?? event.turn?.usage),
       );
+    }
+
+    // Codex Desktop format: cumulative session usage in event_msg/token_count
+    if (event.type === "event_msg" && event.payload?.type === "token_count") {
+      const usage = event.payload.info?.total_token_usage;
+      if (usage) {
+        lastDesktopTotals = desktopTokenTotals(usage);
+      }
     }
   }
 
@@ -121,7 +156,20 @@ export function parseCodexTranscript(
     transcriptPath: input.transcriptPath,
     tool: "codex",
     model: model ?? null,
-    tokenTotals,
+    tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
+  };
+}
+
+function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const cacheReadInputTokens = usage.cached_input_tokens ?? 0;
+  return {
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens,
+    totalTokens: usage.total_tokens ?? inputTokens + outputTokens,
   };
 }
 
@@ -141,6 +189,17 @@ export function tailCodexTranscript(input: {
   limit?: number | undefined;
 }): TranscriptMessage[] {
   return collectTranscriptTail(
+    input.transcript,
+    input.limit,
+    messageFromCodexEvent,
+  );
+}
+
+export function headCodexTranscript(input: {
+  transcript: string;
+  limit?: number | undefined;
+}): TranscriptMessage[] {
+  return collectTranscriptHead(
     input.transcript,
     input.limit,
     messageFromCodexEvent,
@@ -174,11 +233,17 @@ export function scanCodexSessions(codexHome: string): ParsedCodexSession[] {
       ? indexedPaths
       : findJsonlFiles(join(root, "sessions"));
 
-  return transcriptPaths.map((entry) =>
-    parseCodexTranscriptFile(entry.transcriptPath, {
-      expectedThreadId: entry.expectedThreadId,
-    }),
-  );
+  return transcriptPaths.flatMap((entry) => {
+    try {
+      return [
+        parseCodexTranscriptFile(entry.transcriptPath, {
+          expectedThreadId: entry.expectedThreadId,
+        }),
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 function readCodexSessionIndex(
@@ -193,7 +258,7 @@ function readCodexSessionIndex(
   return readFileSync(indexPath, "utf8")
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0)
-    .map((line) => {
+    .flatMap((line) => {
       const entry = JSON.parse(line) as CodexSessionIndexEntry;
       const rawPath =
         entry.path ??
@@ -203,15 +268,15 @@ function readCodexSessionIndex(
         entry.rolloutPath;
 
       if (!rawPath) {
-        throw new Error(
-          "Codex session index entry is missing a transcript path",
-        );
+        return [];
       }
 
-      return {
-        transcriptPath: resolve(codexHome, rawPath),
-        expectedThreadId: entry.thread_id ?? entry.threadId ?? entry.id,
-      };
+      return [
+        {
+          transcriptPath: resolve(codexHome, rawPath),
+          expectedThreadId: entry.thread_id ?? entry.threadId ?? entry.id,
+        },
+      ];
     });
 }
 
@@ -245,5 +310,13 @@ function findJsonlFiles(
 
 function codexThreadIdFromPath(transcriptPath: string): string | undefined {
   const filename = basename(transcriptPath).replace(/\.jsonl$/, "");
-  return filename.length > 0 ? filename.replace(/^rollout-/, "") : undefined;
+  if (!filename.length) return undefined;
+  // Codex Desktop filenames: rollout-YYYY-MM-DDThh-mm-ss-{uuid}
+  // Extract just the trailing UUID when present.
+  const uuidMatch = filename.match(
+    /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+  );
+  if (uuidMatch) return uuidMatch[1];
+  // Legacy Codex CLI filenames: strip rollout- prefix if present.
+  return filename.replace(/^rollout-/, "");
 }

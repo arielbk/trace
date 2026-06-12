@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import {
+  headClaudeCodeTranscript,
   parseClaudeCodeTranscript,
   parseClaudeCodeTranscriptFile,
   tailClaudeCodeTranscript,
 } from "./claude-code-adapter.ts";
 import {
+  headCodexTranscript,
   parseCodexTranscript,
   parseCodexTranscriptFile,
   tailCodexTranscript,
@@ -36,11 +38,16 @@ export type ReadTranscriptTailInput = {
   limit?: number | undefined;
 };
 
+export type TranscriptHeadInput = TranscriptTailInput;
+
+export type ReadTranscriptHeadInput = ReadTranscriptTailInput;
+
 /**
  * The one place that knows, per `SessionTool`, how to read session identity,
- * model, token totals, and the message tail out of a transcript. Callers
+ * model, token totals, and the message head/tail out of a transcript. Callers
  * consult `getTranscriptAdapter(tool)` instead of importing per-tool free
- * functions and re-branching on the tool string.
+ * functions and re-branching on the tool string. `head` surfaces the first user
+ * messages in order (for session naming); `tail` surfaces the last messages.
  */
 export type TranscriptAdapter = {
   readonly tool: SessionTool;
@@ -49,6 +56,8 @@ export type TranscriptAdapter = {
     transcriptPath: string,
     options?: { expectedId?: string | undefined },
   ): ParsedTranscript;
+  head(input: TranscriptHeadInput): TranscriptMessage[];
+  readHead(input: ReadTranscriptHeadInput): TranscriptMessage[];
   tail(input: TranscriptTailInput): TranscriptMessage[];
   readTail(input: ReadTranscriptTailInput): TranscriptMessage[];
 };
@@ -64,11 +73,17 @@ const claudeTranscriptAdapter: TranscriptAdapter = {
   parseFile(transcriptPath) {
     return parseClaudeCodeTranscriptFile(transcriptPath);
   },
+  head(input) {
+    return headClaudeCodeTranscript(input);
+  },
+  readHead(input) {
+    return readFromFile(input, headClaudeCodeTranscript);
+  },
   tail(input) {
     return tailClaudeCodeTranscript(input);
   },
   readTail(input) {
-    return readTail(input, tailClaudeCodeTranscript);
+    return readFromFile(input, tailClaudeCodeTranscript);
   },
 };
 
@@ -86,11 +101,17 @@ const codexTranscriptAdapter: TranscriptAdapter = {
       expectedThreadId: options?.expectedId,
     });
   },
+  head(input) {
+    return headCodexTranscript(input);
+  },
+  readHead(input) {
+    return readFromFile(input, headCodexTranscript);
+  },
   tail(input) {
     return tailCodexTranscript(input);
   },
   readTail(input) {
-    return readTail(input, tailCodexTranscript);
+    return readFromFile(input, tailCodexTranscript);
   },
 };
 
@@ -103,12 +124,12 @@ export function getTranscriptAdapter(tool: SessionTool): TranscriptAdapter {
   return adaptersByTool[tool];
 }
 
-function readTail(
+function readFromFile(
   input: ReadTranscriptTailInput,
-  tail: (tailInput: TranscriptTailInput) => TranscriptMessage[],
+  walk: (walkInput: TranscriptTailInput) => TranscriptMessage[],
 ): TranscriptMessage[] {
   try {
-    return tail({
+    return walk({
       transcript: readFileSync(input.transcriptPath, "utf8"),
       limit: input.limit,
     });

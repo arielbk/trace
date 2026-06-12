@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { join, resolve } from "node:path";
 import {
+  collectTranscriptHead,
   collectTranscriptTail,
   isObject,
   normalizeRole,
@@ -149,6 +150,17 @@ export function tailClaudeCodeTranscript(input: {
   limit?: number | undefined;
 }): TranscriptMessage[] {
   return collectTranscriptTail(
+    input.transcript,
+    input.limit,
+    messageFromClaudeEvent,
+  );
+}
+
+export function headClaudeCodeTranscript(input: {
+  transcript: string;
+  limit?: number | undefined;
+}): TranscriptMessage[] {
+  return collectTranscriptHead(
     input.transcript,
     input.limit,
     messageFromClaudeEvent,

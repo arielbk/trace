@@ -1,29 +1,32 @@
-import { readFileSync } from "node:fs";
-import { isObject, normalizeRole, textFromContent } from "./transcript-messages.ts";
+import { getTranscriptAdapter } from "./transcript-adapter.ts";
+import type { TranscriptMessage } from "./transcript-messages.ts";
+import type { SessionTool } from "./types.ts";
 
 const SESSION_NAME_MAX_LENGTH = 60;
 
-export function deriveSessionName(transcript: string): string | null {
-  for (const line of transcript.split(/\r?\n/)) {
-    if (line.trim().length === 0) continue;
+export function deriveSessionName(
+  transcript: string,
+  tool: SessionTool = "claude",
+): string | null {
+  return nameFromHead(getTranscriptAdapter(tool).head({ transcript }));
+}
 
-    let event: unknown;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      continue;
-    }
+export function readSessionName(
+  transcriptPath: string,
+  tool: SessionTool = "claude",
+): string | null {
+  return nameFromHead(getTranscriptAdapter(tool).readHead({ transcriptPath }));
+}
 
-    if (!isObject(event)) continue;
-
-    const message = isObject(event.message) ? event.message : undefined;
-    const role = normalizeRole(event.type) ?? normalizeRole(message?.role);
-    if (role !== "user") continue;
-
-    const text = textFromContent(message?.content ?? event.content);
-    if (!text) continue;
-
-    const cleaned = cleanMessageText(text);
+/**
+ * Apply the naming policy to the first user messages of a transcript: clean each
+ * candidate in order and return the first that survives, capped at the max
+ * length. The tool-specific job of finding those messages lives behind the
+ * transcript adapter seam — this module owns only the policy.
+ */
+function nameFromHead(messages: TranscriptMessage[]): string | null {
+  for (const message of messages) {
+    const cleaned = cleanMessageText(message.text);
     if (!cleaned) continue;
 
     return cleaned.length > SESSION_NAME_MAX_LENGTH
@@ -32,14 +35,6 @@ export function deriveSessionName(transcript: string): string | null {
   }
 
   return null;
-}
-
-export function readSessionName(transcriptPath: string): string | null {
-  try {
-    return deriveSessionName(readFileSync(transcriptPath, "utf8"));
-  } catch {
-    return null;
-  }
 }
 
 /**

@@ -71,6 +71,39 @@ test("codex adapter answers identity, tokens, tail, and honors expected id", () 
   ]);
 });
 
+test("adapters surface the first user messages as the head, per tool", () => {
+  const claudeTranscript = readFileSync(claudeFixture, "utf8");
+  expect(
+    getTranscriptAdapter("claude").head({ transcript: claudeTranscript, limit: 1 }),
+  ).toEqual([{ role: "user", text: "Plan checkout flow" }]);
+
+  const codexTranscript = readFileSync(codexFixture, "utf8");
+  expect(
+    getTranscriptAdapter("codex").head({ transcript: codexTranscript, limit: 8 }),
+  ).toEqual([
+    { role: "user", text: "Inspect failing test" },
+    { role: "user", text: "Run tests" },
+  ]);
+});
+
+test("readHead reads from disk and returns empty for a missing transcript", () => {
+  expect(
+    getTranscriptAdapter("codex").readHead({
+      transcriptPath: "/tmp/trace-missing-adapter-transcript.jsonl",
+      limit: 5,
+    }),
+  ).toEqual([]);
+  expect(
+    getTranscriptAdapter("codex").readHead({
+      transcriptPath: codexFixture,
+      limit: 8,
+    }),
+  ).toEqual([
+    { role: "user", text: "Inspect failing test" },
+    { role: "user", text: "Run tests" },
+  ]);
+});
+
 test("readTail reads from disk and returns empty for a missing transcript", () => {
   expect(
     getTranscriptAdapter("codex").readTail({
