@@ -33,14 +33,8 @@ function installCodexSkill(env: Record<string, string | undefined>): string {
   const targetPath = join(env.HOME, ".agents", "skills", "trace", "SKILL.md");
   const pluginRoot = resolvePluginRoot();
   const sourcePath = join(pluginRoot, "codex", "skills", "trace", "SKILL.md");
-  const bundledTraceBin = join(pluginRoot, "bin", "trace.js");
   const source = readFileSync(sourcePath, "utf8");
-  const rendered = source
-    .replaceAll(
-      'node "<trace-plugin-root>/bin/trace.js"',
-      `node "${bundledTraceBin}"`,
-    )
-    .replaceAll("<trace-plugin-root>", pluginRoot);
+  const rendered = source;
 
   if (existsSync(targetPath) && readFileSync(targetPath, "utf8") === rendered) {
     return `Codex trace skill: already present at ${targetPath}`;

@@ -13,7 +13,7 @@ resolving a vague reference is `trace-recall`.
 Tell the user to run the Trace web server in their own terminal:
 
 ```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" serve
+npx @arielbk/trace@0.1.0 serve
 ```
 
 The command reads the live store from `~/.trace/trace.sqlite`, starts the board,

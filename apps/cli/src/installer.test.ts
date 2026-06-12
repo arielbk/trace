@@ -14,7 +14,16 @@ import { describe, it } from "vitest";
 import { runInit } from "./installer.ts";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const bundledTraceBin = join(repoRoot, "bin", "trace.js");
+const appRoot = fileURLToPath(new URL("..", import.meta.url));
+const cliPackageJson = join(appRoot, "package.json");
+
+function pinnedTraceCommand(): string {
+  const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
+    name?: string;
+    version?: string;
+  };
+  return `npx ${packageJson.name}@${packageJson.version}`;
+}
 
 type Settings = {
   permissions?: { allow?: string[] };
@@ -123,7 +132,8 @@ describe("trace init", () => {
         true,
       );
       assert.equal(firstSkill, secondSkill);
-      assert.equal(firstSkill.includes(`node "${bundledTraceBin}"`), true);
+      assert.equal(firstSkill.includes(pinnedTraceCommand()), true);
+      assert.equal(firstSkill.includes("bin/trace.js"), false);
       assert.equal(firstSkill.includes("<trace-plugin-root>"), false);
       assert.equal(firstSkill.includes("CLAUDE_PLUGIN_ROOT"), false);
     } finally {

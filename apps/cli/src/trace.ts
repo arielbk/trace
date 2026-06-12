@@ -18,6 +18,7 @@ import {
 import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
+import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import {
   copyFileSync,
   lstatSync,
@@ -41,11 +42,20 @@ export function runTraceCli(
   argv: string[],
   env: Record<string, string | undefined> = process.env,
   cwd = process.cwd(),
+  stdin = "",
 ): CommandResult {
   const [resource, action, ...args] = argv;
 
   if (resource === "init") {
     return success(runInit(env, cwd));
+  }
+
+  if (resource === "hook") {
+    if (action === "session-start" && args.length === 0) {
+      return runClaudeSessionStartHook(stdin, env);
+    }
+
+    return failure("Usage: trace hook session-start\n");
   }
 
   if (resource === "serve") {
@@ -1380,7 +1390,12 @@ function safeRealpath(path: string): string {
 }
 
 if (isDirectRun) {
-  const result = runTraceCli(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  const stdin =
+    args[0] === "hook" && args[1] === "session-start"
+      ? readFileSync(0, "utf8")
+      : "";
+  const result = runTraceCli(args, process.env, process.cwd(), stdin);
   process.stdout.write(result.stdout);
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;

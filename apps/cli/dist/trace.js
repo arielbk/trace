@@ -1354,12 +1354,8 @@ function installCodexSkill(env) {
   const targetPath = join5(env.HOME, ".agents", "skills", "trace", "SKILL.md");
   const pluginRoot = resolvePluginRoot();
   const sourcePath = join5(pluginRoot, "codex", "skills", "trace", "SKILL.md");
-  const bundledTraceBin = join5(pluginRoot, "bin", "trace.js");
   const source = readFileSync4(sourcePath, "utf8");
-  const rendered = source.replaceAll(
-    'node "<trace-plugin-root>/bin/trace.js"',
-    `node "${bundledTraceBin}"`
-  ).replaceAll("<trace-plugin-root>", pluginRoot);
+  const rendered = source;
   if (existsSync4(targetPath) && readFileSync4(targetPath, "utf8") === rendered) {
     return `Codex trace skill: already present at ${targetPath}`;
   }
@@ -1529,11 +1525,114 @@ function startTraceServe(env, options = {}) {
   });
 }
 
+// src/claude-session-start-hook-runner.ts
+import { appendFileSync, mkdirSync as mkdirSync3 } from "fs";
+import { dirname as dirname6 } from "path";
+function runClaudeSessionStartHook(rawInput, env = process.env) {
+  const input = JSON.parse(rawInput);
+  if (input.hook_event_name && input.hook_event_name !== "SessionStart") {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: `Expected SessionStart hook input, received ${input.hook_event_name}
+`
+    };
+  }
+  if (!input.session_id) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "SessionStart input requires session_id\n"
+    };
+  }
+  if (!input.transcript_path) {
+    return {
+      exitCode: 2,
+      stdout: "",
+      stderr: "SessionStart input requires transcript_path\n"
+    };
+  }
+  const identity = inferSessionIdentity(env, {
+    tool: "claude",
+    id: input.session_id,
+    transcriptPath: input.transcript_path
+  });
+  let result;
+  try {
+    result = runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        identity.id ?? input.session_id,
+        "--transcript",
+        identity.transcriptPath ?? input.transcript_path,
+        "--tool",
+        identity.tool
+      ],
+      env
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    result = { exitCode: 1, stdout: "", stderr: `${reason}
+` };
+  }
+  if (result.exitCode !== 0) {
+    recordHookFailure(env, {
+      sessionId: input.session_id,
+      source: input.source,
+      reason: result.stderr.trim() || `exit code ${result.exitCode}`
+    });
+    return result;
+  }
+  const sessionId = identity.id ?? input.session_id;
+  let nudge = "";
+  try {
+    nudge = resolveSessionNudge(env, sessionId, input.cwd);
+  } catch (error) {
+    recordHookFailure(env, {
+      sessionId: input.session_id,
+      source: input.source,
+      reason: error instanceof Error ? error.message : String(error)
+    });
+  }
+  return { ...result, stdout: nudge };
+}
+function resolveSessionNudge(env, sessionId, cwd) {
+  const argv = cwd ? ["session", "active-task", "--id", sessionId, "--project", cwd] : ["session", "active-task", "--id", sessionId];
+  const result = runTraceCli(argv, env);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      result.stderr.trim() || `active-task exited ${result.exitCode}`
+    );
+  }
+  const active = JSON.parse(result.stdout);
+  if (active.kind === "bound") {
+    return `\u2713 Trace tracking: ${active.task.title}
+`;
+  }
+  if (active.kind === "re-enter") {
+    return `Trace: no task is bound to this session yet \u2014 the most recent task in this project is "${active.task.title}". If this session continues that work, offer to re-enter it.
+`;
+  }
+  return "Trace: no task is bound to this session and this project has none yet. If the user is doing real project work, offer to start tracking it.\n";
+}
+function recordHookFailure(env, failure2) {
+  try {
+    const logDir = dirname6(resolveDbPath(env));
+    mkdirSync3(logDir, { recursive: true });
+    const entry = `${(/* @__PURE__ */ new Date()).toISOString()}	SessionStart	session=${failure2.sessionId}	source=${failure2.source ?? "unknown"}	reason=${failure2.reason.replace(/\s+/g, " ")}
+`;
+    appendFileSync(`${logDir}/hook-errors.log`, entry);
+  } catch {
+  }
+}
+
 // src/trace.ts
 import {
   copyFileSync,
   lstatSync,
-  mkdirSync as mkdirSync3,
+  mkdirSync as mkdirSync4,
   readFileSync as readFileSync6,
   realpathSync,
   rmSync,
@@ -1542,10 +1641,16 @@ import {
 } from "fs";
 import { basename as basename3, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
-function runTraceCli(argv, env = process.env, cwd = process.cwd()) {
+function runTraceCli(argv, env = process.env, cwd = process.cwd(), stdin = "") {
   const [resource, action, ...args] = argv;
   if (resource === "init") {
     return success(runInit(env, cwd));
+  }
+  if (resource === "hook") {
+    if (action === "session-start" && args.length === 0) {
+      return runClaudeSessionStartHook(stdin, env);
+    }
+    return failure("Usage: trace hook session-start\n");
   }
   if (resource === "serve") {
     startTraceServe(env).then(({ url }) => {
@@ -1661,7 +1766,7 @@ function runTraceCli(argv, env = process.env, cwd = process.cwd()) {
         const docFileName = parsed.docPath ? basename3(parsed.docPath) : "capture.md";
         const task = store.createTask(parsed.title, projectRoot);
         const docsDir = resolveTaskDocsDir(databasePath, task.id);
-        mkdirSync3(docsDir, { recursive: true });
+        mkdirSync4(docsDir, { recursive: true });
         const docPath = join7(docsDir, docFileName);
         if (parsed.docPath) {
           copyFileSync(parsed.docPath, docPath);
@@ -2180,7 +2285,7 @@ function slugify2(title) {
 }
 function linkRepoDocs(projectRoot, title, docsDir) {
   const linkPath = join7(projectRoot, "docs", slugify2(title));
-  mkdirSync3(join7(projectRoot, "docs"), { recursive: true });
+  mkdirSync4(join7(projectRoot, "docs"), { recursive: true });
   let existing = null;
   try {
     existing = lstatSync(linkPath);
@@ -2497,7 +2602,9 @@ function safeRealpath(path) {
   }
 }
 if (isDirectRun) {
-  const result = runTraceCli(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  const stdin = args[0] === "hook" && args[1] === "session-start" ? readFileSync6(0, "utf8") : "";
+  const result = runTraceCli(args, process.env, process.cwd(), stdin);
   process.stdout.write(result.stdout);
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;

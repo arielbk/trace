@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+// src/claude-session-start-hook.ts
+import { readFileSync as readFileSync7, realpathSync as realpathSync2 } from "fs";
+import { basename as basename4 } from "path";
+import { fileURLToPath as fileURLToPath4 } from "url";
+
 // ../../packages/core/src/store.ts
 import { randomUUID } from "crypto";
 import { mkdirSync, statSync as statSync2 } from "fs";
@@ -1324,10 +1329,9 @@ function inferTranscriptPath(id, tool, env) {
   return `${tool}:${id}`;
 }
 
-// src/claude-session-start-hook.ts
-import { appendFileSync, mkdirSync as mkdirSync4, readFileSync as readFileSync7, realpathSync as realpathSync2 } from "fs";
-import { basename as basename4, dirname as dirname6 } from "path";
-import { fileURLToPath as fileURLToPath4 } from "url";
+// src/claude-session-start-hook-runner.ts
+import { appendFileSync, mkdirSync as mkdirSync4 } from "fs";
+import { dirname as dirname6 } from "path";
 
 // src/db-path.ts
 function resolveDbPath(env) {
@@ -1359,12 +1363,8 @@ function installCodexSkill(env) {
   const targetPath = join5(env.HOME, ".agents", "skills", "trace", "SKILL.md");
   const pluginRoot = resolvePluginRoot();
   const sourcePath = join5(pluginRoot, "codex", "skills", "trace", "SKILL.md");
-  const bundledTraceBin = join5(pluginRoot, "bin", "trace.js");
   const source = readFileSync4(sourcePath, "utf8");
-  const rendered = source.replaceAll(
-    'node "<trace-plugin-root>/bin/trace.js"',
-    `node "${bundledTraceBin}"`
-  ).replaceAll("<trace-plugin-root>", pluginRoot);
+  const rendered = source;
   if (existsSync4(targetPath) && readFileSync4(targetPath, "utf8") === rendered) {
     return `Codex trace skill: already present at ${targetPath}`;
   }
@@ -1547,10 +1547,16 @@ import {
 } from "fs";
 import { basename as basename3, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
-function runTraceCli(argv, env = process.env, cwd = process.cwd()) {
+function runTraceCli(argv, env = process.env, cwd = process.cwd(), stdin = "") {
   const [resource, action, ...args] = argv;
   if (resource === "init") {
     return success(runInit(env, cwd));
+  }
+  if (resource === "hook") {
+    if (action === "session-start" && args.length === 0) {
+      return runClaudeSessionStartHook(stdin, env);
+    }
+    return failure("Usage: trace hook session-start\n");
   }
   if (resource === "serve") {
     startTraceServe(env).then(({ url }) => {
@@ -2502,24 +2508,15 @@ function safeRealpath(path) {
   }
 }
 if (isDirectRun) {
-  const result = runTraceCli(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  const stdin = args[0] === "hook" && args[1] === "session-start" ? readFileSync6(0, "utf8") : "";
+  const result = runTraceCli(args, process.env, process.cwd(), stdin);
   process.stdout.write(result.stdout);
   process.stderr.write(result.stderr);
   process.exitCode = result.exitCode;
 }
 
-// src/claude-session-start-hook.ts
-var invokedPath2 = process.argv[1];
-var modulePath2 = fileURLToPath4(import.meta.url);
-var isHookEntry = basename4(modulePath2) === "claude-session-start-hook.ts" || basename4(modulePath2) === "claude-session-start-hook.js";
-var isDirectRun2 = invokedPath2 !== void 0 && isHookEntry && safeRealpath2(invokedPath2) === modulePath2;
-function safeRealpath2(path) {
-  try {
-    return realpathSync2(path);
-  } catch {
-    return path;
-  }
-}
+// src/claude-session-start-hook-runner.ts
 function runClaudeSessionStartHook(rawInput, env = process.env) {
   const input = JSON.parse(rawInput);
   if (input.hook_event_name && input.hook_event_name !== "SessionStart") {
@@ -2617,6 +2614,19 @@ function recordHookFailure(env, failure2) {
 `;
     appendFileSync(`${logDir}/hook-errors.log`, entry);
   } catch {
+  }
+}
+
+// src/claude-session-start-hook.ts
+var invokedPath2 = process.argv[1];
+var modulePath2 = fileURLToPath4(import.meta.url);
+var isHookEntry = basename4(modulePath2) === "claude-session-start-hook.ts" || basename4(modulePath2) === "claude-session-start-hook.js";
+var isDirectRun2 = invokedPath2 !== void 0 && isHookEntry && safeRealpath2(invokedPath2) === modulePath2;
+function safeRealpath2(path) {
+  try {
+    return realpathSync2(path);
+  } catch {
+    return path;
   }
 }
 if (isDirectRun2) {

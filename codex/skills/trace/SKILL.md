@@ -10,16 +10,13 @@ re-enter, or continue a Trace task.
 
 ## Resolve the Trace CLI
 
-Use the bundled Trace CLI when this skill is loaded from the Trace plugin:
+Use the pinned Trace CLI package:
 
 ```sh
-node "<trace-plugin-root>/bin/trace.js" ...
+npx @arielbk/trace@0.1.0 ...
 ```
 
-`<trace-plugin-root>` is the directory three levels above this `SKILL.md` when
-the skill lives at `codex/skills/trace/SKILL.md`. If this skill was installed
-locally by `trace init`, use the absolute CLI path already rendered in that
-installed copy. If neither path exists, use `trace` from `PATH`.
+The package version is intentionally exact; do not replace it with `@latest`.
 
 ## Backfill Codex sessions first
 
@@ -27,7 +24,7 @@ Before binding or re-entering, backfill Codex sessions so the current and recent
 Codex threads exist in the Trace store:
 
 ```sh
-node "<trace-plugin-root>/bin/trace.js" session scan --codex
+npx @arielbk/trace@0.1.0 session scan --codex
 ```
 
 This uses `CODEX_HOME` when set, otherwise `$HOME/.codex`.
@@ -38,7 +35,7 @@ When the user starts or continues work on a task, resolve or create the task and
 bind the current Codex thread:
 
 ```sh
-node "<trace-plugin-root>/bin/trace.js" skill work-on-task "Task title" --description "One-line summary"
+npx @arielbk/trace@0.1.0 skill work-on-task "Task title" --description "One-line summary"
 ```
 
 The CLI infers the current Codex thread from `CODEX_THREAD_ID` and the
@@ -52,7 +49,7 @@ When the user names an exact task slug or title to resume, backfill first, then
 run:
 
 ```sh
-node "<trace-plugin-root>/bin/trace.js" skill re-enter "task-slug-or-title"
+npx @arielbk/trace@0.1.0 skill re-enter "task-slug-or-title"
 ```
 
 This command prints the re-entry manifest and binds the current Codex thread
