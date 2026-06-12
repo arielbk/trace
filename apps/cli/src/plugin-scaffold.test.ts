@@ -101,6 +101,41 @@ describe("plugin scaffold", () => {
     assert.equal(existsSync(pluginBinDir), false);
   });
 
+  it("ships the full skill set to Codex, generated from the Claude tree", () => {
+    const codexSkillsRoot = join(repoRoot, "codex", "skills");
+    // Codex gets every skill the Claude plugin ships — not just trace.
+    for (const name of [
+      "trace",
+      "recall",
+      "reenter",
+      "board",
+      "doc-placement",
+      "handoff",
+    ]) {
+      assert.equal(
+        existsSync(join(codexSkillsRoot, name, "SKILL.md")),
+        true,
+        `codex/skills/${name}/SKILL.md should exist`,
+      );
+    }
+
+    // The host-agnostic skills are byte-identical copies of the Claude source;
+    // only trace carries a Codex-specific override (asserted below).
+    for (const name of [
+      "recall",
+      "reenter",
+      "board",
+      "doc-placement",
+      "handoff",
+    ]) {
+      assert.equal(
+        readFileSync(join(codexSkillsRoot, name, "SKILL.md"), "utf8"),
+        readFileSync(join(repoRoot, "skills", name, "SKILL.md"), "utf8"),
+        `codex/skills/${name} should be a verbatim copy of skills/${name}`,
+      );
+    }
+  });
+
   it("ships a Codex plugin manifest and Codex-specific trace skill", () => {
     const manifest = JSON.parse(readFileSync(codexPluginManifest, "utf8")) as {
       name?: string;
