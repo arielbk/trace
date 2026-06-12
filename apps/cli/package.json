@@ -7,8 +7,8 @@
     "trace": "./src/trace.ts"
   },
   "scripts": {
-    "build": "node src/build.ts",
-    "test:bundle": "node --test src/bundle.test.ts",
+    "build": "tsup --config tsup.config.ts",
+    "test:bundle": "vitest run src/bundle.test.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
@@ -22,6 +22,7 @@
     "@trace/web": "workspace:*",
     "@types/node": "^22.15.3",
     "eslint": "^9.39.1",
+    "tsup": "^8.5.1",
     "typescript": "5.9.2",
     "vitest": "^4.1.7"
   }

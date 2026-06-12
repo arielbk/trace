@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { inferSessionIdentity } from "@trace/core";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveDbPath } from "./db-path.ts";
 import { runTraceCli } from "./trace.ts";
 
@@ -21,7 +22,23 @@ type ActiveTaskResult =
   | { kind: "none" }
   | { kind: "bound" | "re-enter"; task: { title: string; slug: string } };
 
-const isDirectRun = import.meta.url === `file://${process.argv[1]}`;
+const invokedPath = process.argv[1];
+const modulePath = fileURLToPath(import.meta.url);
+const isHookEntry =
+  basename(modulePath) === "claude-session-start-hook.ts" ||
+  basename(modulePath) === "claude-session-start-hook.js";
+const isDirectRun =
+  invokedPath !== undefined &&
+  isHookEntry &&
+  safeRealpath(invokedPath) === modulePath;
+
+function safeRealpath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
 
 export function runClaudeSessionStartHook(
   rawInput: string,

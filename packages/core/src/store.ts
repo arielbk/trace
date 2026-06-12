@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
+import { DatabaseSync } from "./node-sqlite.ts";
 import {
   generatePlaceholderSlug,
   humanizeSlug,

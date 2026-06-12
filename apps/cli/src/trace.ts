@@ -1363,9 +1363,13 @@ function parseSkillWorkOnTaskArgs(
 // a symlink whose realpath is this entry. Compare resolved realpaths so the CLI
 // runs whether it was launched directly or through the linked `trace` shim.
 const invokedPath = process.argv[1];
+const modulePath = fileURLToPath(import.meta.url);
+const isTraceEntry =
+  basename(modulePath) === "trace.ts" || basename(modulePath) === "trace.js";
 const isDirectRun =
   invokedPath !== undefined &&
-  safeRealpath(invokedPath) === fileURLToPath(import.meta.url);
+  isTraceEntry &&
+  safeRealpath(invokedPath) === modulePath;
 
 function safeRealpath(path: string): string {
   try {
