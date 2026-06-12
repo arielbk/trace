@@ -44,7 +44,9 @@ export function defaultTemplatePaths(repoRoot: string): string[] {
 }
 
 export function defaultVersionedManifestPaths(repoRoot: string): string[] {
-  return [".codex-plugin/plugin.json"].map((path) => resolve(repoRoot, path));
+  return ["codex/.codex-plugin/plugin.json"].map((path) =>
+    resolve(repoRoot, path),
+  );
 }
 
 export function bumpVersion(

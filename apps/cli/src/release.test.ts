@@ -22,14 +22,17 @@ describe("Trace release script", () => {
     const hookTemplate = join(repoRoot, "hooks/hooks.json");
     const claudeSkill = join(repoRoot, "skills/trace/SKILL.md");
     const codexSkill = join(repoRoot, "codex/skills/trace/SKILL.md");
-    const codexPluginManifest = join(repoRoot, ".codex-plugin/plugin.json");
+    const codexPluginManifest = join(
+      repoRoot,
+      "codex/.codex-plugin/plugin.json",
+    );
 
     try {
       mkdirSync(join(repoRoot, "apps/cli"), { recursive: true });
       mkdirSync(join(repoRoot, "hooks"), { recursive: true });
       mkdirSync(join(repoRoot, "skills/trace"), { recursive: true });
       mkdirSync(join(repoRoot, "codex/skills/trace"), { recursive: true });
-      mkdirSync(join(repoRoot, ".codex-plugin"), { recursive: true });
+      mkdirSync(join(repoRoot, "codex/.codex-plugin"), { recursive: true });
 
       writeFileSync(
         cliPackageJson,
