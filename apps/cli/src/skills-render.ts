@@ -6,7 +6,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+
+export const PINNED_COMMAND_PATTERN =
+  /npx @arielbk\/trace@[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?/;
 
 // The Claude skills tree (skills/) is the canonical source for every skill.
 // The Codex skills tree (codex/skills/) is generated from it, so the two can
@@ -83,6 +86,43 @@ export function renderCodexSkills(repoRoot: string): string[] {
     written.push(absolutePath);
   }
   return written;
+}
+
+/**
+ * Walk `dir` recursively and call `visit` for every regular file found.
+ */
+function walkFiles(dir: string, visit: (absolutePath: string) => void): void {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(abs, visit);
+    } else if (entry.isFile()) {
+      visit(abs);
+    }
+  }
+}
+
+/**
+ * Scan `skills/**` and `hooks/` for files that contain a pinned
+ * `npx @arielbk/trace@x.y.z` command. Returns the absolute paths of every
+ * matching file. The result drives version-stamping and drift checks so the
+ * list never needs to be maintained by hand.
+ */
+export function discoverPinnedFiles(repoRoot: string): string[] {
+  const found: string[] = [];
+
+  const collect = (abs: string) => {
+    const content = readFileSync(abs, "utf8");
+    if (PINNED_COMMAND_PATTERN.test(content)) {
+      found.push(abs);
+    }
+  };
+
+  walkFiles(resolve(repoRoot, "skills"), collect);
+  walkFiles(resolve(repoRoot, "hooks"), collect);
+
+  return found.sort();
 }
 
 /**

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 import {
   computeCodexSkills,
+  discoverPinnedFiles,
   findCodexSkillDrift,
   renderCodexSkills,
 } from "./skills-render.ts";
@@ -86,6 +87,104 @@ describe("Codex skill render", () => {
       );
       // The render is idempotent and self-consistent.
       assert.deepEqual(findCodexSkillDrift(root), []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("discoverPinnedFiles", () => {
+  function makeTree(
+    root: string,
+    files: Record<string, string>,
+  ) {
+    for (const [relPath, content] of Object.entries(files)) {
+      const abs = join(root, relPath);
+      mkdirSync(join(abs, ".."), { recursive: true });
+      writeFileSync(abs, content);
+    }
+  }
+
+  it("finds files in skills/** that contain the pinned command", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-pin-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@1.2.3` to run.\n",
+        "skills/recall/SKILL.md": "Use `npx @arielbk/trace@1.2.3` here.\n",
+        "skills/board/SKILL.md": "No pin in this file.\n",
+      });
+
+      const found = discoverPinnedFiles(root);
+      const relFound = found.map((p) => p.replace(root + "/", "")).sort();
+      assert.deepEqual(relFound, [
+        "skills/recall/SKILL.md",
+        "skills/trace/SKILL.md",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds hooks/hooks.json when it contains a pin", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-pin-"));
+    try {
+      makeTree(root, {
+        "hooks/hooks.json": JSON.stringify({
+          hooks: [{ command: "npx @arielbk/trace@1.2.3 trace" }],
+        }),
+        "skills/trace/SKILL.md": "No pin.\n",
+      });
+
+      const found = discoverPinnedFiles(root);
+      const relFound = found.map((p) => p.replace(root + "/", "")).sort();
+      assert.deepEqual(relFound, ["hooks/hooks.json"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("discovers a newly added skill automatically — no registration needed", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-pin-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@1.2.3` to run.\n",
+      });
+
+      const before = discoverPinnedFiles(root);
+
+      // Add a brand new skill with a pin — no registration anywhere.
+      makeTree(root, {
+        "skills/new-skill/SKILL.md": "Run with `npx @arielbk/trace@1.2.3 new-skill`.\n",
+      });
+
+      const after = discoverPinnedFiles(root);
+      assert.equal(after.length, before.length + 1);
+      assert.ok(
+        after.some((p) => p.endsWith("new-skill/SKILL.md")),
+        "new skill SKILL.md was automatically discovered",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds both skills/** and hooks/ pins together", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-pin-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@1.2.3`.\n",
+        "skills/trace/SKILL.codex.md": "Also `npx @arielbk/trace@1.2.3`.\n",
+        "skills/no-pin/SKILL.md": "No pin here.\n",
+        "hooks/hooks.json": '{"cmd":"npx @arielbk/trace@1.2.3 trace"}',
+      });
+
+      const found = discoverPinnedFiles(root);
+      const relFound = found.map((p) => p.replace(root + "/", "")).sort();
+      assert.deepEqual(relFound, [
+        "hooks/hooks.json",
+        "skills/trace/SKILL.codex.md",
+        "skills/trace/SKILL.md",
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
