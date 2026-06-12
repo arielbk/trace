@@ -21,8 +21,8 @@
     "typescript": "5.9.2",
     "vitest": "^4.1.7"
   },
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@11.6.0",
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

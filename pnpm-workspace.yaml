@@ -1,3 +1,12 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# pnpm 11 blocks dependency lifecycle scripts by default and exits non-zero
+# while any remain unapproved (it rewrites this file with a `set this to true or
+# false` placeholder until resolved). pnpm 11 replaced the v9/v10
+# `onlyBuiltDependencies` list with this `allowBuilds` map. esbuild's install
+# script links the platform-native binary that vite (web build) and vitest
+# depend on, so it is allowed here.
+allowBuilds:
+  esbuild: true
