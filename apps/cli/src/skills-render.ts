@@ -6,7 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 export const PINNED_COMMAND_PATTERN =
   /npx @arielbk\/trace@[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?/;
@@ -123,6 +123,70 @@ export function discoverPinnedFiles(repoRoot: string): string[] {
   walkFiles(resolve(repoRoot, "hooks"), collect);
 
   return found.sort();
+}
+
+/** A single derived artifact: a repo-relative path and its exact intended content. */
+export type DerivedArtifact = {
+  relPath: string;
+  content: string;
+};
+
+/** Default list of JSON manifests whose `version` field should be stamped. */
+export const DEFAULT_VERSIONED_MANIFEST_REL_PATHS = [
+  "codex/.codex-plugin/plugin.json",
+];
+
+const PINNED_COMMAND_GLOBAL_PATTERN =
+  /npx @arielbk\/trace@[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?/g;
+
+/**
+ * Compute the full set of derived artifacts for a given target version.
+ * Pure read — returns repo-relative paths and intended file contents without
+ * touching disk. Covers:
+ *   1. The Codex skills tree (override applied for skills with SKILL.codex.md)
+ *   2. Every pinned file discovered by `discoverPinnedFiles`, stamped to `version`
+ *   3. Versioned JSON manifests (plugin.json etc) with their version field set
+ */
+export function compute(
+  repoRoot: string,
+  version: string,
+  opts?: { manifestRelPaths?: string[] },
+): DerivedArtifact[] {
+  const artifacts: DerivedArtifact[] = [];
+
+  // 1. Codex skills tree
+  for (const skill of computeCodexSkills(repoRoot)) {
+    artifacts.push({ relPath: skill.relPath, content: skill.content });
+  }
+
+  // 2. Pinned files stamped to the target version
+  for (const absPath of discoverPinnedFiles(repoRoot)) {
+    const relPath = relative(repoRoot, absPath);
+    const source = readFileSync(absPath, "utf8");
+    const stamped = source.replace(
+      PINNED_COMMAND_GLOBAL_PATTERN,
+      `npx @arielbk/trace@${version}`,
+    );
+    artifacts.push({ relPath, content: stamped });
+  }
+
+  // 3. Versioned JSON manifests
+  const manifestRelPaths =
+    opts?.manifestRelPaths ?? DEFAULT_VERSIONED_MANIFEST_REL_PATHS;
+  for (const relPath of manifestRelPaths) {
+    const absPath = resolve(repoRoot, relPath);
+    const manifest = JSON.parse(readFileSync(absPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    manifest["version"] = version;
+    artifacts.push({
+      relPath,
+      content: `${JSON.stringify(manifest, null, 2)}\n`,
+    });
+  }
+
+  return artifacts;
 }
 
 /**

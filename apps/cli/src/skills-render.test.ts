@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 import {
+  compute,
   computeCodexSkills,
   discoverPinnedFiles,
   findCodexSkillDrift,
@@ -185,6 +186,126 @@ describe("discoverPinnedFiles", () => {
         "skills/trace/SKILL.codex.md",
         "skills/trace/SKILL.md",
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("compute", () => {
+  function makeTree(root: string, files: Record<string, string>) {
+    for (const [relPath, content] of Object.entries(files)) {
+      const abs = join(root, relPath);
+      mkdirSync(join(abs, ".."), { recursive: true });
+      writeFileSync(abs, content);
+    }
+  }
+
+  it("returns Codex skill with override applied for trace", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-compute-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Claude wording `npx @arielbk/trace@0.1.0`.\n",
+        "skills/trace/SKILL.codex.md": "Codex wording `npx @arielbk/trace@0.1.0`.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const artifacts = compute(root, "2.0.0");
+      const byRelPath = new Map(artifacts.map((a) => [a.relPath, a.content]));
+
+      assert.ok(
+        byRelPath.has("codex/skills/trace/SKILL.md"),
+        "Codex skill entry present",
+      );
+      assert.equal(
+        byRelPath.get("codex/skills/trace/SKILL.md"),
+        "Codex wording `npx @arielbk/trace@0.1.0`.\n",
+        "Codex skill uses the override file content verbatim (not stamped — that's the pin-stamped entry)",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stamps every discovered pinned file to the target version", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-compute-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@0.1.0` to run.\n",
+        "hooks/hooks.json": '{"cmd":"npx @arielbk/trace@0.1.0 trace"}\n',
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const artifacts = compute(root, "1.5.0");
+      const byRelPath = new Map(artifacts.map((a) => [a.relPath, a.content]));
+
+      assert.ok(
+        byRelPath.has("skills/trace/SKILL.md"),
+        "pinned skill file is in artifact set",
+      );
+      assert.ok(
+        byRelPath.get("skills/trace/SKILL.md")?.includes("@arielbk/trace@1.5.0"),
+        "skill pin is stamped to target version",
+      );
+      assert.ok(
+        byRelPath.has("hooks/hooks.json"),
+        "hooks file is in artifact set",
+      );
+      assert.ok(
+        byRelPath.get("hooks/hooks.json")?.includes("@arielbk/trace@1.5.0"),
+        "hooks pin is stamped to target version",
+      );
+      assert.ok(
+        !byRelPath.get("skills/trace/SKILL.md")?.includes("@arielbk/trace@0.1.0"),
+        "old version is replaced",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("sets versioned manifest version field to the target version", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-compute-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "No pin here.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const artifacts = compute(root, "3.0.0", {
+        manifestRelPaths: ["codex/.codex-plugin/plugin.json"],
+      });
+      const byRelPath = new Map(artifacts.map((a) => [a.relPath, a.content]));
+
+      assert.ok(
+        byRelPath.has("codex/.codex-plugin/plugin.json"),
+        "manifest is in artifact set",
+      );
+      const manifest = JSON.parse(byRelPath.get("codex/.codex-plugin/plugin.json")!);
+      assert.equal(manifest.version, "3.0.0", "manifest version stamped to target");
+      assert.equal(manifest.name, "trace", "other manifest fields preserved");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses DEFAULT_VERSIONED_MANIFEST_REL_PATHS when no manifestRelPaths option given", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-compute-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "No pin here.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.0.1" }, null, 2) + "\n",
+      });
+
+      const artifacts = compute(root, "1.2.3");
+      const byRelPath = new Map(artifacts.map((a) => [a.relPath, a.content]));
+
+      assert.ok(
+        byRelPath.has("codex/.codex-plugin/plugin.json"),
+        "default manifest path included",
+      );
+      const manifest = JSON.parse(byRelPath.get("codex/.codex-plugin/plugin.json")!);
+      assert.equal(manifest.version, "1.2.3");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
