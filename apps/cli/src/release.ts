@@ -1,7 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageName = "@arielbk/trace";
@@ -30,21 +36,44 @@ export type StampReleaseVersionResult = {
   updatedTemplatePaths: string[];
 };
 
+/** Walk `dir` recursively, calling `visit` for every regular file. */
+function walkFiles(dir: string, visit: (absolutePath: string) => void): void {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(abs, visit);
+    } else if (entry.isFile()) {
+      visit(abs);
+    }
+  }
+}
+
+/**
+ * Discover every committed file that carries a pinned `npx @arielbk/trace@x.y.z`
+ * command by scanning the single skills tree (`plugin/skills/**`) and `hooks/`.
+ * Scanning — rather than a hand-maintained list — means a newly added skill or
+ * skill resource is stamped automatically, and files without a pin (e.g. a
+ * host resource that issues no CLI command) are simply never selected, so the
+ * "every template has a pin" invariant holds by construction.
+ */
 export function defaultTemplatePaths(repoRoot: string): string[] {
-  return [
-    "hooks/hooks.json",
-    "skills/trace/SKILL.md",
-    "skills/recall/SKILL.md",
-    "skills/reenter/SKILL.md",
-    "skills/board/SKILL.md",
-    "skills/doc-placement/SKILL.md",
-    "skills/handoff/SKILL.md",
-    "codex/skills/trace/SKILL.md",
-  ].map((path) => resolve(repoRoot, path));
+  const found: string[] = [];
+  const collect = (abs: string) => {
+    if (pinnedCommandPattern.test(readFileSync(abs, "utf8"))) {
+      found.push(abs);
+    }
+    pinnedCommandPattern.lastIndex = 0;
+  };
+
+  walkFiles(resolve(repoRoot, "plugin/skills"), collect);
+  walkFiles(resolve(repoRoot, "hooks"), collect);
+
+  return found.sort();
 }
 
 export function defaultVersionedManifestPaths(repoRoot: string): string[] {
-  return ["codex/.codex-plugin/plugin.json"].map((path) =>
+  return ["plugin/.codex-plugin/plugin.json"].map((path) =>
     resolve(repoRoot, path),
   );
 }

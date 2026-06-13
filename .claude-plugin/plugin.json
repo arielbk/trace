@@ -3,5 +3,5 @@
   "name": "trace",
   "displayName": "Trace",
   "description": "Bind Claude Code sessions to Trace tasks and re-enter prior task context.",
-  "skills": "./skills/"
+  "skills": "./plugin/skills/"
 }
