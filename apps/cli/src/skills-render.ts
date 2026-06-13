@@ -190,6 +190,90 @@ export function compute(
 }
 
 /**
+ * Write all derived artifacts to disk in two phases:
+ *   1. Stamp pinned source files and manifests (modifies sources on disk)
+ *   2. Re-derive Codex skills from the freshly-stamped sources and write them
+ *
+ * Two phases are required because the Codex skills tree is generated verbatim
+ * from the source skill files. If we wrote both in one pass, the Codex skills
+ * would be copies of the pre-stamp sources. Writing sources first and then
+ * re-deriving the Codex tree ensures both agree at the target version.
+ *
+ * Wipes the Codex skills tree first so removed skills don't linger.
+ * Returns the absolute paths written.
+ */
+export function renderArtifacts(
+  repoRoot: string,
+  version: string,
+  opts?: { manifestRelPaths?: string[] },
+): string[] {
+  rmSync(resolve(repoRoot, CODEX_SKILLS_DIR), { recursive: true, force: true });
+
+  const artifacts = compute(repoRoot, version, opts);
+  const written: string[] = [];
+
+  // Phase 1: write pinned files and manifests so source files are stamped
+  for (const artifact of artifacts) {
+    if (!artifact.relPath.startsWith(`${CODEX_SKILLS_DIR}/`)) {
+      const absolutePath = resolve(repoRoot, artifact.relPath);
+      mkdirSync(resolve(absolutePath, ".."), { recursive: true });
+      writeFileSync(absolutePath, artifact.content);
+      written.push(absolutePath);
+    }
+  }
+
+  // Phase 2: re-derive Codex skills from the now-stamped sources and write them
+  for (const skill of computeCodexSkills(repoRoot)) {
+    const absolutePath = resolve(repoRoot, skill.relPath);
+    mkdirSync(resolve(absolutePath, ".."), { recursive: true });
+    writeFileSync(absolutePath, skill.content);
+    written.push(absolutePath);
+  }
+
+  return written;
+}
+
+/**
+ * Report all artifacts (from `compute`) whose on-disk content does not match
+ * what `compute` would produce — missing, stale, or extra Codex skills. Empty
+ * means the on-disk tree exactly matches the compute output.
+ */
+export function findArtifactDrift(
+  repoRoot: string,
+  version: string,
+  opts?: { manifestRelPaths?: string[] },
+): string[] {
+  const artifacts = compute(repoRoot, version, opts);
+  const drift: string[] = [];
+  const expectedRelPaths = new Set(artifacts.map((a) => a.relPath));
+
+  for (const artifact of artifacts) {
+    const absolutePath = resolve(repoRoot, artifact.relPath);
+    if (
+      !existsSync(absolutePath) ||
+      readFileSync(absolutePath, "utf8") !== artifact.content
+    ) {
+      drift.push(artifact.relPath);
+    }
+  }
+
+  // Extra skills in the Codex tree not produced by compute.
+  const codexSkillsRoot = resolve(repoRoot, CODEX_SKILLS_DIR);
+  if (existsSync(codexSkillsRoot)) {
+    for (const entry of readdirSync(codexSkillsRoot, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        const relPath = `${CODEX_SKILLS_DIR}/${entry.name}/${SKILL_FILE}`;
+        if (!expectedRelPaths.has(relPath)) {
+          drift.push(relPath);
+        }
+      }
+    }
+  }
+
+  return drift;
+}
+
+/**
  * Report Codex skill files whose committed content does not match what the
  * renderer would produce (missing, stale, or extra). Empty array means the
  * Codex tree is exactly the render of the Claude tree. Used by the test suite

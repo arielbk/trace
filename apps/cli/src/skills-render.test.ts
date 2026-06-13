@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +15,9 @@ import {
   compute,
   computeCodexSkills,
   discoverPinnedFiles,
+  findArtifactDrift,
   findCodexSkillDrift,
+  renderArtifacts,
   renderCodexSkills,
 } from "./skills-render.ts";
 
@@ -306,6 +309,147 @@ describe("compute", () => {
       );
       const manifest = JSON.parse(byRelPath.get("codex/.codex-plugin/plugin.json")!);
       assert.equal(manifest.version, "1.2.3");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("findArtifactDrift and renderArtifacts", () => {
+  function makeTree(root: string, files: Record<string, string>) {
+    for (const [relPath, content] of Object.entries(files)) {
+      const abs = join(root, relPath);
+      mkdirSync(join(abs, ".."), { recursive: true });
+      writeFileSync(abs, content);
+    }
+  }
+
+  it("drift is empty after renderArtifacts (on-disk tree matches compute output)", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@0.1.0` to run.\n",
+        "hooks/hooks.json": '{"cmd":"npx @arielbk/trace@0.1.0 trace"}\n',
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      renderArtifacts(root, "1.0.0", { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] });
+
+      assert.deepEqual(
+        findArtifactDrift(root, "1.0.0", { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] }),
+        [],
+        "no drift after renderArtifacts",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("renderArtifacts is idempotent — running twice produces no drift", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@0.1.0`.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const opts = { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] };
+      renderArtifacts(root, "2.0.0", opts);
+      renderArtifacts(root, "2.0.0", opts);
+
+      assert.deepEqual(findArtifactDrift(root, "2.0.0", opts), []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("drift reports a missing generated artifact path (Codex skill)", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "No pin here.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const opts = { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] };
+      renderArtifacts(root, "1.0.0", opts);
+
+      // Delete the generated Codex skill to simulate a missing generated artifact
+      unlinkSync(join(root, "codex/skills/trace/SKILL.md"));
+
+      const drift = findArtifactDrift(root, "1.0.0", opts);
+      assert.ok(
+        drift.includes("codex/skills/trace/SKILL.md"),
+        `expected codex/skills/trace/SKILL.md in drift, got: ${JSON.stringify(drift)}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("drift reports a mis-stamped pin (stale version on disk)", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "Use `npx @arielbk/trace@0.1.0`.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const opts = { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] };
+      renderArtifacts(root, "2.0.0", opts);
+
+      // Manually re-stamp the skill back to the old pin — simulates a stale file
+      writeFileSync(join(root, "skills/trace/SKILL.md"), "Use `npx @arielbk/trace@0.1.0`.\n");
+
+      const drift = findArtifactDrift(root, "2.0.0", opts);
+      assert.ok(
+        drift.includes("skills/trace/SKILL.md"),
+        `expected skills/trace/SKILL.md in drift for mis-stamped pin, got: ${JSON.stringify(drift)}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("drift reports extra Codex skills not in the compute output", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "No pin.\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const opts = { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] };
+      renderArtifacts(root, "1.0.0", opts);
+
+      // Add a ghost Codex skill not present in the skills/ source tree
+      makeTree(root, {
+        "codex/skills/ghost/SKILL.md": "stale ghost\n",
+      });
+
+      const drift = findArtifactDrift(root, "1.0.0", opts);
+      assert.ok(
+        drift.includes("codex/skills/ghost/SKILL.md"),
+        `expected extra ghost skill in drift, got: ${JSON.stringify(drift)}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("renderArtifacts prunes Codex skills removed from the Claude tree", () => {
+    const root = mkdtempSync(join(tmpdir(), "trace-wr-"));
+    try {
+      makeTree(root, {
+        "skills/trace/SKILL.md": "No pin.\n",
+        "codex/skills/ghost/SKILL.md": "stale ghost\n",
+        "codex/.codex-plugin/plugin.json": JSON.stringify({ name: "trace", version: "0.1.0" }, null, 2) + "\n",
+      });
+
+      const opts = { manifestRelPaths: ["codex/.codex-plugin/plugin.json"] };
+      renderArtifacts(root, "1.0.0", opts);
+
+      assert.deepEqual(findArtifactDrift(root, "1.0.0", opts), [], "ghost skill pruned");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
