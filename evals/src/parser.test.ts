@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parse } from "./parser.ts";
+import { parse, normalizeSkill } from "./parser.ts";
 
 // Helpers that build NDJSON strings from event objects.
 const ndjson = (...events: unknown[]) =>
@@ -118,5 +118,23 @@ describe("parse", () => {
 
   test("returns empty array for an empty string", () => {
     expect(parse("")).toEqual([]);
+  });
+});
+
+describe("normalizeSkill", () => {
+  test("maps the plugin-namespaced root skill to 'trace'", () => {
+    expect(normalizeSkill("trace:trace")).toBe("trace");
+  });
+
+  test("maps a namespaced sub-skill to its frontmatter name", () => {
+    expect(normalizeSkill("trace:recall")).toBe("trace-recall");
+    expect(normalizeSkill("trace:doc-placement")).toBe("trace-doc-placement");
+    expect(normalizeSkill("trace:board")).toBe("trace-board");
+  });
+
+  test("leaves non-trace (decoy) skills unchanged", () => {
+    expect(normalizeSkill("grill-me")).toBe("grill-me");
+    expect(normalizeSkill("slice")).toBe("slice");
+    expect(normalizeSkill("<none>")).toBe("<none>");
   });
 });

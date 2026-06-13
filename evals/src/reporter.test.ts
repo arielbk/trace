@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatReport, formatSummary } from "./reporter.ts";
+import { formatHeader, formatReport, formatRow, formatSummary } from "./reporter.ts";
 import type { EvalResult } from "../run.ts";
 
 const pass = (utterance: string, skill: string): EvalResult => ({
@@ -58,6 +58,44 @@ describe("formatReport", () => {
     expect(header).toContain("expected");
     expect(header).toContain("fired");
     expect(header).toContain("verdict");
+  });
+});
+
+describe("formatHeader / formatRow (streaming primitives)", () => {
+  test("formatHeader carries the column names and a separator", () => {
+    const header = formatHeader();
+    const lower = header.toLowerCase();
+    expect(lower).toContain("utterance");
+    expect(lower).toContain("expected");
+    expect(lower).toContain("fired");
+    expect(lower).toContain("verdict");
+    expect(header).toContain("---");
+    // header line + separator line, no data rows
+    expect(header.split("\n")).toHaveLength(2);
+  });
+
+  test("formatRow renders a single PASS row with no header", () => {
+    const row = formatRow(pass("trace this", "trace"));
+    expect(row).toContain("trace this");
+    expect(row).toContain("PASS");
+    expect(row.toLowerCase()).not.toContain("verdict");
+    expect(row.split("\n")).toHaveLength(1);
+  });
+
+  test("formatRow renders a single FAIL row", () => {
+    const row = formatRow(fail("open the board", "trace-board", "trace"));
+    expect(row).toContain("open the board");
+    expect(row).toContain("trace-board");
+    expect(row).toContain("FAIL");
+  });
+
+  test("header + per-row stream reproduces formatReport", () => {
+    const results = [
+      pass("trace this", "trace"),
+      fail("reenter task", "trace-reenter", "trace"),
+    ];
+    const streamed = [formatHeader(), ...results.map(formatRow)].join("\n");
+    expect(streamed).toBe(formatReport(results));
   });
 });
 

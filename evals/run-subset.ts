@@ -2,7 +2,7 @@
  * Subset runner — run only the cases whose utterance contains a given keyword.
  *
  * Usage:
- *   CLAUDE_CONFIG_DIR=~/.claude-sandbox pnpm tsx evals/run-subset.ts steal under
+ *   CLAUDE_CONFIG_DIR=~/.claude-sandbox node evals/run-subset.ts steal under
  *
  * Each positional arg is matched as a substring of the utterance or note field.
  * Pass no args to run all cases (same as `pnpm eval`).

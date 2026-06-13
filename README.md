@@ -140,6 +140,10 @@ corepack pnpm -r test        # run the test suites (per-package)
 corepack pnpm check-types    # typecheck all packages
 ```
 
+The skill-routing eval (`pnpm eval`) is a separate, quota-costing report that
+drives real `claude -p` calls against a sandbox config dir — see
+[`evals/README.md`](./evals/README.md) for setup and how to run it.
+
 - `apps/cli` — the `trace` CLI
 - `packages/core` — the store, transcript adapters, and re-entry manifest
 - `plugin/skills/` — the one canonical skills tree, shared by both hosts. The
