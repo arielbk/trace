@@ -167,6 +167,9 @@ export function resolveWebAssetsDir(
     if (existsSync(join(bundledAssets, "index.html"))) return bundledAssets;
   }
 
+  const distAssets = resolve(moduleDir, "web");
+  if (existsSync(join(distAssets, "index.html"))) return distAssets;
+
   const candidate = resolve(moduleDir, "../../web/dist");
   return existsSync(join(candidate, "index.html")) ? candidate : undefined;
 }

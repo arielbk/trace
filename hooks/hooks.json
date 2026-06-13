@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/claude-session-start-hook.js\""
+            "command": "npx @arielbk/trace@0.1.0 hook session-start"
           }
         ]
       }

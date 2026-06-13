@@ -39,6 +39,37 @@ test("task create --project keys the task to the override repo's git root", () =
   }
 });
 
+test("hook session-start registers a Claude session from stdin", () => {
+  const home = tmp("trace-cli-hook-home-");
+  const project = tmp("trace-cli-hook-project-");
+  const transcript = join(project, "session.jsonl");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    writeFileSync(transcript, "");
+
+    const result = runTraceCli(
+      ["hook", "session-start"],
+      env,
+      project,
+      JSON.stringify({
+        hook_event_name: "SessionStart",
+        session_id: "hook-session",
+        transcript_path: transcript,
+        cwd: project,
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+
+    const listed = runTraceCli(["session", "list", "--unassigned"], env, project);
+    expect(listed.stdout).toContain(`hook-session\tclaude\t${transcript}`);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
 test("task capture --project keys the task to the override repo's git root", () => {
   const home = tmp("trace-cli-home-");
   const sandbox = tmp("trace-cli-sandbox-");

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const cliPackageJson = join(appRoot, "package.json");
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 const codexPluginManifest = join(repoRoot, ".codex-plugin", "plugin.json");
 const codexMarketplaceManifest = join(
@@ -22,20 +22,20 @@ const codexTraceSkill = join(repoRoot, "codex", "skills", "trace", "SKILL.md");
 const recallSkill = join(repoRoot, "skills", "recall", "SKILL.md");
 const reenterSkill = join(repoRoot, "skills", "reenter", "SKILL.md");
 const boardSkill = join(repoRoot, "skills", "board", "SKILL.md");
-const pluginTraceBundle = join(repoRoot, "bin", "trace.js");
-const pluginHookBundle = join(repoRoot, "bin", "claude-session-start-hook.js");
+const docPlacementSkill = join(repoRoot, "skills", "doc-placement", "SKILL.md");
+const handoffSkill = join(repoRoot, "skills", "handoff", "SKILL.md");
+const pluginBinDir = join(repoRoot, "bin");
+
+function pinnedTraceCommand(): string {
+  const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
+    name?: string;
+    version?: string;
+  };
+  return `npx ${packageJson.name}@${packageJson.version}`;
+}
 
 describe("plugin scaffold", () => {
-  it("ships a Claude Code plugin manifest, hook, skill, and bundled CLI artifacts", () => {
-    rmSync(join(appRoot, "dist"), { recursive: true, force: true });
-    rmSync(pluginTraceBundle, { force: true });
-    rmSync(pluginHookBundle, { force: true });
-
-    execFileSync("pnpm", ["--filter", "@trace/cli", "build"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    });
-
+  it("ships a Claude Code plugin manifest, hook, and skills pinned to the npm CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
     };
@@ -70,28 +70,27 @@ describe("plugin scaffold", () => {
         hooks: [
           {
             type: "command",
-            command:
-              'node "${CLAUDE_PLUGIN_ROOT}/bin/claude-session-start-hook.js"',
+            command: `${pinnedTraceCommand()} hook session-start`,
           },
         ],
       },
     ]);
 
-    const skillSource = readFileSync(traceSkill, "utf8");
-    assert.equal(
-      skillSource.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"),
-      true,
-    );
-    assert.equal(skillSource.includes("pnpm link --global"), false);
-
-    for (const artifact of [pluginTraceBundle, pluginHookBundle]) {
-      assert.equal(existsSync(artifact), true);
-      assert.notEqual(statSync(artifact).mode & 0o111, 0);
-      const source = readFileSync(artifact, "utf8");
-      assert.equal(source.startsWith("#!/usr/bin/env node"), true);
-      assert.equal(source.includes("@trace/core"), false);
-      assert.equal(source.includes("better-sqlite3"), false);
+    for (const skill of [
+      traceSkill,
+      recallSkill,
+      reenterSkill,
+      boardSkill,
+      docPlacementSkill,
+      handoffSkill,
+    ]) {
+      const skillSource = readFileSync(skill, "utf8");
+      assert.equal(skillSource.includes(pinnedTraceCommand()), true);
+      assert.equal(skillSource.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"), false);
+      assert.equal(skillSource.includes("pnpm link --global"), false);
     }
+
+    assert.equal(existsSync(pluginBinDir), false);
   });
 
   it("ships a Codex plugin manifest and Codex-specific trace skill", () => {
@@ -150,8 +149,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^name:\s*trace-recall\s*$/m);
     assert.match(meta as string, /^description:\s*.+$/m);
 
-    // It fetches the candidate pool from the bundled CLI, never invents matches.
-    assert.equal(source.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"), true);
+    // It fetches the candidate pool from the pinned npm CLI, never invents matches.
+    assert.equal(source.includes(pinnedTraceCommand()), true);
     assert.equal(source.includes("skill recall-candidates"), true);
 
     // Confident match delegates to the trace-reenter skill via skill re-enter,
@@ -183,8 +182,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^description:\s*.+$/m);
     assert.match(meta as string, /slug|title/i);
 
-    // It re-enters via the bundled CLI's skill re-enter verb.
-    assert.equal(source.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"), true);
+    // It re-enters via the pinned npm CLI's skill re-enter verb.
+    assert.equal(source.includes(pinnedTraceCommand()), true);
     assert.equal(source.includes("skill re-enter"), true);
 
     // The slug is the canonical ref (exact title also resolves).
@@ -221,8 +220,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^description:\s*.+$/m);
     assert.match(meta as string, /board/i);
 
-    // It starts the web UI via the bundled CLI's serve verb.
-    assert.equal(source.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"), true);
+    // It starts the web UI via the pinned npm CLI's serve verb.
+    assert.equal(source.includes(pinnedTraceCommand()), true);
     assert.match(source, /\bserve\b/);
 
     // It carries the read-the-URL-off-stdout and don't-background guidance
