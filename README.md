@@ -36,29 +36,35 @@ a marketplace, then install the plugin (two separate commands):
 /plugin install trace@trace-v2
 ```
 
-The plugin ships the CLI, the skills, and a `SessionStart` hook that captures
-each session live — no global CLI link or manual settings edit. To confirm the
-hook is firing, start a fresh session and run:
+The plugin wires up the skills and a `SessionStart` hook that captures each
+session live — no global CLI link or manual settings edit. The skills and hook
+invoke the CLI on demand via a version-pinned `npx @arielbk/trace@<version>`, so
+there's nothing to build or link. Reload plugins to activate, then ask the agent
+to confirm:
 
 ```sh
-node "${CLAUDE_PLUGIN_ROOT}/bin/trace.js" session list --unassigned
+/reload-plugins
 ```
 
-The new session should appear.
+> Are we currently in a trace session?
+
+The agent should confirm the session is being tracked.
 
 ### Codex
 
-From a checkout of this repo, run:
+Trace installs as a Codex plugin, mirroring Claude. Add this repo as a
+marketplace, then install the plugin (two separate commands):
 
 ```sh
-node bin/trace.js init
+codex plugin marketplace add arielbk/trace-v2
+codex plugin add trace@trace-v2
 ```
 
-That installs a Codex `trace` skill at `~/.agents/skills/trace/SKILL.md` with
-this checkout's bundled CLI path rendered in (and keeps the Claude plugin's
-diagnostic output). Codex has no live session-start slot, so the skill captures
-sessions by backfill — it runs `trace session scan --codex` before it binds or
-re-enters a task. Same store, same manifest; just a different capture path.
+The marketplace source is the repo itself, so it ships the Codex `trace` skill;
+the skill invokes the CLI via the same version-pinned `npx @arielbk/trace@<version>`.
+Codex has no live session-start slot, so the skill captures sessions by backfill —
+it runs `trace session scan --codex` before it binds or re-enters a task. Same
+store, same manifest; just a different capture path.
 
 ## How it works
 
@@ -102,7 +108,8 @@ others carry the whole loop in a single entry skill.
 
 ## What's underneath
 
-- A bundled **`trace` CLI** the skills call — no global install, no `PATH` setup.
+- The **`trace` CLI**, published to npm and resolved per-call by the skills via a
+  version-pinned `npx @arielbk/trace@<version>` — no global install, no `PATH` setup.
 - A **SQLite store** at `~/.trace/trace.sqlite` recording tasks and the sessions
   bound to them.
 - **Transcript adapters** — one per agent — that read session transcripts so
@@ -121,15 +128,51 @@ now are **Claude Code** and **Codex**; more are a matter of adding adapters.
 
 ## Development
 
-This is a [Turborepo](https://turborepo.dev) monorepo (pnpm workspaces).
+This is a [Turborepo](https://turborepo.dev) monorepo (pnpm workspaces). It
+requires **Node 22+** and **pnpm 11**; invoke pnpm via `corepack` so you get the
+pinned version regardless of any globally shimmed pnpm.
 
 ```sh
-pnpm install        # install dependencies
-pnpm test           # run the test suites
-pnpm check-types    # typecheck all packages
+corepack pnpm install        # install dependencies
+corepack pnpm -r test        # run the test suites (per-package)
+corepack pnpm check-types    # typecheck all packages
 ```
 
 - `apps/cli` — the `trace` CLI
 - `packages/core` — the store, transcript adapters, and re-entry manifest
 - `skills/` — the Claude Code skills, auto-discovered by the Claude plugin
-- `codex/skills/` — the Codex skills, bundled by the Codex plugin metadata
+- `codex/` — the Codex plugin: skills under `codex/skills/`, manifest at
+  `codex/.codex-plugin/plugin.json`, surfaced through `.agents/plugins/marketplace.json`
+
+## Releasing
+
+A release publishes one package — `@arielbk/trace` — to npm, and that's the
+only thing distributed. The plugins aren't separate artifacts: the skills and
+the `SessionStart` hook invoke the CLI through an **exact-pinned**
+`npx @arielbk/trace@<version>` (never `@latest`), so a given commit always calls
+a known CLI version. The catch is that those pins live in several files — every
+`skills/*/SKILL.md`, `codex/skills/trace/SKILL.md`, and `hooks/hooks.json` — and
+they must all move in lockstep with the published version, or the plugin calls a
+CLI that doesn't exist yet.
+
+That lockstep is what `release:trace` automates, so **don't hand-edit those
+`npx @arielbk/trace@…` pins** — the release script rewrites them and then
+verifies every one matches, failing the release on any drift.
+
+One command does the whole thing — stamp every pin (plus `apps/cli/package.json`
+and the Codex plugin manifest), build the web UI and the CLI, `npm pack`, and
+publish:
+
+```sh
+# Always dry-run first — stamps, builds, packs, and runs `npm publish --dry-run`
+corepack pnpm release:trace -- --bump patch --dry-run
+
+# Real publish (drop --dry-run). Requires npm auth for the @arielbk scope.
+corepack pnpm release:trace -- --bump patch
+```
+
+Pick the version with either `--bump patch|minor|major` (computed from the
+current `apps/cli/package.json`) or `--version x.y.z` for an explicit one — not
+both. A real publish needs write access to the `@arielbk` npm scope configured
+in your `~/.npmrc`; published versions are immutable, so let the dry-run pass
+before dropping the flag.

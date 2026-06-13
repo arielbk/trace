@@ -11,6 +11,7 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
+    "release:trace": "node apps/cli/src/release.ts",
     "eval": "node evals/run.ts",
     "test:evals": "vitest run evals/src"
   },

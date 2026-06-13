@@ -8,7 +8,12 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliPackageJson = join(appRoot, "package.json");
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
-const codexPluginManifest = join(repoRoot, ".codex-plugin", "plugin.json");
+const codexPluginManifest = join(
+  repoRoot,
+  "codex",
+  ".codex-plugin",
+  "plugin.json",
+);
 const codexMarketplaceManifest = join(
   repoRoot,
   ".agents",
@@ -86,7 +91,10 @@ describe("plugin scaffold", () => {
     ]) {
       const skillSource = readFileSync(skill, "utf8");
       assert.equal(skillSource.includes(pinnedTraceCommand()), true);
-      assert.equal(skillSource.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"), false);
+      assert.equal(
+        skillSource.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"),
+        false,
+      );
       assert.equal(skillSource.includes("pnpm link --global"), false);
     }
 
@@ -103,7 +111,9 @@ describe("plugin scaffold", () => {
     assert.equal(manifest.name, "trace");
     assert.equal(typeof manifest.version, "string");
     assert.equal(typeof manifest.description, "string");
-    assert.equal(manifest.skills, "./codex/skills/");
+    // The Codex plugin root is the ./codex subdir, so skills resolve relative
+    // to it (./skills/), not the repo root.
+    assert.equal(manifest.skills, "./skills/");
 
     const marketplace = JSON.parse(
       readFileSync(codexMarketplaceManifest, "utf8"),
@@ -118,7 +128,19 @@ describe("plugin scaffold", () => {
     assert.equal(marketplace.plugins?.length, 1);
     assert.equal(marketplace.plugins?.[0]?.name, "trace");
     assert.equal(marketplace.plugins?.[0]?.source?.source, "local");
-    assert.equal(marketplace.plugins?.[0]?.source?.path, "./");
+
+    // Regression guard: Codex silently drops a plugin whose source.path is the
+    // marketplace root ("./") — it requires a subdirectory carrying its own
+    // .codex-plugin/plugin.json. The plugin must live under ./codex.
+    const pluginPath = marketplace.plugins?.[0]?.source?.path;
+    assert.equal(pluginPath, "./codex");
+    assert.notEqual(pluginPath, "./");
+    assert.equal(
+      existsSync(
+        join(repoRoot, pluginPath as string, ".codex-plugin", "plugin.json"),
+      ),
+      true,
+    );
 
     const source = readFileSync(codexTraceSkill, "utf8");
     const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
