@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -38,7 +38,55 @@ export function resolveConfigDir(): string {
         "Run 'claude' in that directory once to log in and initialize it.",
     );
   }
+  assertNoTracePlugin(configDir);
   return configDir;
+}
+
+/**
+ * Fail loudly when a trace plugin is installed or enabled in the sandbox.
+ *
+ * The eval is meant to route against the fixture's *project* skills under
+ * `evals/fixture/.claude/skills/`. If the trace plugin is also present in the
+ * config dir, its (possibly stale) skills get exercised instead — and the run
+ * silently scores routing against the wrong source. So treat a present plugin
+ * as a hard setup error rather than letting it quietly change what's tested.
+ */
+function assertNoTracePlugin(configDir: string): void {
+  const offenders: string[] = [];
+
+  const installedPath = join(configDir, "plugins", "installed_plugins.json");
+  if (existsSync(installedPath)) {
+    try {
+      const installed = JSON.parse(readFileSync(installedPath, "utf8"));
+      for (const name of Object.keys(installed?.plugins ?? {})) {
+        if (name.toLowerCase().includes("trace")) offenders.push(`installed: ${name}`);
+      }
+    } catch {
+      // Unparseable file is not this guard's concern; ignore.
+    }
+  }
+
+  const settingsPath = join(configDir, "settings.json");
+  if (existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+      for (const [name, enabled] of Object.entries(settings?.enabledPlugins ?? {})) {
+        if (enabled && name.toLowerCase().includes("trace")) offenders.push(`enabled: ${name}`);
+      }
+    } catch {
+      // Unparseable file is not this guard's concern; ignore.
+    }
+  }
+
+  if (offenders.length > 0) {
+    throw new Error(
+      `CLAUDE_CONFIG_DIR=${configDir} has a trace plugin present (${offenders.join(", ")}).\n` +
+        "The eval must route against the fixture's project skills, not an installed plugin.\n" +
+        "Clean the sandbox:\n" +
+        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin uninstall trace@trace-v2\n` +
+        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin marketplace remove trace-v2`,
+    );
+  }
 }
 
 export interface InvokeResult {
@@ -49,10 +97,19 @@ export interface InvokeResult {
 }
 
 /**
+ * Model the eval drives `claude -p` with. Routing is a cheap classification
+ * task, so default to Haiku to keep the report fast and inexpensive; override
+ * with EVAL_MODEL (e.g. `EVAL_MODEL=sonnet pnpm eval`) when probing a regression
+ * on a specific model.
+ */
+export const EVAL_MODEL = process.env.EVAL_MODEL ?? "haiku";
+
+/**
  * Deep module: an utterance in, the set of fired skill names out. Hides all the
  * subprocess and stream-parsing detail behind one call.
  *
  * Shells out to `claude -p` with the verified flag set:
+ *   --model <EVAL_MODEL>                    (cheap model — Haiku — by default)
  *   --output-format stream-json --verbose  (stream-json needs --verbose to emit
  *                                            per-message tool-use events)
  *   --allowedTools Skill                    (scope-allow only skill invocation)
@@ -70,6 +127,8 @@ export function invoke(utterance: string): Promise<InvokeResult> {
       [
         "-p",
         utterance,
+        "--model",
+        EVAL_MODEL,
         "--output-format",
         "stream-json",
         "--verbose",

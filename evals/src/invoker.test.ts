@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -47,6 +47,72 @@ describe("resolveConfigDir", () => {
   test("returns the config dir when it exists and has .claude.json", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "claude-config-test-"));
     writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+    try {
+      expect(resolveConfigDir()).toBe(tmpDir);
+    } finally {
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  test("throws when a trace plugin is installed in the sandbox", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "claude-config-test-"));
+    writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    mkdirSync(join(tmpDir, "plugins"));
+    writeFileSync(
+      join(tmpDir, "plugins", "installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins: { "trace@trace-v2": [{ scope: "user" }] } }),
+    );
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+    try {
+      expect(() => resolveConfigDir()).toThrow(/trace plugin present.*installed: trace@trace-v2/s);
+    } finally {
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  test("throws when a trace plugin is enabled in settings.json", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "claude-config-test-"));
+    writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "trace@trace-v2": true } }),
+    );
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+    try {
+      expect(() => resolveConfigDir()).toThrow(/enabled: trace@trace-v2/);
+    } finally {
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  test("passes when plugins are present but none are trace", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "claude-config-test-"));
+    writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    mkdirSync(join(tmpDir, "plugins"));
+    writeFileSync(
+      join(tmpDir, "plugins", "installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins: { "other@some-mp": [{ scope: "user" }] } }),
+    );
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "other@some-mp": true } }),
+    );
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+    try {
+      expect(resolveConfigDir()).toBe(tmpDir);
+    } finally {
+      rmSync(tmpDir, { recursive: true });
+    }
+  });
+
+  test("does not throw for a disabled trace plugin in settings.json", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "claude-config-test-"));
+    writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "trace@trace-v2": false } }),
+    );
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     try {
       expect(resolveConfigDir()).toBe(tmpDir);

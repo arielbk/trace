@@ -10,25 +10,30 @@ function pad(s: string, len: number): string {
   return s.padEnd(len);
 }
 
-export function formatReport(results: EvalResult[]): string {
+/** Table header + separator, printed once before any rows. */
+export function formatHeader(): string {
   const header =
     pad("Utterance", COL_UTTERANCE) +
     pad("Expected", COL_EXPECTED) +
     pad("Fired", COL_FIRED) +
     "Verdict";
   const sep = "-".repeat(COL_UTTERANCE + COL_EXPECTED + COL_FIRED + COL_VERDICT);
+  return [header, sep].join("\n");
+}
 
-  const rows = results.map((r) => {
-    const verdict = r.pass ? "PASS" : "FAIL";
-    return (
-      pad(r.utterance, COL_UTTERANCE) +
-      pad(r.expected, COL_EXPECTED) +
-      pad(r.fired, COL_FIRED) +
-      verdict
-    );
-  });
+/** A single result row, printed as each case completes. */
+export function formatRow(r: EvalResult): string {
+  const verdict = r.pass ? "PASS" : "FAIL";
+  return (
+    pad(r.utterance, COL_UTTERANCE) +
+    pad(r.expected, COL_EXPECTED) +
+    pad(r.fired, COL_FIRED) +
+    verdict
+  );
+}
 
-  return [header, sep, ...rows].join("\n");
+export function formatReport(results: EvalResult[]): string {
+  return [formatHeader(), ...results.map(formatRow)].join("\n");
 }
 
 export function formatSummary(results: EvalResult[]): string {
