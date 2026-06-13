@@ -770,9 +770,10 @@ function compareTimelineItems(
   left: TaskTimelineItem,
   right: TaskTimelineItem,
 ): number {
-  // Newest first, matching the reverse-chronological project list on the main
-  // page — the most recent session/doc surfaces at the top of the timeline.
-  const byCreatedAt = right.createdAt.localeCompare(left.createdAt);
+  // Chronological — oldest first — so the timeline reads top-to-bottom in the
+  // order work happened: the founding session, then docs and later sessions as
+  // they were added.
+  const byCreatedAt = left.createdAt.localeCompare(right.createdAt);
   if (byCreatedAt !== 0) return byCreatedAt;
 
   const leftKey =
@@ -783,7 +784,7 @@ function compareTimelineItems(
     right.type === "session"
       ? `session:${right.session.id}`
       : `doc:${right.doc.path}`;
-  return rightKey.localeCompare(leftKey);
+  return leftKey.localeCompare(rightKey);
 }
 
 /** File size in bytes for a doc path, or null when it can't be stat'd. */

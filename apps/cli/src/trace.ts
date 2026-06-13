@@ -203,6 +203,10 @@ export function runTraceCli(
           writeFileSync(docPath, contents);
         }
 
+        // Register the captured doc so it surfaces in the task timeline,
+        // mirroring `task add-doc`; copying the file alone leaves it unlinked.
+        store.addTaskDoc(task.id, docPath);
+
         if (parsed.link) {
           linkRepoDocs(projectRoot, parsed.title, docsDir);
         }
