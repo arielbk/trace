@@ -54,3 +54,19 @@ function collectSkills(node: unknown, out: string[]): void {
 
   for (const value of Object.values(obj)) collectSkills(value, out);
 }
+
+/**
+ * Map a plugin-namespaced skill id to the corpus's expected name (the skill's
+ * frontmatter `name:`).
+ *
+ * The trace skills ship inside the `trace` plugin, so the CLI emits them as
+ * `trace:<dir>` (e.g. `trace:doc-placement`). The corpus names them by their
+ * frontmatter `name:` (`trace-doc-placement`), and the root skill's dir and
+ * name are both just `trace`. Non-trace skills (decoys) pass through unchanged.
+ */
+export function normalizeSkill(fired: string): string {
+  const m = fired.match(/^trace:(.+)$/);
+  if (!m) return fired;
+  const short = m[1];
+  return short === "trace" ? "trace" : `trace-${short}`;
+}
