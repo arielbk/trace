@@ -10,7 +10,7 @@ const cliPackageJson = join(appRoot, "package.json");
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 const codexPluginManifest = join(
   repoRoot,
-  "codex",
+  "plugin",
   ".codex-plugin",
   "plugin.json",
 );
@@ -22,13 +22,15 @@ const codexMarketplaceManifest = join(
 );
 const rootPackage = join(repoRoot, "package.json");
 const hooksConfig = join(repoRoot, "hooks", "hooks.json");
-const traceSkill = join(repoRoot, "skills", "trace", "SKILL.md");
-const codexTraceSkill = join(repoRoot, "codex", "skills", "trace", "SKILL.md");
-const recallSkill = join(repoRoot, "skills", "recall", "SKILL.md");
-const reenterSkill = join(repoRoot, "skills", "reenter", "SKILL.md");
-const boardSkill = join(repoRoot, "skills", "board", "SKILL.md");
-const docPlacementSkill = join(repoRoot, "skills", "doc-placement", "SKILL.md");
-const handoffSkill = join(repoRoot, "skills", "handoff", "SKILL.md");
+const skillsRoot = join(repoRoot, "plugin", "skills");
+const traceSkill = join(skillsRoot, "trace", "SKILL.md");
+const traceClaudeResource = join(skillsRoot, "trace", "resources", "claude.md");
+const traceCodexResource = join(skillsRoot, "trace", "resources", "codex.md");
+const recallSkill = join(skillsRoot, "recall", "SKILL.md");
+const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
+const boardSkill = join(skillsRoot, "board", "SKILL.md");
+const docPlacementSkill = join(skillsRoot, "doc-placement", "SKILL.md");
+const handoffSkill = join(skillsRoot, "handoff", "SKILL.md");
 const pluginBinDir = join(repoRoot, "bin");
 
 function pinnedTraceCommand(): string {
@@ -56,7 +58,9 @@ describe("plugin scaffold", () => {
     assert.equal(manifest.name, "trace");
     assert.equal(manifest.displayName, "Trace");
     assert.equal(typeof manifest.description, "string");
-    assert.equal(manifest.skills, "./skills/");
+    // The canonical skills tree lives one level down, under plugin/skills/, so
+    // the one physical tree can also serve as the Codex plugin's ./skills/.
+    assert.equal(manifest.skills, "./plugin/skills/");
     // The conventional hooks/hooks.json is auto-loaded; referencing it from the
     // manifest causes a duplicate-hooks load error in Claude Code.
     assert.equal(manifest.hooks, undefined);
@@ -101,7 +105,7 @@ describe("plugin scaffold", () => {
     assert.equal(existsSync(pluginBinDir), false);
   });
 
-  it("ships a Codex plugin manifest and Codex-specific trace skill", () => {
+  it("shares one skills tree between the Claude and Codex plugins via a nested path", () => {
     const manifest = JSON.parse(readFileSync(codexPluginManifest, "utf8")) as {
       name?: string;
       version?: string;
@@ -111,8 +115,9 @@ describe("plugin scaffold", () => {
     assert.equal(manifest.name, "trace");
     assert.equal(typeof manifest.version, "string");
     assert.equal(typeof manifest.description, "string");
-    // The Codex plugin root is the ./codex subdir, so skills resolve relative
-    // to it (./skills/), not the repo root.
+    // The Codex plugin root is the ./plugin subdir, which holds the one
+    // canonical skills tree at ./skills/ — the same tree the Claude manifest
+    // reaches via the nested ./plugin/skills/ path. No generated mirror.
     assert.equal(manifest.skills, "./skills/");
 
     const marketplace = JSON.parse(
@@ -131,9 +136,11 @@ describe("plugin scaffold", () => {
 
     // Regression guard: Codex silently drops a plugin whose source.path is the
     // marketplace root ("./") — it requires a subdirectory carrying its own
-    // .codex-plugin/plugin.json. The plugin must live under ./codex.
+    // .codex-plugin/plugin.json. The shared plugin root is ./plugin, and the
+    // canonical skills tree lives inside it so Codex's copy-on-install reaches
+    // it without an escaping path.
     const pluginPath = marketplace.plugins?.[0]?.source?.path;
-    assert.equal(pluginPath, "./codex");
+    assert.equal(pluginPath, "./plugin");
     assert.notEqual(pluginPath, "./");
     assert.equal(
       existsSync(
@@ -141,21 +148,49 @@ describe("plugin scaffold", () => {
       ),
       true,
     );
+    assert.equal(
+      existsSync(
+        join(repoRoot, pluginPath as string, "skills", "trace", "SKILL.md"),
+      ),
+      true,
+    );
+  });
 
-    const source = readFileSync(codexTraceSkill, "utf8");
+  it("ships a host-neutral trace skill that dispatches to per-host resources", () => {
+    const source = readFileSync(traceSkill, "utf8");
     const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
     const meta = frontmatter?.[1];
     assert.equal(typeof meta, "string");
     assert.match(meta as string, /^name:\s*trace\s*$/m);
-    assert.match(meta as string, /^description:\s*.+Codex.+Trace.+$/m);
-    assert.match(source, /session scan --codex/);
+    assert.match(meta as string, /^description:\s*.+$/m);
+    // The description must not be hard-bound to one host — it triggers in both.
+    assert.equal((meta as string).includes("Claude Code session"), false);
+
+    // The dispatcher carries the shared verb and points at both host resources.
     assert.match(source, /skill work-on-task/);
-    assert.match(source, /skill re-enter/);
-    assert.match(source, /CODEX_THREAD_ID/);
-    assert.match(source, /CODEX_TRANSCRIPT_PATH/);
-    assert.match(source, /never paste raw transcripts/i);
-    assert.equal(source.includes("CLAUDE_PLUGIN_ROOT"), false);
-    assert.equal(source.includes("CLAUDE_CODE_SESSION_ID"), false);
+    assert.match(source, /resources\/claude\.md/);
+    assert.match(source, /resources\/codex\.md/);
+    // Re-entry is delegated to the trace-reenter skill, not inlined here.
+    assert.match(source, /trace-reenter/);
+
+    // Claude resource: the SessionStart nudge flow and Claude session env var.
+    const claude = readFileSync(traceClaudeResource, "utf8");
+    assert.match(claude, /no active task/i);
+    assert.match(claude, /CLAUDE_CODE_SESSION_ID/);
+    assert.equal(claude.includes("CODEX_THREAD_ID"), false);
+
+    // Codex resource: backfill scan and Codex thread env vars.
+    const codex = readFileSync(traceCodexResource, "utf8");
+    assert.match(codex, /session scan --codex/);
+    assert.match(codex, /CODEX_THREAD_ID/);
+    assert.match(codex, /CODEX_TRANSCRIPT_PATH/);
+    assert.equal(codex.includes("CLAUDE_CODE_SESSION_ID"), false);
+
+    // No host-specific CLI plumbing leaks into the shared tree.
+    for (const text of [source, claude, codex]) {
+      assert.equal(text.includes("CLAUDE_PLUGIN_ROOT"), false);
+      assert.equal(text.includes("<trace-plugin-root>"), false);
+    }
   });
 
   it("ships a trigger-tuned recall skill that resolves vague references via the candidate pool", () => {

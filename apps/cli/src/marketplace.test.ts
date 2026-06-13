@@ -5,14 +5,20 @@ import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const marketplaceManifest = join(repoRoot, ".claude-plugin", "marketplace.json");
+const marketplaceManifest = join(
+  repoRoot,
+  ".claude-plugin",
+  "marketplace.json",
+);
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 
 describe("plugin marketplace", () => {
   it("publishes the repo as a Claude Code marketplace containing the trace plugin", () => {
     assert.equal(existsSync(marketplaceManifest), true);
 
-    const marketplace = JSON.parse(readFileSync(marketplaceManifest, "utf8")) as {
+    const marketplace = JSON.parse(
+      readFileSync(marketplaceManifest, "utf8"),
+    ) as {
       name?: string;
       owner?: { name?: string };
       description?: string;
@@ -39,8 +45,14 @@ describe("plugin marketplace", () => {
 
     const sourcePath = normalize(join(repoRoot, tracePlugin?.source ?? ""));
     assert.equal(sourcePath, normalize(repoRoot));
-    assert.equal(existsSync(join(sourcePath, ".claude-plugin", "plugin.json")), true);
+    assert.equal(
+      existsSync(join(sourcePath, ".claude-plugin", "plugin.json")),
+      true,
+    );
     assert.equal(existsSync(join(sourcePath, "hooks", "hooks.json")), true);
-    assert.equal(existsSync(join(sourcePath, "skills", "trace", "SKILL.md")), true);
+    assert.equal(
+      existsSync(join(sourcePath, "plugin", "skills", "trace", "SKILL.md")),
+      true,
+    );
   });
 });

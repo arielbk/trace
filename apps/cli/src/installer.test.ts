@@ -9,21 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 import { runInit } from "./installer.ts";
-
-const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const appRoot = fileURLToPath(new URL("..", import.meta.url));
-const cliPackageJson = join(appRoot, "package.json");
-
-function pinnedTraceCommand(): string {
-  const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
-    name?: string;
-    version?: string;
-  };
-  return `npx ${packageJson.name}@${packageJson.version}`;
-}
 
 type Settings = {
   permissions?: { allow?: string[] };
@@ -87,8 +74,9 @@ describe("trace init", () => {
         { hooks: [{ type: "command", command: "echo stop" }] },
       ]);
       assert.equal(settings.hooks?.SessionStart, undefined);
-      assert.equal(first.includes("Codex trace skill: installed"), true);
-      assert.equal(second.includes("Codex trace skill: already present"), true);
+      // Plugin install delivers all skills now; trace init copies nothing.
+      assert.equal(first.includes("Codex trace skill"), false);
+      assert.equal(second.includes("Codex trace skill"), false);
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -110,34 +98,5 @@ describe("trace init", () => {
 
   it("does not require HOME or CLAUDE_SETTINGS_PATH", () => {
     assert.equal(runInit({}, "/tmp").includes("Claude Code plugin"), true);
-  });
-
-  it("installs a Codex trace skill into the user skill directory idempotently", () => {
-    const home = mkdtempSync(join(tmpdir(), "trace-installer-codex-"));
-    const skillPath = join(home, ".agents", "skills", "trace", "SKILL.md");
-
-    try {
-      const first = runInit({ HOME: home }, repoRoot);
-      const firstSkill = readFileSync(skillPath, "utf8");
-      const second = runInit({ HOME: home }, repoRoot);
-      const secondSkill = readFileSync(skillPath, "utf8");
-
-      assert.equal(existsSync(skillPath), true);
-      assert.equal(
-        first.includes(`Codex trace skill: installed at ${skillPath}`),
-        true,
-      );
-      assert.equal(
-        second.includes(`Codex trace skill: already present at ${skillPath}`),
-        true,
-      );
-      assert.equal(firstSkill, secondSkill);
-      assert.equal(firstSkill.includes(pinnedTraceCommand()), true);
-      assert.equal(firstSkill.includes("bin/trace.js"), false);
-      assert.equal(firstSkill.includes("<trace-plugin-root>"), false);
-      assert.equal(firstSkill.includes("CLAUDE_PLUGIN_ROOT"), false);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
   });
 });

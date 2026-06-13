@@ -60,8 +60,10 @@ codex plugin marketplace add arielbk/trace-v2
 codex plugin add trace@trace-v2
 ```
 
-The marketplace source is the repo itself, so it ships the Codex `trace` skill;
-the skill invokes the CLI via the same version-pinned `npx @arielbk/trace@<version>`.
+The marketplace source is the repo itself, and Codex installs from the same
+canonical skills tree as Claude — so it ships the full skill set (not just
+`trace`); each skill invokes the CLI via the same version-pinned
+`npx @arielbk/trace@<version>`.
 Codex has no live session-start slot, so the skill captures sessions by backfill —
 it runs `trace session scan --codex` before it binds or re-enters a task. Same
 store, same manifest; just a different capture path.
@@ -140,9 +142,14 @@ corepack pnpm check-types    # typecheck all packages
 
 - `apps/cli` — the `trace` CLI
 - `packages/core` — the store, transcript adapters, and re-entry manifest
-- `skills/` — the Claude Code skills, auto-discovered by the Claude plugin
-- `codex/` — the Codex plugin: skills under `codex/skills/`, manifest at
-  `codex/.codex-plugin/plugin.json`, surfaced through `.agents/plugins/marketplace.json`
+- `plugin/skills/` — the one canonical skills tree, shared by both hosts. The
+  Claude plugin (manifest at `.claude-plugin/plugin.json`) reaches it via the
+  nested `./plugin/skills/` path; the Codex plugin roots at `plugin/` itself
+  (manifest `plugin/.codex-plugin/plugin.json`, surfaced through
+  `.agents/plugins/marketplace.json`) and reads `./skills/`. No generated mirror.
+- The only per-host skill, `trace`, is a host-neutral dispatcher
+  (`plugin/skills/trace/SKILL.md`) that points at `resources/claude.md` or
+  `resources/codex.md` for the host-specific binding flow.
 
 ## Releasing
 
@@ -151,13 +158,16 @@ only thing distributed. The plugins aren't separate artifacts: the skills and
 the `SessionStart` hook invoke the CLI through an **exact-pinned**
 `npx @arielbk/trace@<version>` (never `@latest`), so a given commit always calls
 a known CLI version. The catch is that those pins live in several files — every
-`skills/*/SKILL.md`, `codex/skills/trace/SKILL.md`, and `hooks/hooks.json` — and
-they must all move in lockstep with the published version, or the plugin calls a
-CLI that doesn't exist yet.
+`plugin/skills/*/SKILL.md`, the `trace` skill's `resources/codex.md`, and
+`hooks/hooks.json` — and they must all move in lockstep with the published
+version, or the plugin calls a CLI that doesn't exist yet.
 
 That lockstep is what `release:trace` automates, so **don't hand-edit those
 `npx @arielbk/trace@…` pins** — the release script rewrites them and then
-verifies every one matches, failing the release on any drift.
+verifies every one matches, failing the release on any drift. The pinned files
+aren't hand-listed — the release script discovers them by scanning
+`plugin/skills/**` and `hooks/` for the `npx @arielbk/trace@…` pin, so a new
+skill or skill resource is picked up automatically.
 
 One command does the whole thing — stamp every pin (plus `apps/cli/package.json`
 and the Codex plugin manifest), build the web UI and the CLI, `npm pack`, and

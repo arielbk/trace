@@ -20,19 +20,20 @@ describe("Trace release script", () => {
     const repoRoot = mkdtempSync(join(tmpdir(), "trace-release-"));
     const cliPackageJson = join(repoRoot, "apps/cli/package.json");
     const hookTemplate = join(repoRoot, "hooks/hooks.json");
-    const claudeSkill = join(repoRoot, "skills/trace/SKILL.md");
-    const codexSkill = join(repoRoot, "codex/skills/trace/SKILL.md");
+    const claudeSkill = join(repoRoot, "plugin/skills/trace/SKILL.md");
+    const codexSkill = join(repoRoot, "plugin/skills/trace/resources/codex.md");
     const codexPluginManifest = join(
       repoRoot,
-      "codex/.codex-plugin/plugin.json",
+      "plugin/.codex-plugin/plugin.json",
     );
 
     try {
       mkdirSync(join(repoRoot, "apps/cli"), { recursive: true });
       mkdirSync(join(repoRoot, "hooks"), { recursive: true });
-      mkdirSync(join(repoRoot, "skills/trace"), { recursive: true });
-      mkdirSync(join(repoRoot, "codex/skills/trace"), { recursive: true });
-      mkdirSync(join(repoRoot, "codex/.codex-plugin"), { recursive: true });
+      mkdirSync(join(repoRoot, "plugin/skills/trace/resources"), {
+        recursive: true,
+      });
+      mkdirSync(join(repoRoot, "plugin/.codex-plugin"), { recursive: true });
 
       writeFileSync(
         cliPackageJson,

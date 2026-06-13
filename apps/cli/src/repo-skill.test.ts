@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,7 @@ import { expect, test } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
-const skillReadme = join(repoRoot, "skills", "trace", "SKILL.md");
+const skillReadme = join(repoRoot, "plugin", "skills", "trace", "SKILL.md");
 
 test("trace skill resolves or creates a task by title, binds a simulated session, and re-enters context", () => {
   expect(existsSync(skillReadme)).toBe(true);
@@ -276,20 +276,36 @@ test("work-on-task resolves an existing slug instead of creating a duplicate", (
   }
 });
 
-test("repo skill prose is pruned to the bind verb and the nudge", () => {
+test("repo skill prose is pruned to the bind verb and dispatches the host nudge", () => {
   const prose = execFileSync("sed", ["-n", "1,260p", skillReadme], {
     encoding: "utf8",
   });
 
-  // What trace keeps: the We're-working-on-X bind verb and the no-task nudge.
+  // What the shared dispatcher keeps: the We're-working-on-X bind verb and a
+  // pointer to each host's binding flow.
   expect(prose).toContain("skill work-on-task");
   expect(prose).toContain("taskDocsDir");
   expect(prose.toLowerCase()).toContain("sentence case");
-  expect(prose).toContain("No active task for this session");
+  expect(prose).toContain("resources/claude.md");
+  expect(prose).toContain("resources/codex.md");
+
+  // The Claude SessionStart no-task nudge now lives in its host resource, not
+  // in the shared SKILL.md.
+  const claudeResource = join(
+    repoRoot,
+    "plugin",
+    "skills",
+    "trace",
+    "resources",
+    "claude.md",
+  );
+  expect(readFileSync(claudeResource, "utf8")).toContain(
+    "No active task for this session",
+  );
 
   // The re-entry protocol and the board verb have moved to their own skills.
-  // The nudge's re-entry door now hands off to the trace-reenter skill rather
-  // than restating the protocol here.
+  // The dispatcher hands off to the trace-reenter skill rather than restating
+  // the protocol here.
   expect(prose).toContain("trace-reenter");
   expect(prose.toLowerCase()).not.toContain("never paste raw transcripts");
   expect(prose).not.toContain("skill re-enter");
