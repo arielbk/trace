@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
-import { DatabaseSync } from "./node-sqlite.ts";
+import { getDatabaseSync, type DatabaseSync } from "./node-sqlite.ts";
 import {
   generatePlaceholderSlug,
   humanizeSlug,
@@ -51,7 +51,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const resolvedPath = resolve(databasePath);
     this.#databasePath = resolvedPath;
     mkdirSync(dirname(resolvedPath), { recursive: true });
-    this.#sqlite = new DatabaseSync(resolvedPath);
+    this.#sqlite = new (getDatabaseSync())(resolvedPath);
     this.#sqlite.exec("PRAGMA journal_mode = WAL");
     this.#sqlite.exec("PRAGMA foreign_keys = ON");
     applyMigrations(this.#sqlite);

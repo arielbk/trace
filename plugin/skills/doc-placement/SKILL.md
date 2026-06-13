@@ -16,7 +16,7 @@ without guessing from conversation scrollback.
 ### 1. Resolve the docs directory
 
 ```sh
-npx @arielbk/trace@0.1.0 skill docs-dir
+npx @arielbk/trace@0.1.2 skill docs-dir
 ```
 
 Two outcomes:
