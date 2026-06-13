@@ -143,3 +143,36 @@ corepack pnpm check-types    # typecheck all packages
 - `skills/` — the Claude Code skills, auto-discovered by the Claude plugin
 - `codex/` — the Codex plugin: skills under `codex/skills/`, manifest at
   `codex/.codex-plugin/plugin.json`, surfaced through `.agents/plugins/marketplace.json`
+
+## Releasing
+
+A release publishes one package — `@arielbk/trace` — to npm, and that's the
+only thing distributed. The plugins aren't separate artifacts: the skills and
+the `SessionStart` hook invoke the CLI through an **exact-pinned**
+`npx @arielbk/trace@<version>` (never `@latest`), so a given commit always calls
+a known CLI version. The catch is that those pins live in several files — every
+`skills/*/SKILL.md`, `codex/skills/trace/SKILL.md`, and `hooks/hooks.json` — and
+they must all move in lockstep with the published version, or the plugin calls a
+CLI that doesn't exist yet.
+
+That lockstep is what `release:trace` automates, so **don't hand-edit those
+`npx @arielbk/trace@…` pins** — the release script rewrites them and then
+verifies every one matches, failing the release on any drift.
+
+One command does the whole thing — stamp every pin (plus `apps/cli/package.json`
+and the Codex plugin manifest), build the web UI and the CLI, `npm pack`, and
+publish:
+
+```sh
+# Always dry-run first — stamps, builds, packs, and runs `npm publish --dry-run`
+corepack pnpm release:trace -- --bump patch --dry-run
+
+# Real publish (drop --dry-run). Requires npm auth for the @arielbk scope.
+corepack pnpm release:trace -- --bump patch
+```
+
+Pick the version with either `--bump patch|minor|major` (computed from the
+current `apps/cli/package.json`) or `--version x.y.z` for an explicit one — not
+both. A real publish needs write access to the `@arielbk` npm scope configured
+in your `~/.npmrc`; published versions are immutable, so let the dry-run pass
+before dropping the flag.
