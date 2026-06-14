@@ -12,19 +12,34 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.16",
+    "@radix-ui/react-slot": "^1.2.5",
+    "@radix-ui/react-switch": "^1.3.0",
     "@trace/core": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.15.1"
+    "react-router-dom": "^7.15.1",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "eslint": "^9.39.1",
+    "@tailwindcss/vite": "^4.3.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@vitejs/plugin-react": "^6.0.2",
+    "eslint": "^9.39.1",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.1",
     "typescript": "5.9.2",
     "vite": "^8.0.14",
     "vitest": "^4.1.7"
