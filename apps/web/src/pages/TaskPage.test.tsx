@@ -783,9 +783,9 @@ test("LeftOffPanel renders all sections when full state is present", () => {
   expect(html).toContain("Payment step is blocked");
   expect(html).toContain("Wire up the Stripe webhook handler");
   expect(html).toContain("Do we support PayPal?");
-  // All section headers present
-  expect(html).toContain("Decisions");
-  expect(html).toContain("Current state");
+  // currentState renders as a muted paragraph (no header), so its content is
+  // asserted above; the remaining sections still carry headers.
+  expect(html).toContain("Decisions made");
   expect(html).toContain("Next step");
   expect(html).toContain("Open questions");
 });
@@ -869,9 +869,9 @@ test("TaskTimelineView renders handoff prompt when timeline has no state", () =>
   expect(html).toContain("/handoff");
 });
 
-// activity-timeline-restyle: vertical connector tests
+// activity-timeline-restyle: continuous spine tests
 
-test("TaskTimelineView renders connector between timeline items but not after the last", () => {
+test("TaskTimelineView renders a single continuous timeline spine across items", () => {
   const timeline: TaskTimeline = {
     ...baseTimeline(),
     items: [
@@ -918,12 +918,15 @@ test("TaskTimelineView renders connector between timeline items but not after th
     </MemoryRouter>,
   );
 
-  // 3 items → 2 connectors (between items 1-2 and 2-3; none after item 3)
-  const connectorCount = (html.match(/data-testid="timeline-connector"/g) ?? []).length;
-  expect(connectorCount).toBe(2);
+  // The timeline is drawn as one continuous spine behind the icons, not as
+  // per-row connectors — so exactly one spine element regardless of item count,
+  // and no horizontal dividers between rows.
+  const spineCount = (html.match(/data-testid="timeline-spine"/g) ?? []).length;
+  expect(spineCount).toBe(1);
+  expect(html).not.toContain("border-b border-border");
 });
 
-test("TaskTimelineView renders no connector when there is only one timeline item", () => {
+test("TaskTimelineView still renders the spine with only one timeline item", () => {
   const timeline: TaskTimeline = {
     ...baseTimeline(),
     items: [
@@ -942,5 +945,63 @@ test("TaskTimelineView renders no connector when there is only one timeline item
     </MemoryRouter>,
   );
 
-  expect(html).not.toContain('data-testid="timeline-connector"');
+  expect(html).toContain('data-testid="timeline-spine"');
+});
+
+// timeline filtering by session / doc counts
+
+function filterableTimeline(): TaskTimeline {
+  return {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        session: {
+          id: "s1",
+          transcriptPath: "/tmp/s1.jsonl",
+          tool: "claude",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        sizeBytes: null,
+      },
+    ],
+  };
+}
+
+test("TaskTimelineView filters the timeline when a count is clicked, and toggles back", () => {
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={filterableTimeline()} />
+    </MemoryRouter>,
+  );
+
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "1 doc" }));
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
+
+  // clicking the active filter again clears it
+  fireEvent.click(screen.getByRole("button", { name: "1 doc" }));
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+});
+
+test("TaskTimelineView breadcrumb links the project name to the filtered home view", () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={baseTimeline()} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain(
+    `href="/?project=${encodeURIComponent("/work/trace-v2")}"`,
+  );
 });

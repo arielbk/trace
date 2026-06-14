@@ -67,7 +67,6 @@
 
   /* Containers */
   --container-app: var(--max-width);
-  --container-task-list: var(--max-width-task-list);
   --container-row-description: var(--max-width-row-description);
 
   /* Radii */
@@ -137,7 +136,6 @@
 
   /* Layout */
   --max-width: 960px;
-  --max-width-task-list: 940px;
   --max-width-row-description: 60ch;
   --size-row-meta: 128px;
   --size-row-action: 31px;
@@ -350,6 +348,45 @@
   .t-icon-swap .t-icon { transition: none !important; }
   .t-success-check { animation: none !important; opacity: 1; }
   .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }
+}
+
+/*
+ * Block-level markdown rendered from a state.md "Current state" section. The
+ * global `ul, ol` reset above strips list styling, so re-enable it here.
+ */
+.left-off-prose > :first-child { margin-top: 0; }
+.left-off-prose > :last-child { margin-bottom: 0; }
+.left-off-prose p { margin: 0 0 0.6em; }
+.left-off-prose ul,
+.left-off-prose ol { margin: 0.4em 0; padding-left: 1.2em; list-style: disc; }
+.left-off-prose ol { list-style: decimal; }
+.left-off-prose li { margin: 0.25em 0; }
+.left-off-prose li::marker { color: var(--color-border-strong); }
+.left-off-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.left-off-prose a { color: var(--color-accent); text-decoration: underline; }
+.left-off-prose strong { color: var(--color-text); font-weight: 650; }
+
+/* ClampedSection: collapse long content behind a Show more toggle. */
+.left-off-clamp {
+  position: relative;
+  overflow: hidden;
+  transition: max-height 300ms var(--dropdown-ease);
+}
+.left-off-clamp-fade::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background: linear-gradient(to bottom, transparent, var(--color-bg));
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .left-off-clamp { transition: none; }
 }
 
 body {

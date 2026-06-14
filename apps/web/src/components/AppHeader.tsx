@@ -3,10 +3,12 @@ import { ThemeToggle } from "./ThemeToggle.tsx";
 
 export function AppHeader({
   project,
+  projectHref,
   context,
   bordered = true,
 }: {
   project?: string;
+  projectHref?: string;
   context?: string;
   bordered?: boolean;
 }) {
@@ -31,9 +33,18 @@ export function AppHeader({
             <span className="text-text-muted" aria-hidden="true">
               /
             </span>
-            <span className="font-mono text-crumb text-text-muted">
-              {project}
-            </span>
+            {projectHref ? (
+              <Link
+                to={projectHref}
+                className="font-mono text-crumb text-text-muted no-underline hover:text-accent"
+              >
+                {project}
+              </Link>
+            ) : (
+              <span className="font-mono text-crumb text-text-muted">
+                {project}
+              </span>
+            )}
           </>
         ) : null}
         {context ? (

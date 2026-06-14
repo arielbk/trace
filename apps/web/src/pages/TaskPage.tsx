@@ -8,10 +8,12 @@ import {
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
+import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
-import { useClipboardCopy } from "../components/useClipboardCopy.ts";
+import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import { cn } from "../lib/utils.ts";
 import {
-  buildReEnterPrompt,
   formatBytes,
   formatRelativeTime,
   formatTokenBreakdown,
@@ -89,97 +91,144 @@ export function TaskTimelineView({
   const archivedAt =
     archivedAtProp !== undefined ? archivedAtProp : timeline.task.archivedAt;
   const isArchived = archivedAt !== null;
+  const onToggleArchive = isArchived ? onUnarchive : onArchive;
+
+  const [timelineFilter, setTimelineFilter] = useState<"all" | "session" | "doc">(
+    "all",
+  );
+
+  const sessionCount = timeline.items.filter(
+    (item) => item.type === "session",
+  ).length;
+  const docCount = timeline.items.filter((item) => item.type === "doc").length;
+  const visibleItems = (
+    timelineFilter === "all"
+      ? timeline.items
+      : timeline.items.filter((item) => item.type === timelineFilter)
+  ).slice().reverse();
+
+  function toggleFilter(filter: "session" | "doc") {
+    setTimelineFilter((current) => (current === filter ? "all" : filter));
+  }
 
   return (
-    <main className="max-w-app mx-auto px-6 py-10">
+    <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader
         project={
           timeline.task.projectRoot
             ? truncatePath(timeline.task.projectRoot)
             : undefined
         }
+        projectHref={
+          timeline.task.projectRoot
+            ? `/?project=${encodeURIComponent(timeline.task.projectRoot)}`
+            : undefined
+        }
         context={timeline.task.slug}
+        bordered={false}
       />
-      <div className="pt-3 pb-1">
+      <div className="pt-3">
         <Link
           to="/"
-          className="text-text-muted text-sm no-underline hover:text-accent"
+          className="inline-flex items-center gap-1.5 font-mono text-crumb text-text-muted no-underline hover:text-accent"
         >
-          ← All tasks
+          <BackArrowIcon />
+          All tasks
         </Link>
       </div>
-      <header className="pb-5 border-b border-border">
-        <div className="flex flex-col gap-3 pt-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <h1 className="m-0 text-xl font-bold leading-tight">
-              {timeline.task.title}
-            </h1>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <ReEnterButton
-                title={timeline.task.title}
-                slug={timeline.task.slug}
-              />
-              {isArchived && onUnarchive ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-text-muted text-xs font-semibold cursor-pointer hover:text-accent hover:border-border-strong"
-                  aria-label="Unarchive task"
-                  onClick={() => void onUnarchive()}
-                >
-                  <UnarchiveIcon />
-                  Unarchive
-                </button>
-              ) : !isArchived && onArchive ? (
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-text-muted text-xs font-semibold cursor-pointer hover:text-accent hover:border-border-strong"
-                  aria-label="Archive task"
-                  onClick={() => void onArchive()}
-                >
-                  <ArchiveIcon />
-                  Archive
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <p className="m-0 text-text-muted text-sm">
-            Last active{" "}
-            <span className="tabular-nums">
-              {formatRelativeTime(timeline.lastActivityAt, now)}
+      <div className="pt-3">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <h1 className="m-0 text-page-title font-extrabold tracking-tight leading-tight">
+            {timeline.task.title}
+          </h1>
+          <div className="flex items-center gap-1.5 pt-2 shrink-0 font-mono text-crumb text-text-muted">
+            <ClockIcon />
+            <span className="whitespace-nowrap">
+              Last active{" "}
+              <span className="tabular-nums">
+                {formatRelativeTime(timeline.lastActivityAt, now)}
+              </span>
             </span>
+          </div>
+        </div>
+        {timeline.task.description ? (
+          <p
+            data-testid="task-description"
+            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description"
+          >
+            {timeline.task.description}
           </p>
-          {timeline.task.description ? (
-            <p
-              data-testid="task-description"
-              className="m-0 text-text-muted text-sm leading-relaxed"
-            >
-              {timeline.task.description}
-            </p>
+        ) : null}
+        <div className="flex items-center gap-2 flex-wrap mt-5">
+          <ReEnterButton title={timeline.task.title} slug={timeline.task.slug} />
+          {onToggleArchive ? (
+            <ArchiveToggleButton
+              isArchived={isArchived}
+              onToggle={onToggleArchive}
+              className="ml-auto"
+            />
           ) : null}
         </div>
-        <TokenSummary totals={timeline.tokenTotals} />
-      </header>
+      </div>
       <LeftOffPanel state={timeline.state} />
-      {timeline.items.length === 0 ? (
-        <p className="text-text-muted mt-5">No timeline items found.</p>
-      ) : (
-        <ol className="mt-5 list-none p-0 m-0">
-          {timeline.items.map((item, index) => {
-            const isLast = index === timeline.items.length - 1;
-            return item.type === "session" ? (
+      <TokenSummary totals={timeline.tokenTotals} />
+      <section className="mt-8">
+        <div className="flex items-baseline gap-5 pb-1.5">
+          <h2 className="m-0 text-row-title font-bold tracking-tight">
+            Activity
+          </h2>
+          <span className="font-mono text-crumb whitespace-nowrap">
+            <button
+              type="button"
+              className={cn(
+                "bg-transparent border-0 p-0 font-mono text-crumb cursor-pointer hover:text-text",
+                timelineFilter === "session"
+                  ? "text-text font-semibold"
+                  : "text-text-muted",
+              )}
+              aria-pressed={timelineFilter === "session"}
+              onClick={() => toggleFilter("session")}
+            >
+              {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+            </button>
+            <span className="text-text-muted"> · </span>
+            <button
+              type="button"
+              className={cn(
+                "bg-transparent border-0 p-0 font-mono text-crumb cursor-pointer hover:text-text",
+                timelineFilter === "doc"
+                  ? "text-text font-semibold"
+                  : "text-text-muted",
+              )}
+              aria-pressed={timelineFilter === "doc"}
+              onClick={() => toggleFilter("doc")}
+            >
+              {docCount} {docCount === 1 ? "doc" : "docs"}
+            </button>
+          </span>
+        </div>
+        {timeline.items.length === 0 ? (
+          <p className="text-text-muted mt-5">No timeline items found.</p>
+        ) : visibleItems.length === 0 ? (
+          <p className="text-text-muted mt-5">
+            No {timelineFilter === "session" ? "sessions" : "docs"} in this
+            timeline.
+          </p>
+        ) : (
+          <ol className="relative mt-2 list-none p-0 m-0">
+            <div
+              className="absolute left-5 top-8 bottom-8 w-0.5 -translate-x-1/2 bg-border-subtle"
+              aria-hidden="true"
+              data-testid="timeline-spine"
+            />
+            {visibleItems.map((item) => {
+              return item.type === "session" ? (
               <li
-                className="grid timeline-grid gap-4 py-4 border-b border-border"
+                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
                 key={`session:${item.session.id}`}
               >
-                <div className="flex flex-col items-center gap-2">
+                <div className="relative z-10 flex justify-center">
                   <TypeIcon type={item.session.tool} />
-                  {!isLast && (
-                    <div
-                      className="flex-1 w-px bg-border"
-                      aria-hidden="true"
-                      data-testid="timeline-connector"
-                    />
-                  )}
                 </div>
                 <div className="min-w-0">
                   {item.sessionName ? (
@@ -225,18 +274,11 @@ export function TaskTimelineView({
               </li>
             ) : (
               <li
-                className="grid timeline-grid gap-4 py-4 border-b border-border"
+                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
                 key={`doc:${item.doc.path}`}
               >
-                <div className="flex flex-col items-center gap-2">
+                <div className="relative z-10 flex justify-center">
                   <TypeIcon type="doc" />
-                  {!isLast && (
-                    <div
-                      className="flex-1 w-px bg-border"
-                      aria-hidden="true"
-                      data-testid="timeline-connector"
-                    />
-                  )}
                 </div>
                 <div className="min-w-0">
                   <CopyChip
@@ -256,9 +298,10 @@ export function TaskTimelineView({
                 </div>
               </li>
             );
-          })}
-        </ol>
-      )}
+            })}
+          </ol>
+        )}
+      </section>
     </main>
   );
 }
@@ -266,7 +309,7 @@ export function TaskTimelineView({
 export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
   if (!state) {
     return (
-      <p className="mt-5 text-sm text-text-muted">
+      <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
         No context saved yet — run{" "}
         <code className="font-mono text-xs">/handoff</code> to capture where you
         left off.
@@ -274,98 +317,97 @@ export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
     );
   }
 
+  const hasGrid =
+    state.decisions.length > 0 ||
+    Boolean(state.nextStep) ||
+    state.openQuestions.length > 0;
+
   return (
-    <section className="mt-5 mb-5 p-4 bg-surface border border-border rounded-lg">
-      <h2 className="mt-0 mb-3 text-sm font-bold uppercase tracking-wide text-text-muted">
+    <section className="mt-8 pt-6 border-t border-border">
+      <h2 className="m-0 mb-2.5 text-xs font-bold uppercase tracking-widest text-accent">
         Where you left off
       </h2>
-      {state.summary ? (
-        <p
-          className="mt-0 mb-3 text-sm leading-relaxed"
-          dangerouslySetInnerHTML={{ __html: state.summary }}
-        />
-      ) : null}
-      {state.decisions.length > 0 ? (
-        <div className="mb-3">
-          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Decisions
-          </h3>
-          <ul className="mt-0 mb-0 pl-4 space-y-1">
-            {state.decisions.map((d, i) => (
-              <li
-                key={i}
-                className="text-sm"
-                dangerouslySetInnerHTML={{ __html: d }}
-              />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {state.currentState.length > 0 ? (
-        <div className="mb-3">
-          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Current state
-          </h3>
-          <ul className="mt-0 mb-0 pl-4 space-y-1">
-            {state.currentState.map((s, i) => (
-              <li
-                key={i}
-                className="text-sm"
-                dangerouslySetInnerHTML={{ __html: s }}
-              />
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {state.nextStep ? (
-        <div className="mb-3">
-          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Next step
-          </h3>
+      <ClampedSection maxHeight={200}>
+        <div>
+        {state.summary ? (
           <p
-            className="mt-0 mb-0 text-sm"
-            dangerouslySetInnerHTML={{ __html: state.nextStep }}
+            className="m-0 text-md font-semibold leading-normal text-text"
+            dangerouslySetInnerHTML={{ __html: state.summary }}
           />
+        ) : null}
+        {state.currentState.length > 0 ? (
+          <div
+            className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: state.currentState.join("\n"),
+            }}
+          />
+        ) : null}
+      {hasGrid ? (
+        <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+          {state.decisions.length > 0 ? (
+            <div>
+              <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                Decisions made
+              </h3>
+              <ul className="m-0 p-0 flex flex-col gap-2.5">
+                {state.decisions.map((d, i) => (
+                  <li key={i} className="flex gap-2.5">
+                    <span
+                      className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="text-sm leading-normal text-text"
+                      dangerouslySetInnerHTML={{ __html: d }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex flex-col gap-6">
+            {state.nextStep ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Next step
+                </h3>
+                <div className="flex gap-2.5">
+                  <NextStepArrow />
+                  <span
+                    className="text-sm font-medium leading-normal text-text"
+                    dangerouslySetInnerHTML={{ __html: state.nextStep }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {state.openQuestions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Open questions
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.openQuestions.map((q, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="text-sm leading-normal text-text"
+                        dangerouslySetInnerHTML={{ __html: q }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
-      {state.openQuestions.length > 0 ? (
-        <div className="mb-0">
-          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            Open questions
-          </h3>
-          <ul className="mt-0 mb-0 pl-4 space-y-1">
-            {state.openQuestions.map((q, i) => (
-              <li
-                key={i}
-                className="text-sm"
-                dangerouslySetInnerHTML={{ __html: q }}
-              />
-            ))}
-          </ul>
         </div>
-      ) : null}
+      </ClampedSection>
     </section>
-  );
-}
-
-function ReEnterButton({ title, slug }: { title: string; slug: string }) {
-  const { copied, copy } = useClipboardCopy();
-  const prompt = buildReEnterPrompt(title, slug);
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer bg-accent-soft text-accent"
-      style={{
-        border:
-          "1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border))",
-      }}
-      aria-label={copied ? "Copied" : "Copy re-enter prompt"}
-      title={prompt}
-      onClick={() => void copy(prompt)}
-    >
-      <ArrowIcon />
-      {copied ? "Copied" : "Re-enter"}
-    </button>
   );
 }
 
@@ -485,19 +527,15 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <div className="mt-5">
-      <dl
-        className="grid token-summary-grid gap-3"
-        aria-label="Token totals"
-      >
+    <div className="mt-8 pt-6 border-t border-border flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+      <dl className="m-0 flex flex-wrap gap-x-11 gap-y-3" aria-label="Token totals">
         {cards.map((card) => (
-          <div
-            key={card.label}
-            className="min-w-20 p-3 bg-surface border border-border rounded-md"
-          >
-            <dt className="text-text-muted text-xs">{card.label}</dt>
+          <div key={card.label} className="min-w-16">
+            <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
+              {card.label}
+            </dt>
             <dd
-              className="mt-1 text-lg font-bold tabular-nums m-0"
+              className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
               title={String(card.value)}
             >
               {formatTokensCompact(card.value)}
@@ -507,16 +545,22 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
       </dl>
       <p
         data-testid="token-summary-cache"
-        className="flex flex-wrap items-baseline gap-2 mt-3 m-0 text-text-muted text-sm tabular-nums"
+        className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
       >
-        <span className="text-xs font-bold uppercase">Cache</span>
-        <span title={String(totals.cacheReadInputTokens)}>
+        <span className="text-xs font-bold uppercase tracking-wide">Cache</span>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheReadInputTokens)}
+        >
           {formatTokensCompact(totals.cacheReadInputTokens)} read
         </span>
-        <span className="opacity-60" aria-hidden="true">
+        <span className="opacity-50" aria-hidden="true">
           ·
         </span>
-        <span title={String(totals.cacheCreationInputTokens)}>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheCreationInputTokens)}
+        >
           {formatTokensCompact(totals.cacheCreationInputTokens)} written
         </span>
       </p>
@@ -524,7 +568,7 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
   );
 }
 
-function ArrowIcon() {
+function BackArrowIcon() {
   return (
     <svg
       width="13"
@@ -537,49 +581,47 @@ function ArrowIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+
+function NextStepArrow() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 mt-0.5 text-accent"
+      aria-hidden="true"
+    >
       <path d="M5 12h13" />
       <path d="m12 5 7 7-7 7" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <path d="M10 12h4" />
-    </svg>
-  );
-}
-
-function UnarchiveIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <path d="m9.5 15 2.5-2.5L14.5 15" />
-      <path d="M12 12.5V18" />
     </svg>
   );
 }

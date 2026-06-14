@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
@@ -12,10 +12,15 @@ import {
   CommandList,
 } from "cmdk";
 import { AppHeader } from "../components/AppHeader.tsx";
-import { useClipboardCopy } from "../components/useClipboardCopy.ts";
+import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import {
+  ArchiveIcon,
+  CheckIcon,
+  SuccessCheckIcon,
+  UnarchiveIcon,
+} from "../components/icons.tsx";
 import { cn } from "../lib/utils.ts";
 import {
-  buildReEnterPrompt,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -46,7 +51,23 @@ export type ProjectTaskGroup = {
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedProject = searchParams.get("project");
+
+  function setSelectedProject(project: string | null) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (project) {
+          next.set("project", project);
+        } else {
+          next.delete("project");
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   useEffect(() => {
     fetch("/api/tasks")
@@ -95,7 +116,7 @@ export function TasksPage() {
   }
 
   return (
-    <main className="max-w-task-list mx-auto px-5 md:px-0 pb-16">
+    <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader project={crumb} bordered={false} />
       <div className="pt-7 pb-header-y">
         <h1 className="m-0 text-page-title font-extrabold">
@@ -314,7 +335,11 @@ function TaskRow({
             : "is-exit opacity-0 focus-within:opacity-100 pointer-events-none",
         )}
       >
-        <CopyPromptAction title={task.title} slug={task.slug} />
+        <ReEnterButton
+          title={task.title}
+          slug={task.slug}
+          className="task-row-action pointer-events-auto"
+        />
         {archived && onUnarchive ? (
           <button
             type="button"
@@ -471,107 +496,6 @@ function CodexLogo() {
   );
 }
 
-function CopyPromptAction({ title, slug }: { title: string; slug: string }) {
-  const { copied, copy } = useClipboardCopy();
-  const prompt = buildReEnterPrompt(title, slug);
-  return (
-    <button
-      type="button"
-      className="task-row-action inline-flex items-center gap-action-gap px-control-x py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer bg-accent-soft text-accent pointer-events-auto"
-      style={{
-        border: "1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border))",
-      }}
-      aria-label={copied ? "Copied" : "Copy re-enter prompt"}
-      title={prompt}
-      onClick={() => void copy(prompt)}
-    >
-      <span
-        className="t-icon-swap inline-grid size-icon-inline place-items-center"
-        data-state={copied ? "b" : "a"}
-        aria-hidden="true"
-      >
-        <span className="t-icon inline-flex" data-icon="a">
-          <ArrowIcon />
-        </span>
-        <span className="t-icon inline-flex" data-icon="b">
-          <CheckIcon />
-        </span>
-      </span>
-      <TextSwapLabel value={copied ? "Copied" : "Re-enter"} />
-    </button>
-  );
-}
-
-function TextSwapLabel({ value }: { value: string }) {
-  const [displayValue, setDisplayValue] = useState(value);
-  const [phase, setPhase] = useState<"idle" | "exit" | "enter">("idle");
-  const labelRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (value === displayValue) return;
-
-    const root = document.documentElement;
-    const dur =
-      parseFloat(getComputedStyle(root).getPropertyValue("--text-swap-dur")) ||
-      150;
-    const timer = window.setTimeout(() => {
-      setDisplayValue(value);
-      setPhase("enter");
-    }, dur);
-
-    setPhase("exit");
-
-    return () => window.clearTimeout(timer);
-  }, [displayValue, value]);
-
-  useEffect(() => {
-    if (phase !== "enter") return;
-
-    const label = labelRef.current;
-    if (!label) {
-      setPhase("idle");
-      return;
-    }
-
-    void label.offsetHeight;
-    const frame = window.requestAnimationFrame(() => setPhase("idle"));
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [phase]);
-
-  return (
-    <span
-      ref={labelRef}
-      className={cn(
-        "t-text-swap",
-        phase === "exit" && "is-exit",
-        phase === "enter" && "is-enter-start",
-      )}
-    >
-      {displayValue}
-    </span>
-  );
-}
-
-function ArrowIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h13" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
-  );
-}
-
 function ChevronDownIcon() {
   return (
     <svg
@@ -604,88 +528,6 @@ function FolderIcon() {
       aria-hidden="true"
     >
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
-
-function SuccessCheckIcon({ shown }: { shown: boolean }) {
-  return (
-    <span
-      className="t-success-check"
-      data-state={shown ? "in" : "out"}
-      aria-hidden="true"
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M20 6 9 17l-5-5" />
-      </svg>
-    </span>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <path d="M10 12h4" />
-    </svg>
-  );
-}
-
-function UnarchiveIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <path d="m9.5 15 2.5-2.5L14.5 15" />
-      <path d="M12 12.5V18" />
     </svg>
   );
 }
