@@ -35,14 +35,32 @@ Add the parsed state to the timeline API.
       "Render <code>state.md</code> inline before sending it to the client.",
     ],
     currentState: [
-      "The parser slice is in place.",
-      "Downstream slices can consume the returned shape.",
+      "<p>The parser slice is in place.</p>",
+      "<p>Downstream slices can consume the returned shape.</p>",
     ],
     nextStep: "Add the parsed state to the timeline API.",
     openQuestions: [
       "Should the panel show <del>stale</del> archived tasks?",
     ],
   });
+});
+
+test("parseStateMd preserves bullet lists inside Current state as block markdown", () => {
+  const state = parseStateMd(`# Mid-flight
+
+## Current state
+
+Five slices are settled:
+- \`pnpm-11-upgrade\` — gate. done.
+- \`tsup-build\` — retired the bundler.
+
+A later commit landed too.
+`);
+
+  expect(state.currentState).toEqual([
+    "<p>Five slices are settled:</p>\n<ul>\n<li><code>pnpm-11-upgrade</code> — gate. done.</li>\n<li><code>tsup-build</code> — retired the bundler.</li>\n</ul>",
+    "<p>A later commit landed too.</p>",
+  ]);
 });
 
 test("parseStateMd gracefully omits missing sections", () => {

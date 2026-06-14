@@ -101,7 +101,7 @@ test("GET /api/tasks/:id/timeline includes parsed state when state.md exists", (
     expect(timeline.state).toEqual({
       summary: "Checkout is resumable",
       decisions: ["Keep parsing in <strong>core</strong>"],
-      currentState: ["Endpoint work is <code>in progress</code>."],
+      currentState: ["<p>Endpoint work is <code>in progress</code>.</p>"],
       nextStep: "Render the panel.",
       openQuestions: [],
     });

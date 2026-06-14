@@ -1,4 +1,4 @@
-import { Renderer, parseInline } from "marked";
+import { Renderer, parse, parseInline } from "marked";
 import type { Tokens } from "marked";
 
 export type ParsedStateMd = {
@@ -77,7 +77,7 @@ export function parseStateMd(text: string): ParsedStateMd {
   }
 
   result.decisions = parseListOrParagraphs(sections.get("decisions") ?? []);
-  result.currentState = parseParagraphs(sections.get("currentState") ?? []);
+  result.currentState = parseBlocks(sections.get("currentState") ?? []);
   result.nextStep = parseFirstParagraph(sections.get("nextStep") ?? []);
   result.openQuestions = parseListOrParagraphs(
     sections.get("openQuestions") ?? [],
@@ -107,8 +107,28 @@ function parseListOrParagraphs(lines: string[]): string[] {
   return values.filter(isMeaningfulValue).map(renderInline);
 }
 
-function parseParagraphs(lines: string[]): string[] {
-  return splitParagraphs(lines).filter(isMeaningfulValue).map(renderInline);
+/**
+ * Render the section as block-level markdown, one entry per blank-line-separated
+ * block. Unlike paragraph parsing this preserves intra-block newlines, so bullet
+ * lists become real <ul><li> instead of being flattened into a run-on paragraph.
+ */
+function parseBlocks(lines: string[]): string[] {
+  return splitBlocks(lines).filter(isMeaningfulValue).map(renderBlock);
+}
+
+function splitBlocks(lines: string[]): string[] {
+  return lines
+    .join("\n")
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+}
+
+function renderBlock(text: string): string {
+  return parse(text.trim(), {
+    async: false,
+    renderer: linkSafeRenderer,
+  }).trim();
 }
 
 function parseFirstParagraph(lines: string[]): string | undefined {
