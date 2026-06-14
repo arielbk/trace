@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
 import { getDatabaseSync, type DatabaseSync } from "./node-sqlite.ts";
@@ -21,6 +21,7 @@ import {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 import { readSessionName } from "./session-name.ts";
+import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   ActiveTask,
@@ -433,6 +434,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const sessionList = this.listSessionsForTask(task.id);
     const docs = this.listDocsForTask(task.id);
+    const stateDoc = docs.find((doc) => basename(doc.path) === "state.md");
     const items: TaskTimelineItem[] = [
       ...sessionList.map(
         (session): TaskTimelineItem => ({
@@ -451,14 +453,22 @@ class NodeSqliteTaskStore implements TaskStore {
         }),
       ),
     ].sort(compareTimelineItems);
+    const lastActivityAt = [
+      task.createdAt,
+      ...sessionList.map((session) => session.createdAt),
+      ...docs.map((doc) => doc.createdAt),
+    ].reduce((latest, current) => (current > latest ? current : latest));
+    const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
 
     return {
       task,
       items,
+      lastActivityAt,
       tokenTotals: sessionList.reduce(
         (totals, session) => addTokenTotals(totals, session.tokenTotals),
         emptyTokenTotals(),
       ),
+      ...(state ? { state } : {}),
     };
   }
 
@@ -847,6 +857,14 @@ function compareTimelineItems(
 function readFileSizeBytes(path: string): number | null {
   try {
     return statSync(path).size;
+  } catch {
+    return null;
+  }
+}
+
+function readParsedState(path: string): ReturnType<typeof parseStateMd> | null {
+  try {
+    return parseStateMd(readFileSync(path, "utf8"));
   } catch {
     return null;
   }

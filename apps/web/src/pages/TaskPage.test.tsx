@@ -66,6 +66,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 8,
@@ -135,6 +136,7 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
         sessionName: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -178,6 +180,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -242,6 +245,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 10,
       outputTokens: 5,
@@ -278,6 +282,7 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 81123,
       outputTokens: 5,
@@ -327,6 +332,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -357,6 +363,7 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -397,6 +404,7 @@ test("TaskTimelineView renders the task description under the title when present
       description,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -427,6 +435,7 @@ test("TaskTimelineView omits the description block when absent", () => {
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -456,6 +465,7 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 81123,
       outputTokens: 5,
@@ -490,6 +500,7 @@ test("TaskTimelineView shows the project display name in the header breadcrumb w
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -521,6 +532,7 @@ test("TaskTimelineView omits the breadcrumb project segment when projectRoot is 
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -565,6 +577,7 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
         sizeBytes: 12544,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
