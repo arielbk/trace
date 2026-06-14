@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
@@ -20,57 +20,35 @@ import {
   formatTokensCompact,
   truncatePath,
 } from "../format.ts";
+import { HttpError, useArchiveTask, useTaskTimeline, useUnarchiveTask } from "../lib/api.ts";
 
 export function TaskPage() {
-  const { id } = useParams();
-  const [timeline, setTimeline] = useState<TaskTimeline | null | "missing">(
-    null,
-  );
-  const [archivedAt, setArchivedAt] = useState<string | null>(null);
+  const { id = "" } = useParams();
+  const query = useTaskTimeline(id);
+  const archiveMutation = useArchiveTask();
+  const unarchiveMutation = useUnarchiveTask();
 
-  useEffect(() => {
-    if (!id) return;
-    fetch(`/api/tasks/${id}/timeline`)
-      .then((res) => (res.status === 404 ? "missing" : res.json()))
-      .then((result) => {
-        setTimeline(result);
-        if (result !== "missing" && result !== null) {
-          setArchivedAt((result as TaskTimeline).task.archivedAt);
-        }
-      });
-  }, [id]);
-
-  if (timeline === null)
+  if (query.isLoading)
     return (
       <main>
         <p>Loading...</p>
       </main>
     );
-  if (timeline === "missing")
+
+  if (query.error instanceof HttpError && query.error.status === 404)
     return (
       <main>
         <p>Task not found.</p>
       </main>
     );
 
-  async function handleArchive() {
-    if (!timeline || timeline === "missing") return;
-    const result = await taskArchive((timeline as TaskTimeline).task.slug);
-    setArchivedAt(result.archivedAt);
-  }
-
-  async function handleUnarchive() {
-    if (!timeline || timeline === "missing") return;
-    const result = await taskUnarchive((timeline as TaskTimeline).task.slug);
-    setArchivedAt(result.archivedAt);
-  }
+  if (!query.data) return null;
 
   return (
     <TaskTimelineView
-      timeline={timeline}
-      archivedAt={archivedAt}
-      onArchive={handleArchive}
-      onUnarchive={handleUnarchive}
+      timeline={query.data}
+      onArchive={() => archiveMutation.mutate(id)}
+      onUnarchive={() => unarchiveMutation.mutate(id)}
     />
   );
 }
@@ -626,24 +604,3 @@ function NextStepArrow() {
   );
 }
 
-async function taskArchive(
-  ref: string,
-): Promise<{ id: string; archivedAt: string | null }> {
-  const response = await fetch(
-    `/api/tasks/${encodeURIComponent(ref)}/archive`,
-    { method: "POST" },
-  );
-  if (!response.ok) throw new Error(`Failed to archive task ${ref}`);
-  return (await response.json()) as { id: string; archivedAt: string | null };
-}
-
-async function taskUnarchive(
-  ref: string,
-): Promise<{ id: string; archivedAt: string | null }> {
-  const response = await fetch(
-    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
-    { method: "POST" },
-  );
-  if (!response.ok) throw new Error(`Failed to unarchive task ${ref}`);
-  return (await response.json()) as { id: string; archivedAt: string | null };
-}

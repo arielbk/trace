@@ -2,11 +2,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeAll, expect, test, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
-import { LeftOffPanel, TaskTimelineView } from "./TaskPage.tsx";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LeftOffPanel, TaskPage, TaskTimelineView } from "./TaskPage.tsx";
 
 beforeAll(() => {
   Object.defineProperty(navigator, "clipboard", {
@@ -1004,4 +1005,90 @@ test("TaskTimelineView breadcrumb links the project name to the filtered home vi
   expect(html).toContain(
     `href="/?project=${encodeURIComponent("/work/trace-v2")}"`,
   );
+});
+
+// TaskPage hook-level integration tests
+
+function makeQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+function renderTaskPage(slug: string, queryClient: QueryClient) {
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/tasks/${slug}`]}>
+        <Routes>
+          <Route path="/tasks/:id" element={<TaskPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function makeTimeline(slug: string, archivedAt: string | null = null): TaskTimeline {
+  return {
+    task: {
+      id: "task-abc",
+      slug,
+      title: "My task",
+      projectRoot: "/work/proj",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      archivedAt,
+    },
+    items: [],
+    lastActivityAt: "2026-06-01T00:00:00.000Z",
+    tokenTotals: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0 },
+  };
+}
+
+describe("TaskPage", () => {
+  test("renders the timeline title when fetch succeeds", async () => {
+    const timeline = makeTimeline("my-task");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(timeline),
+    }));
+
+    renderTaskPage("my-task", makeQueryClient());
+
+    expect(await screen.findByText("My task")).toBeInTheDocument();
+  });
+
+  test("renders not-found state on 404", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve(null),
+    }));
+
+    renderTaskPage("no-such-task", makeQueryClient());
+
+    expect(await screen.findByText("Task not found.")).toBeInTheDocument();
+  });
+
+  test("archive button fires POST to archive endpoint and refetches", async () => {
+    const timeline = makeTimeline("my-task");
+    const archivedTimeline = makeTimeline("my-task", "2026-06-01T00:01:00.000Z");
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(timeline) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ id: "task-abc", archivedAt: "2026-06-01T00:01:00.000Z" }) })
+      .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(archivedTimeline) });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderTaskPage("my-task", makeQueryClient());
+    await screen.findByText("My task");
+
+    fireEvent.click(screen.getByLabelText("Archive task"));
+
+    await waitFor(() => {
+      const archiveCall = fetchMock.mock.calls.find(
+        (c) => typeof c[0] === "string" && c[0].includes("/archive"),
+      );
+      expect(archiveCall).toBeDefined();
+      expect(archiveCall?.[1]?.method).toBe("POST");
+    });
+  });
 });
