@@ -72,6 +72,8 @@ export type TaskTimeline = {
 export type TaskSummary = Task & {
   lastActivityAt: string;
   tokenTotals: TokenTotals;
+  agentTools: SessionTool[];
+  hasDocs: boolean;
 };
 
 export type ReEntryManifestDoc = TaskDoc;
