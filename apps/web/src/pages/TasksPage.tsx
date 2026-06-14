@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { freshTokenTotal, type TaskSummary } from "@trace/core";
 import type { SessionTool } from "@trace/core";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import * as SwitchPrimitive from "@radix-ui/react-switch";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "cmdk";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { useClipboardCopy } from "../components/useClipboardCopy.ts";
 import { cn } from "../lib/utils.ts";
@@ -19,6 +28,12 @@ type VisibilityOptions = {
   showArchived?: boolean;
 };
 
+export type ProjectCount = {
+  projectRoot: string;
+  displayName: string;
+  count: number;
+};
+
 export type ProjectTaskGroup = {
   projectRoot: string;
   displayName: string;
@@ -28,15 +43,12 @@ export type ProjectTaskGroup = {
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [home, setHome] = useState("");
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/tasks")
       .then((res) => res.json())
       .then(setTasks);
-    fetch("/api/config")
-      .then((res) => res.json())
-      .then((config: { home: string }) => setHome(config.home));
   }, []);
 
   if (tasks === null)
@@ -46,10 +58,11 @@ export function TasksPage() {
       </main>
     );
 
-  const displayedTasks = visibleTasks(tasks, { showArchived });
+  const visibleByArchive = visibleTasks(tasks, { showArchived });
+  const displayedTasks = filterByProject(visibleByArchive, selectedProject);
   const archivedHidden = showArchived
     ? 0
-    : tasks.filter((t) => t.archivedAt !== null).length;
+    : filterByProject(tasks, selectedProject).filter((t) => t.archivedAt !== null).length;
 
   async function handleArchive(task: TaskSummary): Promise<void> {
     const archived = await archiveTask(task.slug);
@@ -77,11 +90,17 @@ export function TasksPage() {
   return (
     <main className="max-w-[960px] mx-auto px-6 py-10">
       <AppHeader />
+      <FilterBar
+        projects={getProjectCounts(tasks)}
+        selectedProject={selectedProject}
+        onProjectChange={setSelectedProject}
+        showArchived={showArchived}
+        onShowArchivedChange={setShowArchived}
+      />
       <TaskList
         tasks={displayedTasks}
         onArchive={handleArchive}
         onUnarchive={handleUnarchive}
-        home={home}
         hiddenArchivedCount={archivedHidden}
       />
     </main>
@@ -92,13 +111,11 @@ export function TaskList({
   tasks,
   onArchive,
   onUnarchive,
-  home = "",
   hiddenArchivedCount = 0,
 }: {
   tasks: TaskSummary[];
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
-  home?: string;
   hiddenArchivedCount?: number;
 }) {
   const sorted = [...tasks].sort(byActivityDesc);
@@ -309,6 +326,24 @@ function CopyPromptAction({ title, slug }: { title: string; slug: string }) {
   );
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
 function CopyIcon() {
   return (
     <svg
@@ -419,6 +454,132 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
   );
 
   return ordered;
+}
+
+export function filterByProject(
+  tasks: TaskSummary[],
+  projectRoot: string | null,
+): TaskSummary[] {
+  if (!projectRoot) return tasks;
+  return tasks.filter((t) => t.projectRoot === projectRoot);
+}
+
+export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
+  const map = new Map<string, ProjectCount>();
+  for (const task of tasks) {
+    const root = task.projectRoot || "Unknown";
+    const existing = map.get(root);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      map.set(root, {
+        projectRoot: root,
+        displayName: projectDisplayName(root),
+        count: 1,
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    a.displayName.localeCompare(b.displayName),
+  );
+}
+
+export function FilterBar({
+  projects,
+  selectedProject,
+  onProjectChange,
+  showArchived,
+  onShowArchivedChange,
+}: {
+  projects: ProjectCount[];
+  selectedProject: string | null;
+  onProjectChange: (project: string | null) => void;
+  showArchived: boolean;
+  onShowArchivedChange: (show: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel = selectedProject
+    ? (projects.find((p) => p.projectRoot === selectedProject)?.displayName ??
+      selectedProject)
+    : "All projects";
+
+  return (
+    <div className="flex items-center gap-4 mb-4">
+      <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+        <PopoverPrimitive.Trigger
+          className="filter-bar-project-trigger inline-flex items-center gap-1.5 h-8 px-3 text-sm rounded-md border border-border-subtle bg-surface text-text-muted hover:bg-chip-bg"
+          aria-label={`Project filter: ${selectedLabel}`}
+        >
+          {selectedLabel}
+          <ChevronDownIcon />
+        </PopoverPrimitive.Trigger>
+        <PopoverPrimitive.Portal>
+          <PopoverPrimitive.Content
+            className="filter-bar-project-popover z-50 w-56 rounded-md border border-border-subtle bg-surface shadow-md p-1"
+            align="start"
+            sideOffset={4}
+          >
+            <Command>
+              <CommandInput
+                className="w-full h-8 px-2 text-sm bg-transparent border-none outline-none placeholder:text-text-muted"
+                placeholder="Search projects..."
+              />
+              <CommandList className="max-h-48 overflow-y-auto">
+                <CommandEmpty className="py-2 text-sm text-center text-text-muted">
+                  No projects found.
+                </CommandEmpty>
+                <CommandItem
+                  value="__all__"
+                  className="filter-bar-all-projects flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg"
+                  onSelect={() => {
+                    onProjectChange(null);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="flex-1">All projects</span>
+                  {selectedProject === null && <CheckIcon />}
+                </CommandItem>
+                {projects.map((project) => (
+                  <CommandItem
+                    key={project.projectRoot}
+                    value={project.displayName}
+                    className="filter-bar-project-item flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg"
+                    onSelect={() => {
+                      onProjectChange(project.projectRoot);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="flex-1">{project.displayName}</span>
+                    <span className="text-text-muted tabular-nums">
+                      {project.count}
+                    </span>
+                    {selectedProject === project.projectRoot && <CheckIcon />}
+                  </CommandItem>
+                ))}
+              </CommandList>
+            </Command>
+          </PopoverPrimitive.Content>
+        </PopoverPrimitive.Portal>
+      </PopoverPrimitive.Root>
+
+      <div className="flex items-center gap-2">
+        <SwitchPrimitive.Root
+          id="show-archived-switch"
+          checked={showArchived}
+          onCheckedChange={onShowArchivedChange}
+          className="filter-bar-archived-switch relative inline-flex h-5 w-9 items-center rounded-full border-2 border-transparent bg-chip-bg data-[state=checked]:bg-accent"
+        >
+          <SwitchPrimitive.Thumb className="pointer-events-none block h-4 w-4 rounded-full bg-white shadow data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
+        </SwitchPrimitive.Root>
+        <label
+          htmlFor="show-archived-switch"
+          className="text-sm text-text-muted cursor-pointer select-none"
+        >
+          Show archived
+        </label>
+      </div>
+    </div>
+  );
 }
 
 export function visibleTasks(

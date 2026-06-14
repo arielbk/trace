@@ -4,6 +4,9 @@ import { describe, expect, test } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   archiveTask,
+  filterByProject,
+  FilterBar,
+  getProjectCounts,
   TaskList,
   unarchiveTask,
   visibleTasks,
@@ -518,5 +521,132 @@ describe("TaskList rendering — flat recency-first", () => {
     expect(html).toContain("task-row-archived");
     expect(html).toContain('aria-label="Unarchive CLI work"');
     expect(html).not.toContain('aria-label="Archive CLI work"');
+  });
+});
+
+describe("filterByProject", () => {
+  test("returns all tasks when projectRoot is null", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+    ];
+    expect(filterByProject(tasks, null)).toEqual(tasks);
+  });
+
+  test("returns only tasks with matching projectRoot", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+      summary({ id: "c", projectRoot: "/work/alpha" }),
+    ];
+    const result = filterByProject(tasks, "/work/alpha");
+    expect(result.map((t) => t.id)).toEqual(["a", "c"]);
+  });
+
+  test("returns empty array when no tasks match the projectRoot", () => {
+    const tasks = [summary({ id: "a", projectRoot: "/work/alpha" })];
+    expect(filterByProject(tasks, "/work/other")).toEqual([]);
+  });
+});
+
+describe("getProjectCounts", () => {
+  test("returns one entry per unique projectRoot", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+      summary({ id: "c", projectRoot: "/work/alpha" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    expect(counts).toHaveLength(2);
+    expect(counts.map((p) => p.projectRoot)).toContain("/work/alpha");
+    expect(counts.map((p) => p.projectRoot)).toContain("/work/beta");
+  });
+
+  test("count includes all tasks in the project regardless of archived state", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({
+        id: "b",
+        projectRoot: "/work/alpha",
+        archivedAt: "2026-06-01T00:00:00.000Z",
+      }),
+      summary({ id: "c", projectRoot: "/work/beta" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    const alpha = counts.find((p) => p.projectRoot === "/work/alpha");
+    expect(alpha?.count).toBe(2);
+  });
+
+  test("displayName is the projectRoot basename", () => {
+    const tasks = [summary({ id: "a", projectRoot: "/work/trace-v2" })];
+    const counts = getProjectCounts(tasks);
+    expect(counts[0]?.displayName).toBe("trace-v2");
+  });
+
+  test("returns entries sorted alphabetically by displayName", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/zebra" }),
+      summary({ id: "b", projectRoot: "/work/alpha" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    expect(counts[0]?.displayName).toBe("alpha");
+    expect(counts[1]?.displayName).toBe("zebra");
+  });
+});
+
+describe("FilterBar", () => {
+  test("shows 'All projects' in trigger when selectedProject is null", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("All projects");
+  });
+
+  test("shows selected project displayName in trigger when project is selected", () => {
+    const projects = [
+      { projectRoot: "/work/alpha", displayName: "alpha", count: 3 },
+    ];
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={projects}
+        selectedProject="/work/alpha"
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("alpha");
+  });
+
+  test("renders the Show archived label", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("Show archived");
+  });
+
+  test("renders a switch with show-archived-switch id", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("show-archived-switch");
   });
 });
