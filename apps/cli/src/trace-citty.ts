@@ -1,12 +1,18 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import {
+  getTranscriptAdapter,
   openTraceStore,
   resolveProjectRootArg,
   resolveTaskDocsDir,
+  scanClaudeCodeSessions,
+  scanCodexSessions,
+  type ActiveTask,
   type Session,
+  type SessionTool,
   type Task,
   type TaskDoc,
+  type TokenTotals,
 } from "@trace/core";
 import {
   copyFileSync,
@@ -255,6 +261,126 @@ function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {
   return `${taskRef}\t${doc.path}\n`;
 }
 
+function formatActiveTask(
+  activeTask: ActiveTask,
+): { kind: "none" } | { kind: "bound" | "re-enter"; task: { title: string; slug: string } } {
+  if (activeTask.kind === "none") return { kind: "none" };
+  return { kind: activeTask.kind, task: { title: activeTask.task.title, slug: activeTask.task.slug } };
+}
+
+function parseNonNegativeInteger(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${flag} must be a non-negative integer`);
+  }
+  return parsed;
+}
+
+function parseSessionRegisterArgs(args: string[]): {
+  id: string;
+  transcriptPath: string;
+  tool: SessionTool;
+  tokenTotals: Partial<TokenTotals>;
+  model?: string | null;
+} {
+  let id: string | undefined;
+  let transcriptPath: string | undefined;
+  let tool: string | undefined;
+  let model: string | null | undefined;
+  const tokenTotals: Partial<TokenTotals> = {};
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+
+    if (!flag || !value) throw new Error("Session register requires --id, --transcript, and --tool");
+
+    if (flag === "--id") id = value;
+    else if (flag === "--transcript") transcriptPath = value;
+    else if (flag === "--tool") tool = value;
+    else if (flag === "--model") model = value;
+    else if (flag === "--input-tokens") tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
+    else if (flag === "--output-tokens") tokenTotals.outputTokens = parseNonNegativeInteger(value, flag);
+    else if (flag === "--cache-creation-input-tokens") tokenTotals.cacheCreationInputTokens = parseNonNegativeInteger(value, flag);
+    else if (flag === "--cache-read-input-tokens") tokenTotals.cacheReadInputTokens = parseNonNegativeInteger(value, flag);
+    else if (flag === "--total-tokens") tokenTotals.totalTokens = parseNonNegativeInteger(value, flag);
+    else throw new Error(`Unknown option: ${flag}`);
+  }
+
+  if (!id || !transcriptPath || !tool) throw new Error("Session register requires --id, --transcript, and --tool");
+  if (tool !== "claude" && tool !== "codex") throw new Error("Session tool must be claude or codex");
+
+  return { id, transcriptPath, tool, model, tokenTotals };
+}
+
+function sessionActiveTaskUsage(): string {
+  return "Usage: trace session active-task --id <session-id> [--project <dir>]";
+}
+
+function parseSessionActiveTaskArgs(args: string[]): { id: string; project?: string } {
+  let id: string | undefined;
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--id") {
+      const value = args[index + 1];
+      if (!value) throw new Error(sessionActiveTaskUsage());
+      id = value;
+      index += 2;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(sessionActiveTaskUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (!id) throw new Error(sessionActiveTaskUsage());
+  return { id, project };
+}
+
+function parseSessionTailLimit(args: string[]): number | undefined {
+  if (args.length === 0) return undefined;
+  if (args.length !== 2 || args[0] !== "--limit") throw new Error("Session tail accepts --limit <count>");
+  return parseNonNegativeInteger(args[1] ?? "", "--limit");
+}
+
+function parseCodexScanArgs(args: string[], env: Env): string {
+  let codexHome = env.CODEX_HOME;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!flag || !value) throw new Error("Codex scan accepts --codex-home <path>");
+    if (flag === "--codex-home") codexHome = value;
+    else throw new Error(`Unknown option: ${flag}`);
+  }
+
+  if (codexHome) return codexHome;
+  if (!env.HOME) throw new Error("Codex scan requires --codex-home when HOME is not set");
+  return `${env.HOME}/.codex`;
+}
+
+function parseClaudeScanArgs(args: string[], env: Env): string {
+  let projectsRoot: string | undefined;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!flag || !value) throw new Error("Claude scan accepts --projects-root <path>");
+    if (flag === "--projects-root") projectsRoot = value;
+    else throw new Error(`Unknown option: ${flag}`);
+  }
+
+  if (projectsRoot) return projectsRoot;
+  if (!env.HOME) throw new Error("Claude scan requires --projects-root when HOME is not set");
+  return `${env.HOME}/.claude/projects`;
+}
+
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
 // so this is sound at runtime even though it looks like a type override.
@@ -467,6 +593,154 @@ export function buildTraceCittyRoot(
                 const doc = store.addTaskDoc(task.id, path);
                 return success(formatTaskDocSummary(task.slug, doc));
               });
+            },
+          }),
+        },
+      }),
+
+      session: defineCommand({
+        meta: { description: "Manage sessions" },
+        subCommands: {
+          register: defineCommand({
+            meta: { description: "Register a session" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              let parsed: {
+                id: string;
+                transcriptPath: string;
+                tool: SessionTool;
+                tokenTotals: Partial<TokenTotals>;
+                model?: string | null;
+              };
+              try {
+                parsed = parseSessionRegisterArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              return withStore(env, (store) => {
+                const session = store.registerSession(parsed);
+                return success(`${session.id}\n`);
+              });
+            },
+          }),
+
+          assign: defineCommand({
+            meta: { description: "Assign a session to a task" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              const sessionId = args[0];
+              const taskId = args[1];
+              if (!sessionId) return failure("Session id is required");
+              if (!taskId) return failure("Task id is required");
+              return withStore(env, (store) => {
+                const session = store.assignSession(sessionId, taskId);
+                return success(formatSessionSummary(session));
+              });
+            },
+          }),
+
+          "active-task": defineCommand({
+            meta: { description: "Get the active task for a session" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              let parsed: { id: string; project?: string };
+              try {
+                parsed = parseSessionActiveTaskArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              let projectRoot: string;
+              try {
+                projectRoot = resolveProjectRootArg(parsed.project, cwd);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              return withStore(env, (store) => {
+                const activeTask = store.resolveActiveTask(parsed.id, projectRoot);
+                return success(`${JSON.stringify(formatActiveTask(activeTask))}\n`);
+              });
+            },
+          }),
+
+          list: defineCommand({
+            meta: { description: "List sessions" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              if (args[0] !== "--unassigned") {
+                return failure("Usage: trace session list --unassigned");
+              }
+              return withStore(env, (store) => {
+                return success(store.listUnassignedSessions().map(formatSessionSummary).join(""));
+              });
+            },
+          }),
+
+          tail: defineCommand({
+            meta: { description: "Read the tail of a session transcript" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              const sessionId = args[0];
+              if (!sessionId) return failure("Session id is required");
+              let limit: number | undefined;
+              try {
+                limit = parseSessionTailLimit(args.slice(1));
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              return withStore(env, (store) => {
+                const session = store.getSession(sessionId);
+                if (!session) return failure(`Session not found: ${sessionId}`, 1);
+                return success(
+                  getTranscriptAdapter(session.tool)
+                    .readTail({ transcriptPath: session.transcriptPath, limit })
+                    .map((message) => `${message.role}: ${message.text}\n`)
+                    .join(""),
+                );
+              });
+            },
+          }),
+
+          scan: defineCommand({
+            meta: { description: "Scan for sessions" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              if (args[0] === "--codex") {
+                let codexHome: string;
+                try {
+                  codexHome = parseCodexScanArgs(args.slice(1), env);
+                } catch (error) {
+                  return failure(error instanceof Error ? error.message : String(error));
+                }
+                return withStore(env, (store) => {
+                  const sessions = scanCodexSessions(codexHome).map((session) =>
+                    store.registerSession({
+                      id: session.id,
+                      transcriptPath: session.transcriptPath,
+                      tool: session.tool,
+                      model: session.model,
+                      tokenTotals: session.tokenTotals,
+                    }),
+                  );
+                  return success(sessions.map(formatSessionSummary).join(""));
+                });
+              }
+
+              if (args[0] === "--claude") {
+                let projectsRoot: string;
+                try {
+                  projectsRoot = parseClaudeScanArgs(args.slice(1), env);
+                } catch (error) {
+                  return failure(error instanceof Error ? error.message : String(error));
+                }
+                return withStore(env, (store) => {
+                  const sessions = scanClaudeCodeSessions(projectsRoot).map((session) =>
+                    store.registerSession({
+                      id: session.id,
+                      transcriptPath: session.transcriptPath,
+                      tool: session.tool,
+                      model: session.model,
+                      tokenTotals: session.tokenTotals,
+                    }),
+                  );
+                  return success(sessions.map(formatSessionSummary).join(""));
+                });
+              }
+
+              return failure("Usage: trace session scan --codex | --claude");
             },
           }),
         },
