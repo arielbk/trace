@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   freshTokenTotal,
   type SessionTool,
@@ -8,6 +8,7 @@ import {
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { useClipboardCopy } from "../components/useClipboardCopy.ts";
 import {
   buildReEnterPrompt,
   formatBytes,
@@ -22,12 +23,18 @@ export function TaskPage() {
   const [timeline, setTimeline] = useState<TaskTimeline | null | "missing">(
     null,
   );
+  const [archivedAt, setArchivedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     fetch(`/api/tasks/${id}/timeline`)
       .then((res) => (res.status === 404 ? "missing" : res.json()))
-      .then(setTimeline);
+      .then((result) => {
+        setTimeline(result);
+        if (result !== "missing" && result !== null) {
+          setArchivedAt((result as TaskTimeline).task.archivedAt);
+        }
+      });
   }, [id]);
 
   if (timeline === null)
@@ -43,16 +50,45 @@ export function TaskPage() {
       </main>
     );
 
-  return <TaskTimelineView timeline={timeline} />;
+  async function handleArchive() {
+    if (!timeline || timeline === "missing") return;
+    const result = await taskArchive((timeline as TaskTimeline).task.slug);
+    setArchivedAt(result.archivedAt);
+  }
+
+  async function handleUnarchive() {
+    if (!timeline || timeline === "missing") return;
+    const result = await taskUnarchive((timeline as TaskTimeline).task.slug);
+    setArchivedAt(result.archivedAt);
+  }
+
+  return (
+    <TaskTimelineView
+      timeline={timeline}
+      archivedAt={archivedAt}
+      onArchive={handleArchive}
+      onUnarchive={handleUnarchive}
+    />
+  );
 }
 
 export function TaskTimelineView({
   timeline,
   now,
+  archivedAt: archivedAtProp,
+  onArchive,
+  onUnarchive,
 }: {
   timeline: TaskTimeline;
   now?: Date;
+  archivedAt?: string | null;
+  onArchive?: () => void | Promise<void>;
+  onUnarchive?: () => void | Promise<void>;
 }) {
+  const archivedAt =
+    archivedAtProp !== undefined ? archivedAtProp : timeline.task.archivedAt;
+  const isArchived = archivedAt !== null;
+
   return (
     <main className="max-w-app mx-auto px-6 py-10">
       <AppHeader
@@ -61,22 +97,56 @@ export function TaskTimelineView({
             ? truncatePath(timeline.task.projectRoot)
             : undefined
         }
-        context={timeline.task.title}
+        context={timeline.task.slug}
       />
+      <div className="pt-3 pb-1">
+        <Link
+          to="/"
+          className="text-text-muted text-sm no-underline hover:text-accent"
+        >
+          ← All tasks
+        </Link>
+      </div>
       <header className="pb-5 border-b border-border">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-col gap-3 pt-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <h1 className="m-0 text-xl font-bold leading-tight">
               {timeline.task.title}
             </h1>
-            <CopyChip
-              value={buildReEnterPrompt(
-                timeline.task.title,
-                timeline.task.slug,
-              )}
-              display="Copy re-enter prompt"
-            />
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <ReEnterButton
+                title={timeline.task.title}
+                slug={timeline.task.slug}
+              />
+              {isArchived && onUnarchive ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-text-muted text-xs font-semibold cursor-pointer hover:text-accent hover:border-border-strong"
+                  aria-label="Unarchive task"
+                  onClick={() => void onUnarchive()}
+                >
+                  <UnarchiveIcon />
+                  Unarchive
+                </button>
+              ) : !isArchived && onArchive ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-text-muted text-xs font-semibold cursor-pointer hover:text-accent hover:border-border-strong"
+                  aria-label="Archive task"
+                  onClick={() => void onArchive()}
+                >
+                  <ArchiveIcon />
+                  Archive
+                </button>
+              ) : null}
+            </div>
           </div>
+          <p className="m-0 text-text-muted text-sm">
+            Last active{" "}
+            <span className="tabular-nums">
+              {formatRelativeTime(timeline.lastActivityAt, now)}
+            </span>
+          </p>
           {timeline.task.description ? (
             <p
               data-testid="task-description"
@@ -169,6 +239,27 @@ export function TaskTimelineView({
         </ol>
       )}
     </main>
+  );
+}
+
+function ReEnterButton({ title, slug }: { title: string; slug: string }) {
+  const { copied, copy } = useClipboardCopy();
+  const prompt = buildReEnterPrompt(title, slug);
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer bg-accent-soft text-accent"
+      style={{
+        border:
+          "1px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border))",
+      }}
+      aria-label={copied ? "Copied" : "Copy re-enter prompt"}
+      title={prompt}
+      onClick={() => void copy(prompt)}
+    >
+      <ArrowIcon />
+      {copied ? "Copied" : "Re-enter"}
+    </button>
   );
 }
 
@@ -325,4 +416,86 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
       </p>
     </div>
   );
+}
+
+function ArrowIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h13" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
+function UnarchiveIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="m9.5 15 2.5-2.5L14.5 15" />
+      <path d="M12 12.5V18" />
+    </svg>
+  );
+}
+
+async function taskArchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const response = await fetch(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to archive task ${ref}`);
+  return (await response.json()) as { id: string; archivedAt: string | null };
+}
+
+async function taskUnarchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const response = await fetch(
+    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to unarchive task ${ref}`);
+  return (await response.json()) as { id: string; archivedAt: string | null };
 }

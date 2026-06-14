@@ -1,8 +1,37 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import { TaskTimelineView } from "./TaskPage.tsx";
+
+beforeAll(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanup();
+});
 
 test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   const timeline: TaskTimeline = {
@@ -600,4 +629,134 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
   expect(html).not.toContain("No timeline items found.");
   // Zero token totals still render (no session rows, no crash).
   expect(html).toContain("Token totals");
+});
+
+function baseTimeline(overrides: Partial<TaskTimeline["task"]> = {}): TaskTimeline {
+  return {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+      ...overrides,
+    },
+    items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+}
+
+test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  // The breadcrumb context crumb should be the slug
+  expect(html).toContain("usable-v1");
+});
+
+test("TaskTimelineView header shows All tasks back link", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("All tasks");
+});
+
+test("TaskTimelineView header shows Last active timestamp", () => {
+  const now = new Date("2026-05-29T00:10:00.000Z");
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} now={now} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("Last active");
+  // lastActivityAt is "2026-05-29T00:00:00.000Z", now is 10m later
+  expect(html).toContain("10m ago");
+});
+
+test("TaskTimelineView header shows Re-enter button with prompt as title", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("Re-enter");
+  // The full prompt is available on the button for accessibility/hover
+  expect(html).toContain('title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"');
+});
+
+test("TaskTimelineView header shows Archive button for unarchived task", () => {
+  const timeline = baseTimeline({ archivedAt: null });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onArchive={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("aria-label=\"Archive task\"");
+  expect(html).not.toContain("aria-label=\"Unarchive task\"");
+});
+
+test("TaskTimelineView header shows Unarchive button for archived task", () => {
+  const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onUnarchive={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("aria-label=\"Unarchive task\"");
+  expect(html).not.toContain("aria-label=\"Archive task\"");
+});
+
+test("TaskTimelineView Archive button calls onArchive handler on click", async () => {
+  const onArchive = vi.fn().mockResolvedValue(undefined);
+  const timeline = baseTimeline({ archivedAt: null });
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onArchive={onArchive} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Archive task"));
+  await waitFor(() => expect(onArchive).toHaveBeenCalledTimes(1));
+});
+
+test("TaskTimelineView Unarchive button calls onUnarchive handler on click", async () => {
+  const onUnarchive = vi.fn().mockResolvedValue(undefined);
+  const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onUnarchive={onUnarchive} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Unarchive task"));
+  await waitFor(() => expect(onUnarchive).toHaveBeenCalledTimes(1));
+});
+
+test("TaskTimelineView Re-enter button copies re-enter prompt to clipboard on click", async () => {
+  const timeline = baseTimeline();
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Copy re-enter prompt"));
+  await waitFor(() =>
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      'Re-enter the trace task "usable v1" (usable-v1)',
+    ),
+  );
 });
