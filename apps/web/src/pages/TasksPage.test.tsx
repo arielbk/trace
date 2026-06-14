@@ -2,19 +2,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
-import {
-  archiveTask,
-  buildSubtitle,
-  filterByProject,
-  FilterBar,
-  getProjectCounts,
-  TaskList,
-  unarchiveTask,
-  visibleTasks,
-} from "./TasksPage.tsx";
+import { FilterBar, TaskList, TasksPage } from "./TasksPage.tsx";
 
 beforeAll(() => {
   Object.defineProperty(navigator, "clipboard", {
@@ -22,10 +15,24 @@ beforeAll(() => {
     writable: true,
     configurable: true,
   });
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -56,85 +63,77 @@ function summary(
   };
 }
 
-describe("visibleTasks", () => {
-  test("hides archived tasks by default", () => {
+function makeQueryWrapper() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(MemoryRouter, null, children),
+    );
+  };
+}
+
+describe("TasksPage", () => {
+  test("renders task titles from the query payload", async () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "active", title: "Active work", archivedAt: null }),
-      summary({
-        id: "archived",
-        title: "Archived work",
-        archivedAt: "2026-06-04T20:00:00.000Z",
-      }),
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+      summary({ id: "task-2", slug: "api-work", title: "API work" }),
     ];
-
-    expect(visibleTasks(tasks).map((task) => task.id)).toEqual(["active"]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(tasks), { status: 200 }),
+      ),
+    );
+    render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    await screen.findByText("CLI work");
+    expect(screen.getByText("API work")).toBeInTheDocument();
   });
 
-  test("includes archived tasks when requested", () => {
+  test("clicking archive fires POST to the archive endpoint after the settle time", async () => {
     const tasks: TaskSummary[] = [
-      summary({ id: "active", title: "Active work", archivedAt: null }),
-      summary({
-        id: "archived",
-        title: "Archived work",
-        archivedAt: "2026-06-04T20:00:00.000Z",
-      }),
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
     ];
-
-    expect(
-      visibleTasks(tasks, { showArchived: true }).map((task) => task.id),
-    ).toEqual(["active", "archived"]);
-  });
-});
-
-describe("archiveTask", () => {
-  test("posts to the archive endpoint for the task slug", async () => {
-    const calls: Array<[string, RequestInit | undefined]> = [];
-    const fetcher = async (
-      input: string | URL | globalThis.Request,
-      init?: RequestInit,
-    ) => {
-      calls.push([String(input), init]);
-      return new Response(
-        JSON.stringify({
-          id: "task-1",
-          archivedAt: "2026-06-04T20:00:00.000Z",
-        }),
-        { status: 200 },
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url === "/api/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "task-1", archivedAt: "2026-01-01T00:00:00.000Z" }),
+          { status: 200 },
+        ),
       );
-    };
-
-    await expect(archiveTask("task-1", fetcher)).resolves.toMatchObject({
-      id: "task-1",
-      archivedAt: "2026-06-04T20:00:00.000Z",
     });
-    expect(calls).toEqual([["/api/tasks/task-1/archive", { method: "POST" }]]);
-  });
-});
+    vi.stubGlobal("fetch", fetchMock);
 
-describe("unarchiveTask", () => {
-  test("posts to the unarchive endpoint for the task slug", async () => {
-    const calls: Array<[string, RequestInit | undefined]> = [];
-    const fetcher = async (
-      input: string | URL | globalThis.Request,
-      init?: RequestInit,
-    ) => {
-      calls.push([String(input), init]);
-      return new Response(
-        JSON.stringify({
-          id: "task-1",
-          archivedAt: null,
-        }),
-        { status: 200 },
-      );
-    };
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
 
-    await expect(unarchiveTask("task-1", fetcher)).resolves.toMatchObject({
-      id: "task-1",
-      archivedAt: null,
-    });
-    expect(calls).toEqual([
-      ["/api/tasks/task-1/unarchive", { method: "POST" }],
-    ]);
+    // Wait for tasks to load (real timers)
+    await screen.findByText("CLI work");
+
+    // Switch to fake timers for the archive animation
+    vi.useFakeTimers();
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+    fireEvent.click(screen.getByRole("button", { name: "Archive CLI work" }));
+
+    // Advance past the 2200ms commit timer
+    await vi.advanceTimersByTimeAsync(2200);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/cli-work/archive",
+      { method: "POST" },
+    );
   });
 });
 
@@ -423,18 +422,6 @@ describe("TaskList rendering — flat recency-first", () => {
     expect(html).not.toContain("docs-indicator");
   });
 
-  test("subtitle shows task count and hidden archived count", () => {
-    const subtitle = buildSubtitle(2, 3);
-    expect(subtitle).toContain("2 tasks");
-    expect(subtitle).toContain("3 archived hidden");
-  });
-
-  test("subtitle omits archived hidden when count is zero", () => {
-    const subtitle = buildSubtitle(1, 0);
-    expect(subtitle).toContain("1 task");
-    expect(subtitle).not.toContain("archived hidden");
-  });
-
   test("empty state shows 'No tasks in this view.' when list is empty", () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
@@ -519,76 +506,6 @@ describe("TaskList rendering — flat recency-first", () => {
     expect(html).toContain("task-row-archived");
     expect(html).toContain('aria-label="Unarchive CLI work"');
     expect(html).not.toContain('aria-label="Archive CLI work"');
-  });
-});
-
-describe("filterByProject", () => {
-  test("returns all tasks when projectRoot is null", () => {
-    const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/beta" }),
-    ];
-    expect(filterByProject(tasks, null)).toEqual(tasks);
-  });
-
-  test("returns only tasks with matching projectRoot", () => {
-    const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/beta" }),
-      summary({ id: "c", projectRoot: "/work/alpha" }),
-    ];
-    const result = filterByProject(tasks, "/work/alpha");
-    expect(result.map((t) => t.id)).toEqual(["a", "c"]);
-  });
-
-  test("returns empty array when no tasks match the projectRoot", () => {
-    const tasks = [summary({ id: "a", projectRoot: "/work/alpha" })];
-    expect(filterByProject(tasks, "/work/other")).toEqual([]);
-  });
-});
-
-describe("getProjectCounts", () => {
-  test("returns one entry per unique projectRoot", () => {
-    const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/beta" }),
-      summary({ id: "c", projectRoot: "/work/alpha" }),
-    ];
-    const counts = getProjectCounts(tasks);
-    expect(counts).toHaveLength(2);
-    expect(counts.map((p) => p.projectRoot)).toContain("/work/alpha");
-    expect(counts.map((p) => p.projectRoot)).toContain("/work/beta");
-  });
-
-  test("count includes all tasks in the project regardless of archived state", () => {
-    const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({
-        id: "b",
-        projectRoot: "/work/alpha",
-        archivedAt: "2026-06-01T00:00:00.000Z",
-      }),
-      summary({ id: "c", projectRoot: "/work/beta" }),
-    ];
-    const counts = getProjectCounts(tasks);
-    const alpha = counts.find((p) => p.projectRoot === "/work/alpha");
-    expect(alpha?.count).toBe(2);
-  });
-
-  test("displayName is the projectRoot basename", () => {
-    const tasks = [summary({ id: "a", projectRoot: "/work/trace-v2" })];
-    const counts = getProjectCounts(tasks);
-    expect(counts[0]?.displayName).toBe("trace-v2");
-  });
-
-  test("returns entries sorted alphabetically by displayName", () => {
-    const tasks = [
-      summary({ id: "a", projectRoot: "/work/zebra" }),
-      summary({ id: "b", projectRoot: "/work/alpha" }),
-    ];
-    const counts = getProjectCounts(tasks);
-    expect(counts[0]?.displayName).toBe("alpha");
-    expect(counts[1]?.displayName).toBe("zebra");
   });
 });
 

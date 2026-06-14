@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useArchiveTask, useTasks, useUnarchiveTask } from "../lib/api.ts";
 import { Link, useSearchParams } from "react-router-dom";
 import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
@@ -35,17 +36,14 @@ import {
   type ProjectCount,
   visibleTasks,
 } from "../lib/task-list.ts";
-export type { ProjectCount, ProjectTaskGroup } from "../lib/task-list.ts";
-export { buildSubtitle, filterByProject, getProjectCounts, visibleTasks } from "../lib/task-list.ts";
-
-type ArchiveTaskResult = Pick<TaskSummary, "id" | "archivedAt">;
-type FetchTask = typeof fetch;
 const ARCHIVE_SETTLE_MS = 2200;
 const ARCHIVE_EXIT_MS = 350;
 const ARCHIVE_SUCCESS_HOLD_MS = ARCHIVE_SETTLE_MS - ARCHIVE_EXIT_MS;
 
 export function TasksPage() {
-  const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
+  const tasksQuery = useTasks();
+  const archiveMutation = useArchiveTask();
+  const unarchiveMutation = useUnarchiveTask();
   const [showArchived, setShowArchived] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedProject = searchParams.get("project");
@@ -65,18 +63,14 @@ export function TasksPage() {
     );
   }
 
-  useEffect(() => {
-    fetch("/api/tasks")
-      .then((res) => res.json())
-      .then(setTasks);
-  }, []);
-
-  if (tasks === null)
+  if (tasksQuery.isPending)
     return (
       <main>
         <p>Loading...</p>
       </main>
     );
+
+  const tasks = tasksQuery.data ?? [];
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
   const displayedTasks = filterByProject(visibleByArchive, selectedProject);
@@ -89,26 +83,10 @@ export function TasksPage() {
   const subtitle = buildSubtitle(displayedTasks.length, archivedHidden);
 
   async function handleArchive(task: TaskSummary): Promise<void> {
-    const archived = await archiveTask(task.slug);
-    setTasks(
-      (current) =>
-        current?.map((existing) =>
-          existing.id === archived.id
-            ? { ...existing, archivedAt: archived.archivedAt }
-            : existing,
-        ) ?? current,
-    );
+    await archiveMutation.mutateAsync(task.slug);
   }
   async function handleUnarchive(task: TaskSummary): Promise<void> {
-    const unarchived = await unarchiveTask(task.slug);
-    setTasks(
-      (current) =>
-        current?.map((existing) =>
-          existing.id === unarchived.id
-            ? { ...existing, archivedAt: unarchived.archivedAt }
-            : existing,
-        ) ?? current,
-    );
+    await unarchiveMutation.mutateAsync(task.slug);
   }
 
   return (
@@ -521,8 +499,6 @@ function isUntitled(title: string): boolean {
   return title === "" || truncateId(title) !== title;
 }
 
-export { groupTasksByProject } from "../lib/task-list.ts";
-
 export function FilterBar({
   projects,
   selectedProject,
@@ -710,38 +686,6 @@ export function FilterBar({
       </label>
     </div>
   );
-}
-
-export async function archiveTask(
-  ref: string,
-  fetcher: FetchTask = fetch,
-): Promise<ArchiveTaskResult> {
-  const response = await fetcher(
-    `/api/tasks/${encodeURIComponent(ref)}/archive`,
-    { method: "POST" },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to archive task ${ref}`);
-  }
-
-  return (await response.json()) as ArchiveTaskResult;
-}
-
-export async function unarchiveTask(
-  ref: string,
-  fetcher: FetchTask = fetch,
-): Promise<ArchiveTaskResult> {
-  const response = await fetcher(
-    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
-    { method: "POST" },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to unarchive task ${ref}`);
-  }
-
-  return (await response.json()) as ArchiveTaskResult;
 }
 
 
