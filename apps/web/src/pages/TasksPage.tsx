@@ -161,6 +161,7 @@ function TaskRow({
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
   const untitled = isUntitled(task.title);
   const archived = task.archivedAt !== null;
   const projectName = projectDisplayName(task.projectRoot || "Unknown");
@@ -173,6 +174,8 @@ function TaskRow({
         "task-row flex items-start gap-3 py-2 border-b border-border-subtle relative",
         archived && "task-row-archived opacity-60",
       )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Left: title row + description */}
       <div className="flex-1 min-w-0">
@@ -207,7 +210,7 @@ function TaskRow({
       </div>
 
       {/* Right: agent avatars + docs icon + token count + time */}
-      <div className="task-row-meta flex items-center gap-2 flex-shrink-0">
+      <div className={cn("task-row-meta flex items-center gap-2 flex-shrink-0", isHovered && "opacity-0 pointer-events-none")}>
         <AgentAvatars agentTools={task.agentTools} />
         {task.hasDocs && <DocsIndicator />}
         <span
@@ -221,8 +224,11 @@ function TaskRow({
         </span>
       </div>
 
-      {/* Row actions (visible on hover — hover-swap implemented in task-list-row-actions slice) */}
-      <div className="task-row-actions absolute top-1/2 right-0 -translate-y-1/2 inline-flex items-center gap-1 opacity-0 focus-within:opacity-100 pointer-events-none">
+      {/* Row actions (visible on hover) */}
+      <div className={cn(
+        "task-row-actions absolute top-1/2 right-0 -translate-y-1/2 inline-flex items-center gap-1",
+        isHovered ? "opacity-100 pointer-events-auto" : "opacity-0 focus-within:opacity-100 pointer-events-none",
+      )}>
         <CopyPromptAction title={task.title} slug={task.slug} />
         {archived && onUnarchive ? (
           <button
@@ -317,7 +323,7 @@ function CopyPromptAction({ title, slug }: { title: string; slug: string }) {
     <button
       type="button"
       className="task-row-action inline-flex items-center justify-center w-7 h-7 p-0 border-none rounded-sm bg-transparent text-text-muted cursor-pointer hover:bg-surface hover:text-accent pointer-events-auto"
-      aria-label="Copy re-enter prompt"
+      aria-label={copied ? "Copied" : "Copy re-enter prompt"}
       title={prompt}
       onClick={() => void copy(prompt)}
     >

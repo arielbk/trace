@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   archiveTask,
@@ -11,6 +14,18 @@ import {
   unarchiveTask,
   visibleTasks,
 } from "./TasksPage.tsx";
+
+beforeAll(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  });
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 function tokens(totalTokens: number): TokenTotals {
   return {
@@ -648,5 +663,122 @@ describe("FilterBar", () => {
       />,
     );
     expect(html).toContain("show-archived-switch");
+  });
+});
+
+describe("TaskRow hover-swap", () => {
+  test("hovering a row hides the meta cluster and reveals the actions", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    const meta = container.querySelector(".task-row-meta")!;
+    const actions = container.querySelector(".task-row-actions")!;
+    const row = container.querySelector(".task-row")!;
+
+    expect(meta).not.toHaveClass("opacity-0");
+    expect(actions).toHaveClass("opacity-0");
+
+    fireEvent.mouseEnter(row);
+
+    expect(meta).toHaveClass("opacity-0");
+    expect(actions).not.toHaveClass("opacity-0");
+  });
+
+  test("mouse leave restores meta and hides actions", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    const meta = container.querySelector(".task-row-meta")!;
+    const actions = container.querySelector(".task-row-actions")!;
+    const row = container.querySelector(".task-row")!;
+
+    fireEvent.mouseEnter(row);
+    fireEvent.mouseLeave(row);
+
+    expect(meta).not.toHaveClass("opacity-0");
+    expect(actions).toHaveClass("opacity-0");
+  });
+
+  test("Re-enter button shows Copied aria-label after click", async () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    const btn = screen.getByRole("button", { name: "Copy re-enter prompt" });
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Copied" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("clicking archive button calls onArchive with the task", () => {
+    const onArchive = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={onArchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const archiveBtn = screen.getByRole("button", { name: "Archive CLI work" });
+    fireEvent.click(archiveBtn);
+
+    expect(onArchive).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
+  });
+
+  test("clicking unarchive button calls onUnarchive with the task", () => {
+    const onUnarchive = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        archivedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onUnarchive={onUnarchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const unarchiveBtn = screen.getByRole("button", {
+      name: "Unarchive CLI work",
+    });
+    fireEvent.click(unarchiveBtn);
+
+    expect(onUnarchive).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
   });
 });
