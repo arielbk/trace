@@ -24,6 +24,6 @@ test("CopyChip renders as an accessible copy button", () => {
   );
 
   expect(html).toContain('type="button"');
-  expect(html).toContain('class="copy-chip"');
+  expect(html).toContain('data-testid="copy-chip"');
   expect(html).toContain('aria-label="Copy 0e1d2c3b-4a59-6879-8a7b-6c5d4e3f2a1b"');
 });

@@ -14,13 +14,14 @@ export function CopyChip({ value, display }: { value: string; display: string })
   return (
     <button
       type="button"
-      className="copy-chip"
+      data-testid="copy-chip"
+      className="inline-flex items-center gap-2 px-2 py-1 border border-chip-border rounded-sm bg-surface text-chip-text font-mono text-base leading-snug cursor-pointer hover:border-border-strong"
       title={value}
       aria-label={`Copy ${value}`}
       onClick={() => void copy(value)}
     >
-      <span className="copy-chip-value">{display}</span>
-      <span className="copy-chip-status" aria-live="polite">
+      <span>{display}</span>
+      <span className="text-accent text-xs font-bold uppercase empty:hidden" aria-live="polite">
         {copied ? "Copied" : ""}
       </span>
     </button>

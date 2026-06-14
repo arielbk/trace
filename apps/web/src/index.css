@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+/* dark: responds to data-theme="dark" on any ancestor */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Tailwind design tokens — sourced from the CSS custom properties below so
+ * utilities like bg-bg, text-text-muted, rounded-md, font-mono etc. pick up
+ * light/dark values automatically at runtime.
+ */
+@theme inline {
+  /* Colors */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-strong: var(--color-border-strong);
+  --color-chip-border: var(--color-chip-border);
+  --color-chip-text: var(--color-chip-text);
+  --color-chip-bg: var(--color-chip-bg);
+  --color-accent: var(--color-accent);
+  --color-tag-claude: var(--color-tag-claude);
+  --color-tag-codex: var(--color-tag-codex);
+  --color-tag-codex-bg: var(--color-tag-codex-bg);
+  --color-tag-doc: var(--color-tag-doc);
+  --color-tag-text: var(--color-tag-text);
+  --color-selection-bg: var(--color-selection-bg);
+  --color-selection-text: var(--color-selection-text);
+
+  /* Font families */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* Font sizes — direct one-to-one mapping from design tokens */
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-base: var(--text-base);
+  --text-md: var(--text-md);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+
+  /* Radii */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-pill: var(--radius-pill);
+}
+
+/*
+ * Theme tokens. All color, spacing, type-scale, radius and layout values live
+ * as CSS custom properties here. Light is the default palette on :root; the
+ * dark palette overrides only the color tokens under [data-theme="dark"].
+ * No hardcoded hex colors should appear anywhere below these two blocks —
+ * see styles.test.ts, which enforces it.
+ */
+:root {
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+
+  /* Type scale */
+  --text-xs: 0.7rem;
+  --text-sm: 0.78rem;
+  --text-base: 0.9rem;
+  --text-md: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 2rem;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  /* Layout */
+  --max-width: 960px;
+  --font-sans: system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Light palette */
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-text: #171717;
+  --color-text-muted: #667085;
+  --color-border: #dfe3e8;
+  --color-border-subtle: #eeeeee;
+  --color-border-strong: #98a2b3;
+  --color-chip-border: #d0d5dd;
+  --color-chip-text: #475467;
+  --color-chip-bg: #eef1f4;
+  --color-accent: #1f6f5b;
+  --color-tag-claude: #d97757;
+  --color-tag-codex: #3941ff;
+  --color-tag-codex-bg: #ffffff;
+  --color-tag-doc: #2f5fa8;
+  --color-tag-text: #ffffff;
+  --color-selection-bg: #bfe3d7;
+  --color-selection-text: #0c2b22;
+}
+
+[data-theme="dark"] {
+  --color-bg: #0f1419;
+  --color-surface: #1a2027;
+  --color-text: #e6e8eb;
+  --color-text-muted: #9aa4b2;
+  --color-border: #2a313a;
+  --color-border-subtle: #232a32;
+  --color-border-strong: #3a434f;
+  --color-chip-border: #3a434f;
+  --color-chip-text: #c2cad4;
+  --color-chip-bg: #232a32;
+  --color-accent: #3ba88c;
+  --color-tag-claude: #f08a6a;
+  --color-tag-codex: #7a9dff;
+  --color-tag-codex-bg: #ffffff;
+  --color-tag-doc: #6a9fd8;
+  --color-tag-text: #0f1419;
+  --color-selection-bg: #2f6f5d;
+  --color-selection-text: #f2f5f4;
+}
+
+body {
+  font-family: var(--font-sans);
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+::selection {
+  background: var(--color-selection-bg);
+  color: var(--color-selection-text);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+}

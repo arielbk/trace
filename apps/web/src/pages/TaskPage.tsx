@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import {
   freshTokenTotal,
@@ -78,7 +78,7 @@ export function TaskTimelineView({
             />
           </div>
           {timeline.task.description ? (
-            <p className="task-description">{timeline.task.description}</p>
+            <p data-testid="task-description" className="m-0 text-text-muted text-sm leading-relaxed">{timeline.task.description}</p>
           ) : null}
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
@@ -173,11 +173,30 @@ const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   doc: "Document",
 };
 
+const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
+  claude: {
+    color: "var(--color-tag-claude)",
+    background: "color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface))",
+    borderColor: "color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border))",
+  },
+  codex: {
+    color: "var(--color-tag-codex)",
+    background: "var(--color-tag-codex-bg)",
+    borderColor: "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+  },
+  doc: {
+    color: "var(--color-tag-doc)",
+    background: "color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface))",
+    borderColor: "color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border))",
+  },
+};
+
 /** Inline SVG glyph for each timeline entry type; colored via the type token. */
 function TypeIcon({ type }: { type: SessionTool | "doc" }) {
   return (
     <span
-      className={`type-icon type-icon-${type}`}
+      className={`type-icon type-icon-${type} inline-flex items-center justify-center w-10 h-10 border rounded-md`}
+      style={TYPE_ICON_STYLES[type]}
       role="img"
       aria-label={TYPE_LABELS[type]}
     >
@@ -284,12 +303,12 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
           </div>
         ))}
       </dl>
-      <p className="token-summary-cache">
-        <span className="token-summary-cache-label">Cache</span>
+      <p data-testid="token-summary-cache" className="flex flex-wrap items-baseline gap-2 mt-3 m-0 text-text-muted text-sm tabular-nums">
+        <span className="text-xs font-bold uppercase [letter-spacing:0.04em]">Cache</span>
         <span title={String(totals.cacheReadInputTokens)}>
           {formatTokensCompact(totals.cacheReadInputTokens)} read
         </span>
-        <span className="token-summary-cache-sep" aria-hidden="true">
+        <span className="opacity-60" aria-hidden="true">
           ·
         </span>
         <span title={String(totals.cacheCreationInputTokens)}>

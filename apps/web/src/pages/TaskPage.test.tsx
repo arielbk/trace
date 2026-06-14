@@ -412,7 +412,7 @@ test("TaskTimelineView renders the task description under the title when present
     </MemoryRouter>,
   );
 
-  expect(html).toContain('class="task-description"');
+  expect(html).toContain('data-testid="task-description"');
   expect(html).toContain(description);
 });
 
@@ -442,7 +442,7 @@ test("TaskTimelineView omits the description block when absent", () => {
     </MemoryRouter>,
   );
 
-  expect(html).not.toContain("task-description");
+  expect(html).not.toContain('data-testid="task-description"');
 });
 
 test("TokenSummary renders cache reads/writes as a secondary line below the cards", () => {
@@ -472,7 +472,7 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
   );
 
   // Cache reads/writes render on the dedicated secondary line, not as a card.
-  expect(html).toContain('class="token-summary-cache"');
+  expect(html).toContain('data-testid="token-summary-cache"');
   // Cache data is still visible (not hidden), labeled, without the old "+".
   expect(html).toContain("1.0M read");
   expect(html).toContain("999 written");
