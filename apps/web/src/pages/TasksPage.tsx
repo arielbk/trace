@@ -26,27 +26,23 @@ import {
   formatTokensCompact,
   truncateId,
 } from "../format.ts";
+import {
+  byActivityDesc,
+  buildSubtitle,
+  filterByProject,
+  getProjectCounts,
+  projectDisplayName,
+  type ProjectCount,
+  visibleTasks,
+} from "../lib/task-list.ts";
+export type { ProjectCount, ProjectTaskGroup } from "../lib/task-list.ts";
+export { buildSubtitle, filterByProject, getProjectCounts, visibleTasks } from "../lib/task-list.ts";
 
 type ArchiveTaskResult = Pick<TaskSummary, "id" | "archivedAt">;
 type FetchTask = typeof fetch;
-type VisibilityOptions = {
-  showArchived?: boolean;
-};
 const ARCHIVE_SETTLE_MS = 2200;
 const ARCHIVE_EXIT_MS = 350;
 const ARCHIVE_SUCCESS_HOLD_MS = ARCHIVE_SETTLE_MS - ARCHIVE_EXIT_MS;
-
-export type ProjectCount = {
-  projectRoot: string;
-  displayName: string;
-  count: number;
-};
-
-export type ProjectTaskGroup = {
-  projectRoot: string;
-  displayName: string;
-  tasks: TaskSummary[];
-};
 
 export function TasksPage() {
   const [tasks, setTasks] = useState<TaskSummary[] | null>(null);
@@ -142,17 +138,6 @@ export function TasksPage() {
       />
     </main>
   );
-}
-
-export function buildSubtitle(
-  taskCount: number,
-  hiddenArchivedCount: number,
-): string {
-  const parts = [`${taskCount} ${taskCount === 1 ? "task" : "tasks"}`];
-  if (hiddenArchivedCount > 0) {
-    parts.push(`${hiddenArchivedCount} archived hidden`);
-  }
-  return parts.join("  ·  ");
 }
 
 export function TaskList({
@@ -536,63 +521,7 @@ function isUntitled(title: string): boolean {
   return title === "" || truncateId(title) !== title;
 }
 
-export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
-  const groups = new Map<string, ProjectTaskGroup>();
-
-  for (const task of tasks) {
-    const projectRoot = task.projectRoot || "Unknown project";
-    const group = groups.get(projectRoot);
-
-    if (group) {
-      group.tasks.push(task);
-      continue;
-    }
-
-    groups.set(projectRoot, {
-      projectRoot,
-      displayName: projectDisplayName(projectRoot),
-      tasks: [task],
-    });
-  }
-
-  const ordered = Array.from(groups.values());
-  for (const group of ordered) {
-    group.tasks.sort(byActivityDesc);
-  }
-  ordered.sort(
-    (a, b) => activityEpoch(b.tasks[0]!) - activityEpoch(a.tasks[0]!),
-  );
-
-  return ordered;
-}
-
-export function filterByProject(
-  tasks: TaskSummary[],
-  projectRoot: string | null,
-): TaskSummary[] {
-  if (!projectRoot) return tasks;
-  return tasks.filter((t) => t.projectRoot === projectRoot);
-}
-
-export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
-  const map = new Map<string, ProjectCount>();
-  for (const task of tasks) {
-    const root = task.projectRoot || "Unknown";
-    const existing = map.get(root);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      map.set(root, {
-        projectRoot: root,
-        displayName: projectDisplayName(root),
-        count: 1,
-      });
-    }
-  }
-  return Array.from(map.values()).sort((a, b) =>
-    a.displayName.localeCompare(b.displayName),
-  );
-}
+export { groupTasksByProject } from "../lib/task-list.ts";
 
 export function FilterBar({
   projects,
@@ -783,17 +712,6 @@ export function FilterBar({
   );
 }
 
-export function visibleTasks(
-  tasks: TaskSummary[],
-  options: VisibilityOptions = {},
-): TaskSummary[] {
-  if (options.showArchived) {
-    return tasks;
-  }
-
-  return tasks.filter((task) => task.archivedAt === null);
-}
-
 export async function archiveTask(
   ref: string,
   fetcher: FetchTask = fetch,
@@ -826,16 +744,4 @@ export async function unarchiveTask(
   return (await response.json()) as ArchiveTaskResult;
 }
 
-function byActivityDesc(a: TaskSummary, b: TaskSummary): number {
-  return activityEpoch(b) - activityEpoch(a);
-}
 
-function activityEpoch(task: TaskSummary): number {
-  return new Date(task.lastActivityAt).getTime();
-}
-
-function projectDisplayName(projectRoot: string): string {
-  const normalizedPath = projectRoot.replace(/[/\\]+$/, "");
-  const parts = normalizedPath.split(/[/\\]/).filter(Boolean);
-  return parts.at(-1) ?? projectRoot;
-}
