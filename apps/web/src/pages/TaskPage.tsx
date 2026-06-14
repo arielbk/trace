@@ -5,7 +5,7 @@ import {
   type SessionTool,
   type TaskTimeline,
   type TokenTotals,
-} from "@trace/core";
+} from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import {
@@ -54,7 +54,7 @@ export function TaskTimelineView({
   now?: Date;
 }) {
   return (
-    <main className="max-w-[960px] mx-auto px-6 py-10">
+    <main className="max-w-app mx-auto px-6 py-10">
       <AppHeader
         project={
           timeline.task.projectRoot
@@ -78,7 +78,12 @@ export function TaskTimelineView({
             />
           </div>
           {timeline.task.description ? (
-            <p data-testid="task-description" className="m-0 text-text-muted text-sm leading-relaxed">{timeline.task.description}</p>
+            <p
+              data-testid="task-description"
+              className="m-0 text-text-muted text-sm leading-relaxed"
+            >
+              {timeline.task.description}
+            </p>
           ) : null}
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
@@ -90,7 +95,7 @@ export function TaskTimelineView({
           {timeline.items.map((item) =>
             item.type === "session" ? (
               <li
-                className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 items-start py-4 border-b border-border"
+                className="grid timeline-grid gap-4 items-start py-4 border-b border-border"
                 key={`session:${item.session.id}`}
               >
                 <TypeIcon type={item.session.tool} />
@@ -105,9 +110,9 @@ export function TaskTimelineView({
                       display={truncatePath(item.session.transcriptPath)}
                     />
                   )}
-                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted [overflow-wrap:anywhere] m-0">
+                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
                     {item.session.model ? (
-                      <span className="inline-flex items-center w-fit min-h-[1.6rem] px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                      <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
                         {item.session.model}
                       </span>
                     ) : null}
@@ -138,7 +143,7 @@ export function TaskTimelineView({
               </li>
             ) : (
               <li
-                className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 items-start py-4 border-b border-border"
+                className="grid timeline-grid gap-4 items-start py-4 border-b border-border"
                 key={`doc:${item.doc.path}`}
               >
                 <TypeIcon type="doc" />
@@ -285,7 +290,7 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
   return (
     <div className="mt-5">
       <dl
-        className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-3"
+        className="grid token-summary-grid gap-3"
         aria-label="Token totals"
       >
         {cards.map((card) => (
@@ -303,8 +308,11 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
           </div>
         ))}
       </dl>
-      <p data-testid="token-summary-cache" className="flex flex-wrap items-baseline gap-2 mt-3 m-0 text-text-muted text-sm tabular-nums">
-        <span className="text-xs font-bold uppercase [letter-spacing:0.04em]">Cache</span>
+      <p
+        data-testid="token-summary-cache"
+        className="flex flex-wrap items-baseline gap-2 mt-3 m-0 text-text-muted text-sm tabular-nums"
+      >
+        <span className="text-xs font-bold uppercase">Cache</span>
         <span title={String(totals.cacheReadInputTokens)}>
           {formatTokensCompact(totals.cacheReadInputTokens)} read
         </span>
