@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
+import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
   type SessionTool,
@@ -158,6 +159,7 @@ export function TaskTimelineView({
         </div>
         <TokenSummary totals={timeline.tokenTotals} />
       </header>
+      <LeftOffPanel state={timeline.state} />
       {timeline.items.length === 0 ? (
         <p className="text-text-muted mt-5">No timeline items found.</p>
       ) : (
@@ -239,6 +241,91 @@ export function TaskTimelineView({
         </ol>
       )}
     </main>
+  );
+}
+
+export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
+  if (!state) {
+    return (
+      <p className="mt-5 text-sm text-text-muted">
+        No context saved yet — run{" "}
+        <code className="font-mono text-xs">/handoff</code> to capture where you
+        left off.
+      </p>
+    );
+  }
+
+  return (
+    <section className="mt-5 mb-5 p-4 bg-surface border border-border rounded-lg">
+      <h2 className="mt-0 mb-3 text-sm font-bold uppercase tracking-wide text-text-muted">
+        Where you left off
+      </h2>
+      {state.summary ? (
+        <p
+          className="mt-0 mb-3 text-sm leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: state.summary }}
+        />
+      ) : null}
+      {state.decisions.length > 0 ? (
+        <div className="mb-3">
+          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            Decisions
+          </h3>
+          <ul className="mt-0 mb-0 pl-4 space-y-1">
+            {state.decisions.map((d, i) => (
+              <li
+                key={i}
+                className="text-sm"
+                dangerouslySetInnerHTML={{ __html: d }}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {state.currentState.length > 0 ? (
+        <div className="mb-3">
+          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            Current state
+          </h3>
+          <ul className="mt-0 mb-0 pl-4 space-y-1">
+            {state.currentState.map((s, i) => (
+              <li
+                key={i}
+                className="text-sm"
+                dangerouslySetInnerHTML={{ __html: s }}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {state.nextStep ? (
+        <div className="mb-3">
+          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            Next step
+          </h3>
+          <p
+            className="mt-0 mb-0 text-sm"
+            dangerouslySetInnerHTML={{ __html: state.nextStep }}
+          />
+        </div>
+      ) : null}
+      {state.openQuestions.length > 0 ? (
+        <div className="mb-0">
+          <h3 className="mt-0 mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            Open questions
+          </h3>
+          <ul className="mt-0 mb-0 pl-4 space-y-1">
+            {state.openQuestions.map((q, i) => (
+              <li
+                key={i}
+                className="text-sm"
+                dangerouslySetInnerHTML={{ __html: q }}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

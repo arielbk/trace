@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
-import { TaskTimelineView } from "./TaskPage.tsx";
+import type { ParsedStateMd } from "@trace/core";
+import { LeftOffPanel, TaskTimelineView } from "./TaskPage.tsx";
 
 beforeAll(() => {
   Object.defineProperty(navigator, "clipboard", {
@@ -759,4 +760,111 @@ test("TaskTimelineView Re-enter button copies re-enter prompt to clipboard on cl
       'Re-enter the trace task "usable v1" (usable-v1)',
     ),
   );
+});
+
+// LeftOffPanel tests
+
+test("LeftOffPanel renders all sections when full state is present", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on the checkout redesign",
+    decisions: ["Use React Query for data fetching", "Skip caching layer"],
+    currentState: ["Auth flow is done", "Payment step is blocked"],
+    nextStep: "Wire up the Stripe webhook handler",
+    openQuestions: ["Do we support PayPal?"],
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Working on the checkout redesign");
+  expect(html).toContain("Use React Query for data fetching");
+  expect(html).toContain("Skip caching layer");
+  expect(html).toContain("Auth flow is done");
+  expect(html).toContain("Payment step is blocked");
+  expect(html).toContain("Wire up the Stripe webhook handler");
+  expect(html).toContain("Do we support PayPal?");
+  // All section headers present
+  expect(html).toContain("Decisions");
+  expect(html).toContain("Current state");
+  expect(html).toContain("Next step");
+  expect(html).toContain("Open questions");
+});
+
+test("LeftOffPanel omits headers for missing sections (partial state)", () => {
+  const state: ParsedStateMd = {
+    summary: "Auth migration in progress",
+    decisions: [],
+    currentState: ["JWT tokens implemented"],
+    nextStep: undefined,
+    openQuestions: [],
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Auth migration in progress");
+  expect(html).toContain("JWT tokens implemented");
+  // Sections with no content should not render their headers
+  expect(html).not.toContain("Decisions");
+  expect(html).not.toContain("Next step");
+  expect(html).not.toContain("Open questions");
+});
+
+test("LeftOffPanel renders handoff prompt when state is absent", () => {
+  const html = renderToStaticMarkup(<LeftOffPanel state={undefined} />);
+
+  expect(html).toContain("/handoff");
+  // No section headers when there's no state
+  expect(html).not.toContain("Where you left off");
+  expect(html).not.toContain("Decisions");
+});
+
+test("LeftOffPanel renders HTML fragments without escaping inline markup", () => {
+  const state: ParsedStateMd = {
+    decisions: [],
+    currentState: [],
+    openQuestions: [],
+    summary: "Working on <strong>auth</strong>",
+    nextStep: "Fix <code>login()</code>",
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  // The pre-rendered HTML fragments must not be double-escaped
+  expect(html).toContain("<strong>auth</strong>");
+  expect(html).toContain("<code>login()</code>");
+});
+
+test("TaskTimelineView renders LeftOffPanel with state when timeline has state", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on billing integration",
+    decisions: ["Use Stripe"],
+    currentState: [],
+    openQuestions: [],
+  };
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    state,
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Working on billing integration");
+});
+
+test("TaskTimelineView renders handoff prompt when timeline has no state", () => {
+  const timeline = baseTimeline();
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("/handoff");
 });
