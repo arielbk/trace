@@ -54,7 +54,7 @@ export function TaskTimelineView({
   now?: Date;
 }) {
   return (
-    <main className="task-page">
+    <main className="max-w-[960px] mx-auto px-6 py-10">
       <AppHeader
         project={
           timeline.task.projectRoot
@@ -63,10 +63,12 @@ export function TaskTimelineView({
         }
         context={timeline.task.title}
       />
-      <header className="task-header">
-        <div className="task-heading">
-          <div className="task-title-row">
-            <h1>{timeline.task.title}</h1>
+      <header className="pb-5 border-b border-border">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h1 className="m-0 text-xl font-bold leading-tight">
+              {timeline.task.title}
+            </h1>
             <CopyChip
               value={buildReEnterPrompt(
                 timeline.task.title,
@@ -82,28 +84,35 @@ export function TaskTimelineView({
         <TokenSummary totals={timeline.tokenTotals} />
       </header>
       {timeline.items.length === 0 ? (
-        <p className="empty-state">No timeline items found.</p>
+        <p className="text-text-muted mt-5">No timeline items found.</p>
       ) : (
-        <ol className="timeline-list">
+        <ol className="mt-5 list-none p-0 m-0">
           {timeline.items.map((item) =>
             item.type === "session" ? (
-              <li className="timeline-item" key={`session:${item.session.id}`}>
+              <li
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 items-start py-4 border-b border-border"
+                key={`session:${item.session.id}`}
+              >
                 <TypeIcon type={item.session.tool} />
-                <div className="timeline-item-body">
+                <div className="min-w-0">
                   {item.sessionName ? (
-                    <span className="session-name">{item.sessionName}</span>
+                    <span className="text-base font-semibold">
+                      {item.sessionName}
+                    </span>
                   ) : (
                     <CopyChip
                       value={item.session.transcriptPath}
                       display={truncatePath(item.session.transcriptPath)}
                     />
                   )}
-                  <p className="item-meta">
+                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted [overflow-wrap:anywhere] m-0">
                     {item.session.model ? (
-                      <span className="model-chip">{item.session.model}</span>
+                      <span className="inline-flex items-center w-fit min-h-[1.6rem] px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                        {item.session.model}
+                      </span>
                     ) : null}
                     <span
-                      className="item-tokens"
+                      className="font-mono"
                       title={formatTokenBreakdown(item.session.tokenTotals)}
                     >
                       {hasCapturedTokens(item.session.tokenTotals) ? (
@@ -121,27 +130,30 @@ export function TaskTimelineView({
                         "tokens unavailable"
                       )}
                     </span>
-                    <span className="timeline-item-time">
+                    <span className="ml-auto text-text-muted text-sm">
                       {formatRelativeTime(item.createdAt, now)}
                     </span>
                   </p>
                 </div>
               </li>
             ) : (
-              <li className="timeline-item" key={`doc:${item.doc.path}`}>
+              <li
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 items-start py-4 border-b border-border"
+                key={`doc:${item.doc.path}`}
+              >
                 <TypeIcon type="doc" />
-                <div className="timeline-item-body">
+                <div className="min-w-0">
                   <CopyChip
                     value={item.doc.path}
                     display={truncatePath(item.doc.path)}
                   />
-                  <p className="item-meta">
+                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
                     {item.sizeBytes !== null ? (
-                      <span className="doc-size">
+                      <span className="font-mono tabular-nums">
                         {formatBytes(item.sizeBytes)}
                       </span>
                     ) : null}
-                    <span className="timeline-item-time">
+                    <span className="ml-auto text-text-muted text-sm">
                       {formatRelativeTime(item.createdAt, now)}
                     </span>
                   </p>
@@ -252,12 +264,21 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <div className="token-summary-wrap">
-      <dl className="token-summary" aria-label="Token totals">
+    <div className="mt-5">
+      <dl
+        className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-3"
+        aria-label="Token totals"
+      >
         {cards.map((card) => (
-          <div key={card.label}>
-            <dt>{card.label}</dt>
-            <dd title={String(card.value)}>
+          <div
+            key={card.label}
+            className="min-w-20 p-3 bg-surface border border-border rounded-md"
+          >
+            <dt className="text-text-muted text-xs">{card.label}</dt>
+            <dd
+              className="mt-1 text-lg font-bold tabular-nums m-0"
+              title={String(card.value)}
+            >
               {formatTokensCompact(card.value)}
             </dd>
           </div>
