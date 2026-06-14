@@ -1,3 +1,52 @@
+@import "tailwindcss";
+
+/* dark: responds to data-theme="dark" on any ancestor */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Tailwind design tokens — sourced from the CSS custom properties below so
+ * utilities like bg-bg, text-text-muted, rounded-md, font-mono etc. pick up
+ * light/dark values automatically at runtime.
+ */
+@theme inline {
+  /* Colors */
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-border: var(--color-border);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-border-strong: var(--color-border-strong);
+  --color-chip-border: var(--color-chip-border);
+  --color-chip-text: var(--color-chip-text);
+  --color-chip-bg: var(--color-chip-bg);
+  --color-accent: var(--color-accent);
+  --color-tag-claude: var(--color-tag-claude);
+  --color-tag-codex: var(--color-tag-codex);
+  --color-tag-codex-bg: var(--color-tag-codex-bg);
+  --color-tag-doc: var(--color-tag-doc);
+  --color-tag-text: var(--color-tag-text);
+  --color-selection-bg: var(--color-selection-bg);
+  --color-selection-text: var(--color-selection-text);
+
+  /* Font families */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  /* Font sizes — direct one-to-one mapping from design tokens */
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-base: var(--text-base);
+  --text-md: var(--text-md);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+
+  /* Radii */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-pill: var(--radius-pill);
+}
+
 /*
  * Theme tokens. All color, spacing, type-scale, radius and layout values live
  * as CSS custom properties here. Light is the default palette on :root; the
@@ -30,7 +79,7 @@
   /* Layout */
   --max-width: 960px;
   --font-sans: system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Light palette */
   --color-bg: #f7f8fa;
