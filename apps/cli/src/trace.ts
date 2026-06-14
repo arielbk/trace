@@ -16,9 +16,7 @@ import {
   type TokenTotals,
 } from "@trace/core";
 import { resolveDbPath } from "./db-path.ts";
-import { runInit } from "./installer.ts";
-import { openBrowser, startTraceServe } from "./serve.ts";
-import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
+import { buildTraceCittyRoot, runCittyDispatch } from "./trace-citty.ts";
 import {
   copyFileSync,
   lstatSync,
@@ -46,37 +44,11 @@ export function runTraceCli(
 ): CommandResult {
   const [resource, action, ...args] = argv;
 
-  if (resource === "init") {
-    return success(runInit(env, cwd));
-  }
-
-  if (resource === "hook") {
-    if (action === "session-start" && args.length === 0) {
-      return runClaudeSessionStartHook(stdin, env);
-    }
-
-    return failure("Usage: trace hook session-start\n");
-  }
-
-  if (resource === "serve") {
-    // Long-running: the HTTP server keeps the event loop alive after we return,
-    // so the process stays up until Ctrl-C. We resolve the URL asynchronously
-    // and print it; the empty CommandResult just lets the caller fall through.
-    startTraceServe(env)
-      .then(({ url }) => {
-        process.stdout.write(`trace serve listening on ${url}\n`);
-        openBrowser(url);
-      })
-      .catch((error) => {
-        process.stderr.write(
-          `trace serve failed: ${
-            error instanceof Error ? error.message : String(error)
-          }\n`,
-        );
-        process.exitCode = 1;
-      });
-    return success("");
-  }
+  // Route init, serve, and hook through the citty command tree.
+  // task / session / skill fall through to the hand-rolled dispatch below.
+  const cittyRoot = buildTraceCittyRoot(env, cwd, stdin);
+  const cittyResult = runCittyDispatch(cittyRoot, argv);
+  if (cittyResult !== null) return cittyResult;
 
   let databasePath: string;
   try {
