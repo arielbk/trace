@@ -868,3 +868,79 @@ test("TaskTimelineView renders handoff prompt when timeline has no state", () =>
 
   expect(html).toContain("/handoff");
 });
+
+// activity-timeline-restyle: vertical connector tests
+
+test("TaskTimelineView renders connector between timeline items but not after the last", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        session: {
+          id: "s1",
+          transcriptPath: "/tmp/s1.jsonl",
+          tool: "claude",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        sizeBytes: null,
+      },
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        session: {
+          id: "s2",
+          transcriptPath: "/tmp/s2.jsonl",
+          tool: "codex",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0 },
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
+        sessionName: null,
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // 3 items → 2 connectors (between items 1-2 and 2-3; none after item 3)
+  const connectorCount = (html.match(/data-testid="timeline-connector"/g) ?? []).length;
+  expect(connectorCount).toBe(2);
+});
+
+test("TaskTimelineView renders no connector when there is only one timeline item", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/b.md", createdAt: "2026-05-29T00:01:00.000Z" },
+        sizeBytes: null,
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).not.toContain('data-testid="timeline-connector"');
+});

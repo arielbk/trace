@@ -164,13 +164,23 @@ export function TaskTimelineView({
         <p className="text-text-muted mt-5">No timeline items found.</p>
       ) : (
         <ol className="mt-5 list-none p-0 m-0">
-          {timeline.items.map((item) =>
-            item.type === "session" ? (
+          {timeline.items.map((item, index) => {
+            const isLast = index === timeline.items.length - 1;
+            return item.type === "session" ? (
               <li
-                className="grid timeline-grid gap-4 items-start py-4 border-b border-border"
+                className="grid timeline-grid gap-4 py-4 border-b border-border"
                 key={`session:${item.session.id}`}
               >
-                <TypeIcon type={item.session.tool} />
+                <div className="flex flex-col items-center gap-2">
+                  <TypeIcon type={item.session.tool} />
+                  {!isLast && (
+                    <div
+                      className="flex-1 w-px bg-border"
+                      aria-hidden="true"
+                      data-testid="timeline-connector"
+                    />
+                  )}
+                </div>
                 <div className="min-w-0">
                   {item.sessionName ? (
                     <span className="text-base font-semibold">
@@ -215,10 +225,19 @@ export function TaskTimelineView({
               </li>
             ) : (
               <li
-                className="grid timeline-grid gap-4 items-start py-4 border-b border-border"
+                className="grid timeline-grid gap-4 py-4 border-b border-border"
                 key={`doc:${item.doc.path}`}
               >
-                <TypeIcon type="doc" />
+                <div className="flex flex-col items-center gap-2">
+                  <TypeIcon type="doc" />
+                  {!isLast && (
+                    <div
+                      className="flex-1 w-px bg-border"
+                      aria-hidden="true"
+                      data-testid="timeline-connector"
+                    />
+                  )}
+                </div>
                 <div className="min-w-0">
                   <CopyChip
                     value={item.doc.path}
@@ -236,8 +255,8 @@ export function TaskTimelineView({
                   </p>
                 </div>
               </li>
-            ),
-          )}
+            );
+          })}
         </ol>
       )}
     </main>
