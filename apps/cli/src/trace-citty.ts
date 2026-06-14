@@ -2,12 +2,14 @@ import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import {
   getTranscriptAdapter,
+  inferSessionIdentity,
   openTraceStore,
   resolveProjectRootArg,
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
   type ActiveTask,
+  type ReEntryManifest,
   type Session,
   type SessionTool,
   type Task,
@@ -381,6 +383,234 @@ function parseClaudeScanArgs(args: string[], env: Env): string {
   return `${env.HOME}/.claude/projects`;
 }
 
+function skillWorkOnTaskUsage(): string {
+  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex>] [--model <name>] [--description <text>] [--project <dir>]";
+}
+
+function skillReEnterUsage(): string {
+  return "Usage: trace skill re-enter <ref>";
+}
+
+function skillDocsDirUsage(): string {
+  return "Usage: trace skill docs-dir [--id <session>] [--project <dir>]";
+}
+
+function recallCandidatesUsage(): string {
+  return "Usage: trace skill recall-candidates [--project <dir>]";
+}
+
+function parseSkillWorkOnTaskArgs(
+  args: string[],
+  env: Env,
+): {
+  id: string;
+  transcriptPath: string;
+  tool: SessionTool;
+  model?: string;
+  tokenTotals: Partial<TokenTotals>;
+  description?: string;
+  project?: string;
+} {
+  let id: string | undefined;
+  let transcriptPath: string | undefined;
+  let tool: string | undefined;
+  let model: string | undefined;
+  let description: string | undefined;
+  let project: string | undefined;
+
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+
+    if (!flag || !value) {
+      throw new Error(
+        "Skill work-on-task accepts --id, --transcript, --tool, --model, --description, and --project",
+      );
+    }
+
+    if (flag === "--id") id = value;
+    else if (flag === "--transcript") transcriptPath = value;
+    else if (flag === "--tool") tool = value;
+    else if (flag === "--model") model = value;
+    else if (flag === "--description") description = value;
+    else if (flag === "--project") project = value;
+    else throw new Error(`Unknown option: ${flag}`);
+  }
+
+  let toolOverride: SessionTool | undefined;
+  if (tool === undefined) {
+    toolOverride = undefined;
+  } else if (tool === "claude" || tool === "codex") {
+    toolOverride = tool;
+  } else {
+    throw new Error("Session tool must be claude or codex");
+  }
+
+  const identity = inferSessionIdentity(env, {
+    tool: toolOverride,
+    id,
+    transcriptPath,
+  });
+
+  if (identity.id === undefined || identity.transcriptPath === undefined) {
+    throw new Error(
+      "Skill work-on-task requires --id or a current session env var",
+    );
+  }
+
+  return {
+    id: identity.id,
+    transcriptPath: identity.transcriptPath,
+    tool: identity.tool,
+    model,
+    tokenTotals: {},
+    description,
+    project,
+  };
+}
+
+function parseRecallCandidatesArgs(args: string[]): string | undefined {
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(recallCandidatesUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  return project;
+}
+
+function parseSkillDocsDirArgs(args: string[]): { id?: string; project?: string } {
+  let id: string | undefined;
+  let project: string | undefined;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--id") {
+      const value = args[index + 1];
+      if (!value) throw new Error(skillDocsDirUsage());
+      id = value;
+      index += 2;
+    } else if (flag === "--project") {
+      const value = args[index + 1];
+      if (!value) throw new Error(skillDocsDirUsage());
+      project = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  return { id, project };
+}
+
+function resolveSkillTaskRef(
+  tasks: Task[],
+  ref: string,
+  getById: (id: string) => Task | null,
+): Task | null {
+  const trimmed = ref.trim();
+  if (trimmed.length === 0) return null;
+
+  const byId = getById(trimmed);
+  if (byId) return byId;
+
+  const bySlug = tasks.find((task) => task.slug === trimmed);
+  if (bySlug) return bySlug;
+
+  const normalized = trimmed.toLowerCase();
+  const byTitle = tasks.find(
+    (task) => task.title.trim().toLowerCase() === normalized,
+  );
+  return byTitle ?? null;
+}
+
+function taskNotFoundMessage(tasks: Task[], ref: string): string {
+  const needle = ref.trim().toLowerCase();
+  const near = tasks
+    .filter(
+      (task) =>
+        needle.length > 0 &&
+        (task.slug.includes(needle) || task.title.toLowerCase().includes(needle)),
+    )
+    .slice(0, 5);
+
+  const lines = [`Task not found: ${ref}`];
+  if (near.length > 0) {
+    lines.push("Near candidates:");
+    for (const task of near) {
+      lines.push(`  ${task.slug} — ${task.title}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function formatSkillWorkOnTaskResult(
+  session: Session,
+  task: Task,
+  databasePath: string,
+): string {
+  if (!session.taskId) {
+    return formatSessionSummary(session);
+  }
+
+  return [
+    formatSessionSummary(session).trimEnd(),
+    `taskDocsDir: ${resolveTaskDocsDir(databasePath, task.slug)}`,
+    "",
+  ].join("\n");
+}
+
+function formatReEntryManifest(manifest: ReEntryManifest): string {
+  const lines = [
+    "task:",
+    `  id: ${manifest.task.id}`,
+    `  title: ${manifest.task.title}`,
+    ...(manifest.task.description
+      ? [`  description: ${manifest.task.description}`]
+      : []),
+    `  projectRoot: ${manifest.task.projectRoot}`,
+  ];
+
+  if (manifest.state) {
+    lines.push("state:", `  path: ${manifest.state.path}`);
+  }
+
+  lines.push(`taskDocsDir: ${manifest.taskDocsDir}`);
+
+  if (manifest.docs.length === 0) {
+    lines.push("docs: []");
+  } else {
+    lines.push("docs:", ...manifest.docs.map((doc) => `- path: ${doc.path}`));
+  }
+
+  if (manifest.sessions.length === 0) {
+    lines.push("sessions: []");
+  } else {
+    lines.push(
+      "sessions:",
+      ...manifest.sessions.flatMap((session) => [
+        `- id: ${session.id}`,
+        `  tool: ${session.tool}`,
+        `  transcript: ${session.transcriptPath}`,
+        `  mostRecent: ${session.isMostRecent ? "true" : "false"}`,
+        ...(session.model ? [`  model: ${session.model}`] : []),
+      ]),
+    );
+  }
+
+  return [...lines, ""].join("\n");
+}
+
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
 // so this is sound at runtime even though it looks like a type override.
@@ -741,6 +971,171 @@ export function buildTraceCittyRoot(
               }
 
               return failure("Usage: trace session scan --codex | --claude");
+            },
+          }),
+        },
+      }),
+
+      skill: defineCommand({
+        meta: { description: "Trace skill helpers" },
+        subCommands: {
+          "work-on-task": defineCommand({
+            meta: { description: "Bind current session to a task" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              if (isHelpFlag(args[0])) return success(`${skillWorkOnTaskUsage()}\n`);
+              const titleError = rejectFlagTitle(args[0], "skill work-on-task");
+              if (titleError) return titleError;
+
+              const title = args[0];
+              if (!title) return failure("Task title is required");
+
+              let parsed: ReturnType<typeof parseSkillWorkOnTaskArgs>;
+              try {
+                parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              const { description, project, ...registerInput } = parsed;
+
+              let workOnTaskProjectRoot: string;
+              try {
+                workOnTaskProjectRoot = resolveProjectRootArg(project, cwd);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              return withStore(env, (store, databasePath) => {
+                const session = store.registerSession(registerInput);
+
+                const resolvedTask =
+                  resolveSkillTaskRef(store.listTasks(), title, (id) =>
+                    store.getTask(id),
+                  ) ?? store.createTask(title, workOnTaskProjectRoot, description);
+
+                const task = resolvedTask.archivedAt
+                  ? store.unarchiveTask(resolvedTask.id)
+                  : resolvedTask;
+
+                const assigned = store.assignSession(session.id, task.id);
+
+                return success(formatSkillWorkOnTaskResult(assigned, task, databasePath));
+              });
+            },
+          }),
+
+          "recall-candidates": defineCommand({
+            meta: { description: "List recall candidates as JSON" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              let recallProject: string | undefined;
+              try {
+                recallProject = parseRecallCandidatesArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              let recallProjectRoot: string;
+              try {
+                recallProjectRoot = resolveProjectRootArg(recallProject, cwd);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              return withStore(env, (store) => {
+                const candidates = store.recallCandidates(recallProjectRoot);
+                return success(`${JSON.stringify(candidates)}\n`);
+              });
+            },
+          }),
+
+          "re-enter": defineCommand({
+            meta: { description: "Re-enter a task by ref" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              if (isHelpFlag(args[0])) return success(`${skillReEnterUsage()}\n`);
+              const refError = rejectFlagTitle(args[0], "skill re-enter", "ref");
+              if (refError) return refError;
+
+              const ref = args[0];
+              if (!ref) return failure("Task slug or title is required");
+
+              return withStore(env, (store) => {
+                const tasks = store.listTasks();
+                const resolved = resolveSkillTaskRef(tasks, ref, (id) =>
+                  store.getTask(id),
+                );
+                if (!resolved) return failure(taskNotFoundMessage(tasks, ref), 1);
+
+                const manifest = store.getReEntryManifest(resolved.id);
+                if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
+
+                const identity = inferSessionIdentity(env, {});
+                if (
+                  identity.id !== undefined &&
+                  identity.transcriptPath !== undefined
+                ) {
+                  const session = store.registerSession({
+                    id: identity.id,
+                    transcriptPath: identity.transcriptPath,
+                    tool: identity.tool,
+                  });
+                  store.assignSession(session.id, resolved.id);
+                }
+
+                return success(formatReEntryManifest(manifest));
+              });
+            },
+          }),
+
+          "docs-dir": defineCommand({
+            meta: { description: "Get the docs directory for the active task" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              if (isHelpFlag(args[0])) return success(`${skillDocsDirUsage()}\n`);
+
+              let parsedDocsDir: { id?: string; project?: string };
+              try {
+                parsedDocsDir = parseSkillDocsDirArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              const identity = inferSessionIdentity(env, { id: parsedDocsDir.id });
+              if (identity.id === undefined) {
+                return failure(
+                  "Skill docs-dir requires --id or a current session env var",
+                );
+              }
+
+              let docsDirProjectRoot: string;
+              try {
+                docsDirProjectRoot = resolveProjectRootArg(parsedDocsDir.project, cwd);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              return withStore(env, (store, databasePath) => {
+                const activeTask = store.resolveActiveTask(
+                  identity.id as string,
+                  docsDirProjectRoot,
+                );
+
+                if (activeTask.kind === "bound") {
+                  return success(
+                    `taskDocsDir: ${resolveTaskDocsDir(databasePath, activeTask.task.slug)}\n`,
+                  );
+                }
+
+                if (activeTask.kind === "re-enter") {
+                  return failure(
+                    `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
+                    1,
+                  );
+                }
+
+                return failure(
+                  "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
+                  1,
+                );
+              });
             },
           }),
         },
