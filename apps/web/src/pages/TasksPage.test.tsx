@@ -100,7 +100,7 @@ describe("TasksPage", () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
     ];
-    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === "/api/tasks") {
         return Promise.resolve(
           new Response(JSON.stringify(tasks), { status: 200 }),
