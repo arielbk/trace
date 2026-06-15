@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
@@ -11,6 +11,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { cn } from "../lib/utils.ts";
 import {
@@ -74,6 +75,13 @@ export function TaskTimelineView({
   const [timelineFilter, setTimelineFilter] = useState<"all" | "session" | "doc">(
     "all",
   );
+  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
+  const docTriggerRef = useRef<HTMLElement | null>(null);
+
+  function openDoc(trigger: HTMLElement, path: string) {
+    docTriggerRef.current = trigger;
+    setSelectedDocPath(path);
+  }
 
   const sessionCount = timeline.items.filter(
     (item) => item.type === "session",
@@ -251,28 +259,44 @@ export function TaskTimelineView({
                 </div>
               </li>
             ) : (
-              <li
-                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
-                key={`doc:${item.doc.path}`}
-              >
-                <div className="relative z-10 flex justify-center">
-                  <TypeIcon type="doc" />
-                </div>
-                <div className="min-w-0">
-                  <CopyChip
-                    value={item.doc.path}
-                    display={truncatePath(item.doc.path)}
-                  />
-                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
-                    {item.sizeBytes !== null ? (
-                      <span className="font-mono tabular-nums">
-                        {formatBytes(item.sizeBytes)}
-                      </span>
-                    ) : null}
-                    <span className="ml-auto text-text-muted text-sm">
-                      {formatRelativeTime(item.createdAt, now)}
+              <li key={`doc:${item.doc.path}`}>
+                <div
+                  className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View ${truncatePath(item.doc.path)}`}
+                  onClick={(e) => openDoc(e.currentTarget, item.doc.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openDoc(e.currentTarget, item.doc.path);
+                    }
+                  }}
+                >
+                  <div className="relative z-10 flex justify-center">
+                    <TypeIcon type="doc" />
+                  </div>
+                  <div className="min-w-0">
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <CopyChip
+                        value={item.doc.path}
+                        display={truncatePath(item.doc.path)}
+                      />
                     </span>
-                  </p>
+                    <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
+                      {item.sizeBytes !== null ? (
+                        <span className="font-mono tabular-nums">
+                          {formatBytes(item.sizeBytes)}
+                        </span>
+                      ) : null}
+                      <span className="ml-auto text-text-muted text-sm">
+                        {formatRelativeTime(item.createdAt, now)}
+                      </span>
+                    </p>
+                  </div>
                 </div>
               </li>
             );
@@ -280,6 +304,16 @@ export function TaskTimelineView({
           </ol>
         )}
       </section>
+      {selectedDocPath !== null ? (
+        <DocViewerSheet
+          taskRef={timeline.task.slug}
+          docPath={selectedDocPath}
+          triggerRef={docTriggerRef}
+          onOpenChange={(open) => {
+            if (!open) setSelectedDocPath(null);
+          }}
+        />
+      ) : null}
     </main>
   );
 }

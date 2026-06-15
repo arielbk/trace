@@ -23,6 +23,23 @@ export async function fetchTaskTimeline(id: string): Promise<TaskTimeline> {
   return res.json() as Promise<TaskTimeline>;
 }
 
+export type DocContents = {
+  contentType: string;
+  body: string;
+};
+
+export async function fetchDocContents(ref: string, docPath: string): Promise<DocContents> {
+  const res = await fetch(
+    `/api/tasks/${encodeURIComponent(ref)}/docs?path=${encodeURIComponent(docPath)}`,
+  );
+  const contentType = res.headers.get("content-type") ?? "text/plain";
+  const body = await res.text();
+  if (!res.ok) {
+    throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
+  }
+  return { contentType, body };
+}
+
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
   const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/archive`, { method: "POST" });
   if (!res.ok) throw new HttpError(res.status, `POST archive ${ref} failed: ${res.status}`);
@@ -41,6 +58,13 @@ export function useTasks() {
 
 export function useTaskTimeline(id: string) {
   return useQuery({ queryKey: ["task-timeline", id], queryFn: () => fetchTaskTimeline(id) });
+}
+
+export function useDocContents(ref: string, docPath: string) {
+  return useQuery({
+    queryKey: ["doc-contents", ref, docPath],
+    queryFn: () => fetchDocContents(ref, docPath),
+  });
 }
 
 export function useArchiveTask() {

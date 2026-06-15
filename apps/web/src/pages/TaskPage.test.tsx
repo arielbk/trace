@@ -1007,6 +1007,114 @@ test("TaskTimelineView breadcrumb links the project name to the filtered home vi
   );
 });
 
+// doc viewer Sheet
+
+function timelineWithDoc(docPath: string): TaskTimeline {
+  return {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        doc: { taskId: "task-1", path: docPath, createdAt: "2026-05-29T00:01:00.000Z" },
+        sizeBytes: null,
+      },
+    ],
+  };
+}
+
+function renderTimelineWithProvider(timeline: TaskTimeline) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <TaskTimelineView timeline={timeline} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+test("clicking a doc opens the Sheet and rendered content appears", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  fireEvent.click(screen.getByRole("button", { name: "View plan.md" }));
+
+  expect(await screen.findByRole("heading", { name: "Plan" })).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith(
+    `/api/tasks/usable-v1/docs?path=${encodeURIComponent("/work/docs/plan.md")}`,
+  );
+});
+
+test("clicking a non-markdown doc shows a contained raw-text fallback in the Sheet", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response('{"a":1}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/data.json"));
+
+  fireEvent.click(screen.getByRole("button", { name: "View data.json" }));
+
+  expect(await screen.findByText("Showing raw contents")).toBeInTheDocument();
+  expect(screen.getByText('{"a":1}')).toBeInTheDocument();
+});
+
+test("copying a doc's path does not open the Sheet", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Copy /work/docs/plan.md" }));
+
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith("/work/docs/plan.md");
+  expect(screen.queryByRole("heading", { name: "Plan" })).not.toBeInTheDocument();
+});
+
+test("closing the doc Sheet returns focus to the timeline row", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  const row = screen.getByRole("button", { name: "View plan.md" });
+  fireEvent.click(row);
+  await screen.findByRole("heading", { name: "Plan" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+  await waitFor(() => expect(row).toHaveFocus());
+});
+
 // TaskPage hook-level integration tests
 
 function makeQueryClient() {
