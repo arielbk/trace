@@ -115,13 +115,21 @@ const codexTranscriptAdapter: TranscriptAdapter = {
   },
 };
 
-const adaptersByTool: Record<SessionTool, TranscriptAdapter> = {
+// Partial because the tool axis (`SessionTool`) can carry tools whose adapter
+// has not landed yet — `cursor` is registered by the cursor-adapter-shim slice.
+// `getTranscriptAdapter` throws for an unregistered tool rather than returning
+// undefined, preserving the non-null contract callers rely on.
+const adaptersByTool: Partial<Record<SessionTool, TranscriptAdapter>> = {
   claude: claudeTranscriptAdapter,
   codex: codexTranscriptAdapter,
 };
 
 export function getTranscriptAdapter(tool: SessionTool): TranscriptAdapter {
-  return adaptersByTool[tool];
+  const adapter = adaptersByTool[tool];
+  if (!adapter) {
+    throw new Error(`No transcript adapter registered for tool "${tool}"`);
+  }
+  return adapter;
 }
 
 function readFromFile(

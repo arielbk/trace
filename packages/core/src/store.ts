@@ -323,8 +323,12 @@ class NodeSqliteTaskStore implements TaskStore {
     if (transcriptPath.length === 0) {
       throw new Error("Session transcript path is required");
     }
-    if (input.tool !== "claude" && input.tool !== "codex") {
-      throw new Error("Session tool must be claude or codex");
+    if (
+      input.tool !== "claude" &&
+      input.tool !== "codex" &&
+      input.tool !== "cursor"
+    ) {
+      throw new Error("Session tool must be claude, codex, or cursor");
     }
 
     const existing = this.getSession(id);
@@ -774,7 +778,7 @@ type TaskRow = {
 type SessionRow = {
   id: string;
   transcript_path: string;
-  tool: "claude" | "codex";
+  tool: "claude" | "codex" | "cursor";
   model: string | null;
   task_id: string | null;
   created_at: string;

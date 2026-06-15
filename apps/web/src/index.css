@@ -25,6 +25,7 @@
   --color-tag-claude: var(--color-tag-claude);
   --color-tag-codex: var(--color-tag-codex);
   --color-tag-codex-bg: var(--color-tag-codex-bg);
+  --color-tag-cursor: var(--color-tag-cursor);
   --color-tag-doc: var(--color-tag-doc);
   --color-tag-text: var(--color-tag-text);
   --color-selection-bg: var(--color-selection-bg);
@@ -161,6 +162,7 @@
   --color-tag-claude: #d97757;
   --color-tag-codex: #3941ff;
   --color-tag-codex-bg: #ffffff;
+  --color-tag-cursor: #8b5cf6;
   --color-tag-doc: #2f5fa8;
   --color-tag-text: #ffffff;
   --color-selection-bg: #bfe3d7;
@@ -218,6 +220,7 @@
   --color-tag-claude: #f08a6a;
   --color-tag-codex: #7a9dff;
   --color-tag-codex-bg: #ffffff;
+  --color-tag-cursor: #a78bfa;
   --color-tag-doc: #6a9fd8;
   --color-tag-text: #0f1419;
   --color-selection-bg: #2f6f5d;

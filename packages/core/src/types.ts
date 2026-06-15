@@ -24,7 +24,7 @@ export type ActiveTask =
   | { kind: "re-enter"; task: Task }
   | { kind: "none" };
 
-export type SessionTool = "claude" | "codex";
+export type SessionTool = "claude" | "codex" | "cursor";
 
 export type Session = {
   id: string;

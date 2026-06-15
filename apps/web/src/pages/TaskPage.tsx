@@ -392,6 +392,7 @@ export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   claude: "Claude session",
   codex: "Codex session",
+  cursor: "Cursor session",
   doc: "Document",
 };
 
@@ -405,6 +406,11 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
     color: "var(--color-tag-codex)",
     background: "var(--color-tag-codex-bg)",
     borderColor: "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+  },
+  cursor: {
+    color: "var(--color-tag-cursor)",
+    background: "color-mix(in srgb, var(--color-tag-cursor) 10%, var(--color-surface))",
+    borderColor: "color-mix(in srgb, var(--color-tag-cursor) 25%, var(--color-border))",
   },
   doc: {
     color: "var(--color-tag-doc)",
@@ -454,6 +460,16 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
               <stop offset="1" stopColor="#3941ff" />
             </linearGradient>
           </defs>
+        </svg>
+      ) : type === "cursor" ? (
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path
+            d="M5 3l14 8-6 1.6L9.6 18z"
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
         </svg>
       ) : (
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
