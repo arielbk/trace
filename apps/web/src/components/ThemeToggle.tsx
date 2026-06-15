@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 import {
   applyTheme,
   nextTheme,
@@ -7,12 +8,6 @@ import {
   type Theme,
 } from "../theme.ts";
 
-/**
- * Header control that flips the page between light and dark. On mount it
- * syncs to the theme already resolved on the document root (set pre-paint by
- * the bootstrap script in `index.html`), so OS preference wins on first visit
- * and a stored override survives reloads. Toggling persists the choice.
- */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("light");
 
@@ -43,13 +38,17 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className="inline-flex items-center justify-center size-8 rounded-full border border-border text-text-muted hover:text-text hover:border-border-strong transition-colors cursor-pointer"
       aria-label="Toggle color theme"
       aria-pressed={isDark}
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
       onClick={handleToggle}
     >
-      <span aria-hidden="true">{isDark ? "🌙" : "☀️"}</span>
+      {isDark ? (
+        <Moon size={14} aria-hidden="true" />
+      ) : (
+        <Sun size={14} aria-hidden="true" />
+      )}
     </button>
   );
 }

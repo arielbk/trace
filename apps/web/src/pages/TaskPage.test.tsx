@@ -342,7 +342,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
     </MemoryRouter>,
   );
 
-  expect(html).toContain('class="theme-toggle"');
+  expect(html).toContain('aria-label="Toggle color theme"');
 });
 
 test("TaskTimelineView header has a copy re-enter prompt button, no slug text, no UUID chip", () => {
@@ -505,7 +505,6 @@ test("TaskTimelineView shows the project display name in the header breadcrumb w
     </MemoryRouter>,
   );
 
-  expect(html).toContain('class="app-header-project"');
   expect(html).toContain("my-cool-app");
   // Full path must not render as bare visible text.
   expect(html).not.toContain(">/Users/me/Projects/my-cool-app<");
@@ -537,7 +536,11 @@ test("TaskTimelineView omits the breadcrumb project segment when projectRoot is 
     </MemoryRouter>,
   );
 
+  // When projectRoot is empty, no project crumb segment should appear in the breadcrumb
+  // (only the wordmark "Trace" and the context title render in the nav).
   expect(html).not.toContain("app-header-project");
+  // The truncated path should not appear as visible text either.
+  expect(html).not.toContain(">/Users/me/Projects<");
 });
 
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {

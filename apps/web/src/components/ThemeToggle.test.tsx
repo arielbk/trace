@@ -6,7 +6,6 @@ test("ThemeToggle renders an accessible toggle button", () => {
   const html = renderToStaticMarkup(<ThemeToggle />);
 
   expect(html).toContain('type="button"');
-  expect(html).toContain('class="theme-toggle"');
   expect(html).toContain('aria-label="Toggle color theme"');
   // aria-pressed must be present so assistive tech reports the toggle state.
   expect(html).toContain("aria-pressed=");

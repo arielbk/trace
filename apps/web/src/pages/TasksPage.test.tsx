@@ -33,6 +33,8 @@ function summary(
     archivedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
     tokenTotals: tokens(0),
+    agentTools: [],
+    hasDocs: false,
     ...overrides,
   };
 }

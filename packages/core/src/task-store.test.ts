@@ -1065,6 +1065,8 @@ test("listTaskSummaries reports last activity and aggregated token totals", () =
         cacheReadInputTokens: 8,
         totalTokens: 58,
       },
+      agentTools: ["claude", "codex"],
+      hasDocs: true,
     });
 
     expect(summaries.find((summary) => summary.id === emptyTask.id)).toEqual({
@@ -1077,6 +1079,8 @@ test("listTaskSummaries reports last activity and aggregated token totals", () =
         cacheReadInputTokens: 0,
         totalTokens: 0,
       },
+      agentTools: [],
+      hasDocs: false,
     });
 
     store.close();
@@ -1107,6 +1111,8 @@ test("listTaskSummaries falls back to task createdAt when only docs predate it i
         cacheReadInputTokens: 0,
         totalTokens: 0,
       },
+      agentTools: [],
+      hasDocs: true,
     });
 
     store.close();
@@ -1274,6 +1280,119 @@ test("task timeline tokenTotals aggregates refreshed per-session values", () => 
     const timeline = store.getTaskTimeline(task.id);
     expect(timeline).not.toBeNull();
     expect(timeline!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries agentTools: none when task has no sessions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("no-sessions");
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.agentTools).toEqual([]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries agentTools: claude-only when only claude sessions exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("claude-only");
+    const s1 = store.registerSession({ id: "s1", transcriptPath: "/t1.jsonl", tool: "claude" });
+    const s2 = store.registerSession({ id: "s2", transcriptPath: "/t2.jsonl", tool: "claude" });
+    store.assignSession(s1.id, task.id);
+    store.assignSession(s2.id, task.id);
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.agentTools).toEqual(["claude"]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries agentTools: codex-only when only codex sessions exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("codex-only");
+    const s1 = store.registerSession({ id: "s1", transcriptPath: "/t1.jsonl", tool: "codex" });
+    store.assignSession(s1.id, task.id);
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.agentTools).toEqual(["codex"]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries agentTools: both tools sorted when both claude and codex sessions exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("both-tools");
+    const claude = store.registerSession({ id: "c1", transcriptPath: "/c1.jsonl", tool: "claude" });
+    const codex = store.registerSession({ id: "cx1", transcriptPath: "/cx1.jsonl", tool: "codex" });
+    store.assignSession(claude.id, task.id);
+    store.assignSession(codex.id, task.id);
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.agentTools).toEqual(["claude", "codex"]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries hasDocs: false when no task_docs entries exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.createTask("no-docs");
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.hasDocs).toBe(false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTaskSummaries hasDocs: true when task_docs entries exist", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("has-docs");
+    store.addTaskDoc(task.id, "/tmp/spec.md");
+
+    const [summary] = store.listTaskSummaries();
+    expect(summary?.hasDocs).toBe(true);
 
     store.close();
   } finally {

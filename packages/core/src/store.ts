@@ -28,6 +28,7 @@ import type {
   RegisterSessionInput,
   ReEntryManifest,
   Session,
+  SessionTool,
   Task,
   TaskDoc,
   TaskStore,
@@ -138,24 +139,79 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   listTaskSummaries(): TaskSummary[] {
-    return this.listTasks().map((task) => {
-      const sessions = this.listSessionsForTask(task.id);
-      const docs = this.listDocsForTask(task.id);
+    const tasks = this.#sqlite
+      .prepare(
+        `SELECT id, title, slug, created_at, project_root, archived_at, description
+         FROM tasks ORDER BY created_at ASC, id ASC`,
+      )
+      .all() as TaskRow[];
+
+    type SessionAggRow = {
+      task_id: string;
+      tools: string | null;
+      last_session_at: string | null;
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens: number;
+      cache_read_input_tokens: number;
+      total_tokens: number;
+    };
+    const sessionAgg = this.#sqlite
+      .prepare(
+        `SELECT task_id,
+                GROUP_CONCAT(DISTINCT tool) AS tools,
+                MAX(created_at) AS last_session_at,
+                SUM(input_tokens) AS input_tokens,
+                SUM(output_tokens) AS output_tokens,
+                SUM(cache_creation_input_tokens) AS cache_creation_input_tokens,
+                SUM(cache_read_input_tokens) AS cache_read_input_tokens,
+                SUM(total_tokens) AS total_tokens
+         FROM sessions
+         WHERE task_id IS NOT NULL
+         GROUP BY task_id`,
+      )
+      .all() as SessionAggRow[];
+
+    type DocAggRow = { task_id: string; count: number; last_doc_at: string };
+    const docAgg = this.#sqlite
+      .prepare(
+        `SELECT task_id, COUNT(*) AS count, MAX(created_at) AS last_doc_at
+         FROM task_docs
+         GROUP BY task_id`,
+      )
+      .all() as DocAggRow[];
+
+    const sessionByTask = new Map(sessionAgg.map((r) => [r.task_id, r]));
+    const docByTask = new Map(docAgg.map((r) => [r.task_id, r]));
+
+    return tasks.map((row) => {
+      const task = taskFromRow(row);
+      const sAgg = sessionByTask.get(task.id);
+      const dAgg = docByTask.get(task.id);
 
       const lastActivityAt = [
-        ...sessions.map((session) => session.createdAt),
-        ...docs.map((doc) => doc.createdAt),
-      ].reduce(
-        (latest, current) => (current > latest ? current : latest),
         task.createdAt,
-      );
+        sAgg?.last_session_at ?? null,
+        dAgg?.last_doc_at ?? null,
+      ]
+        .filter((t): t is string => t !== null)
+        .reduce((latest, current) => (current > latest ? current : latest));
 
-      const tokenTotals = sessions.reduce(
-        (totals, session) => addTokenTotals(totals, session.tokenTotals),
-        emptyTokenTotals(),
-      );
+      const tokenTotals: TokenTotals = {
+        inputTokens: sAgg?.input_tokens ?? 0,
+        outputTokens: sAgg?.output_tokens ?? 0,
+        cacheCreationInputTokens: sAgg?.cache_creation_input_tokens ?? 0,
+        cacheReadInputTokens: sAgg?.cache_read_input_tokens ?? 0,
+        totalTokens: sAgg?.total_tokens ?? 0,
+      };
 
-      return { ...task, lastActivityAt, tokenTotals };
+      const agentTools: SessionTool[] = sAgg?.tools
+        ? (sAgg.tools.split(",") as SessionTool[]).sort()
+        : [];
+
+      const hasDocs = (dAgg?.count ?? 0) > 0;
+
+      return { ...task, lastActivityAt, tokenTotals, agentTools, hasDocs };
     });
   }
 
