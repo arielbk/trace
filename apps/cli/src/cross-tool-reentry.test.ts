@@ -70,6 +70,62 @@ test("a Claude task can be re-entered from Codex with prior docs and sessions", 
   }
 });
 
+test("a Cursor-bound task surfaces its cursor session in the re-entry manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cursor-reentry-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+  const composerId = "11111111-2222-3333-4444-555555555555";
+
+  try {
+    // Cursor (GUI) exposes no session env var, so the bind path takes the
+    // composerId explicitly; the transcript locator is derived as cursor:<id>.
+    const bound = execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "skill",
+        "work-on-task",
+        "Cursor re-entry task",
+        "--id",
+        composerId,
+        "--tool",
+        "cursor",
+      ],
+      { encoding: "utf8", env, cwd: dir },
+    );
+    const docsDir = /^taskDocsDir: (.+)$/m.exec(bound)?.[1];
+    expect(docsDir).toBeTruthy();
+    mkdirSync(docsDir as string, { recursive: true });
+    writeFileSync(
+      join(docsDir as string, "plan.md"),
+      "# Plan\n\nFinish Cursor re-entry.\n",
+    );
+
+    const reentered = execFileSync(
+      process.execPath,
+      [traceBin, "skill", "re-enter", "Cursor re-entry task"],
+      { encoding: "utf8", env, cwd: dir },
+    );
+
+    expect(reentered).toContain("title: Cursor re-entry task");
+    expect(reentered).toContain("plan.md");
+    expect(reentered).toMatch(
+      new RegExp(
+        `sessions:\\n- id: ${composerId}\\n {2}tool: cursor\\n {2}transcript: cursor:${composerId}\\n {2}mostRecent: true`,
+      ),
+    );
+
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", "cursor-re-entry-task"],
+      { encoding: "utf8", env, cwd: dir },
+    );
+    expect(shown).toContain(`- ${composerId}\tcursor\tcursor:${composerId}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex-created work can be re-entered from Claude through the same manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-codex-to-claude-"));
   const databasePath = join(dir, "trace.sqlite");
