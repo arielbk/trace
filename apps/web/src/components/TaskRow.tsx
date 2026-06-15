@@ -215,7 +215,8 @@ function AgentAvatars({
 }) {
   const hasClaude = agentTools.includes("claude");
   const hasCodex = agentTools.includes("codex");
-  if (!hasClaude && !hasCodex && !hasDocs) return null;
+  const hasCursor = agentTools.includes("cursor");
+  if (!hasClaude && !hasCodex && !hasCursor && !hasDocs) return null;
 
   const baseAvatar =
     "inline-flex items-center justify-center w-5 h-5 rounded-full -ml-1.5 relative";
@@ -253,6 +254,23 @@ function AgentAvatars({
           title="Codex"
         >
           <CodexLogo />
+        </span>
+      )}
+      {hasCursor && (
+        <span
+          className={cn("agent-avatar agent-avatar-cursor z-[15]", baseAvatar)}
+          style={{
+            background:
+              "color-mix(in srgb, var(--color-tag-cursor) 15%, var(--color-surface))",
+            border:
+              "1px solid color-mix(in srgb, var(--color-tag-cursor) 30%, var(--color-border))",
+            boxShadow: "0 0 0 2px var(--color-bg)",
+            color: "var(--color-tag-cursor)",
+          }}
+          aria-label="Cursor"
+          title="Cursor"
+        >
+          <CursorLogo />
         </span>
       )}
       {hasDocs && (
@@ -317,6 +335,18 @@ function CodexLogo() {
           <stop offset="1" stopColor="#3941ff" />
         </linearGradient>
       </defs>
+    </svg>
+  );
+}
+
+function CursorLogo() {
+  // Cursor's isometric cube mark, rendered monochrome via currentColor: three
+  // faces at descending opacity read as the 3D logo while honoring the tag color.
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2L22 7.5L12 13L2 7.5Z" fill="currentColor" />
+      <path d="M22 7.5L22 17.5L12 23L12 13Z" fill="currentColor" opacity="0.6" />
+      <path d="M2 7.5L12 13L12 23L2 17.5Z" fill="currentColor" opacity="0.8" />
     </svg>
   );
 }

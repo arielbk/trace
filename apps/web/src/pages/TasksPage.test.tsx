@@ -360,6 +360,43 @@ describe("TaskList rendering — flat recency-first", () => {
     expect(html).not.toContain('aria-label="Claude"');
   });
 
+  test("shows Cursor avatar when agentTools includes cursor", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", agentTools: ["cursor"] }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Cursor"');
+    expect(html).toContain("agent-avatar-cursor");
+    expect(html).not.toContain('aria-label="Claude"');
+    expect(html).not.toContain('aria-label="Codex"');
+  });
+
+  test("shows all three avatars when agentTools has claude, codex and cursor", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        title: "Work",
+        agentTools: ["claude", "codex", "cursor"],
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Claude"');
+    expect(html).toContain('aria-label="Codex"');
+    expect(html).toContain('aria-label="Cursor"');
+  });
+
   test("shows both avatars when agentTools has claude and codex", () => {
     const tasks: TaskSummary[] = [
       summary({

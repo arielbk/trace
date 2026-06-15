@@ -462,13 +462,19 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
           </defs>
         </svg>
       ) : type === "cursor" ? (
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        // Cursor's isometric cube mark, monochrome via currentColor: three faces
+        // at descending opacity read as the 3D logo while honoring the tag color.
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+          <path d="M12 2L22 7.5L12 13L2 7.5Z" fill="currentColor" />
           <path
-            d="M5 3l14 8-6 1.6L9.6 18z"
+            d="M22 7.5L22 17.5L12 23L12 13Z"
             fill="currentColor"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinejoin="round"
+            opacity="0.6"
+          />
+          <path
+            d="M2 7.5L12 13L12 23L2 17.5Z"
+            fill="currentColor"
+            opacity="0.8"
           />
         </svg>
       ) : (

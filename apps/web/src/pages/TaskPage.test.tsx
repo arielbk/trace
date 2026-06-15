@@ -135,6 +135,63 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   expect(html).toContain("5 out");
 });
 
+test("TaskTimelineView renders the Cursor brand mark for a cursor session", () => {
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "cursor-task",
+      title: "Cursor task",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-06-11T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-06-11T00:01:00.000Z",
+        session: {
+          id: "cursor-session",
+          transcriptPath: "cursor:cursor-session",
+          tool: "cursor",
+          model: "claude-opus-4-7",
+          taskId: "task-1",
+          tokenTotals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 0,
+          },
+          createdAt: "2026-06-11T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+    ],
+    lastActivityAt: "2026-06-11T00:00:00.000Z",
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // The cursor session carries its own labeled type icon, colored via the
+  // cursor token, using the real Cursor cube mark — not the placeholder arrow.
+  expect(html).toContain("type-icon type-icon-cursor");
+  expect(html).toContain('aria-label="Cursor session"');
+  expect(html).toContain("var(--color-tag-cursor)");
+  expect(html).toContain("M12 2L22 7.5L12 13L2 7.5Z");
+  expect(html).not.toContain("M5 3l14 8-6 1.6L9.6 18z");
+});
+
 test("TaskTimelineView labels uncaptured session token totals as unavailable", () => {
   const timeline: TaskTimeline = {
     task: {
