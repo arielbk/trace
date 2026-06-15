@@ -25,6 +25,7 @@ import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   ActiveTask,
+  ContextTokens,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -584,13 +585,21 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   #refreshSession(session: Session): Session {
-    let fresh: { tokenTotals: TokenTotals; model: string | null } | null = null;
+    let fresh: {
+      tokenTotals: TokenTotals;
+      model: string | null;
+      contextTokens: ContextTokens | null;
+    } | null = null;
     try {
       const adapter = getTranscriptAdapter(session.tool);
       const parsed = adapter.parseFile(session.transcriptPath, {
         expectedId: session.id,
       });
-      fresh = { tokenTotals: parsed.tokenTotals, model: parsed.model };
+      fresh = {
+        tokenTotals: parsed.tokenTotals,
+        model: parsed.model,
+        contextTokens: parsed.contextTokens ?? null,
+      };
     } catch {
       // Missing file or unparseable transcript — return stored values untouched.
       return session;
@@ -629,7 +638,7 @@ class NodeSqliteTaskStore implements TaskStore {
         );
     }
 
-    return { ...session, tokenTotals: totals };
+    return { ...session, tokenTotals: totals, contextTokens: fresh.contextTokens };
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left

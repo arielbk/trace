@@ -8,6 +8,7 @@ export { parseStateMd } from "./state-parser.ts";
 export type { ParsedStateMd } from "./state-parser.ts";
 export type {
   ActiveTask,
+  ContextTokens,
   RegisterSessionInput,
   ReEntryManifest,
   ReEntryManifestDoc,

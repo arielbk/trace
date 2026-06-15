@@ -12,9 +12,12 @@ import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
+import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
+  formatContextUsage,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -240,6 +243,8 @@ export function TaskTimelineView({
                           )}{" "}
                           out
                         </>
+                      ) : item.session.contextTokens ? (
+                        formatContextUsage(item.session.contextTokens)
                       ) : (
                         "tokens unavailable"
                       )}
@@ -408,9 +413,9 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
     borderColor: "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
   },
   cursor: {
-    color: "var(--color-tag-cursor)",
-    background: "color-mix(in srgb, var(--color-tag-cursor) 10%, var(--color-surface))",
-    borderColor: "color-mix(in srgb, var(--color-tag-cursor) 25%, var(--color-border))",
+    color: "var(--color-text)",
+    background: "transparent",
+    borderColor: "var(--color-border)",
   },
   doc: {
     color: "var(--color-tag-doc)",
@@ -423,7 +428,7 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
 function TypeIcon({ type }: { type: SessionTool | "doc" }) {
   return (
     <span
-      className={`type-icon type-icon-${type} inline-flex items-center justify-center w-10 h-10 border rounded-md`}
+      className={`type-icon type-icon-${type} inline-flex items-center justify-center w-10 h-10 rounded-md ${type === "cursor" ? "relative overflow-hidden" : "border"}`}
       style={TYPE_ICON_STYLES[type]}
       role="img"
       aria-label={TYPE_LABELS[type]}
@@ -462,21 +467,25 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
           </defs>
         </svg>
       ) : type === "cursor" ? (
-        // Cursor's isometric cube mark, monochrome via currentColor: three faces
-        // at descending opacity read as the 3D logo while honoring the tag color.
-        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-          <path d="M12 2L22 7.5L12 13L2 7.5Z" fill="currentColor" />
-          <path
-            d="M22 7.5L22 17.5L12 23L12 13Z"
-            fill="currentColor"
-            opacity="0.6"
+        <>
+          <img
+            src={cursorIconLightUrl}
+            alt=""
+            className="absolute inset-0 block h-full w-full object-cover dark:hidden"
+            aria-hidden="true"
           />
-          <path
-            d="M2 7.5L12 13L12 23L2 17.5Z"
-            fill="currentColor"
-            opacity="0.8"
+          <img
+            src={cursorIconDarkUrl}
+            alt=""
+            className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+            aria-hidden="true"
           />
-        </svg>
+          <span
+            className="pointer-events-none absolute inset-0 rounded-md"
+            style={{ boxShadow: "inset 0 0 0 1px var(--color-border-strong)" }}
+            aria-hidden="true"
+          />
+        </>
       ) : (
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
           <path
@@ -625,4 +634,3 @@ function NextStepArrow() {
     </svg>
   );
 }
-

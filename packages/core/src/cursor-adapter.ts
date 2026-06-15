@@ -53,6 +53,7 @@ function parsedFromSession(
     tool: "cursor",
     model: session.model,
     tokenTotals: tokenTotalsFromCursor(session.tokenTotals),
+    contextTokens: session.contextTokens,
   };
 }
 

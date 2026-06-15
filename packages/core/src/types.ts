@@ -34,6 +34,9 @@ export type Session = {
   taskId: string | null;
   createdAt: string;
   tokenTotals: TokenTotals;
+  // Live context-window occupancy when the tool exposes it (Cursor). Not
+  // persisted — recomputed from the transcript on read. Absent for claude/codex.
+  contextTokens?: ContextTokens | null;
 };
 
 export type TaskDoc = {
@@ -48,6 +51,14 @@ export type TokenTotals = {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalTokens: number;
+};
+
+// Current context-window occupancy for a session — a live snapshot, not
+// cumulative spend. Only Cursor exposes this today (claude/codex track spend
+// instead), so it's optional everywhere and absent for those tools.
+export type ContextTokens = {
+  used: number;
+  limit: number;
 };
 
 export type TaskTimelineItem =

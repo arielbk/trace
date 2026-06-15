@@ -78,6 +78,7 @@ describe("readComposer", () => {
       lastUpdatedAt: 1_717_000_500_000,
       messageCount: 2,
       tokenTotals: null,
+      contextTokens: null,
     });
   });
 
@@ -101,7 +102,38 @@ describe("readComposer", () => {
       lastUpdatedAt: null,
       messageCount: 0,
       tokenTotals: null,
+      contextTokens: null,
     });
+  });
+
+  it("reads context-window occupancy when the composer records it", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          contextTokensUsed: 154_826,
+          contextTokenLimit: 300_000,
+        },
+      ],
+    });
+
+    expect(
+      readComposer("composer-1", { storageRoot }).contextTokens,
+    ).toEqual({ used: 154_826, limit: 300_000 });
+  });
+
+  it("defaults a missing context limit to 0 but keeps the used count", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [{ composerId: "composer-1", contextTokensUsed: 1234 }],
+    });
+
+    expect(
+      readComposer("composer-1", { storageRoot }).contextTokens,
+    ).toEqual({ used: 1234, limit: 0 });
   });
 });
 

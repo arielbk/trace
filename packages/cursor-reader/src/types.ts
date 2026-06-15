@@ -11,6 +11,10 @@ export type CursorSession = {
   lastUpdatedAt: number | null;
   messageCount: number;
   tokenTotals: { inputTokens: number; outputTokens: number } | null;
+  // Cursor doesn't persist cumulative input/output spend, but it does record the
+  // current context-window occupancy (`contextTokensUsed` of `contextTokenLimit`).
+  // A snapshot of the live window, not cumulative spend — null when absent.
+  contextTokens: { used: number; limit: number } | null;
 };
 
 export type CursorMessage =

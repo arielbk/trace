@@ -62,10 +62,13 @@ type ComposerData = {
   createdAt?: unknown;
   lastUpdatedAt?: unknown;
   usageData?: unknown;
+  contextTokensUsed?: unknown;
+  contextTokenLimit?: unknown;
   fullConversationHeadersOnly?: unknown;
 };
 
 type TokenTotals = { inputTokens: number; outputTokens: number };
+type ContextTokens = { used: number; limit: number };
 
 function asNumberOrNull(value: unknown): number | null {
   return typeof value === "number" ? value : null;
@@ -73,6 +76,17 @@ function asNumberOrNull(value: unknown): number | null {
 
 function asStringOrNull(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+/**
+ * Current context-window occupancy from the composer. Requires a numeric
+ * `contextTokensUsed`; the limit falls back to 0 when Cursor omits it. Null when
+ * usage is absent, so callers can distinguish "0 tokens used" from "unknown".
+ */
+function asContextTokens(data: ComposerData): ContextTokens | null {
+  const used = asNumberOrNull(data.contextTokensUsed);
+  if (used === null) return null;
+  return { used, limit: asNumberOrNull(data.contextTokenLimit) ?? 0 };
 }
 
 /**
@@ -112,6 +126,7 @@ export function readComposer(
       lastUpdatedAt: asNumberOrNull(data.lastUpdatedAt),
       messageCount: headers.length,
       tokenTotals: computeTokenTotals(db, composerId, headers, data.usageData),
+      contextTokens: asContextTokens(data),
     };
   } finally {
     db.close();

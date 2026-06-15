@@ -11,6 +11,18 @@ export function formatTokensCompact(n: number): string {
 }
 
 /**
+ * Render a session's context-window occupancy (Cursor's snapshot of the live
+ * window, not cumulative spend): `{used: 154826, limit: 300000}` →
+ * `"154.8K / 300.0K ctx · 52%"`. A missing/zero limit drops the ratio and
+ * percent: `"154.8K ctx"`.
+ */
+export function formatContextUsage(ctx: { used: number; limit: number }): string {
+  if (ctx.limit <= 0) return `${formatTokensCompact(ctx.used)} ctx`;
+  const percent = Math.round((ctx.used / ctx.limit) * 100);
+  return `${formatTokensCompact(ctx.used)} / ${formatTokensCompact(ctx.limit)} ctx · ${percent}%`;
+}
+
+/**
  * Render a byte count as a compact file size: `812` → `"812 B"`,
  * `12544` → `"12.3 KB"`, `2_300_000` → `"2.2 MB"`. Sub-kilobyte sizes keep
  * their exact byte count; larger sizes round to one decimal place.

@@ -13,7 +13,7 @@ import {
 } from "./codex-adapter.ts";
 import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
-import type { SessionTool, TokenTotals } from "./types.ts";
+import type { ContextTokens, SessionTool, TokenTotals } from "./types.ts";
 
 export type ParsedTranscript = {
   id: string;
@@ -21,6 +21,9 @@ export type ParsedTranscript = {
   tool: SessionTool;
   model: string | null;
   tokenTotals: TokenTotals;
+  // Live context-window occupancy when the tool exposes it (Cursor); absent
+  // otherwise. Not persisted — surfaced through to the refreshed session.
+  contextTokens?: ContextTokens | null;
 };
 
 export type TranscriptParseInput = {

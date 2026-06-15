@@ -35,6 +35,7 @@ const composer: CursorSession = {
   lastUpdatedAt: 2,
   messageCount: 4,
   tokenTotals: { inputTokens: 12, outputTokens: 34 },
+  contextTokens: null,
 };
 
 let dir: string;

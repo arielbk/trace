@@ -34,6 +34,8 @@ export type FixtureComposer = {
   createdAt?: number | null;
   lastUpdatedAt?: number | null;
   usageData?: { inputTokens?: number; outputTokens?: number } | null;
+  contextTokensUsed?: number;
+  contextTokenLimit?: number;
   bubbles?: FixtureBubble[];
 };
 
@@ -99,6 +101,8 @@ export function buildCursorFixture(root: string, spec: FixtureSpec): void {
         createdAt: composer.createdAt ?? null,
         lastUpdatedAt: composer.lastUpdatedAt ?? null,
         usageData: composer.usageData ?? undefined,
+        contextTokensUsed: composer.contextTokensUsed,
+        contextTokenLimit: composer.contextTokenLimit,
         fullConversationHeadersOnly: bubbles.map((b) => ({
           bubbleId: b.bubbleId,
           type: b.type,

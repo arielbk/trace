@@ -25,6 +25,7 @@ const session: CursorSession = {
   lastUpdatedAt: 2,
   messageCount: 4,
   tokenTotals: { inputTokens: 17, outputTokens: 29 },
+  contextTokens: null,
 };
 
 beforeEach(() => {
@@ -57,6 +58,7 @@ test("parse maps a CursorSession to a ParsedTranscript via the composerId locato
       cacheReadInputTokens: 0,
       totalTokens: 46,
     },
+    contextTokens: null,
   });
 });
 

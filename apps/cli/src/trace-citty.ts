@@ -385,7 +385,7 @@ function parseClaudeScanArgs(args: string[], env: Env): string {
 }
 
 function skillWorkOnTaskUsage(): string {
-  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex>] [--model <name>] [--description <text>] [--project <dir>]";
+  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex|cursor>] [--model <name>] [--description <text>] [--project <dir>]";
 }
 
 function skillReEnterUsage(): string {

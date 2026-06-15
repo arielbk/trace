@@ -2,12 +2,25 @@ import { describe, expect, test } from "vitest";
 import {
   buildReEnterPrompt,
   collapseHomePath,
+  formatContextUsage,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
   truncateId,
   truncatePath,
 } from "./format.ts";
+
+describe("formatContextUsage", () => {
+  test("renders used / limit with a rounded percent", () => {
+    expect(formatContextUsage({ used: 154_826, limit: 300_000 })).toBe(
+      "154.8K / 300.0K ctx · 52%",
+    );
+  });
+
+  test("drops the ratio and percent when the limit is missing", () => {
+    expect(formatContextUsage({ used: 154_826, limit: 0 })).toBe("154.8K ctx");
+  });
+});
 
 describe("formatTokensCompact", () => {
   test("abbreviates millions to one decimal with an M suffix", () => {

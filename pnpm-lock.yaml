@@ -39,6 +39,9 @@ importers:
       '@trace/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@trace/cursor-reader':
+        specifier: workspace:*
+        version: link:../../packages/cursor-reader
       '@trace/web':
         specifier: workspace:*
         version: link:../web
@@ -154,6 +157,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@trace/cursor-reader':
+        specifier: workspace:*
+        version: link:../cursor-reader
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2

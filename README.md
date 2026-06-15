@@ -68,6 +68,33 @@ Codex has no live session-start slot, so the skill captures sessions by backfill
 it runs `trace session scan --codex` before it binds or re-enters a task. Same
 store, same manifest; just a different capture path.
 
+### Cursor
+
+Cursor (the IDE) has no plugin marketplace and no session-start hook, so there's
+nothing to install — and like Codex, capture is **pull-time**: trace reads
+Cursor's local session store (`state.vscdb`) on demand and resolves the session
+you're in from the directory the command runs in. No env var, no Cursor
+cooperation.
+
+To let Cursor's own agent drive the same loop, point it at trace from your
+project's `AGENTS.md` (Cursor reads it):
+
+```md
+## Trace
+When I name a piece of work I'm starting or resuming, bind it with Trace before
+planning: run `npx @arielbk/trace@<version> skill work-on-task "<the task>"`.
+To resume a task I name, run `npx @arielbk/trace@<version> skill re-enter <slug>`.
+```
+
+The agent then binds and re-enters through the same CLI as the other hosts —
+each invocation backfills the current Cursor session from `state.vscdb`. You can
+also run those commands yourself from Cursor's integrated terminal. A live
+Cursor hook (auto-capture, no invocation) is a follow-up; for now capture
+happens when the skill runs.
+
+> Cursor does not record per-message token *spend* in its local store, so the
+> board shows a session's context-window usage instead of an input/output total.
+
 ## How it works
 
 It's a loop. Walk it once and the value is obvious:
@@ -126,7 +153,8 @@ others carry the whole loop in a single entry skill.
 Same-tool re-entry — work in an agent, clear, re-enter, keep going — is the core
 loop and works today. Cross-tool re-entry rides the shared manifest: a task
 worked in one agent can be re-entered from another. The agents supported right
-now are **Claude Code** and **Codex**; more are a matter of adding adapters.
+now are **Claude Code**, **Codex**, and **Cursor** (macOS; pull-time capture, no
+live hook yet); more are a matter of adding adapters.
 
 ## Development
 
