@@ -27,17 +27,38 @@ function renderFence(entries: ManifestEntry[]): string {
 }
 
 /**
+ * Remove a previously-rendered manifest region (and the `---` divider we
+ * inserted just before it) from `content`, returning the prose above it. Prose
+ * is left untouched when no fence is present.
+ */
+function stripFence(content: string): string {
+  const start = content.indexOf(FENCE_START);
+  if (start === -1) return content;
+  const endMarker = content.indexOf(FENCE_END, start);
+  const end = endMarker === -1 ? content.length : endMarker + FENCE_END.length;
+  const before = content.slice(0, start);
+  const after = content.slice(end);
+  // Drop the `---` divider that immediately precedes the fence — it was
+  // inserted together with the fence, never authored prose.
+  return `${before.replace(/\s*-{3,}\s*$/, "")}${after}`;
+}
+
+/**
  * Pure transform: given the existing state.md content and the doc entries,
- * return content carrying the fenced manifest region. The fence sits below a
- * `---` divider so the state parser treats it as a strippable footer and needs
- * no changes.
+ * return content carrying the fenced manifest region. Re-rendering replaces the
+ * existing fence in place (preserving prose above it and producing byte-
+ * identical output when the docs are unchanged) rather than stacking footers.
+ * state.md is never listed in its own manifest. The fence sits below a `---`
+ * divider so the state parser treats it as a strippable footer and needs no
+ * changes.
  */
 export function renderManifest(
   content: string,
   entries: ManifestEntry[],
 ): string {
-  const body = content.replace(/\s+$/, "");
-  return `${body}\n\n---\n\n${renderFence(entries)}\n`;
+  const docs = entries.filter((entry) => entry.label !== "state.md");
+  const body = stripFence(content).replace(/\s+$/, "");
+  return `${body}\n\n---\n\n${renderFence(docs)}\n`;
 }
 
 /**
