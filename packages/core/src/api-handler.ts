@@ -1,5 +1,8 @@
+import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { openTraceStore } from "./store.ts";
+import { extname, resolve, sep } from "node:path";
+import { renderMarkdown } from "./markdown.ts";
+import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 
 export type TraceApiResponse = {
   status: number;
@@ -84,6 +87,25 @@ export function handleTraceApiRequest(
       }
     }
 
+    const docsMatch = /^\/api\/tasks\/([^/]+)\/docs\/?$/.exec(path);
+    if (docsMatch?.[1]) {
+      if (method !== "GET") return methodNotAllowed();
+      const store = openTraceStore(databasePath);
+      try {
+        const task = store.getTaskByRef(decodeURIComponent(docsMatch[1]));
+        if (!task) return notFound();
+
+        const docPath = new URLSearchParams(rawUrl.split("?", 2)[1] ?? "").get(
+          "path",
+        );
+        if (!docPath) return badRequest("path query parameter is required");
+
+        return readTaskDocContents(databasePath, task.slug, docPath);
+      } finally {
+        store.close();
+      }
+    }
+
     return notFound();
   } catch (error) {
     if (
@@ -125,4 +147,66 @@ function notFound(): TraceApiResponse {
 
 function methodNotAllowed(): TraceApiResponse {
   return { status: 405, body: "" };
+}
+
+function badRequest(message: string): TraceApiResponse {
+  return { status: 400, body: message };
+}
+
+/** Content types for non-markdown docs, served as raw text. */
+const DOC_TEXT_CONTENT_TYPES: Record<string, string> = {
+  ".json": "application/json",
+  ".yaml": "text/plain",
+  ".yml": "text/plain",
+  ".txt": "text/plain",
+};
+
+/**
+ * Read a task doc for the read-only doc viewer. `docPath` is resolved against
+ * the task's docs directory (absolute paths are accepted too) and rejected if
+ * it escapes that directory — this is the only guard against path traversal
+ * and against docs registered with an out-of-bounds path. `.md` docs are
+ * rendered to sanitized HTML; everything else is returned as raw text with a
+ * best-effort content type.
+ */
+function readTaskDocContents(
+  databasePath: string,
+  taskSlug: string,
+  docPath: string,
+): TraceApiResponse {
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  const resolved = resolve(docsDir, docPath);
+
+  if (!resolved.startsWith(docsDir + sep)) {
+    return badRequest("Doc path is outside the task's docs directory");
+  }
+
+  let isFile: boolean;
+  try {
+    isFile = statSync(resolved).isFile();
+  } catch {
+    return notFound();
+  }
+
+  if (!isFile) {
+    return { status: 500, body: "Doc could not be read" };
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(resolved, "utf8");
+  } catch {
+    return { status: 500, body: "Doc could not be read" };
+  }
+
+  const extension = extname(resolved).toLowerCase();
+  if (extension === ".md") {
+    return { status: 200, body: renderMarkdown(content), contentType: "text/html" };
+  }
+
+  return {
+    status: 200,
+    body: content,
+    contentType: DOC_TEXT_CONTENT_TYPES[extension] ?? "text/plain",
+  };
 }
