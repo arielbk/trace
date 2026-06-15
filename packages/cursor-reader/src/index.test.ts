@@ -2,7 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readComposer, resolveFocusedComposer } from "./index.ts";
+import {
+  readComposer,
+  readComposerTail,
+  resolveFocusedComposer,
+} from "./index.ts";
 import { buildCursorFixture } from "./test-fixture.ts";
 
 let storageRoot: string;
@@ -98,5 +102,170 @@ describe("readComposer", () => {
       messageCount: 0,
       tokenTotals: null,
     });
+  });
+});
+
+describe("readComposer tokenTotals", () => {
+  it("sums per-bubble tokenCount when there is no aggregate", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          bubbles: [
+            {
+              bubbleId: "b1",
+              type: 1,
+              text: "hello",
+              tokenCount: { inputTokens: 10, outputTokens: 0 },
+            },
+            {
+              bubbleId: "b2",
+              type: 2,
+              text: "hi",
+              tokenCount: { inputTokens: 3, outputTokens: 5 },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposer("composer-1", { storageRoot }).tokenTotals).toEqual({
+      inputTokens: 13,
+      outputTokens: 5,
+    });
+  });
+
+  it("prefers the aggregate usageData over per-bubble sums", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          usageData: { inputTokens: 100, outputTokens: 50 },
+          bubbles: [
+            {
+              bubbleId: "b1",
+              type: 1,
+              text: "hello",
+              tokenCount: { inputTokens: 10, outputTokens: 0 },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposer("composer-1", { storageRoot }).tokenTotals).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+  });
+});
+
+describe("readComposerTail", () => {
+  it("projects all four bubble kinds in order", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          bubbles: [
+            { bubbleId: "b1", type: 1, text: "do the thing" },
+            {
+              bubbleId: "b2",
+              type: 2,
+              capabilityType: 30,
+              thinking: { text: "let me reason" },
+            },
+            {
+              bubbleId: "b3",
+              type: 2,
+              capabilityType: 15,
+              toolFormerData: { name: "read_file", status: "completed" },
+            },
+            { bubbleId: "b4", type: 2, text: "done" },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposerTail("composer-1", 10, { storageRoot })).toEqual([
+      { kind: "user", text: "do the thing" },
+      { kind: "thinking", text: "let me reason" },
+      { kind: "tool", name: "read_file", status: "completed" },
+      { kind: "assistant", text: "done" },
+    ]);
+  });
+
+  it("skips blank assistant turns", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          bubbles: [
+            { bubbleId: "b1", type: 1, text: "ask" },
+            { bubbleId: "b2", type: 2, text: "" },
+            { bubbleId: "b3", type: 2, text: "answer" },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposerTail("composer-1", 10, { storageRoot })).toEqual([
+      { kind: "user", text: "ask" },
+      { kind: "assistant", text: "answer" },
+    ]);
+  });
+
+  it("omits status when the tool call has none", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          bubbles: [
+            {
+              bubbleId: "b1",
+              type: 2,
+              capabilityType: 15,
+              toolFormerData: { name: "run_terminal" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposerTail("composer-1", 10, { storageRoot })).toEqual([
+      { kind: "tool", name: "run_terminal" },
+    ]);
+  });
+
+  it("returns only the last `limit` messages", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        {
+          composerId: "composer-1",
+          bubbles: [
+            { bubbleId: "b1", type: 1, text: "one" },
+            { bubbleId: "b2", type: 2, text: "two" },
+            { bubbleId: "b3", type: 1, text: "three" },
+            { bubbleId: "b4", type: 2, text: "four" },
+          ],
+        },
+      ],
+    });
+
+    expect(readComposerTail("composer-1", 2, { storageRoot })).toEqual([
+      { kind: "user", text: "three" },
+      { kind: "assistant", text: "four" },
+    ]);
   });
 });
