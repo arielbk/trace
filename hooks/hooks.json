@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx @arielbk/trace@0.1.2 hook session-start"
+            "command": "npx @arielbk/trace@0.2.0 hook session-start"
           }
         ]
       }

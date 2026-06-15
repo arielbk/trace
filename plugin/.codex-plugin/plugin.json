@@ -1,6 +1,6 @@
 {
   "name": "trace",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Bind Codex sessions to Trace tasks and re-enter prior task context.",
   "skills": "./skills/"
 }
