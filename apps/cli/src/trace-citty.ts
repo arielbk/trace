@@ -16,6 +16,7 @@ import {
   type TaskDoc,
   type TokenTotals,
 } from "@trace/core";
+import { resolveFocusedComposer } from "@trace/cursor-reader";
 import {
   copyFileSync,
   lstatSync,
@@ -402,6 +403,7 @@ function recallCandidatesUsage(): string {
 function parseSkillWorkOnTaskArgs(
   args: string[],
   env: Env,
+  cwd: string,
 ): {
   id: string;
   transcriptPath: string;
@@ -440,16 +442,22 @@ function parseSkillWorkOnTaskArgs(
   let toolOverride: SessionTool | undefined;
   if (tool === undefined) {
     toolOverride = undefined;
-  } else if (tool === "claude" || tool === "codex") {
+  } else if (tool === "claude" || tool === "codex" || tool === "cursor") {
     toolOverride = tool;
   } else {
-    throw new Error("Session tool must be claude or codex");
+    throw new Error("Session tool must be claude, codex, or cursor");
   }
 
   const identity = inferSessionIdentity(env, {
     tool: toolOverride,
     id,
     transcriptPath,
+    // Cursor exposes no session env var; bind-time capture resolves the focused
+    // composer from the directory the skill ran in. Runs only when no
+    // claude/codex session env is present (see inferSessionIdentity).
+    cwd,
+    resolveCursorComposer: (dir) =>
+      resolveFocusedComposer(dir)?.composerId ?? null,
   });
 
   if (identity.id === undefined || identity.transcriptPath === undefined) {
@@ -991,7 +999,7 @@ export function buildTraceCittyRoot(
 
               let parsed: ReturnType<typeof parseSkillWorkOnTaskArgs>;
               try {
-                parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
+                parsed = parseSkillWorkOnTaskArgs(args.slice(1), env, cwd);
               } catch (error) {
                 return failure(error instanceof Error ? error.message : String(error));
               }

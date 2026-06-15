@@ -165,3 +165,136 @@ test("an explicit transcriptPath override wins over synthesis", () => {
     transcriptPath: "/custom/path.jsonl",
   });
 });
+
+test("resolves a cursor composer from cwd when no other session env is set", () => {
+  // Binding from a Cursor terminal: no claude/codex env var, but the cwd maps to
+  // a Cursor workspace whose focused composer is resolved. The GUI sets no env
+  // var trace can read, so the composerId is the only driver.
+  const identity = inferSessionIdentity(
+    {},
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: (cwd) =>
+        cwd === "/repos/trace-v2" ? "composer-abc" : null,
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "composer-abc",
+    transcriptPath: "cursor:composer-abc",
+  });
+});
+
+test("a live Claude session takes precedence over cursor cwd resolution", () => {
+  // In a Cursor terminal running Claude Code, CLAUDE_CODE_SESSION_ID wins and the
+  // cursor resolver is never consulted.
+  let resolverCalled = false;
+  const identity = inferSessionIdentity(
+    { CLAUDE_CODE_SESSION_ID: "claude-live" },
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => {
+        resolverCalled = true;
+        return "composer-abc";
+      },
+    },
+  );
+
+  expect(identity.tool).toBe("claude");
+  expect(identity.id).toBe("claude-live");
+  expect(resolverCalled).toBe(false);
+});
+
+test("a live Codex session takes precedence over cursor cwd resolution", () => {
+  const identity = inferSessionIdentity(
+    { CODEX_THREAD_ID: "codex-live" },
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => "composer-abc",
+    },
+  );
+
+  expect(identity.tool).toBe("codex");
+  expect(identity.id).toBe("codex-live");
+});
+
+test("falls back to claude when the cwd maps to no cursor composer", () => {
+  const identity = inferSessionIdentity(
+    {},
+    {
+      cwd: "/somewhere/else",
+      resolveCursorComposer: () => null,
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "claude",
+    id: undefined,
+    transcriptPath: undefined,
+  });
+});
+
+test("treats a blank resolved composerId as no cursor session", () => {
+  const identity = inferSessionIdentity(
+    {},
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => "   ",
+    },
+  );
+
+  expect(identity.tool).toBe("claude");
+  expect(identity.id).toBeUndefined();
+});
+
+test("a forced cursor tool resolves the composer from cwd", () => {
+  const identity = inferSessionIdentity(
+    { CLAUDE_CODE_SESSION_ID: "claude-live" },
+    {
+      tool: "cursor",
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => "composer-xyz",
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "composer-xyz",
+    transcriptPath: "cursor:composer-xyz",
+  });
+});
+
+test("an explicit id override wins over cursor cwd resolution", () => {
+  const identity = inferSessionIdentity(
+    {},
+    {
+      tool: "cursor",
+      id: "explicit-composer",
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => "resolved-composer",
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "explicit-composer",
+    transcriptPath: "cursor:explicit-composer",
+  });
+});
+
+test("does not attempt cursor resolution without a cwd", () => {
+  let resolverCalled = false;
+  const identity = inferSessionIdentity(
+    {},
+    {
+      resolveCursorComposer: () => {
+        resolverCalled = true;
+        return "composer-abc";
+      },
+    },
+  );
+
+  expect(identity.tool).toBe("claude");
+  expect(resolverCalled).toBe(false);
+});
