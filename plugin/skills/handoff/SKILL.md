@@ -97,15 +97,24 @@ One clear, actionable task, not a list.>
 <Bullet list of unresolved questions or decisions. Mark "unblocking" if one
 needs to be resolved before the next step can proceed. Write "none" only if
 there genuinely are none.>
-
----
-
-*Other docs in this task: [list linked filenames from the docs dir, if any]*
 ```
 
-**Links section:** List the other files present in `<taskDocsDir>` (skip
-`state.md` itself). Use relative links: `[filename.md](filename.md)`. If there
-are no other docs, omit the footer entirely.
+**Do not write a docs footer.** The list of other docs in this task is a
+machine-owned region rendered automatically by `trace task add-doc`. It is
+delimited by HTML-comment fence markers:
+
+```
+<!-- trace:docs-manifest:start -->
+...
+<!-- trace:docs-manifest:end -->
+```
+
+If the existing `state.md` you read in step 2 already contains this fenced
+region (along with the `---` divider immediately above it), **preserve it
+verbatim** — write your prose sections above it and leave everything from the
+`---` divider through the closing fence marker exactly as you found it. Never
+hand-write an "Other docs in this task" footer; doing so would duplicate the
+rendered manifest.
 
 ### 5. Confirm
 
