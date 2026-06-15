@@ -1,0 +1,327 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import {
+  cleanup,
+  renderHook,
+  waitFor,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React from "react";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type { TaskSummary, TaskTimeline, TokenTotals } from "@trace/core";
+import {
+  fetchTaskTimeline,
+  fetchTasks,
+  HttpError,
+  useArchiveTask,
+  useTasks,
+  useTaskTimeline,
+  useUnarchiveTask,
+} from "./api.ts";
+
+function makeFreshClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper(client: QueryClient) {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(QueryClientProvider, { client }, children);
+  };
+}
+
+function tokens(n = 0): TokenTotals {
+  return {
+    inputTokens: n,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    totalTokens: n,
+  };
+}
+
+function makeTask(id: string): TaskSummary {
+  return {
+    id,
+    slug: id,
+    title: "Task " + id,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    projectRoot: "/work/proj",
+    archivedAt: null,
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
+    tokenTotals: tokens(),
+    agentTools: [],
+    hasDocs: false,
+  };
+}
+
+function makeTimeline(slug: string): TaskTimeline {
+  return {
+    task: {
+      id: "tid-1",
+      slug,
+      title: "Task " + slug,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      projectRoot: "/work/proj",
+      archivedAt: null,
+    },
+    items: [],
+    tokenTotals: tokens(),
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanup();
+});
+
+// ─── fetchTasks ──────────────────────────────────────────────────────────────
+
+describe("fetchTasks", () => {
+  test("resolves to TaskSummary[] on 200", async () => {
+    const tasks = [makeTask("a"), makeTask("b")];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(tasks), { status: 200 }),
+      ),
+    );
+    const result = await fetchTasks();
+    expect(result).toEqual(tasks);
+    expect(fetch).toHaveBeenCalledWith("/api/tasks");
+  });
+
+  test("throws HttpError with status on non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Error", { status: 500 })),
+    );
+    await expect(fetchTasks()).rejects.toBeInstanceOf(HttpError);
+    await expect(fetchTasks()).rejects.toMatchObject({ status: 500 });
+  });
+});
+
+// ─── fetchTaskTimeline ────────────────────────────────────────────────────────
+
+describe("fetchTaskTimeline", () => {
+  test("resolves to TaskTimeline on 200", async () => {
+    const timeline = makeTimeline("my-task");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(timeline), { status: 200 }),
+      ),
+    );
+    const result = await fetchTaskTimeline("my-task");
+    expect(result).toEqual(timeline);
+    expect(fetch).toHaveBeenCalledWith("/api/tasks/my-task/timeline");
+  });
+
+  test("throws HttpError with status 404 on a 404 response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Not found", { status: 404 })),
+    );
+    await expect(fetchTaskTimeline("missing")).rejects.toBeInstanceOf(HttpError);
+    await expect(fetchTaskTimeline("missing")).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("throws HttpError with status on generic non-OK", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Err", { status: 503 })),
+    );
+    await expect(fetchTaskTimeline("slug")).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+// ─── useTasks ─────────────────────────────────────────────────────────────────
+
+describe("useTasks", () => {
+  test("returns tasks from the /api/tasks endpoint", async () => {
+    const tasks = [makeTask("a"), makeTask("b")];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(tasks), { status: 200 }),
+      ),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useTasks(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(tasks);
+  });
+
+  test("surfaces a non-OK response as a query error carrying the HTTP status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Error", { status: 500 })),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useTasks(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(HttpError);
+    expect((result.current.error as HttpError).status).toBe(500);
+  });
+});
+
+// ─── useTaskTimeline ──────────────────────────────────────────────────────────
+
+describe("useTaskTimeline", () => {
+  test("returns the timeline for a given id", async () => {
+    const timeline = makeTimeline("my-task");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(timeline), { status: 200 }),
+      ),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useTaskTimeline("my-task"), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(timeline);
+  });
+
+  test("surfaces 404 as query error carrying status 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Not found", { status: 404 })),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useTaskTimeline("missing"), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect((result.current.error as HttpError).status).toBe(404);
+  });
+});
+
+// ─── useArchiveTask ───────────────────────────────────────────────────────────
+
+describe("useArchiveTask", () => {
+  test("POSTs to the archive endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "t1", archivedAt: "2026-06-15T00:00:00.000Z" }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useArchiveTask(), {
+      wrapper: wrapper(client),
+    });
+    result.current.mutate("my-task");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/my-task/archive",
+      { method: "POST" },
+    );
+  });
+
+  test("invalidates the tasks query on success", async () => {
+    const tasks = [makeTask("a")];
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        callCount++;
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "a", archivedAt: "2026-06-15T00:00:00.000Z" }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({ tasks: useTasks(), archive: useArchiveTask() }),
+      { wrapper: wrapper(client) },
+    );
+
+    // Wait for initial tasks fetch
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    const initialCallCount = callCount;
+
+    // Trigger archive mutation
+    result.current.archive.mutate("a");
+    await waitFor(() => expect(result.current.archive.isSuccess).toBe(true));
+
+    // Tasks should have been refetched (invalidation)
+    await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
+  });
+});
+
+// ─── useUnarchiveTask ─────────────────────────────────────────────────────────
+
+describe("useUnarchiveTask", () => {
+  test("POSTs to the unarchive endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "t1", archivedAt: null }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useUnarchiveTask(), {
+      wrapper: wrapper(client),
+    });
+    result.current.mutate("my-task");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/my-task/unarchive",
+      { method: "POST" },
+    );
+  });
+
+  test("invalidates the tasks query on success", async () => {
+    const tasks = [makeTask("a")];
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        callCount++;
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "a", archivedAt: null }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({ tasks: useTasks(), unarchive: useUnarchiveTask() }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    const initialCallCount = callCount;
+
+    result.current.unarchive.mutate("a");
+    await waitFor(() => expect(result.current.unarchive.isSuccess).toBe(true));
+
+    await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
+  });
+});
