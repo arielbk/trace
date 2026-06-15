@@ -38,16 +38,16 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="inline-flex items-center justify-center size-8 rounded-full border border-border text-text-muted hover:text-text hover:border-border-strong transition-colors cursor-pointer"
+      className="inline-flex items-center justify-center size-8 rounded-full border border-border bg-surface text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer"
       aria-label="Toggle color theme"
       aria-pressed={isDark}
       title={isDark ? "Switch to light theme" : "Switch to dark theme"}
       onClick={handleToggle}
     >
       {isDark ? (
-        <Moon size={14} aria-hidden="true" />
-      ) : (
         <Sun size={14} aria-hidden="true" />
+      ) : (
+        <Moon size={14} aria-hidden="true" />
       )}
     </button>
   );

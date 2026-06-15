@@ -1,15 +1,19 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState, type CSSProperties } from "react";
+import { Link, useParams } from "react-router-dom";
+import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
   type SessionTool,
   type TaskTimeline,
   type TokenTotals,
-} from "@trace/core";
+} from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
+import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import { cn } from "../lib/utils.ts";
 import {
-  buildReEnterPrompt,
   formatBytes,
   formatRelativeTime,
   formatTokenBreakdown,
@@ -22,12 +26,18 @@ export function TaskPage() {
   const [timeline, setTimeline] = useState<TaskTimeline | null | "missing">(
     null,
   );
+  const [archivedAt, setArchivedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     fetch(`/api/tasks/${id}/timeline`)
       .then((res) => (res.status === 404 ? "missing" : res.json()))
-      .then(setTimeline);
+      .then((result) => {
+        setTimeline(result);
+        if (result !== "missing" && result !== null) {
+          setArchivedAt((result as TaskTimeline).task.archivedAt);
+        }
+      });
   }, [id]);
 
   if (timeline === null)
@@ -43,67 +53,202 @@ export function TaskPage() {
       </main>
     );
 
-  return <TaskTimelineView timeline={timeline} />;
+  async function handleArchive() {
+    if (!timeline || timeline === "missing") return;
+    const result = await taskArchive((timeline as TaskTimeline).task.slug);
+    setArchivedAt(result.archivedAt);
+  }
+
+  async function handleUnarchive() {
+    if (!timeline || timeline === "missing") return;
+    const result = await taskUnarchive((timeline as TaskTimeline).task.slug);
+    setArchivedAt(result.archivedAt);
+  }
+
+  return (
+    <TaskTimelineView
+      timeline={timeline}
+      archivedAt={archivedAt}
+      onArchive={handleArchive}
+      onUnarchive={handleUnarchive}
+    />
+  );
 }
 
 export function TaskTimelineView({
   timeline,
   now,
+  archivedAt: archivedAtProp,
+  onArchive,
+  onUnarchive,
 }: {
   timeline: TaskTimeline;
   now?: Date;
+  archivedAt?: string | null;
+  onArchive?: () => void | Promise<void>;
+  onUnarchive?: () => void | Promise<void>;
 }) {
+  const archivedAt =
+    archivedAtProp !== undefined ? archivedAtProp : timeline.task.archivedAt;
+  const isArchived = archivedAt !== null;
+  const onToggleArchive = isArchived ? onUnarchive : onArchive;
+
+  const [timelineFilter, setTimelineFilter] = useState<"all" | "session" | "doc">(
+    "all",
+  );
+
+  const sessionCount = timeline.items.filter(
+    (item) => item.type === "session",
+  ).length;
+  const docCount = timeline.items.filter((item) => item.type === "doc").length;
+  const visibleItems = (
+    timelineFilter === "all"
+      ? timeline.items
+      : timeline.items.filter((item) => item.type === timelineFilter)
+  ).slice().reverse();
+
+  function toggleFilter(filter: "session" | "doc") {
+    setTimelineFilter((current) => (current === filter ? "all" : filter));
+  }
+
   return (
-    <main className="task-page">
+    <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader
         project={
           timeline.task.projectRoot
             ? truncatePath(timeline.task.projectRoot)
             : undefined
         }
-        context={timeline.task.title}
+        projectHref={
+          timeline.task.projectRoot
+            ? `/?project=${encodeURIComponent(timeline.task.projectRoot)}`
+            : undefined
+        }
+        context={timeline.task.slug}
+        bordered={false}
       />
-      <header className="task-header">
-        <div className="task-heading">
-          <div className="task-title-row">
-            <h1>{timeline.task.title}</h1>
-            <CopyChip
-              value={buildReEnterPrompt(
-                timeline.task.title,
-                timeline.task.slug,
-              )}
-              display="Copy re-enter prompt"
-            />
+      <div className="pt-3">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 font-mono text-crumb text-text-muted no-underline hover:text-accent"
+        >
+          <BackArrowIcon />
+          All tasks
+        </Link>
+      </div>
+      <div className="pt-3">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <h1 className="m-0 text-page-title font-extrabold tracking-tight leading-tight">
+            {timeline.task.title}
+          </h1>
+          <div className="flex items-center gap-1.5 pt-2 shrink-0 font-mono text-crumb text-text-muted">
+            <ClockIcon />
+            <span className="whitespace-nowrap">
+              Last active{" "}
+              <span className="tabular-nums">
+                {formatRelativeTime(timeline.lastActivityAt, now)}
+              </span>
+            </span>
           </div>
-          {timeline.task.description ? (
-            <p className="task-description">{timeline.task.description}</p>
+        </div>
+        {timeline.task.description ? (
+          <p
+            data-testid="task-description"
+            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description"
+          >
+            {timeline.task.description}
+          </p>
+        ) : null}
+        <div className="flex items-center gap-2 flex-wrap mt-5">
+          <ReEnterButton title={timeline.task.title} slug={timeline.task.slug} />
+          {onToggleArchive ? (
+            <ArchiveToggleButton
+              isArchived={isArchived}
+              onToggle={onToggleArchive}
+              className="ml-auto"
+            />
           ) : null}
         </div>
-        <TokenSummary totals={timeline.tokenTotals} />
-      </header>
-      {timeline.items.length === 0 ? (
-        <p className="empty-state">No timeline items found.</p>
-      ) : (
-        <ol className="timeline-list">
-          {timeline.items.map((item) =>
-            item.type === "session" ? (
-              <li className="timeline-item" key={`session:${item.session.id}`}>
-                <TypeIcon type={item.session.tool} />
-                <div className="timeline-item-body">
+      </div>
+      <LeftOffPanel state={timeline.state} />
+      <TokenSummary totals={timeline.tokenTotals} />
+      <section className="mt-8">
+        <div className="flex items-baseline gap-5 pb-1.5">
+          <h2 className="m-0 text-row-title font-bold tracking-tight">
+            Activity
+          </h2>
+          <span className="font-mono text-crumb whitespace-nowrap">
+            <button
+              type="button"
+              className={cn(
+                "bg-transparent border-0 p-0 font-mono text-crumb cursor-pointer hover:text-text",
+                timelineFilter === "session"
+                  ? "text-text font-semibold"
+                  : "text-text-muted",
+              )}
+              aria-pressed={timelineFilter === "session"}
+              onClick={() => toggleFilter("session")}
+            >
+              {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+            </button>
+            <span className="text-text-muted"> · </span>
+            <button
+              type="button"
+              className={cn(
+                "bg-transparent border-0 p-0 font-mono text-crumb cursor-pointer hover:text-text",
+                timelineFilter === "doc"
+                  ? "text-text font-semibold"
+                  : "text-text-muted",
+              )}
+              aria-pressed={timelineFilter === "doc"}
+              onClick={() => toggleFilter("doc")}
+            >
+              {docCount} {docCount === 1 ? "doc" : "docs"}
+            </button>
+          </span>
+        </div>
+        {timeline.items.length === 0 ? (
+          <p className="text-text-muted mt-5">No timeline items found.</p>
+        ) : visibleItems.length === 0 ? (
+          <p className="text-text-muted mt-5">
+            No {timelineFilter === "session" ? "sessions" : "docs"} in this
+            timeline.
+          </p>
+        ) : (
+          <ol className="relative mt-2 list-none p-0 m-0">
+            <div
+              className="absolute left-5 top-8 bottom-8 w-0.5 -translate-x-1/2 bg-border-subtle"
+              aria-hidden="true"
+              data-testid="timeline-spine"
+            />
+            {visibleItems.map((item) => {
+              return item.type === "session" ? (
+              <li
+                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
+                key={`session:${item.session.id}`}
+              >
+                <div className="relative z-10 flex justify-center">
+                  <TypeIcon type={item.session.tool} />
+                </div>
+                <div className="min-w-0">
                   {item.sessionName ? (
-                    <span className="session-name">{item.sessionName}</span>
+                    <span className="text-base font-semibold">
+                      {item.sessionName}
+                    </span>
                   ) : (
                     <CopyChip
                       value={item.session.transcriptPath}
                       display={truncatePath(item.session.transcriptPath)}
                     />
                   )}
-                  <p className="item-meta">
+                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
                     {item.session.model ? (
-                      <span className="model-chip">{item.session.model}</span>
+                      <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                        {item.session.model}
+                      </span>
                     ) : null}
                     <span
-                      className="item-tokens"
+                      className="font-mono"
                       title={formatTokenBreakdown(item.session.tokenTotals)}
                     >
                       {hasCapturedTokens(item.session.tokenTotals) ? (
@@ -121,37 +266,148 @@ export function TaskTimelineView({
                         "tokens unavailable"
                       )}
                     </span>
-                    <span className="timeline-item-time">
+                    <span className="ml-auto text-text-muted text-sm">
                       {formatRelativeTime(item.createdAt, now)}
                     </span>
                   </p>
                 </div>
               </li>
             ) : (
-              <li className="timeline-item" key={`doc:${item.doc.path}`}>
-                <TypeIcon type="doc" />
-                <div className="timeline-item-body">
+              <li
+                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
+                key={`doc:${item.doc.path}`}
+              >
+                <div className="relative z-10 flex justify-center">
+                  <TypeIcon type="doc" />
+                </div>
+                <div className="min-w-0">
                   <CopyChip
                     value={item.doc.path}
                     display={truncatePath(item.doc.path)}
                   />
-                  <p className="item-meta">
+                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
                     {item.sizeBytes !== null ? (
-                      <span className="doc-size">
+                      <span className="font-mono tabular-nums">
                         {formatBytes(item.sizeBytes)}
                       </span>
                     ) : null}
-                    <span className="timeline-item-time">
+                    <span className="ml-auto text-text-muted text-sm">
                       {formatRelativeTime(item.createdAt, now)}
                     </span>
                   </p>
                 </div>
               </li>
-            ),
-          )}
-        </ol>
-      )}
+            );
+            })}
+          </ol>
+        )}
+      </section>
     </main>
+  );
+}
+
+export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
+  if (!state) {
+    return (
+      <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
+        No context saved yet — run{" "}
+        <code className="font-mono text-xs">/handoff</code> to capture where you
+        left off.
+      </p>
+    );
+  }
+
+  const hasGrid =
+    state.decisions.length > 0 ||
+    Boolean(state.nextStep) ||
+    state.openQuestions.length > 0;
+
+  return (
+    <section className="mt-8 pt-6 border-t border-border">
+      <h2 className="m-0 mb-2.5 text-xs font-bold uppercase tracking-widest text-accent">
+        Where you left off
+      </h2>
+      <ClampedSection maxHeight={200}>
+        <div>
+        {state.summary ? (
+          <p
+            className="m-0 text-md font-semibold leading-normal text-text"
+            dangerouslySetInnerHTML={{ __html: state.summary }}
+          />
+        ) : null}
+        {state.currentState.length > 0 ? (
+          <div
+            className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: state.currentState.join("\n"),
+            }}
+          />
+        ) : null}
+      {hasGrid ? (
+        <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+          {state.decisions.length > 0 ? (
+            <div>
+              <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                Decisions made
+              </h3>
+              <ul className="m-0 p-0 flex flex-col gap-2.5">
+                {state.decisions.map((d, i) => (
+                  <li key={i} className="flex gap-2.5">
+                    <span
+                      className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="text-sm leading-normal text-text"
+                      dangerouslySetInnerHTML={{ __html: d }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex flex-col gap-6">
+            {state.nextStep ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Next step
+                </h3>
+                <div className="flex gap-2.5">
+                  <NextStepArrow />
+                  <span
+                    className="text-sm font-medium leading-normal text-text"
+                    dangerouslySetInnerHTML={{ __html: state.nextStep }}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {state.openQuestions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Open questions
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.openQuestions.map((q, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="text-sm leading-normal text-text"
+                        dangerouslySetInnerHTML={{ __html: q }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+        </div>
+      </ClampedSection>
+    </section>
   );
 }
 
@@ -161,11 +417,30 @@ const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   doc: "Document",
 };
 
+const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
+  claude: {
+    color: "var(--color-tag-claude)",
+    background: "color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface))",
+    borderColor: "color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border))",
+  },
+  codex: {
+    color: "var(--color-tag-codex)",
+    background: "var(--color-tag-codex-bg)",
+    borderColor: "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+  },
+  doc: {
+    color: "var(--color-tag-doc)",
+    background: "color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface))",
+    borderColor: "color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border))",
+  },
+};
+
 /** Inline SVG glyph for each timeline entry type; colored via the type token. */
 function TypeIcon({ type }: { type: SessionTool | "doc" }) {
   return (
     <span
-      className={`type-icon type-icon-${type}`}
+      className={`type-icon type-icon-${type} inline-flex items-center justify-center w-10 h-10 border rounded-md`}
+      style={TYPE_ICON_STYLES[type]}
       role="img"
       aria-label={TYPE_LABELS[type]}
     >
@@ -252,29 +527,123 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <div className="token-summary-wrap">
-      <dl className="token-summary" aria-label="Token totals">
+    <div className="mt-8 pt-6 border-t border-border flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+      <dl className="m-0 flex flex-wrap gap-x-11 gap-y-3" aria-label="Token totals">
         {cards.map((card) => (
-          <div key={card.label}>
-            <dt>{card.label}</dt>
-            <dd title={String(card.value)}>
+          <div key={card.label} className="min-w-16">
+            <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
+              {card.label}
+            </dt>
+            <dd
+              className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
+              title={String(card.value)}
+            >
               {formatTokensCompact(card.value)}
             </dd>
           </div>
         ))}
       </dl>
-      <p className="token-summary-cache">
-        <span className="token-summary-cache-label">Cache</span>
-        <span title={String(totals.cacheReadInputTokens)}>
+      <p
+        data-testid="token-summary-cache"
+        className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
+      >
+        <span className="text-xs font-bold uppercase tracking-wide">Cache</span>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheReadInputTokens)}
+        >
           {formatTokensCompact(totals.cacheReadInputTokens)} read
         </span>
-        <span className="token-summary-cache-sep" aria-hidden="true">
+        <span className="opacity-50" aria-hidden="true">
           ·
         </span>
-        <span title={String(totals.cacheCreationInputTokens)}>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheCreationInputTokens)}
+        >
           {formatTokensCompact(totals.cacheCreationInputTokens)} written
         </span>
       </p>
     </div>
   );
+}
+
+function BackArrowIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+
+function NextStepArrow() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 mt-0.5 text-accent"
+      aria-hidden="true"
+    >
+      <path d="M5 12h13" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+async function taskArchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const response = await fetch(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to archive task ${ref}`);
+  return (await response.json()) as { id: string; archivedAt: string | null };
+}
+
+async function taskUnarchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const response = await fetch(
+    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
+    { method: "POST" },
+  );
+  if (!response.ok) throw new Error(`Failed to unarchive task ${ref}`);
+  return (await response.json()) as { id: string; archivedAt: string | null };
 }

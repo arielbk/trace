@@ -1,3 +1,5 @@
+import type { ParsedStateMd } from "./state-parser.ts";
+
 export type Task = {
   id: string;
   title: string;
@@ -67,6 +69,8 @@ export type TaskTimeline = {
   task: Task;
   items: TaskTimelineItem[];
   tokenTotals: TokenTotals;
+  lastActivityAt: string;
+  state?: ParsedStateMd;
 };
 
 export type TaskSummary = Task & {

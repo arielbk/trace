@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   archiveTask,
+  buildSubtitle,
   filterByProject,
   FilterBar,
   getProjectCounts,
@@ -24,6 +25,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -422,34 +424,15 @@ describe("TaskList rendering — flat recency-first", () => {
   });
 
   test("subtitle shows task count and hidden archived count", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "Work 1" }),
-      summary({ id: "task-2", title: "Work 2" }),
-    ];
-
-    const html = renderToStaticMarkup(
-      <MemoryRouter>
-        <TaskList tasks={tasks} hiddenArchivedCount={3} />
-      </MemoryRouter>,
-    );
-
-    expect(html).toContain("2 tasks");
-    expect(html).toContain("3 archived hidden");
+    const subtitle = buildSubtitle(2, 3);
+    expect(subtitle).toContain("2 tasks");
+    expect(subtitle).toContain("3 archived hidden");
   });
 
   test("subtitle omits archived hidden when count is zero", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "Work" }),
-    ];
-
-    const html = renderToStaticMarkup(
-      <MemoryRouter>
-        <TaskList tasks={tasks} hiddenArchivedCount={0} />
-      </MemoryRouter>,
-    );
-
-    expect(html).toContain("1 tasks");
-    expect(html).not.toContain("archived hidden");
+    const subtitle = buildSubtitle(1, 0);
+    expect(subtitle).toContain("1 task");
+    expect(subtitle).not.toContain("archived hidden");
   });
 
   test("empty state shows 'No tasks in this view.' when list is empty", () => {
@@ -731,7 +714,8 @@ describe("TaskRow hover-swap", () => {
     });
   });
 
-  test("clicking archive button calls onArchive with the task", () => {
+  test("clicking archive button calls onArchive after the confirmation window", async () => {
+    vi.useFakeTimers();
     const onArchive = vi.fn();
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
@@ -748,9 +732,70 @@ describe("TaskRow hover-swap", () => {
     const archiveBtn = screen.getByRole("button", { name: "Archive CLI work" });
     fireEvent.click(archiveBtn);
 
+    expect(onArchive).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2200);
+
     expect(onArchive).toHaveBeenCalledWith(
       expect.objectContaining({ id: "task-1" }),
     );
+  });
+
+  test("archive button swaps to a held success check after click", async () => {
+    vi.useFakeTimers();
+    const onArchive = vi.fn().mockResolvedValue(undefined);
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={onArchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const archiveBtn = screen.getByRole("button", { name: "Archive CLI work" });
+    expect(archiveBtn).not.toHaveAttribute("title");
+    fireEvent.click(archiveBtn);
+
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Unarchive CLI work" }),
+    ).toBeEnabled();
+    fireEvent.mouseLeave(row);
+    expect(container.querySelector(".task-row-actions")).not.toHaveClass(
+      "opacity-0",
+    );
+    expect(container.querySelector(".t-success-check")).toHaveAttribute(
+      "data-state",
+      "in",
+    );
+  });
+
+  test("clicking success archive button cancels the pending archive", async () => {
+    vi.useFakeTimers();
+    const onArchive = vi.fn().mockResolvedValue(undefined);
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={onArchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive CLI work" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unarchive CLI work" }));
+    await vi.advanceTimersByTimeAsync(2200);
+
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Archive CLI work" }),
+    ).toBeInTheDocument();
   });
 
   test("clicking unarchive button calls onUnarchive with the task", () => {

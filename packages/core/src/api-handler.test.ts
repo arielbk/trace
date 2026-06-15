@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { openTraceStore } from "./store.ts";
+import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { handleTraceApiRequest } from "./api-handler.ts";
 
 function withSeededDatabase(
@@ -39,9 +39,11 @@ test("GET /api/tasks returns the live task summaries as JSON", () => {
 
 test("GET /api/tasks/:id/timeline returns the live timeline as JSON", () => {
   let timelineId = "";
+  let createdAt = "";
   const { databasePath, cleanup } = withSeededDatabase((store) => {
     const task = store.createTask("checkout");
     timelineId = task.id;
+    createdAt = task.createdAt;
   });
 
   try {
@@ -55,6 +57,56 @@ test("GET /api/tasks/:id/timeline returns the live timeline as JSON", () => {
     expect(response!.contentType).toBe("application/json");
     const timeline = JSON.parse(response!.body);
     expect(timeline.task.id).toBe(timelineId);
+    expect(timeline.lastActivityAt).toBe(createdAt);
+    expect("state" in timeline).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:id/timeline includes parsed state when state.md exists", () => {
+  let timelineId = "";
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    const task = store.createTask("checkout");
+    timelineId = task.id;
+    taskSlug = task.slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(
+    join(docsDir, "state.md"),
+    [
+      "# Checkout is resumable",
+      "",
+      "## Decisions made",
+      "- Keep parsing in **core**",
+      "",
+      "## Current state",
+      "Endpoint work is `in progress`.",
+      "",
+      "## Next step",
+      "Render the panel.",
+    ].join("\n"),
+  );
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${timelineId}/timeline`,
+    );
+    expect(response!.status).toBe(200);
+    const timeline = JSON.parse(response!.body);
+    expect(timeline.state).toEqual({
+      summary: "Checkout is resumable",
+      decisions: ["Keep parsing in <strong>core</strong>"],
+      currentState: ["<p>Endpoint work is <code>in progress</code>.</p>"],
+      nextStep: "Render the panel.",
+      openQuestions: [],
+    });
+    expect(timeline.lastActivityAt).toEqual(expect.any(String));
+    expect(timeline.lastActivityAt >= timeline.task.createdAt).toBe(true);
   } finally {
     cleanup();
   }

@@ -785,6 +785,7 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
           sessionName: null,
         },
       ],
+      lastActivityAt: codexSession.createdAt,
       tokenTotals: {
         inputTokens: 17,
         outputTokens: 31,
@@ -797,6 +798,7 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
     expect(store.getTaskTimeline(emptyTask.id)).toEqual({
       task: emptyTask,
       items: [],
+      lastActivityAt: emptyTask.createdAt,
       tokenTotals: {
         inputTokens: 0,
         outputTokens: 0,
@@ -1293,7 +1295,7 @@ test("listTaskSummaries agentTools: none when task has no sessions", () => {
 
   try {
     const store = openTraceStore(databasePath);
-    const task = store.createTask("no-sessions");
+    store.createTask("no-sessions");
 
     const [summary] = store.listTaskSummaries();
     expect(summary?.agentTools).toEqual([]);

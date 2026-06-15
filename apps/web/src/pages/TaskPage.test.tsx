@@ -1,8 +1,38 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { expect, test } from "vitest";
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
-import { TaskTimelineView } from "./TaskPage.tsx";
+import type { ParsedStateMd } from "@trace/core";
+import { LeftOffPanel, TaskTimelineView } from "./TaskPage.tsx";
+
+beforeAll(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanup();
+});
 
 test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   const timeline: TaskTimeline = {
@@ -66,6 +96,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 8,
@@ -135,6 +166,7 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
         sessionName: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -178,6 +210,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -242,6 +275,7 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
         sizeBytes: null,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 10,
       outputTokens: 5,
@@ -278,6 +312,7 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 81123,
       outputTokens: 5,
@@ -327,6 +362,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -357,6 +393,7 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -397,6 +434,7 @@ test("TaskTimelineView renders the task description under the title when present
       description,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -412,7 +450,7 @@ test("TaskTimelineView renders the task description under the title when present
     </MemoryRouter>,
   );
 
-  expect(html).toContain('class="task-description"');
+  expect(html).toContain('data-testid="task-description"');
   expect(html).toContain(description);
 });
 
@@ -427,6 +465,7 @@ test("TaskTimelineView omits the description block when absent", () => {
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -442,7 +481,7 @@ test("TaskTimelineView omits the description block when absent", () => {
     </MemoryRouter>,
   );
 
-  expect(html).not.toContain("task-description");
+  expect(html).not.toContain('data-testid="task-description"');
 });
 
 test("TokenSummary renders cache reads/writes as a secondary line below the cards", () => {
@@ -456,6 +495,7 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 81123,
       outputTokens: 5,
@@ -472,7 +512,7 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
   );
 
   // Cache reads/writes render on the dedicated secondary line, not as a card.
-  expect(html).toContain('class="token-summary-cache"');
+  expect(html).toContain('data-testid="token-summary-cache"');
   // Cache data is still visible (not hidden), labeled, without the old "+".
   expect(html).toContain("1.0M read");
   expect(html).toContain("999 written");
@@ -490,6 +530,7 @@ test("TaskTimelineView shows the project display name in the header breadcrumb w
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -521,6 +562,7 @@ test("TaskTimelineView omits the breadcrumb project segment when projectRoot is 
       archivedAt: null,
     },
     items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -565,6 +607,7 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
         sizeBytes: 12544,
       },
     ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
     tokenTotals: {
       inputTokens: 0,
       outputTokens: 0,
@@ -587,4 +630,378 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
   expect(html).not.toContain("No timeline items found.");
   // Zero token totals still render (no session rows, no crash).
   expect(html).toContain("Token totals");
+});
+
+function baseTimeline(overrides: Partial<TaskTimeline["task"]> = {}): TaskTimeline {
+  return {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+      ...overrides,
+    },
+    items: [],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+}
+
+test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  // The breadcrumb context crumb should be the slug
+  expect(html).toContain("usable-v1");
+});
+
+test("TaskTimelineView header shows All tasks back link", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("All tasks");
+});
+
+test("TaskTimelineView header shows Last active timestamp", () => {
+  const now = new Date("2026-05-29T00:10:00.000Z");
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} now={now} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("Last active");
+  // lastActivityAt is "2026-05-29T00:00:00.000Z", now is 10m later
+  expect(html).toContain("10m ago");
+});
+
+test("TaskTimelineView header shows Re-enter button with prompt as title", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("Re-enter");
+  // The full prompt is available on the button for accessibility/hover
+  expect(html).toContain('title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"');
+});
+
+test("TaskTimelineView header shows Archive button for unarchived task", () => {
+  const timeline = baseTimeline({ archivedAt: null });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onArchive={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("aria-label=\"Archive task\"");
+  expect(html).not.toContain("aria-label=\"Unarchive task\"");
+});
+
+test("TaskTimelineView header shows Unarchive button for archived task", () => {
+  const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onUnarchive={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("aria-label=\"Unarchive task\"");
+  expect(html).not.toContain("aria-label=\"Archive task\"");
+});
+
+test("TaskTimelineView Archive button calls onArchive handler on click", async () => {
+  const onArchive = vi.fn().mockResolvedValue(undefined);
+  const timeline = baseTimeline({ archivedAt: null });
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onArchive={onArchive} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Archive task"));
+  await waitFor(() => expect(onArchive).toHaveBeenCalledTimes(1));
+});
+
+test("TaskTimelineView Unarchive button calls onUnarchive handler on click", async () => {
+  const onUnarchive = vi.fn().mockResolvedValue(undefined);
+  const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onUnarchive={onUnarchive} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Unarchive task"));
+  await waitFor(() => expect(onUnarchive).toHaveBeenCalledTimes(1));
+});
+
+test("TaskTimelineView Re-enter button copies re-enter prompt to clipboard on click", async () => {
+  const timeline = baseTimeline();
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByLabelText("Copy re-enter prompt"));
+  await waitFor(() =>
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      'Re-enter the trace task "usable v1" (usable-v1)',
+    ),
+  );
+});
+
+// LeftOffPanel tests
+
+test("LeftOffPanel renders all sections when full state is present", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on the checkout redesign",
+    decisions: ["Use React Query for data fetching", "Skip caching layer"],
+    currentState: ["Auth flow is done", "Payment step is blocked"],
+    nextStep: "Wire up the Stripe webhook handler",
+    openQuestions: ["Do we support PayPal?"],
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Working on the checkout redesign");
+  expect(html).toContain("Use React Query for data fetching");
+  expect(html).toContain("Skip caching layer");
+  expect(html).toContain("Auth flow is done");
+  expect(html).toContain("Payment step is blocked");
+  expect(html).toContain("Wire up the Stripe webhook handler");
+  expect(html).toContain("Do we support PayPal?");
+  // currentState renders as a muted paragraph (no header), so its content is
+  // asserted above; the remaining sections still carry headers.
+  expect(html).toContain("Decisions made");
+  expect(html).toContain("Next step");
+  expect(html).toContain("Open questions");
+});
+
+test("LeftOffPanel omits headers for missing sections (partial state)", () => {
+  const state: ParsedStateMd = {
+    summary: "Auth migration in progress",
+    decisions: [],
+    currentState: ["JWT tokens implemented"],
+    nextStep: undefined,
+    openQuestions: [],
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Auth migration in progress");
+  expect(html).toContain("JWT tokens implemented");
+  // Sections with no content should not render their headers
+  expect(html).not.toContain("Decisions");
+  expect(html).not.toContain("Next step");
+  expect(html).not.toContain("Open questions");
+});
+
+test("LeftOffPanel renders handoff prompt when state is absent", () => {
+  const html = renderToStaticMarkup(<LeftOffPanel state={undefined} />);
+
+  expect(html).toContain("/handoff");
+  // No section headers when there's no state
+  expect(html).not.toContain("Where you left off");
+  expect(html).not.toContain("Decisions");
+});
+
+test("LeftOffPanel renders HTML fragments without escaping inline markup", () => {
+  const state: ParsedStateMd = {
+    decisions: [],
+    currentState: [],
+    openQuestions: [],
+    summary: "Working on <strong>auth</strong>",
+    nextStep: "Fix <code>login()</code>",
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
+
+  // The pre-rendered HTML fragments must not be double-escaped
+  expect(html).toContain("<strong>auth</strong>");
+  expect(html).toContain("<code>login()</code>");
+});
+
+test("TaskTimelineView renders LeftOffPanel with state when timeline has state", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on billing integration",
+    decisions: ["Use Stripe"],
+    currentState: [],
+    openQuestions: [],
+  };
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    state,
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("Where you left off");
+  expect(html).toContain("Working on billing integration");
+});
+
+test("TaskTimelineView renders handoff prompt when timeline has no state", () => {
+  const timeline = baseTimeline();
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("/handoff");
+});
+
+// activity-timeline-restyle: continuous spine tests
+
+test("TaskTimelineView renders a single continuous timeline spine across items", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        session: {
+          id: "s1",
+          transcriptPath: "/tmp/s1.jsonl",
+          tool: "claude",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        sizeBytes: null,
+      },
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        session: {
+          id: "s2",
+          transcriptPath: "/tmp/s2.jsonl",
+          tool: "codex",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0 },
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
+        sessionName: null,
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // The timeline is drawn as one continuous spine behind the icons, not as
+  // per-row connectors — so exactly one spine element regardless of item count,
+  // and no horizontal dividers between rows.
+  const spineCount = (html.match(/data-testid="timeline-spine"/g) ?? []).length;
+  expect(spineCount).toBe(1);
+  expect(html).not.toContain("border-b border-border");
+});
+
+test("TaskTimelineView still renders the spine with only one timeline item", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/b.md", createdAt: "2026-05-29T00:01:00.000Z" },
+        sizeBytes: null,
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain('data-testid="timeline-spine"');
+});
+
+// timeline filtering by session / doc counts
+
+function filterableTimeline(): TaskTimeline {
+  return {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        session: {
+          id: "s1",
+          transcriptPath: "/tmp/s1.jsonl",
+          tool: "claude",
+          model: null,
+          taskId: "task-1",
+          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+        sessionName: null,
+      },
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        sizeBytes: null,
+      },
+    ],
+  };
+}
+
+test("TaskTimelineView filters the timeline when a count is clicked, and toggles back", () => {
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={filterableTimeline()} />
+    </MemoryRouter>,
+  );
+
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+  fireEvent.click(screen.getByRole("button", { name: "1 doc" }));
+  expect(screen.getAllByRole("listitem")).toHaveLength(1);
+
+  // clicking the active filter again clears it
+  fireEvent.click(screen.getByRole("button", { name: "1 doc" }));
+  expect(screen.getAllByRole("listitem")).toHaveLength(2);
+});
+
+test("TaskTimelineView breadcrumb links the project name to the filtered home view", () => {
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={baseTimeline()} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain(
+    `href="/?project=${encodeURIComponent("/work/trace-v2")}"`,
+  );
 });

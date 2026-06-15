@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-const stylesPath = fileURLToPath(new URL("./styles.css", import.meta.url));
+const stylesPath = fileURLToPath(new URL("./index.css", import.meta.url));
 const css = readFileSync(stylesPath, "utf8");
 
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
