@@ -11,6 +11,7 @@ import {
   parseCodexTranscriptFile,
   tailCodexTranscript,
 } from "./codex-adapter.ts";
+import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
 import type { SessionTool, TokenTotals } from "./types.ts";
 
@@ -116,12 +117,13 @@ const codexTranscriptAdapter: TranscriptAdapter = {
 };
 
 // Partial because the tool axis (`SessionTool`) can carry tools whose adapter
-// has not landed yet — `cursor` is registered by the cursor-adapter-shim slice.
-// `getTranscriptAdapter` throws for an unregistered tool rather than returning
-// undefined, preserving the non-null contract callers rely on.
+// has not landed yet. `getTranscriptAdapter` throws for an unregistered tool
+// rather than returning undefined, preserving the non-null contract callers
+// rely on.
 const adaptersByTool: Partial<Record<SessionTool, TranscriptAdapter>> = {
   claude: claudeTranscriptAdapter,
   codex: codexTranscriptAdapter,
+  cursor: cursorTranscriptAdapter,
 };
 
 export function getTranscriptAdapter(tool: SessionTool): TranscriptAdapter {

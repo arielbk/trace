@@ -36,6 +36,12 @@ export default defineConfig({
   sourcemap: false,
   clean: true,
   external: ["node:sqlite"],
-  noExternal: ["@trace/core", "drizzle-orm", "citty", "marked"],
+  noExternal: [
+    "@trace/core",
+    "@trace/cursor-reader",
+    "drizzle-orm",
+    "citty",
+    "marked",
+  ],
   onSuccess: copyWebAssets,
 });
