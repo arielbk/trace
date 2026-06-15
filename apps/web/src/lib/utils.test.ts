@@ -10,5 +10,6 @@ test("cn deduplicates conflicting Tailwind classes", () => {
 });
 
 test("cn drops falsy values", () => {
-  expect(cn("foo", false && "bar", undefined, "baz")).toBe("foo baz");
+  const falsy: boolean = false;
+  expect(cn("foo", falsy && "bar", undefined, "baz")).toBe("foo baz");
 });

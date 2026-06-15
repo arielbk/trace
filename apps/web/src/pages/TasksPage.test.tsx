@@ -1,14 +1,31 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   archiveTask,
-  groupTasksByProject,
+  filterByProject,
+  FilterBar,
+  getProjectCounts,
   TaskList,
   unarchiveTask,
   visibleTasks,
 } from "./TasksPage.tsx";
+
+beforeAll(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  });
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 function tokens(totalTokens: number): TokenTotals {
   return {
@@ -24,8 +41,6 @@ function summary(
   overrides: Partial<TaskSummary> & Pick<TaskSummary, "id">,
 ): TaskSummary {
   return {
-    // Slug defaults to the id so existing id-based route assertions stay valid;
-    // tests that exercise slug routing pass an explicit slug.
     slug: overrides.id,
     title: "Untitled",
     createdAt: "2020-01-01T00:00:00.000Z",
@@ -38,69 +53,6 @@ function summary(
     ...overrides,
   };
 }
-
-describe("groupTasksByProject", () => {
-  test("derives the basename display name and groups by project root", () => {
-    const tasks: TaskSummary[] = [
-      summary({
-        id: "task-1",
-        title: "CLI work",
-        projectRoot: "/work/trace-v2",
-      }),
-      summary({ id: "task-2", title: "Docs work", projectRoot: "/work/docs" }),
-      summary({
-        id: "task-3",
-        title: "Web work",
-        projectRoot: "/work/trace-v2",
-      }),
-    ];
-
-    const groups = groupTasksByProject(tasks);
-    expect(groups.map((g) => g.displayName)).toEqual(["trace-v2", "docs"]);
-    expect(groups[0]!.projectRoot).toBe("/work/trace-v2");
-    expect(groups[0]!.tasks.map((t) => t.id)).toEqual(["task-1", "task-3"]);
-    expect(groups[1]!.tasks.map((t) => t.id)).toEqual(["task-2"]);
-  });
-
-  test("sorts rows newest-activity-first within each group", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "old", lastActivityAt: "2020-03-01T00:00:00.000Z" }),
-      summary({ id: "new", lastActivityAt: "2020-05-01T00:00:00.000Z" }),
-      summary({ id: "mid", lastActivityAt: "2020-04-01T00:00:00.000Z" }),
-    ];
-
-    expect(groupTasksByProject(tasks)[0]!.tasks.map((t) => t.id)).toEqual([
-      "new",
-      "mid",
-      "old",
-    ]);
-  });
-
-  test("orders groups by their most recent activity first", () => {
-    const tasks: TaskSummary[] = [
-      summary({
-        id: "docs-old",
-        projectRoot: "/work/docs",
-        lastActivityAt: "2020-01-01T00:00:00.000Z",
-      }),
-      summary({
-        id: "trace-new",
-        projectRoot: "/work/trace-v2",
-        lastActivityAt: "2020-05-01T00:00:00.000Z",
-      }),
-      summary({
-        id: "trace-mid",
-        projectRoot: "/work/trace-v2",
-        lastActivityAt: "2020-03-01T00:00:00.000Z",
-      }),
-    ];
-
-    expect(groupTasksByProject(tasks).map((g) => g.displayName)).toEqual([
-      "trace-v2",
-      "docs",
-    ]);
-  });
-});
 
 describe("visibleTasks", () => {
   test("hides archived tasks by default", () => {
@@ -184,8 +136,41 @@ describe("unarchiveTask", () => {
   });
 });
 
-describe("TaskList rendering", () => {
-  test("renders project heading with a copyable muted path", () => {
+describe("TaskList rendering — flat recency-first", () => {
+  test("renders all tasks in a single flat list sorted by lastActivityAt desc", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "a",
+        projectRoot: "/work/alpha",
+        lastActivityAt: "2020-01-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "b",
+        projectRoot: "/work/beta",
+        lastActivityAt: "2020-03-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "c",
+        projectRoot: "/work/alpha",
+        lastActivityAt: "2020-02-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    // b (March) before c (Feb) before a (Jan) — flat recency order across projects
+    const idxB = html.indexOf('href="/task/b"');
+    const idxC = html.indexOf('href="/task/c"');
+    const idxA = html.indexOf('href="/task/a"');
+    expect(idxB).toBeLessThan(idxC);
+    expect(idxC).toBeLessThan(idxA);
+  });
+
+  test("each row carries a project chip with the project basename", () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "task-1",
@@ -200,9 +185,8 @@ describe("TaskList rendering", () => {
       </MemoryRouter>,
     );
 
+    expect(html).toContain("task-row-project");
     expect(html).toContain("trace-v2");
-    // Path is copyable: rendered via a CopyChip carrying the full path.
-    expect(html).toContain('aria-label="Copy /work/trace-v2"');
   });
 
   test("renders each row with title, relative time and compact token total", () => {
@@ -231,26 +215,11 @@ describe("TaskList rendering", () => {
     expect(html).toContain('href="/task/task-1"');
     // Relative time (old timestamp falls back to absolute date).
     expect(html).toContain("Mar 15, 2020");
-    // The visible figure is fresh spend (input + output), matching the detail
-    // page — not the cache-inflated grand total.
+    // The visible figure is fresh spend (input + output).
     expect(html).toContain("81.1K");
     expect(html).not.toContain("16.3M");
-    // The full breakdown, including the grand total, is available on hover.
+    // The full breakdown is available on hover.
     expect(html).toContain("total 16317514");
-  });
-
-  test("does not render a UUID copy chip on a row", () => {
-    const id = "550e8400-e29b-41d4-a716-446655440000";
-    const tasks: TaskSummary[] = [summary({ id, title: "Real title" })];
-
-    const html = renderToStaticMarkup(
-      <MemoryRouter>
-        <TaskList tasks={tasks} />
-      </MemoryRouter>,
-    );
-
-    // UUID chip is gone — no copy button carrying the id.
-    expect(html).not.toContain(`aria-label="Copy ${id}"`);
   });
 
   test("renders a distinct untitled fallback when the title is a raw UUID", () => {
@@ -300,16 +269,14 @@ describe("TaskList rendering", () => {
       </MemoryRouter>,
     );
 
-    // Route is the human-readable slug, not the UUID.
     expect(html).toContain('href="/task/manual-break-start-sounds"');
     expect(html).not.toContain(
       'href="/task/550e8400-e29b-41d4-a716-446655440000"',
     );
-    // The slug is NOT visible as text — identifiers are gone from the row.
     expect(html).not.toContain("task-row-slug");
   });
 
-  test("renders a one-line description below the title when present", () => {
+  test("renders a description below the title when present, clamped to 2 lines", () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "task-1",
@@ -343,25 +310,156 @@ describe("TaskList rendering", () => {
     expect(html).not.toContain("task-row-description");
   });
 
-  test("group header chip displays tilde-collapsed path when home is provided", () => {
+  test("archived rows carry the Archived badge and the task-row-archived class", () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "task-1",
         title: "CLI work",
-        projectRoot: "/Users/alice/Projects/trace-v2",
+        archivedAt: "2026-06-04T20:00:00.000Z",
       }),
     ];
 
     const html = renderToStaticMarkup(
       <MemoryRouter>
-        <TaskList tasks={tasks} home="/Users/alice" />
+        <TaskList tasks={tasks} />
       </MemoryRouter>,
     );
 
-    // Chip display uses collapsed path.
-    expect(html).toContain("~/Projects/trace-v2");
-    // Chip value (for copying) still has the full path.
-    expect(html).toContain('aria-label="Copy /Users/alice/Projects/trace-v2"');
+    expect(html).toContain("task-row-archived");
+    expect(html).toContain("archived-badge");
+  });
+
+  test("shows Claude avatar when agentTools includes claude", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", agentTools: ["claude"] }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Claude"');
+    expect(html).not.toContain('aria-label="Codex"');
+  });
+
+  test("shows Codex avatar when agentTools includes codex", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", agentTools: ["codex"] }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Codex"');
+    expect(html).not.toContain('aria-label="Claude"');
+  });
+
+  test("shows both avatars when agentTools has claude and codex", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        title: "Work",
+        agentTools: ["claude", "codex"],
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain('aria-label="Claude"');
+    expect(html).toContain('aria-label="Codex"');
+  });
+
+  test("shows no agent avatars when agentTools is empty", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", agentTools: [] }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain('aria-label="Claude"');
+    expect(html).not.toContain('aria-label="Codex"');
+  });
+
+  test("shows docs indicator when hasDocs is true", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", hasDocs: true }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("docs-indicator");
+  });
+
+  test("does not show docs indicator when hasDocs is false", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work", hasDocs: false }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain("docs-indicator");
+  });
+
+  test("subtitle shows task count and hidden archived count", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work 1" }),
+      summary({ id: "task-2", title: "Work 2" }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} hiddenArchivedCount={3} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("2 tasks");
+    expect(html).toContain("3 archived hidden");
+  });
+
+  test("subtitle omits archived hidden when count is zero", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "Work" }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} hiddenArchivedCount={0} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("1 tasks");
+    expect(html).not.toContain("archived hidden");
+  });
+
+  test("empty state shows 'No tasks in this view.' when list is empty", () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={[]} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("No tasks in this view.");
   });
 
   test("renders an archive button for each active row", () => {
@@ -393,10 +491,7 @@ describe("TaskList rendering", () => {
       </MemoryRouter>,
     );
 
-    // The action is labelled for screen readers...
     expect(html).toContain('aria-label="Copy re-enter prompt"');
-    // ...and carries the exact builder output as its copyable value (the
-    // title tooltip mirrors the detail page's copy button).
     expect(html).toContain(
       "Re-enter the trace task &quot;CLI work&quot; (cli-work)",
     );
@@ -441,5 +536,249 @@ describe("TaskList rendering", () => {
     expect(html).toContain("task-row-archived");
     expect(html).toContain('aria-label="Unarchive CLI work"');
     expect(html).not.toContain('aria-label="Archive CLI work"');
+  });
+});
+
+describe("filterByProject", () => {
+  test("returns all tasks when projectRoot is null", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+    ];
+    expect(filterByProject(tasks, null)).toEqual(tasks);
+  });
+
+  test("returns only tasks with matching projectRoot", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+      summary({ id: "c", projectRoot: "/work/alpha" }),
+    ];
+    const result = filterByProject(tasks, "/work/alpha");
+    expect(result.map((t) => t.id)).toEqual(["a", "c"]);
+  });
+
+  test("returns empty array when no tasks match the projectRoot", () => {
+    const tasks = [summary({ id: "a", projectRoot: "/work/alpha" })];
+    expect(filterByProject(tasks, "/work/other")).toEqual([]);
+  });
+});
+
+describe("getProjectCounts", () => {
+  test("returns one entry per unique projectRoot", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({ id: "b", projectRoot: "/work/beta" }),
+      summary({ id: "c", projectRoot: "/work/alpha" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    expect(counts).toHaveLength(2);
+    expect(counts.map((p) => p.projectRoot)).toContain("/work/alpha");
+    expect(counts.map((p) => p.projectRoot)).toContain("/work/beta");
+  });
+
+  test("count includes all tasks in the project regardless of archived state", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/alpha" }),
+      summary({
+        id: "b",
+        projectRoot: "/work/alpha",
+        archivedAt: "2026-06-01T00:00:00.000Z",
+      }),
+      summary({ id: "c", projectRoot: "/work/beta" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    const alpha = counts.find((p) => p.projectRoot === "/work/alpha");
+    expect(alpha?.count).toBe(2);
+  });
+
+  test("displayName is the projectRoot basename", () => {
+    const tasks = [summary({ id: "a", projectRoot: "/work/trace-v2" })];
+    const counts = getProjectCounts(tasks);
+    expect(counts[0]?.displayName).toBe("trace-v2");
+  });
+
+  test("returns entries sorted alphabetically by displayName", () => {
+    const tasks = [
+      summary({ id: "a", projectRoot: "/work/zebra" }),
+      summary({ id: "b", projectRoot: "/work/alpha" }),
+    ];
+    const counts = getProjectCounts(tasks);
+    expect(counts[0]?.displayName).toBe("alpha");
+    expect(counts[1]?.displayName).toBe("zebra");
+  });
+});
+
+describe("FilterBar", () => {
+  test("shows 'All projects' in trigger when selectedProject is null", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("All projects");
+  });
+
+  test("shows selected project displayName in trigger when project is selected", () => {
+    const projects = [
+      { projectRoot: "/work/alpha", displayName: "alpha", count: 3 },
+    ];
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={projects}
+        selectedProject="/work/alpha"
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("alpha");
+  });
+
+  test("renders the Show archived label", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("Show archived");
+  });
+
+  test("renders a switch with show-archived-switch id", () => {
+    const html = renderToStaticMarkup(
+      <FilterBar
+        projects={[]}
+        selectedProject={null}
+        onProjectChange={() => undefined}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+    expect(html).toContain("show-archived-switch");
+  });
+});
+
+describe("TaskRow hover-swap", () => {
+  test("hovering a row hides the meta cluster and reveals the actions", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    const meta = container.querySelector(".task-row-meta")!;
+    const actions = container.querySelector(".task-row-actions")!;
+    const row = container.querySelector(".task-row")!;
+
+    expect(meta).not.toHaveClass("opacity-0");
+    expect(actions).toHaveClass("opacity-0");
+
+    fireEvent.mouseEnter(row);
+
+    expect(meta).toHaveClass("opacity-0");
+    expect(actions).not.toHaveClass("opacity-0");
+  });
+
+  test("mouse leave restores meta and hides actions", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    const meta = container.querySelector(".task-row-meta")!;
+    const actions = container.querySelector(".task-row-actions")!;
+    const row = container.querySelector(".task-row")!;
+
+    fireEvent.mouseEnter(row);
+    fireEvent.mouseLeave(row);
+
+    expect(meta).not.toHaveClass("opacity-0");
+    expect(actions).toHaveClass("opacity-0");
+  });
+
+  test("Re-enter button shows Copied aria-label after click", async () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    const btn = screen.getByRole("button", { name: "Copy re-enter prompt" });
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Copied" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("clicking archive button calls onArchive with the task", () => {
+    const onArchive = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onArchive={onArchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const archiveBtn = screen.getByRole("button", { name: "Archive CLI work" });
+    fireEvent.click(archiveBtn);
+
+    expect(onArchive).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
+  });
+
+  test("clicking unarchive button calls onUnarchive with the task", () => {
+    const onUnarchive = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        archivedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onUnarchive={onUnarchive} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const unarchiveBtn = screen.getByRole("button", {
+      name: "Unarchive CLI work",
+    });
+    fireEvent.click(unarchiveBtn);
+
+    expect(onUnarchive).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
   });
 });
