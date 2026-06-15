@@ -6,6 +6,7 @@ export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
 export type { ParsedStateMd } from "./state-parser.ts";
+export { renderMarkdown } from "./markdown.ts";
 export type {
   ActiveTask,
   RegisterSessionInput,
