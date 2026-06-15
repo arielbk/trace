@@ -481,6 +481,40 @@ test("add-doc then show lists the associated task doc", () => {
   }
 });
 
+test("add-doc --description renders a fenced manifest footer into a created state.md", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, "spec.md");
+    writeFileSync(docPath, "# Spec\n");
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", slug, docPath, "--description", "The spec"],
+      { encoding: "utf8", env },
+    );
+
+    const statePath = join(docsDir, "state.md");
+    expect(existsSync(statePath)).toBe(true);
+    const state = readFileSync(statePath, "utf8");
+    expect(state).toContain("<!-- trace:docs-manifest:start -->");
+    expect(state).toContain("- [spec.md](spec.md) — The spec");
+    expect(state).toContain("<!-- trace:docs-manifest:end -->");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task show and skill re-enter list docs written under the trace task docs directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
@@ -607,11 +641,16 @@ test("task timeline --json prints the aggregated task timeline", () => {
     expect(timeline.task.slug).toBe(taskId);
     expect(timeline.task.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(timeline.task.title).toBe("checkout");
-    expect(
-      timeline.items.map((item) =>
-        item.type === "session" ? item.session?.id : item.doc?.path,
-      ),
-    ).toEqual(["session-1", "/tmp/spec.md"]);
+    // The session precedes the docs chronologically. add-doc also renders the
+    // manifest into a freshly-created state.md, so it appears alongside the
+    // registered doc (order between the two same-instant docs is incidental).
+    expect(timeline.items[0]?.type).toBe("session");
+    expect(timeline.items[0]?.session?.id).toBe("session-1");
+    const docPaths = timeline.items
+      .filter((item) => item.type === "doc")
+      .map((item) => item.doc?.path);
+    expect(docPaths).toContain("/tmp/spec.md");
+    expect(docPaths.some((path) => path?.endsWith("state.md"))).toBe(true);
     expect(timeline.items[0]?.session?.model).toBe("gpt-5-codex");
     expect(timeline.tokenTotals).toEqual({
       inputTokens: 12,
