@@ -4,6 +4,8 @@ import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
 import { ReEnterButton } from "./ReEnterButton.tsx";
 import { ArchiveIcon, SuccessCheckIcon, UnarchiveIcon } from "./icons.tsx";
+import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
+import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import { cn } from "../lib/utils.ts";
 import {
   formatRelativeTime,
@@ -258,14 +260,11 @@ function AgentAvatars({
       )}
       {hasCursor && (
         <span
-          className={cn("agent-avatar agent-avatar-cursor z-[15]", baseAvatar)}
+          className={cn("agent-avatar agent-avatar-cursor z-[15] overflow-hidden", baseAvatar)}
           style={{
-            background:
-              "color-mix(in srgb, var(--color-tag-cursor) 15%, var(--color-surface))",
-            border:
-              "1px solid color-mix(in srgb, var(--color-tag-cursor) 30%, var(--color-border))",
+            background: "transparent",
+            border: "0",
             boxShadow: "0 0 0 2px var(--color-bg)",
-            color: "var(--color-tag-cursor)",
           }}
           aria-label="Cursor"
           title="Cursor"
@@ -340,14 +339,29 @@ function CodexLogo() {
 }
 
 function CursorLogo() {
-  // Cursor's isometric cube mark, rendered monochrome via currentColor: three
-  // faces at descending opacity read as the 3D logo while honoring the tag color.
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2L22 7.5L12 13L2 7.5Z" fill="currentColor" />
-      <path d="M22 7.5L22 17.5L12 23L12 13Z" fill="currentColor" opacity="0.6" />
-      <path d="M2 7.5L12 13L12 23L2 17.5Z" fill="currentColor" opacity="0.8" />
-    </svg>
+    <>
+      <img
+        src={cursorIconLightUrl}
+        alt=""
+        className="absolute inset-0 block h-full w-full object-cover dark:hidden"
+        aria-hidden="true"
+      />
+      <img
+        src={cursorIconDarkUrl}
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+        aria-hidden="true"
+      />
+      <span
+        className="pointer-events-none absolute inset-0"
+        style={{
+          borderRadius: "inherit",
+          boxShadow: "inset 0 0 0 1px var(--color-border-strong)",
+        }}
+        aria-hidden="true"
+      />
+    </>
   );
 }
 

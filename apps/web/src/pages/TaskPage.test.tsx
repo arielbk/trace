@@ -183,13 +183,14 @@ test("TaskTimelineView renders the Cursor brand mark for a cursor session", () =
     </MemoryRouter>,
   );
 
-  // The cursor session carries its own labeled type icon, colored via the
-  // cursor token, using the real Cursor cube mark — not the placeholder arrow.
+  // The cursor session carries its own labeled type icon, using Cursor's app
+  // icon asset — not the placeholder arrow or a recolored cube.
   expect(html).toContain("type-icon type-icon-cursor");
   expect(html).toContain('aria-label="Cursor session"');
-  expect(html).toContain("var(--color-tag-cursor)");
-  expect(html).toContain("M12 2L22 7.5L12 13L2 7.5Z");
+  expect(html).toContain("cursor-icon-light.png");
+  expect(html).toContain("cursor-icon-dark.png");
   expect(html).not.toContain("M5 3l14 8-6 1.6L9.6 18z");
+  expect(html).not.toContain("cursor-icon-gradient");
 });
 
 test("TaskTimelineView labels uncaptured session token totals as unavailable", () => {
