@@ -760,6 +760,72 @@ test("TaskTimelineView nests child sessions beneath their parent with origin bad
   expect(rows[2]).toHaveAttribute("data-timeline-depth", "1");
   expect(screen.getByText("↳ researcher")).toBeInTheDocument();
   expect(screen.getByText("↳ spawned session")).toBeInTheDocument();
+  // Each child row carries an elbow connector tying it back to the parent rail;
+  // the depth-0 parent has none.
+  expect(screen.getAllByTestId("timeline-connector")).toHaveLength(2);
+});
+
+test("TaskTimelineView leads nameless child rows with their origin instead of a stacked path chip", () => {
+  const namelessChild = (
+    overrides: Partial<
+      Extract<TaskTimeline["items"][number], { type: "session" }>["session"]
+    >,
+  ): TaskTimeline["items"][number] => ({
+    type: "session",
+    createdAt: "2026-05-29T00:02:00.000Z",
+    session: {
+      id: "child",
+      transcriptPath: "/tmp/agent-OHuLCSQdcF.jsonl",
+      tool: "claude",
+      model: null,
+      taskId: "task-1",
+      parentSessionId: "parent-session",
+      origin: "subagent",
+      subagentType: "Explore",
+      agentId: "OHuLCSQdcF",
+      tokenTotals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 0,
+      },
+      createdAt: "2026-05-29T00:02:00.000Z",
+      ...overrides,
+    },
+    sessionName: null,
+  });
+
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      namelessChild({}),
+      namelessChild({
+        id: "child-2",
+        origin: "spawned",
+        subagentType: null,
+        transcriptPath: "/tmp/NmfFfDhFZt.jsonl",
+        agentId: null,
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // The origin/type leads the row as its title…
+  expect(screen.getByText("Explore")).toBeInTheDocument();
+  expect(screen.getByText("Spawned session")).toBeInTheDocument();
+  // …and the redundant origin-badge pill is gone, since the title now says it.
+  expect(screen.queryByText("↳ Explore")).not.toBeInTheDocument();
+  expect(screen.queryByText("↳ spawned session")).not.toBeInTheDocument();
 });
 
 test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {

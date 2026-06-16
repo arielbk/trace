@@ -134,6 +134,23 @@ function timelineDepthStyle(depth: number): CSSProperties | undefined {
   return { marginLeft: `${depth * 1.75}rem` };
 }
 
+// Horizontal elbow tying a child row's icon back to its parent's rail. The
+// row's icon centre sits 2rem from its own padding-box left (0.75rem of
+// padding + half a 2.5rem icon); the parent rail sits one indent step to the
+// left — further for a depth-1 child, whose depth-0 parent carries the extra
+// -0.75rem hover bleed. The vertical run is supplied by the shared spine.
+function timelineConnectorStyle(depth: number): CSSProperties {
+  const iconCentreRem = 2;
+  const parentRailRem = depth === 1 ? -0.5 : 0.25;
+
+  return {
+    top: "2rem",
+    marginTop: "-1px",
+    left: `${parentRailRem}rem`,
+    width: `${iconCentreRem - parentRailRem}rem`,
+  };
+}
+
 function sessionOriginBadge(
   session: Extract<TaskTimelineItem, { type: "session" }>["session"],
 ): string | null {
@@ -143,6 +160,23 @@ function sessionOriginBadge(
 
   if (session.origin === "spawned") {
     return "↳ spawned session";
+  }
+
+  return null;
+}
+
+// Title for a child session that has no captured name of its own. Leading with
+// the origin/type reads as a real name and avoids stacking a meaningless temp
+// transcript path above the origin badge.
+function sessionChildTitle(
+  session: Extract<TaskTimelineItem, { type: "session" }>["session"],
+): string | null {
+  if (session.origin === "subagent") {
+    return session.subagentType ?? "Subagent";
+  }
+
+  if (session.origin === "spawned") {
+    return "Spawned session";
   }
 
   return null;
@@ -360,6 +394,12 @@ export function TaskTimelineView({
             {renderItems.map(({ item, depth }) => {
               if (item.type === "session") {
                 const originBadge = sessionOriginBadge(item.session);
+                // When a child session has no name of its own, lead the row with
+                // its origin/type and demote the temp transcript path into the
+                // meta line, rather than stacking two pills.
+                const childTitle = item.sessionName
+                  ? null
+                  : sessionChildTitle(item.session);
 
                 return (
                   <li
@@ -368,6 +408,14 @@ export function TaskTimelineView({
                     key={`session:${item.session.id}`}
                     style={timelineDepthStyle(depth)}
                   >
+                    {depth > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        data-testid="timeline-connector"
+                        className="absolute z-0 h-0.5 bg-border-subtle"
+                        style={timelineConnectorStyle(depth)}
+                      />
+                    ) : null}
                     <div className="relative z-10 flex justify-center">
                       <TypeIcon type={item.session.tool} />
                     </div>
@@ -375,6 +423,10 @@ export function TaskTimelineView({
                       {item.sessionName ? (
                         <span className="text-base font-semibold">
                           {item.sessionName}
+                        </span>
+                      ) : childTitle ? (
+                        <span className="text-base font-semibold">
+                          {childTitle}
                         </span>
                       ) : (
                         <CopyChip
@@ -388,10 +440,16 @@ export function TaskTimelineView({
                             {item.session.model}
                           </span>
                         ) : null}
-                        {originBadge ? (
+                        {originBadge && !childTitle ? (
                           <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
                             {originBadge}
                           </span>
+                        ) : null}
+                        {childTitle ? (
+                          <CopyChip
+                            value={item.session.transcriptPath}
+                            display={truncatePath(item.session.transcriptPath)}
+                          />
                         ) : null}
                         <span
                           className="font-mono"
