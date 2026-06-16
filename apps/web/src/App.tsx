@@ -11,6 +11,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<TasksPage />} />
           <Route path="/task/:id" element={<TaskPage />} />
+          <Route path="/task/:id/docs/*" element={<TaskPage />} />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

@@ -1,5 +1,6 @@
-import { useState, type CSSProperties } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { AnimatePresence } from "motion/react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
@@ -11,6 +12,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { cn } from "../lib/utils.ts";
 import {
@@ -20,10 +22,17 @@ import {
   formatTokensCompact,
   truncatePath,
 } from "../format.ts";
-import { HttpError, useArchiveTask, useTaskTimeline, useUnarchiveTask } from "../lib/api.ts";
+import {
+  HttpError,
+  useArchiveTask,
+  useTaskTimeline,
+  useUnarchiveTask,
+} from "../lib/api.ts";
+import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
 
 export function TaskPage() {
-  const { id = "" } = useParams();
+  const { id = "", "*": routeDocPath } = useParams();
+  const navigate = useNavigate();
   const query = useTaskTimeline(id);
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
@@ -47,22 +56,40 @@ export function TaskPage() {
   return (
     <TaskTimelineView
       timeline={query.data}
+      routedDocPath={routeDocPath ?? null}
+      onOpenDoc={(path) => navigate(docRoute(query.data.task.slug, path))}
+      onNavigateDocRoute={(route) => navigate(route)}
+      onCloseDoc={() =>
+        navigate(`/task/${encodeURIComponent(query.data.task.slug)}`)
+      }
       onArchive={() => archiveMutation.mutate(id)}
       onUnarchive={() => unarchiveMutation.mutate(id)}
     />
   );
 }
 
+function docRoute(taskRef: string, docPath: string): string {
+  return `/task/${encodeURIComponent(taskRef)}/docs/${encodeURIComponent(docPath)}`;
+}
+
 export function TaskTimelineView({
   timeline,
   now,
   archivedAt: archivedAtProp,
+  routedDocPath,
+  onOpenDoc,
+  onNavigateDocRoute,
+  onCloseDoc,
   onArchive,
   onUnarchive,
 }: {
   timeline: TaskTimeline;
   now?: Date;
   archivedAt?: string | null;
+  routedDocPath?: string | null;
+  onOpenDoc?: (path: string) => void;
+  onNavigateDocRoute?: (route: string) => void;
+  onCloseDoc?: () => void;
   onArchive?: () => void | Promise<void>;
   onUnarchive?: () => void | Promise<void>;
 }) {
@@ -71,19 +98,67 @@ export function TaskTimelineView({
   const isArchived = archivedAt !== null;
   const onToggleArchive = isArchived ? onUnarchive : onArchive;
 
-  const [timelineFilter, setTimelineFilter] = useState<"all" | "session" | "doc">(
-    "all",
-  );
+  const [timelineFilter, setTimelineFilter] = useState<
+    "all" | "session" | "doc"
+  >("all");
+  const [localSelectedDocPath, setLocalSelectedDocPath] = useState<
+    string | null
+  >(null);
+  const selectedDocPath =
+    routedDocPath === undefined ? localSelectedDocPath : routedDocPath;
+  const docTriggerRef = useRef<HTMLElement | null>(null);
+
+  function openDoc(trigger: HTMLElement, path: string) {
+    docTriggerRef.current = trigger;
+    if (onOpenDoc) {
+      onOpenDoc(path);
+      return;
+    }
+    setLocalSelectedDocPath(path);
+  }
+
+  function closeDoc() {
+    if (onCloseDoc) {
+      onCloseDoc();
+      return;
+    }
+    setLocalSelectedDocPath(null);
+  }
 
   const sessionCount = timeline.items.filter(
     (item) => item.type === "session",
   ).length;
   const docCount = timeline.items.filter((item) => item.type === "doc").length;
+  const knownDocPaths = timeline.items.flatMap((item) =>
+    item.type === "doc" ? [item.doc.path] : [],
+  );
+
+  function navigateStateDocLink(event: MouseEvent<HTMLElement>) {
+    if (!onNavigateDocRoute) return;
+
+    const route = docRouteFromStateClick(event, {
+      taskRef: timeline.task.slug,
+      knownDocPaths,
+    });
+    if (!route) return;
+
+    event.preventDefault();
+    const target = event.target;
+    const anchor =
+      target instanceof Element ? target.closest("a[href]") : null;
+    if (anchor instanceof HTMLElement) {
+      docTriggerRef.current = anchor;
+    }
+    onNavigateDocRoute(route);
+  }
+
   const visibleItems = (
     timelineFilter === "all"
       ? timeline.items
       : timeline.items.filter((item) => item.type === timelineFilter)
-  ).slice().reverse();
+  )
+    .slice()
+    .reverse();
 
   function toggleFilter(filter: "session" | "doc") {
     setTimelineFilter((current) => (current === filter ? "all" : filter));
@@ -138,7 +213,10 @@ export function TaskTimelineView({
           </p>
         ) : null}
         <div className="flex items-center gap-2 flex-wrap mt-5">
-          <ReEnterButton title={timeline.task.title} slug={timeline.task.slug} />
+          <ReEnterButton
+            title={timeline.task.title}
+            slug={timeline.task.slug}
+          />
           {onToggleArchive ? (
             <ArchiveToggleButton
               isArchived={isArchived}
@@ -148,7 +226,10 @@ export function TaskTimelineView({
           ) : null}
         </div>
       </div>
-      <LeftOffPanel state={timeline.state} />
+      <LeftOffPanel
+        state={timeline.state}
+        onDocLinkClick={navigateStateDocLink}
+      />
       <TokenSummary totals={timeline.tokenTotals} />
       <section className="mt-8">
         <div className="flex items-baseline gap-5 pb-1.5">
@@ -201,90 +282,127 @@ export function TaskTimelineView({
             />
             {visibleItems.map((item) => {
               return item.type === "session" ? (
-              <li
-                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
-                key={`session:${item.session.id}`}
-              >
-                <div className="relative z-10 flex justify-center">
-                  <TypeIcon type={item.session.tool} />
-                </div>
-                <div className="min-w-0">
-                  {item.sessionName ? (
-                    <span className="text-base font-semibold">
-                      {item.sessionName}
-                    </span>
-                  ) : (
-                    <CopyChip
-                      value={item.session.transcriptPath}
-                      display={truncatePath(item.session.transcriptPath)}
-                    />
-                  )}
-                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
-                    {item.session.model ? (
-                      <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                        {item.session.model}
+                <li
+                  className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
+                  key={`session:${item.session.id}`}
+                >
+                  <div className="relative z-10 flex justify-center">
+                    <TypeIcon type={item.session.tool} />
+                  </div>
+                  <div className="min-w-0">
+                    {item.sessionName ? (
+                      <span className="text-base font-semibold">
+                        {item.sessionName}
                       </span>
-                    ) : null}
-                    <span
-                      className="font-mono"
-                      title={formatTokenBreakdown(item.session.tokenTotals)}
-                    >
-                      {hasCapturedTokens(item.session.tokenTotals) ? (
-                        <>
-                          {formatTokensCompact(
-                            item.session.tokenTotals.inputTokens,
-                          )}{" "}
-                          in{" · "}
-                          {formatTokensCompact(
-                            item.session.tokenTotals.outputTokens,
-                          )}{" "}
-                          out
-                        </>
-                      ) : (
-                        "tokens unavailable"
-                      )}
-                    </span>
-                    <span className="ml-auto text-text-muted text-sm">
-                      {formatRelativeTime(item.createdAt, now)}
-                    </span>
-                  </p>
-                </div>
-              </li>
-            ) : (
-              <li
-                className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
-                key={`doc:${item.doc.path}`}
-              >
-                <div className="relative z-10 flex justify-center">
-                  <TypeIcon type="doc" />
-                </div>
-                <div className="min-w-0">
-                  <CopyChip
-                    value={item.doc.path}
-                    display={truncatePath(item.doc.path)}
-                  />
-                  <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
-                    {item.sizeBytes !== null ? (
-                      <span className="font-mono tabular-nums">
-                        {formatBytes(item.sizeBytes)}
+                    ) : (
+                      <CopyChip
+                        value={item.session.transcriptPath}
+                        display={truncatePath(item.session.transcriptPath)}
+                      />
+                    )}
+                    <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
+                      {item.session.model ? (
+                        <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                          {item.session.model}
+                        </span>
+                      ) : null}
+                      <span
+                        className="font-mono"
+                        title={formatTokenBreakdown(item.session.tokenTotals)}
+                      >
+                        {hasCapturedTokens(item.session.tokenTotals) ? (
+                          <>
+                            {formatTokensCompact(
+                              item.session.tokenTotals.inputTokens,
+                            )}{" "}
+                            in{" · "}
+                            {formatTokensCompact(
+                              item.session.tokenTotals.outputTokens,
+                            )}{" "}
+                            out
+                          </>
+                        ) : (
+                          "tokens unavailable"
+                        )}
                       </span>
-                    ) : null}
-                    <span className="ml-auto text-text-muted text-sm">
-                      {formatRelativeTime(item.createdAt, now)}
-                    </span>
-                  </p>
-                </div>
-              </li>
-            );
+                      <span className="ml-auto text-text-muted text-sm">
+                        {formatRelativeTime(item.createdAt, now)}
+                      </span>
+                    </p>
+                  </div>
+                </li>
+              ) : (
+                <li key={`doc:${item.doc.path}`}>
+                  <div
+                    className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View ${truncatePath(item.doc.path)}`}
+                    onClick={(e) => openDoc(e.currentTarget, item.doc.path)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openDoc(e.currentTarget, item.doc.path);
+                      }
+                    }}
+                  >
+                    <div className="relative z-10 flex justify-center">
+                      <TypeIcon type="doc" />
+                    </div>
+                    <div className="min-w-0">
+                      <span
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <CopyChip
+                          value={item.doc.path}
+                          display={truncatePath(item.doc.path)}
+                        />
+                      </span>
+                      <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
+                        {item.sizeBytes !== null ? (
+                          <span className="font-mono tabular-nums">
+                            {formatBytes(item.sizeBytes)}
+                          </span>
+                        ) : null}
+                        <span className="ml-auto text-text-muted text-sm">
+                          {formatRelativeTime(item.createdAt, now)}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              );
             })}
           </ol>
         )}
       </section>
+      <AnimatePresence onExitComplete={() => docTriggerRef.current?.focus()}>
+        {selectedDocPath !== null ? (
+          <DocViewerSheet
+            key={selectedDocPath}
+            taskRef={timeline.task.slug}
+            docPath={selectedDocPath}
+            knownDocPaths={knownDocPaths}
+            triggerRef={docTriggerRef}
+            onNavigateDocRoute={onNavigateDocRoute}
+            onOpenChange={(open) => {
+              if (!open) closeDoc();
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
   );
 }
 
-export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
+export function LeftOffPanel({
+  state,
+  onDocLinkClick,
+}: {
+  state?: ParsedStateMd;
+  onDocLinkClick?: (event: MouseEvent<HTMLElement>) => void;
+}) {
   if (!state) {
     return (
       <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
@@ -301,92 +419,127 @@ export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
     state.openQuestions.length > 0;
 
   return (
-    <section className="mt-8 pt-6 border-t border-border">
+    <section
+      className="mt-8 pt-6 border-t border-border"
+      onClick={onDocLinkClick}
+    >
       <h2 className="m-0 mb-2.5 text-xs font-bold uppercase tracking-widest text-accent">
         Where you left off
       </h2>
       <ClampedSection maxHeight={200}>
         <div>
-        {state.summary ? (
-          <p
-            className="m-0 text-md font-semibold leading-normal text-text"
-            dangerouslySetInnerHTML={{ __html: state.summary }}
-          />
-        ) : null}
-        {state.currentState.length > 0 ? (
-          <div
-            className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
-            dangerouslySetInnerHTML={{
-              __html: state.currentState.join("\n"),
-            }}
-          />
-        ) : null}
-      {hasGrid ? (
-        <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-          {state.decisions.length > 0 ? (
-            <div>
-              <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                Decisions made
-              </h3>
-              <ul className="m-0 p-0 flex flex-col gap-2.5">
-                {state.decisions.map((d, i) => (
-                  <li key={i} className="flex gap-2.5">
-                    <span
-                      className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                      aria-hidden="true"
-                    />
-                    <span
-                      className="text-sm leading-normal text-text"
-                      dangerouslySetInnerHTML={{ __html: d }}
-                    />
-                  </li>
-                ))}
-              </ul>
+          {state.summary ? (
+            <p
+              className="m-0 text-md font-semibold leading-normal text-text"
+              dangerouslySetInnerHTML={{ __html: state.summary }}
+            />
+          ) : null}
+          {state.currentState.length > 0 ? (
+            <div
+              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
+              dangerouslySetInnerHTML={{
+                __html: state.currentState.join("\n"),
+              }}
+            />
+          ) : null}
+          {hasGrid ? (
+            <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+              {state.decisions.length > 0 ? (
+                <div>
+                  <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                    Decisions made
+                  </h3>
+                  <ul className="m-0 p-0 flex flex-col gap-2.5">
+                    {state.decisions.map((d, i) => (
+                      <li key={i} className="flex gap-2.5">
+                        <span
+                          className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                          aria-hidden="true"
+                        />
+                        <span
+                          className="text-sm leading-normal text-text"
+                          dangerouslySetInnerHTML={{ __html: d }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-6">
+                {state.nextStep ? (
+                  <div>
+                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                      Next step
+                    </h3>
+                    <div className="flex gap-2.5">
+                      <NextStepArrow />
+                      <span
+                        className="text-sm font-medium leading-normal text-text"
+                        dangerouslySetInnerHTML={{ __html: state.nextStep }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {state.openQuestions.length > 0 ? (
+                  <div>
+                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                      Open questions
+                    </h3>
+                    <ul className="m-0 p-0 flex flex-col gap-2.5">
+                      {state.openQuestions.map((q, i) => (
+                        <li key={i} className="flex gap-2.5">
+                          <span
+                            className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                            aria-hidden="true"
+                          />
+                          <span
+                            className="text-sm leading-normal text-text"
+                            dangerouslySetInnerHTML={{ __html: q }}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
-          <div className="flex flex-col gap-6">
-            {state.nextStep ? (
-              <div>
-                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                  Next step
-                </h3>
-                <div className="flex gap-2.5">
-                  <NextStepArrow />
-                  <span
-                    className="text-sm font-medium leading-normal text-text"
-                    dangerouslySetInnerHTML={{ __html: state.nextStep }}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {state.openQuestions.length > 0 ? (
-              <div>
-                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                  Open questions
-                </h3>
-                <ul className="m-0 p-0 flex flex-col gap-2.5">
-                  {state.openQuestions.map((q, i) => (
-                    <li key={i} className="flex gap-2.5">
-                      <span
-                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                        aria-hidden="true"
-                      />
-                      <span
-                        className="text-sm leading-normal text-text"
-                        dangerouslySetInnerHTML={{ __html: q }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
         </div>
       </ClampedSection>
     </section>
   );
+}
+
+function docRouteFromStateClick(
+  event: MouseEvent<HTMLElement>,
+  {
+    taskRef,
+    knownDocPaths,
+  }: { taskRef: string; knownDocPaths: readonly string[] },
+): string | null {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return null;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+
+  const anchor = target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return null;
+
+  return resolveTaskDocLink({
+    href: anchor.getAttribute("href") ?? "",
+    baseDocPath: "state.md",
+    knownDocPaths,
+    taskRef,
+  });
 }
 
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
@@ -398,18 +551,23 @@ const TYPE_LABELS: Record<SessionTool | "doc", string> = {
 const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
   claude: {
     color: "var(--color-tag-claude)",
-    background: "color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface))",
-    borderColor: "color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border))",
+    background:
+      "color-mix(in srgb, var(--color-tag-claude) 10%, var(--color-surface))",
+    borderColor:
+      "color-mix(in srgb, var(--color-tag-claude) 25%, var(--color-border))",
   },
   codex: {
     color: "var(--color-tag-codex)",
     background: "var(--color-tag-codex-bg)",
-    borderColor: "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+    borderColor:
+      "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
   },
   doc: {
     color: "var(--color-tag-doc)",
-    background: "color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface))",
-    borderColor: "color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border))",
+    background:
+      "color-mix(in srgb, var(--color-tag-doc) 10%, var(--color-surface))",
+    borderColor:
+      "color-mix(in srgb, var(--color-tag-doc) 25%, var(--color-border))",
   },
 };
 
@@ -506,7 +664,10 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
   ];
   return (
     <div className="mt-8 pt-6 border-t border-border flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-      <dl className="m-0 flex flex-wrap gap-x-11 gap-y-3" aria-label="Token totals">
+      <dl
+        className="m-0 flex flex-wrap gap-x-11 gap-y-3"
+        aria-label="Token totals"
+      >
         {cards.map((card) => (
           <div key={card.label} className="min-w-16">
             <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
@@ -603,4 +764,3 @@ function NextStepArrow() {
     </svg>
   );
 }
-

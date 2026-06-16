@@ -1,5 +1,4 @@
-import { Renderer, parse, parseInline } from "marked";
-import type { Tokens } from "marked";
+import { renderInlineMarkdown, renderMarkdown } from "./markdown.ts";
 
 export type ParsedStateMd = {
   summary?: string;
@@ -18,15 +17,6 @@ const sectionNames = new Map<string, StateSection>([
   ["next step", "nextStep"],
   ["open questions", "openQuestions"],
 ]);
-
-const linkSafeRenderer = new Renderer();
-linkSafeRenderer.link = function link(token: Tokens.Link): string {
-  if (hasUnsafeProtocol(token.href)) {
-    return this.parser.parseInline(token.tokens);
-  }
-
-  return Renderer.prototype.link.call(this, token);
-};
 
 export function parseStateMd(text: string): ParsedStateMd {
   const result: ParsedStateMd = {
@@ -73,7 +63,7 @@ export function parseStateMd(text: string): ParsedStateMd {
   const fallbackSummary = firstContentLine(preamble);
   const summaryText = summary ?? fallbackSummary;
   if (summaryText) {
-    result.summary = renderInline(summaryText);
+    result.summary = renderInlineMarkdown(summaryText);
   }
 
   result.decisions = parseListOrParagraphs(sections.get("decisions") ?? []);
@@ -104,7 +94,7 @@ function parseListOrParagraphs(lines: string[]): string[] {
     .filter((line): line is string => Boolean(line));
 
   const values = items.length > 0 ? items : splitParagraphs(lines);
-  return values.filter(isMeaningfulValue).map(renderInline);
+  return values.filter(isMeaningfulValue).map(renderInlineMarkdown);
 }
 
 /**
@@ -113,7 +103,7 @@ function parseListOrParagraphs(lines: string[]): string[] {
  * lists become real <ul><li> instead of being flattened into a run-on paragraph.
  */
 function parseBlocks(lines: string[]): string[] {
-  return splitBlocks(lines).filter(isMeaningfulValue).map(renderBlock);
+  return splitBlocks(lines).filter(isMeaningfulValue).map(renderMarkdown);
 }
 
 function splitBlocks(lines: string[]): string[] {
@@ -124,16 +114,9 @@ function splitBlocks(lines: string[]): string[] {
     .filter((block) => block.length > 0);
 }
 
-function renderBlock(text: string): string {
-  return parse(text.trim(), {
-    async: false,
-    renderer: linkSafeRenderer,
-  }).trim();
-}
-
 function parseFirstParagraph(lines: string[]): string | undefined {
   const paragraph = splitParagraphs(lines).find(isMeaningfulValue);
-  return paragraph ? renderInline(paragraph) : undefined;
+  return paragraph ? renderInlineMarkdown(paragraph) : undefined;
 }
 
 function splitParagraphs(lines: string[]): string[] {
@@ -146,19 +129,4 @@ function splitParagraphs(lines: string[]): string[] {
 
 function isMeaningfulValue(text: string): boolean {
   return !/^(?:none|n\/a)$/i.test(text.trim());
-}
-
-function renderInline(text: string): string {
-  return parseInline(text.trim(), {
-    async: false,
-    renderer: linkSafeRenderer,
-  });
-}
-
-function hasUnsafeProtocol(href: string): boolean {
-  const protocolMatch = /^([a-z][a-z0-9+.-]*):/i.exec(href.trim());
-  if (!protocolMatch) return false;
-
-  const protocol = protocolMatch[1]?.toLowerCase();
-  return protocol !== "http" && protocol !== "https";
 }

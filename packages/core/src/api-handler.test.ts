@@ -1,6 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { handleTraceApiRequest } from "./api-handler.ts";
@@ -266,6 +273,174 @@ test("non-GET /api/config is rejected with 405", () => {
     );
     expect(response).not.toBeNull();
     expect(response!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs renders an in-bounds markdown doc as sanitized HTML", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "notes.md");
+  writeFileSync(docPath, "# Notes\n\nSome content.");
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("text/html");
+    expect(response!.body).toContain("<h1>Notes</h1>");
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs returns raw text and a content type for a non-markdown doc", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "notes.txt");
+  writeFileSync(docPath, "plain notes");
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("text/plain");
+    expect(response!.body).toBe("plain notes");
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs rejects a doc path outside the task's docs directory", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+
+  // A sibling file outside the task's own docs dir.
+  const outsidePath = join(docsDir, "..", "..", "secret.md");
+  writeFileSync(outsidePath, "# Secret");
+
+  try {
+    const traversal = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent("../../secret.md")}`,
+    );
+    expect(traversal!.status).toBe(400);
+
+    const absoluteOutside = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(resolve(outsidePath))}`,
+    );
+    expect(absoluteOutside!.status).toBe(400);
+  } finally {
+    rmSync(outsidePath, { force: true });
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs returns distinct results for a missing doc vs. an unreadable one", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(join(docsDir, "subdir"), { recursive: true });
+
+  try {
+    const missing = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(join(docsDir, "missing.md"))}`,
+    );
+    expect(missing!.status).toBe(404);
+
+    // A directory exists at this path but cannot be read as a doc.
+    const unreadable = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(join(docsDir, "subdir"))}`,
+    );
+    expect(unreadable!.status).toBe(500);
+    expect(unreadable!.status).not.toBe(missing!.status);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs returns 400 when the path query parameter is missing, and 404 for an unknown task", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+
+  try {
+    const missingParam = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs`,
+    );
+    expect(missingParam!.status).toBe(400);
+
+    const unknownTask = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/does-not-exist/docs?path=notes.md`,
+    );
+    expect(unknownTask!.status).toBe(404);
+
+    const wrongMethod = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs?path=notes.md`,
+    );
+    expect(wrongMethod!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs is read-only: the doc on disk is unchanged after the request", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "notes.md");
+  const original = "# Notes\n\nOriginal content.";
+  writeFileSync(docPath, original);
+  const statBefore = statSync(docPath);
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+
+    expect(readFileSync(docPath, "utf8")).toBe(original);
+    expect(statSync(docPath).mtimeMs).toBe(statBefore.mtimeMs);
   } finally {
     cleanup();
   }
