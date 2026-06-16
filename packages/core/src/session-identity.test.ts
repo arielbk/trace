@@ -11,6 +11,30 @@ test("infers a live Codex session from CODEX_THREAD_ID", () => {
   });
 });
 
+test("prefers codex over claude over cursor when detecting the live session", () => {
+  let resolverCalls = 0;
+  const identity = inferSessionIdentity(
+    {
+      CODEX_THREAD_ID: "codex-thread-1",
+      CLAUDE_CODE_SESSION_ID: "claude-session-1",
+    },
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => {
+        resolverCalls += 1;
+        return "composer-abc";
+      },
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "codex",
+    id: "codex-thread-1",
+    transcriptPath: "codex:codex-thread-1",
+  });
+  expect(resolverCalls).toBe(0);
+});
+
 test("defaults to Claude and reads CLAUDE_CODE_SESSION_ID when no Codex env", () => {
   const identity = inferSessionIdentity({
     CLAUDE_CODE_SESSION_ID: "live-claude-session",
@@ -56,6 +80,29 @@ test("uses CODEX_TRANSCRIPT_PATH for a Codex session when present", () => {
   });
 
   expect(identity.transcriptPath).toBe("/tmp/codex.jsonl");
+});
+
+test("uses the chosen tool's transcript-path env var even when id is overridden", () => {
+  expect(
+    inferSessionIdentity(
+      { CLAUDE_TRANSCRIPT_PATH: "/tmp/claude-from-env.jsonl" },
+      { tool: "claude", id: "manual-claude-id" },
+    ),
+  ).toEqual({
+    tool: "claude",
+    id: "manual-claude-id",
+    transcriptPath: "/tmp/claude-from-env.jsonl",
+  });
+  expect(
+    inferSessionIdentity(
+      { CODEX_TRANSCRIPT_PATH: "/tmp/codex-from-env.jsonl" },
+      { tool: "codex", id: "manual-codex-id" },
+    ),
+  ).toEqual({
+    tool: "codex",
+    id: "manual-codex-id",
+    transcriptPath: "/tmp/codex-from-env.jsonl",
+  });
 });
 
 test("ignores the other tool's transcript-path env var", () => {
@@ -217,6 +264,30 @@ test("a live Codex session takes precedence over cursor cwd resolution", () => {
 
   expect(identity.tool).toBe("codex");
   expect(identity.id).toBe("codex-live");
+});
+
+test("cursor resolution runs only after codex and claude env sessions are absent", () => {
+  let resolverCalls = 0;
+  const identity = inferSessionIdentity(
+    {
+      CODEX_THREAD_ID: "   ",
+      CLAUDE_CODE_SESSION_ID: "   ",
+    },
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorComposer: () => {
+        resolverCalls += 1;
+        return "composer-abc";
+      },
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "composer-abc",
+    transcriptPath: "cursor:composer-abc",
+  });
+  expect(resolverCalls).toBe(1);
 });
 
 test("falls back to claude when the cwd maps to no cursor composer", () => {
