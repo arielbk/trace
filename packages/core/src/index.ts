@@ -70,3 +70,5 @@ export {
   resolveTraceParentSession,
 } from "./session-locator.ts";
 export type { SessionLocator } from "./session-locator.ts";
+export { discoverClaudeCodeSubagentSessions } from "./subagent-discovery.ts";
+export type { DiscoverClaudeCodeSubagentSessionsInput } from "./subagent-discovery.ts";
