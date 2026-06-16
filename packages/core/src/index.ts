@@ -16,6 +16,7 @@ export type {
   ReEntryManifestDoc,
   ReEntryManifestSession,
   Session,
+  SessionOrigin,
   SessionTool,
   Task,
   TaskDoc,
@@ -64,3 +65,8 @@ export type {
   SessionIdentity,
   SessionIdentityOverrides,
 } from "./session-identity.ts";
+export {
+  createStoreSessionLocator,
+  resolveTraceParentSession,
+} from "./session-locator.ts";
+export type { SessionLocator } from "./session-locator.ts";

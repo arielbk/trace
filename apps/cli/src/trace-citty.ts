@@ -12,6 +12,7 @@ import {
   type ActiveTask,
   type ReEntryManifest,
   type Session,
+  type SessionOrigin,
   type SessionTool,
   type Task,
   type TaskDoc,
@@ -328,11 +329,15 @@ function parseSessionRegisterArgs(args: string[]): {
   tool: SessionTool;
   tokenTotals: Partial<TokenTotals>;
   model?: string | null;
+  parentSessionId?: string | null;
+  origin?: SessionOrigin;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
   let model: string | null | undefined;
+  let parentSessionId: string | null | undefined;
+  let origin: string | undefined;
   const tokenTotals: Partial<TokenTotals> = {};
 
   for (let index = 0; index < args.length; index += 2) {
@@ -345,6 +350,8 @@ function parseSessionRegisterArgs(args: string[]): {
     else if (flag === "--transcript") transcriptPath = value;
     else if (flag === "--tool") tool = value;
     else if (flag === "--model") model = value;
+    else if (flag === "--parent-session") parentSessionId = value;
+    else if (flag === "--origin") origin = value;
     else if (flag === "--input-tokens") tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
     else if (flag === "--output-tokens") tokenTotals.outputTokens = parseNonNegativeInteger(value, flag);
     else if (flag === "--cache-creation-input-tokens") tokenTotals.cacheCreationInputTokens = parseNonNegativeInteger(value, flag);
@@ -355,8 +362,15 @@ function parseSessionRegisterArgs(args: string[]): {
 
   if (!id || !transcriptPath || !tool) throw new Error("Session register requires --id, --transcript, and --tool");
   if (tool !== "claude" && tool !== "codex") throw new Error("Session tool must be claude or codex");
+  if (origin !== undefined && !isSessionOrigin(origin)) {
+    throw new Error("Session origin must be root, subagent, or spawned");
+  }
 
-  return { id, transcriptPath, tool, model, tokenTotals };
+  return { id, transcriptPath, tool, model, parentSessionId, origin, tokenTotals };
+}
+
+function isSessionOrigin(value: string): value is SessionOrigin {
+  return value === "root" || value === "subagent" || value === "spawned";
 }
 
 function sessionActiveTaskUsage(): string {
