@@ -615,6 +615,30 @@ test("task doc associations can be added, read, and removed through the store in
   }
 });
 
+test("addTaskDoc persists and reads back an optional description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const described = store.addTaskDoc(task.id, "/tmp/spec.md", "The spec");
+    expect(described.description).toBe("The spec");
+
+    const undescribed = store.addTaskDoc(task.id, "/tmp/notes.md");
+    expect("description" in undescribed).toBe(false);
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(described);
+    expect(reread.find((d) => d.path === "/tmp/notes.md")).toEqual(undescribed);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task docs include files written to the task docs directory without registration", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");

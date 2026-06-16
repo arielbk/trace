@@ -7,6 +7,8 @@ export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
 export type { ParsedStateMd } from "./state-parser.ts";
 export { renderMarkdown } from "./markdown.ts";
+export { renderManifest, updateStateManifest } from "./state-manifest.ts";
+export type { ManifestEntry } from "./state-manifest.ts";
 export type {
   ActiveTask,
   RegisterSessionInput,

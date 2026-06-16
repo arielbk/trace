@@ -849,7 +849,7 @@ test("skill re-enter renders state: above docs: when a state.md doc exists", () 
   }
 });
 
-test("skill re-enter output is unchanged when no state.md exists", () => {
+test("skill re-enter surfaces the state.md that add-doc renders the manifest into", () => {
   const home = tmp("trace-cli-home-");
   const repoParent = tmp("trace-cli-repo-");
   const repo = join(repoParent, "repo");
@@ -868,6 +868,8 @@ test("skill re-enter output is unchanged when no state.md exists", () => {
 
     const notesPath = join(repo, "notes.md");
     writeFileSync(notesPath, "# Notes\n");
+    // add-doc creates a minimal state.md carrying the docs manifest footer, so
+    // re-entry now surfaces that state file alongside the registered doc.
     runTraceCli(["task", "add-doc", slug, notesPath], env, repo);
 
     const reentered = runTraceCli(
@@ -876,7 +878,7 @@ test("skill re-enter output is unchanged when no state.md exists", () => {
       repo,
     );
     expect(reentered.exitCode).toBe(0);
-    expect(reentered.stdout).not.toContain("state:");
+    expect(reentered.stdout).toContain("state:");
     expect(reentered.stdout).toContain("docs:");
     expect(reentered.stdout).toContain("notes.md");
   } finally {

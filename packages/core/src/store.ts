@@ -508,7 +508,7 @@ class NodeSqliteTaskStore implements TaskStore {
     };
   }
 
-  addTaskDoc(taskId: string, path: string): TaskDoc {
+  addTaskDoc(taskId: string, path: string, description?: string): TaskDoc {
     const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
@@ -520,20 +520,22 @@ class NodeSqliteTaskStore implements TaskStore {
     const existing = this.getTaskDoc(task.id, normalizedPath);
     if (existing) return existing;
 
+    const normalizedDescription = description?.trim();
     const doc: TaskDoc = {
       taskId: task.id,
       path: normalizedPath,
       createdAt: new Date().toISOString(),
+      ...(normalizedDescription ? { description: normalizedDescription } : {}),
     };
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO task_docs (task_id, path, created_at)
-          VALUES (?, ?, ?)
+          INSERT INTO task_docs (task_id, path, created_at, description)
+          VALUES (?, ?, ?, ?)
         `,
       )
-      .run(doc.taskId, doc.path, doc.createdAt);
+      .run(doc.taskId, doc.path, doc.createdAt, doc.description ?? null);
     return doc;
   }
 
@@ -544,7 +546,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const registeredDocs = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at
+          SELECT task_id, path, created_at, description
           FROM task_docs
           WHERE task_id = ?
           ORDER BY created_at ASC, path ASC
@@ -687,7 +689,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const row = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at
+          SELECT task_id, path, created_at, description
           FROM task_docs
           WHERE task_id = ? AND path = ?
         `,
@@ -789,6 +791,7 @@ type TaskDocRow = {
   task_id: string;
   path: string;
   created_at: string;
+  description: string | null;
 };
 
 function taskFromRow(row: TaskRow): Task {
@@ -825,11 +828,15 @@ function sessionFromRow(row: SessionRow): Session {
 }
 
 function taskDocFromRow(row: TaskDocRow): TaskDoc {
-  return {
+  const doc: TaskDoc = {
     taskId: row.task_id,
     path: row.path,
     createdAt: row.created_at,
   };
+  // A null column means the doc was registered without a description; keep the
+  // field absent rather than carrying a null so round-trips stay clean.
+  if (row.description != null) doc.description = row.description;
+  return doc;
 }
 
 function compareTimelineItems(
