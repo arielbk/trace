@@ -1,4 +1,10 @@
 import type { SessionTool } from "./types.ts";
+import {
+  getSessionLocator,
+  sessionLocatorsByPrecedence,
+  type LocateContext,
+  type SessionLocation,
+} from "./session-locator.ts";
 
 export type SessionIdentityOverrides = {
   tool?: SessionTool;
@@ -35,42 +41,60 @@ export function inferSessionIdentity(
   env: Record<string, string | undefined>,
   overrides: SessionIdentityOverrides = {},
 ): SessionIdentity {
-  // Cursor exposes no env var, so its composerId is resolved from the cwd. Only
-  // attempt it when the caller forces `tool: "cursor"` or when no claude/codex
-  // session env is present (a live IDE/CLI session always wins, and the resolver
-  // touches the Cursor SQLite store — skip it when something else already owns
-  // the session).
-  const cursorComposerId =
-    overrides.tool === "cursor" ||
-    (overrides.tool === undefined && !hasEnvSession(env))
-      ? resolveCursorComposer(overrides)
-      : undefined;
-
-  const tool = overrides.tool ?? inferTool(env, cursorComposerId);
-  const id = present(overrides.id) ?? inferId(tool, env, cursorComposerId);
+  const ctx: LocateContext = {
+    env,
+    cwd: overrides.cwd,
+    resolveCursorComposer: overrides.resolveCursorComposer,
+  };
+  const location = locateSession(ctx, overrides.tool);
+  const tool = overrides.tool ?? location?.tool ?? "claude";
+  const id = present(overrides.id) ?? location?.id;
   const transcriptPath =
     present(overrides.transcriptPath) ??
-    (id === undefined ? undefined : inferTranscriptPath(id, tool, env));
+    (id === undefined
+      ? undefined
+      : (location?.nativeTranscriptPath ??
+        nativeTranscriptPathForExplicitId(ctx, tool, id) ??
+        `${tool}:${id}`));
 
   return { tool, id, transcriptPath };
 }
 
-// True when the env already names a live claude or codex session — the case
-// where cursor cwd resolution must not run.
-function hasEnvSession(env: Record<string, string | undefined>): boolean {
-  return present(env.CODEX_THREAD_ID) !== undefined || claudeId(env) !== undefined;
+function locateSession(
+  ctx: LocateContext,
+  forcedTool: SessionTool | undefined,
+): SessionLocation | null {
+  if (forcedTool) {
+    return getSessionLocator(forcedTool).locate(ctx);
+  }
+
+  for (const locator of sessionLocatorsByPrecedence) {
+    const location = locator.locate(ctx);
+    if (location) {
+      return location;
+    }
+  }
+
+  return null;
 }
 
-// Runs the injected resolver against the cwd, collapsing a missing cwd/resolver
-// or a blank composerId to undefined.
-function resolveCursorComposer(
-  overrides: SessionIdentityOverrides,
+function nativeTranscriptPathForExplicitId(
+  ctx: LocateContext,
+  tool: SessionTool,
+  id: string,
 ): string | undefined {
-  const cwd = present(overrides.cwd);
-  if (!cwd || !overrides.resolveCursorComposer) {
+  const env =
+    tool === "codex"
+      ? { ...ctx.env, CODEX_THREAD_ID: id }
+      : tool === "claude"
+        ? { ...ctx.env, CLAUDE_CODE_SESSION_ID: id }
+        : undefined;
+
+  if (!env) {
     return undefined;
   }
-  return present(overrides.resolveCursorComposer(cwd) ?? undefined);
+
+  return getSessionLocator(tool).locate({ ...ctx, env })?.nativeTranscriptPath;
 }
 
 // Trims a candidate value and collapses blank to undefined, so `??` chains
@@ -78,68 +102,4 @@ function resolveCursorComposer(
 function present(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function inferTool(
-  env: Record<string, string | undefined>,
-  cursorComposerId: string | undefined,
-): SessionTool {
-  if (present(env.CODEX_THREAD_ID)) {
-    return "codex";
-  }
-
-  // A resolved Cursor composer only reaches here when no claude/codex env was
-  // present (see `inferSessionIdentity`), so it cannot shadow a live session.
-  if (cursorComposerId) {
-    return "cursor";
-  }
-
-  return "claude";
-}
-
-function inferId(
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-  cursorComposerId: string | undefined,
-): string | undefined {
-  if (tool === "codex") {
-    return present(env.CODEX_THREAD_ID);
-  }
-
-  if (tool === "cursor") {
-    return cursorComposerId;
-  }
-
-  return claudeId(env);
-}
-
-// Claude Code exports the live session id as CLAUDE_CODE_SESSION_ID; the legacy
-// CLAUDE_SESSION_ID / session_id are accepted for hook-stdin callers and older
-// integrations.
-function claudeId(
-  env: Record<string, string | undefined>,
-): string | undefined {
-  return (
-    present(env.CLAUDE_CODE_SESSION_ID) ??
-    present(env.CLAUDE_SESSION_ID) ??
-    present(env.session_id)
-  );
-}
-
-function inferTranscriptPath(
-  id: string,
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-): string {
-  const claudePath = present(env.CLAUDE_TRANSCRIPT_PATH);
-  if (tool === "claude" && claudePath) {
-    return claudePath;
-  }
-
-  const codexPath = present(env.CODEX_TRANSCRIPT_PATH);
-  if (tool === "codex" && codexPath) {
-    return codexPath;
-  }
-
-  return `${tool}:${id}`;
 }
