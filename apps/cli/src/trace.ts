@@ -28,7 +28,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace serve | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...",
+    "Usage: trace init | trace serve | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|timeline> ... | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...",
   );
 }
 
@@ -55,7 +55,8 @@ function safeRealpath(path: string): string {
 if (isDirectRun) {
   const args = process.argv.slice(2);
   const stdin =
-    args[0] === "hook" && args[1] === "session-start"
+    args[0] === "hook" &&
+    (args[1] === "session-start" || args[1] === "subagent-stop")
       ? readFileSync(0, "utf8")
       : "";
   const result = runTraceCli(args, process.env, process.cwd(), stdin);

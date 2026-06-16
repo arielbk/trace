@@ -33,6 +33,7 @@ import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
+import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 
 type CommandResult = { exitCode: number; stdout: string; stderr: string };
 type Env = Record<string, string | undefined>;
@@ -714,6 +715,12 @@ export function buildTraceCittyRoot(
             meta: { description: "Register a new Claude session on start" },
             run(): CommandResult {
               return runClaudeSessionStartHook(stdin, env) as unknown as CommandResult;
+            },
+          }),
+          "subagent-stop": defineCommand({
+            meta: { description: "Discover Claude subagent sessions on stop" },
+            run(): CommandResult {
+              return runClaudeSubagentStopHook(stdin, env) as unknown as CommandResult;
             },
           }),
         },

@@ -18,7 +18,11 @@ function copyWebAssets(): void {
   rmSync(bundledWebDir, { recursive: true, force: true });
   cpSync(webDistDir, bundledWebDir, { recursive: true });
 
-  for (const artifact of ["trace.js", "claude-session-start-hook.js"]) {
+  for (const artifact of [
+    "trace.js",
+    "claude-session-start-hook.js",
+    "claude-subagent-stop-hook.js",
+  ]) {
     const distArtifact = resolve(appRoot, "dist", artifact);
     chmodSync(distArtifact, 0o755);
   }
@@ -28,6 +32,7 @@ export default defineConfig({
   entry: {
     trace: "src/trace.ts",
     "claude-session-start-hook": "src/claude-session-start-hook.ts",
+    "claude-subagent-stop-hook": "src/claude-subagent-stop-hook.ts",
   },
   format: ["esm"],
   target: "node22",
