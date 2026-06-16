@@ -40,6 +40,9 @@ export type TaskDoc = {
   taskId: string;
   path: string;
   createdAt: string;
+  // Optional one-line description; absent on docs registered without one. It is
+  // the source of truth the state.md manifest footer renders from.
+  description?: string;
 };
 
 export type TokenTotals = {
@@ -125,7 +128,7 @@ export type TaskStore = {
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;
-  addTaskDoc(taskId: string, path: string): TaskDoc;
+  addTaskDoc(taskId: string, path: string, description?: string): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
   close(): void;
