@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* dark: responds to data-theme="dark" on any ancestor */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -371,6 +372,78 @@
 }
 .left-off-prose a { color: var(--color-accent); text-decoration: underline; }
 .left-off-prose strong { color: var(--color-text); font-weight: 650; }
+
+/* Block-level markdown rendered for the read-only doc viewer Sheet. */
+.doc-viewer-prose > :first-child { margin-top: 0; }
+.doc-viewer-prose > :last-child { margin-bottom: 0; }
+.doc-viewer-prose p { margin: 0 0 0.8em; }
+.doc-viewer-prose h1,
+.doc-viewer-prose h2,
+.doc-viewer-prose h3,
+.doc-viewer-prose h4,
+.doc-viewer-prose h5,
+.doc-viewer-prose h6 {
+  margin: 1.4em 0 0.5em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.doc-viewer-prose h1 { font-size: 1.6em; }
+.doc-viewer-prose h2 { font-size: 1.35em; }
+.doc-viewer-prose h3 { font-size: 1.15em; }
+.doc-viewer-prose ul,
+.doc-viewer-prose ol { margin: 0.5em 0; padding-left: 1.4em; list-style: disc; }
+.doc-viewer-prose ol { list-style: decimal; }
+.doc-viewer-prose li { margin: 0.3em 0; }
+.doc-viewer-prose li::marker { color: var(--color-border-strong); }
+.doc-viewer-prose a { color: var(--color-accent); text-decoration: underline; }
+.doc-viewer-prose strong { color: var(--color-text); font-weight: 650; }
+.doc-viewer-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 0.25em;
+  padding: 0.1em 0.35em;
+}
+.doc-viewer-prose pre {
+  margin: 0.8em 0;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 0.375em;
+}
+.doc-viewer-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.doc-viewer-prose blockquote {
+  margin: 0.8em 0;
+  padding-left: 1em;
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+}
+.doc-viewer-prose hr {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid var(--color-border-subtle);
+}
+.doc-viewer-prose img { max-width: 100%; border-radius: 0.375em; }
+.doc-viewer-prose table {
+  width: 100%;
+  margin: 0.8em 0;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.doc-viewer-prose th,
+.doc-viewer-prose td {
+  border: 1px solid var(--color-border-subtle);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.doc-viewer-prose th { background: var(--color-surface); font-weight: 650; }
 
 /* ClampedSection: collapse long content behind a Show more toggle. */
 .left-off-clamp {

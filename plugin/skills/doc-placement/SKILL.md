@@ -16,7 +16,7 @@ without guessing from conversation scrollback.
 ### 1. Resolve the docs directory
 
 ```sh
-npx @arielbk/trace@0.2.0 skill docs-dir
+npx @arielbk/trace@0.3.0 skill docs-dir
 ```
 
 Two outcomes:
@@ -49,7 +49,27 @@ reflects the document's content (e.g. `checkout-flow.prd.md`,
 `auth-rewrite.decisions.md`). Do not nest subdirectories unless the user
 asks for them — flat is easier to scan during re-entry.
 
-After writing, report the full path so the user sees where it landed.
+### 3. Register the document
+
+Register the file with the task so it appears in the task's docs manifest. The
+resolved `taskDocsDir` is `~/.trace/tasks/<slug>/docs/`, so the task `<slug>` is
+the directory name two levels above `docs/` — use it as the `add-doc` ref:
+
+```sh
+npx @arielbk/trace@0.3.0 task add-doc <slug> <path> --description "<one-line description>"
+```
+
+- `<slug>` — the task slug extracted from `taskDocsDir` (the segment before
+  `/docs/`).
+- `<path>` — the full path to the file you just wrote.
+- `--description` — a one-line summary of what the doc is (strongly
+  recommended; it is rendered next to the link in state.md's manifest footer so
+  a re-entering agent can scan the index without opening each doc). Omit the
+  flag only when no meaningful one-liner exists.
+
+This re-renders the machine-owned docs-manifest footer in the task's state.md,
+so the manifest stays current without a manual handoff. After registering,
+report the full path so the user sees where it landed.
 
 ## Notes
 

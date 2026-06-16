@@ -40,6 +40,7 @@ export const taskDocs = sqliteTable(
       .references(() => tasks.id, { onDelete: "cascade" }),
     path: text("path").notNull(),
     createdAt: text("created_at").notNull(),
+    description: text("description"),
   },
   (table) => [primaryKey({ columns: [table.taskId, table.path] })],
 );

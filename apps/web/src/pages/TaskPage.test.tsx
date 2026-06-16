@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
@@ -691,7 +697,9 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
   expect(html).toContain("Token totals");
 });
 
-function baseTimeline(overrides: Partial<TaskTimeline["task"]> = {}): TaskTimeline {
+function baseTimeline(
+  overrides: Partial<TaskTimeline["task"]> = {},
+): TaskTimeline {
   return {
     task: {
       id: "task-1",
@@ -757,7 +765,9 @@ test("TaskTimelineView header shows Re-enter button with prompt as title", () =>
   );
   expect(html).toContain("Re-enter");
   // The full prompt is available on the button for accessibility/hover
-  expect(html).toContain('title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"');
+  expect(html).toContain(
+    'title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"',
+  );
 });
 
 test("TaskTimelineView header shows Archive button for unarchived task", () => {
@@ -767,8 +777,8 @@ test("TaskTimelineView header shows Archive button for unarchived task", () => {
       <TaskTimelineView timeline={timeline} onArchive={() => {}} />
     </MemoryRouter>,
   );
-  expect(html).toContain("aria-label=\"Archive task\"");
-  expect(html).not.toContain("aria-label=\"Unarchive task\"");
+  expect(html).toContain('aria-label="Archive task"');
+  expect(html).not.toContain('aria-label="Unarchive task"');
 });
 
 test("TaskTimelineView header shows Unarchive button for archived task", () => {
@@ -778,8 +788,8 @@ test("TaskTimelineView header shows Unarchive button for archived task", () => {
       <TaskTimelineView timeline={timeline} onUnarchive={() => {}} />
     </MemoryRouter>,
   );
-  expect(html).toContain("aria-label=\"Unarchive task\"");
-  expect(html).not.toContain("aria-label=\"Archive task\"");
+  expect(html).toContain('aria-label="Unarchive task"');
+  expect(html).not.toContain('aria-label="Archive task"');
 });
 
 test("TaskTimelineView Archive button calls onArchive handler on click", async () => {
@@ -943,7 +953,13 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "claude",
           model: null,
           taskId: "task-1",
-          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          tokenTotals: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 2,
+          },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
         sessionName: null,
@@ -951,7 +967,11 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
       {
         type: "doc",
         createdAt: "2026-05-29T00:02:00.000Z",
-        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        doc: {
+          taskId: "task-1",
+          path: "/work/docs/a.md",
+          createdAt: "2026-05-29T00:02:00.000Z",
+        },
         sizeBytes: null,
       },
       {
@@ -963,7 +983,13 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "codex",
           model: null,
           taskId: "task-1",
-          tokenTotals: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0 },
+          tokenTotals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 0,
+          },
           createdAt: "2026-05-29T00:03:00.000Z",
         },
         sessionName: null,
@@ -992,7 +1018,11 @@ test("TaskTimelineView still renders the spine with only one timeline item", () 
       {
         type: "doc",
         createdAt: "2026-05-29T00:01:00.000Z",
-        doc: { taskId: "task-1", path: "/work/docs/b.md", createdAt: "2026-05-29T00:01:00.000Z" },
+        doc: {
+          taskId: "task-1",
+          path: "/work/docs/b.md",
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
         sizeBytes: null,
       },
     ],
@@ -1022,7 +1052,13 @@ function filterableTimeline(): TaskTimeline {
           tool: "claude",
           model: null,
           taskId: "task-1",
-          tokenTotals: { inputTokens: 1, outputTokens: 1, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 2 },
+          tokenTotals: {
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+            totalTokens: 2,
+          },
           createdAt: "2026-05-29T00:01:00.000Z",
         },
         sessionName: null,
@@ -1030,7 +1066,11 @@ function filterableTimeline(): TaskTimeline {
       {
         type: "doc",
         createdAt: "2026-05-29T00:02:00.000Z",
-        doc: { taskId: "task-1", path: "/work/docs/a.md", createdAt: "2026-05-29T00:02:00.000Z" },
+        doc: {
+          taskId: "task-1",
+          path: "/work/docs/a.md",
+          createdAt: "2026-05-29T00:02:00.000Z",
+        },
         sizeBytes: null,
       },
     ],
@@ -1065,6 +1105,128 @@ test("TaskTimelineView breadcrumb links the project name to the filtered home vi
   );
 });
 
+// doc viewer Sheet
+
+function timelineWithDoc(docPath: string): TaskTimeline {
+  return {
+    ...baseTimeline(),
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        doc: {
+          taskId: "task-1",
+          path: docPath,
+          createdAt: "2026-05-29T00:01:00.000Z",
+        },
+        sizeBytes: null,
+      },
+    ],
+  };
+}
+
+function renderTimelineWithProvider(timeline: TaskTimeline) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <TaskTimelineView timeline={timeline} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+test("clicking a doc opens the Sheet and rendered content appears", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  fireEvent.click(screen.getByRole("button", { name: "View plan.md" }));
+
+  expect(
+    await screen.findByRole("heading", { name: "Plan" }),
+  ).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith(
+    `/api/tasks/usable-v1/docs?path=${encodeURIComponent("/work/docs/plan.md")}`,
+  );
+});
+
+test("clicking a non-markdown doc shows a contained raw-text fallback in the Sheet", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response('{"a":1}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/data.json"));
+
+  fireEvent.click(screen.getByRole("button", { name: "View data.json" }));
+
+  expect(await screen.findByText("Showing raw contents")).toBeInTheDocument();
+  expect(screen.getByText('{"a":1}')).toBeInTheDocument();
+});
+
+test("copying a doc's path does not open the Sheet", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Copy /work/docs/plan.md" }),
+  );
+
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+    "/work/docs/plan.md",
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Plan" }),
+  ).not.toBeInTheDocument();
+});
+
+test("closing the doc Sheet returns focus to the timeline row", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    ),
+  );
+
+  renderTimelineWithProvider(timelineWithDoc("/work/docs/plan.md"));
+
+  const row = screen.getByRole("button", { name: "View plan.md" });
+  fireEvent.click(row);
+  await screen.findByRole("heading", { name: "Plan" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+  await waitFor(() => expect(row).toHaveFocus());
+});
+
 // TaskPage hook-level integration tests
 
 function makeQueryClient() {
@@ -1083,7 +1245,33 @@ function renderTaskPage(slug: string, queryClient: QueryClient) {
   );
 }
 
-function makeTimeline(slug: string, archivedAt: string | null = null): TaskTimeline {
+function renderRoutedTaskPage(
+  initialEntry: string,
+  queryClient: QueryClient = makeQueryClient(),
+) {
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route path="/task/:id" element={<TaskPage />} />
+          <Route path="/task/:id/docs/*" element={<TaskPage />} />
+          <Route path="*" element={<p>Task not found.</p>} />
+        </Routes>
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-path">{location.pathname}</div>;
+}
+
+function makeTimeline(
+  slug: string,
+  archivedAt: string | null = null,
+): TaskTimeline {
   return {
     task: {
       id: "task-abc",
@@ -1095,30 +1283,324 @@ function makeTimeline(slug: string, archivedAt: string | null = null): TaskTimel
     },
     items: [],
     lastActivityAt: "2026-06-01T00:00:00.000Z",
-    tokenTotals: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, totalTokens: 0 },
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
   };
 }
 
 describe("TaskPage", () => {
   test("renders the timeline title when fetch succeeds", async () => {
     const timeline = makeTimeline("my-task");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(timeline),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      }),
+    );
 
     renderTaskPage("my-task", makeQueryClient());
 
     expect(await screen.findByText("My task")).toBeInTheDocument();
   });
 
+  test("direct-loading a doc route opens the Sheet on that doc", async () => {
+    const timeline = {
+      ...makeTimeline("my-task"),
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: "/work/docs/plan.md",
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce(
+        new Response("<h1>Plan</h1>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage(
+      `/task/my-task/docs/${encodeURIComponent("/work/docs/plan.md")}`,
+    );
+
+    expect(await screen.findByText("My task")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/timeline");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent("/work/docs/plan.md")}`,
+    );
+  });
+
+  test("clicking a timeline doc row navigates to the doc route and closing returns to the task route", async () => {
+    const timeline = {
+      ...makeTimeline("my-task"),
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: "/work/docs/plan.md",
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(timeline),
+        })
+        .mockResolvedValue(
+          new Response("<h1>Plan</h1>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+        ),
+    );
+
+    renderRoutedTaskPage("/task/my-task");
+    await screen.findByText("My task");
+
+    fireEvent.click(screen.getByRole("button", { name: "View plan.md" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      `/task/my-task/docs/${encodeURIComponent("/work/docs/plan.md")}`,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", { name: "Plan" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      "/task/my-task",
+    );
+    expect(screen.getByText("My task")).toBeInTheDocument();
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+  });
+
+  test("clicking a same-task markdown link inside the Sheet navigates to that doc route", async () => {
+    const planPath = "/work/docs/plan.md";
+    const nextPath = "/work/docs/notes/next.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:02:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: nextPath,
+            createdAt: "2026-06-01T00:02:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce(
+        new Response('<p><a href="notes/next.md">Next doc</a></p>', {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("<h1>Next</h1>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage(
+      `/task/my-task/docs/${encodeURIComponent(planPath)}`,
+    );
+    await screen.findByText("Next doc");
+
+    fireEvent.click(screen.getByRole("link", { name: "Next doc" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      `/task/my-task/docs/${encodeURIComponent(nextPath)}`,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Next" }),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent(nextPath)}`,
+    );
+  });
+
+  test("clicking a same-task markdown link in state content opens the doc route", async () => {
+    const planPath = "/work/docs/plan.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      state: {
+        summary: undefined,
+        decisions: [],
+        currentState: [
+          `<p>Continue from <a href="plan.md">the plan</a>.</p>`,
+        ],
+        nextStep: undefined,
+        openQuestions: [],
+      },
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce(
+        new Response("<h1>Plan</h1>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage("/task/my-task");
+    await screen.findByText("the plan");
+
+    fireEvent.click(screen.getByRole("link", { name: "the plan" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      `/task/my-task/docs/${encodeURIComponent(planPath)}`,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent(planPath)}`,
+    );
+  });
+
+  test("state content leaves unknown, external, and non-markdown links uncaptured", async () => {
+    const planPath = "/work/docs/plan.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      state: {
+        summary: undefined,
+        decisions: [],
+        currentState: [
+          [
+            `<a href="missing.md">missing markdown</a>`,
+            `<a href="https://example.com/plan.md">external markdown</a>`,
+            `<a href="data.json">data file</a>`,
+          ].join(" "),
+        ],
+        nextStep: undefined,
+        openQuestions: [],
+      },
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(timeline),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage("/task/my-task");
+    await screen.findByText("missing markdown");
+
+    fireEvent.click(screen.getByRole("link", { name: "missing markdown" }));
+    fireEvent.click(screen.getByRole("link", { name: "external markdown" }));
+    fireEvent.click(screen.getByRole("link", { name: "data file" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      "/task/my-task",
+    );
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("renders not-found state on 404", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: () => Promise.resolve(null),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve(null),
+      }),
+    );
 
     renderTaskPage("no-such-task", makeQueryClient());
 
@@ -1127,12 +1609,32 @@ describe("TaskPage", () => {
 
   test("archive button fires POST to archive endpoint and refetches", async () => {
     const timeline = makeTimeline("my-task");
-    const archivedTimeline = makeTimeline("my-task", "2026-06-01T00:01:00.000Z");
+    const archivedTimeline = makeTimeline(
+      "my-task",
+      "2026-06-01T00:01:00.000Z",
+    );
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(timeline) })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ id: "task-abc", archivedAt: "2026-06-01T00:01:00.000Z" }) })
-      .mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(archivedTimeline) });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            id: "task-abc",
+            archivedAt: "2026-06-01T00:01:00.000Z",
+          }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(archivedTimeline),
+      });
 
     vi.stubGlobal("fetch", fetchMock);
 

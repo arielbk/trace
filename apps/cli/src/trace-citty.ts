@@ -8,6 +8,7 @@ import {
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
+  updateStateManifest,
   type ActiveTask,
   type ReEntryManifest,
   type Session,
@@ -27,7 +28,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
@@ -262,6 +263,49 @@ function formatSessionSummary(session: Session): string {
 
 function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {
   return `${taskRef}\t${doc.path}\n`;
+}
+
+function addDocUsage(): string {
+  return "Usage: trace task add-doc <ref> <path> [--description <text>]";
+}
+
+function parseAddDocDescription(flags: string[]): string | undefined {
+  let description: string | undefined;
+  let index = 0;
+  while (index < flags.length) {
+    const flag = flags[index];
+    if (flag === "--description") {
+      const value = flags[index + 1];
+      if (!value) throw new Error(addDocUsage());
+      description = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+  return description;
+}
+
+// Re-render the task's machine-owned state.md manifest footer from the docs
+// currently registered for the task. state.md is created when absent and is
+// excluded from its own manifest.
+function renderTaskDocManifest(
+  store: Store,
+  databasePath: string,
+  task: Task,
+): void {
+  const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+  const statePath = join(docsDir, "state.md");
+  const entries = store
+    .listDocsForTask(task.id)
+    .filter((doc) => basename(doc.path) !== "state.md")
+    .map((doc) => ({
+      label: basename(doc.path),
+      href: relative(docsDir, doc.path) || basename(doc.path),
+      ...(doc.description ? { description: doc.description } : {}),
+    }));
+  mkdirSync(docsDir, { recursive: true });
+  updateStateManifest(statePath, task.title, entries);
 }
 
 function formatActiveTask(
@@ -825,10 +869,18 @@ export function buildTraceCittyRoot(
               if (!taskId) return failure("Task id is required");
               if (!path) return failure("Task doc path is required");
 
-              return withStore(env, (store) => {
+              let description: string | undefined;
+              try {
+                description = parseAddDocDescription(args.slice(2));
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+
+              return withStore(env, (store, databasePath) => {
                 const task = store.getTaskByRef(taskId);
                 if (!task) return failure(`Task not found: ${taskId}`, 1);
-                const doc = store.addTaskDoc(task.id, path);
+                const doc = store.addTaskDoc(task.id, path, description);
+                renderTaskDocManifest(store, databasePath, task);
                 return success(formatTaskDocSummary(task.slug, doc));
               });
             },

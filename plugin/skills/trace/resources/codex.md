@@ -13,7 +13,7 @@ Before binding or re-entering, backfill Codex sessions so the current and recent
 Codex threads exist in the Trace store:
 
 ```sh
-npx @arielbk/trace@0.2.0 session scan --codex
+npx @arielbk/trace@0.3.0 session scan --codex
 ```
 
 This uses `CODEX_HOME` when set, otherwise `$HOME/.codex`. Run it once at the

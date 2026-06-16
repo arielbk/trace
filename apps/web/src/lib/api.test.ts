@@ -10,10 +10,12 @@ import React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TaskTimeline, TokenTotals } from "@trace/core";
 import {
+  fetchDocContents,
   fetchTaskTimeline,
   fetchTasks,
   HttpError,
   useArchiveTask,
+  useDocContents,
   useTasks,
   useTaskTimeline,
   useUnarchiveTask,
@@ -200,6 +202,90 @@ describe("useTaskTimeline", () => {
     );
     const client = makeFreshClient();
     const { result } = renderHook(() => useTaskTimeline("missing"), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect((result.current.error as HttpError).status).toBe(404);
+  });
+});
+
+// ─── fetchDocContents ─────────────────────────────────────────────────────────
+
+describe("fetchDocContents", () => {
+  test("resolves to rendered HTML with its content-type for a markdown doc", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("<h1>Plan</h1>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchDocContents("my-task", "/work/docs/plan.md");
+
+    expect(result).toEqual({ contentType: "text/html", body: "<h1>Plan</h1>" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent("/work/docs/plan.md")}`,
+    );
+  });
+
+  test("resolves to raw text with its content-type for a non-markdown doc", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('{"a":1}', {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    const result = await fetchDocContents("my-task", "/work/docs/data.json");
+
+    expect(result).toEqual({ contentType: "application/json", body: '{"a":1}' });
+  });
+
+  test("throws HttpError with status and body message on non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("Doc could not be read", { status: 500 })),
+    );
+
+    const error = await fetchDocContents("my-task", "/work/docs/plan.md").catch((e) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 500, message: "Doc could not be read" });
+  });
+});
+
+// ─── useDocContents ───────────────────────────────────────────────────────────
+
+describe("useDocContents", () => {
+  test("returns doc contents keyed by task ref and doc path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("<p>Hello</p>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      ),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useDocContents("my-task", "/work/docs/plan.md"), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ contentType: "text/html", body: "<p>Hello</p>" });
+  });
+
+  test("surfaces a 404 as a query error carrying status 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("", { status: 404 })),
+    );
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useDocContents("my-task", "/work/docs/missing.md"), {
       wrapper: wrapper(client),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
