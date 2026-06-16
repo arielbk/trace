@@ -1,4 +1,5 @@
 import { useRef, useState, type CSSProperties } from "react";
+import { AnimatePresence } from "motion/react";
 import { Link, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
@@ -304,16 +305,19 @@ export function TaskTimelineView({
           </ol>
         )}
       </section>
-      {selectedDocPath !== null ? (
-        <DocViewerSheet
-          taskRef={timeline.task.slug}
-          docPath={selectedDocPath}
-          triggerRef={docTriggerRef}
-          onOpenChange={(open) => {
-            if (!open) setSelectedDocPath(null);
-          }}
-        />
-      ) : null}
+      <AnimatePresence onExitComplete={() => docTriggerRef.current?.focus()}>
+        {selectedDocPath !== null ? (
+          <DocViewerSheet
+            key={selectedDocPath}
+            taskRef={timeline.task.slug}
+            docPath={selectedDocPath}
+            triggerRef={docTriggerRef}
+            onOpenChange={(open) => {
+              if (!open) setSelectedDocPath(null);
+            }}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
   );
 }
@@ -637,4 +641,3 @@ function NextStepArrow() {
     </svg>
   );
 }
-

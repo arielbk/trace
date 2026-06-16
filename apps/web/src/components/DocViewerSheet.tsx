@@ -1,14 +1,17 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import type { UseQueryResult } from "@tanstack/react-query";
+import { motion, useReducedMotion } from "motion/react";
 import type { RefObject } from "react";
 import { truncatePath } from "../format.ts";
 import { HttpError, type DocContents, useDocContents } from "../lib/api.ts";
 import { CopyChip } from "./CopyChip.tsx";
 
+const docViewerEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 /**
  * Right-side Sheet showing the rendered contents of a task doc. Mounted only
- * while a doc is selected — `open` is always true while mounted, and closing
- * (Escape/overlay/Close button) unmounts it via `onOpenChange`.
+ * while a doc is selected. AnimatePresence in the parent keeps it mounted long
+ * enough for Motion to play the exit animation after close.
  */
 export function DocViewerSheet({
   taskRef,
@@ -22,35 +25,59 @@ export function DocViewerSheet({
   triggerRef: RefObject<HTMLElement | null>;
 }) {
   const query = useDocContents(taskRef, docPath);
+  const shouldReduceMotion = useReducedMotion();
+  const transition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.35, ease: docViewerEase };
+  const overlayTransition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.4, ease: docViewerEase };
 
   return (
     <DialogPrimitive.Root open onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50 animate-in fade-in-0" />
+      <DialogPrimitive.Portal forceMount>
+        <DialogPrimitive.Overlay asChild forceMount>
+          <motion.div
+            className="fixed inset-0 z-50 bg-black/50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={overlayTransition}
+          />
+        </DialogPrimitive.Overlay>
         <DialogPrimitive.Content
-          className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg shadow-lg sm:max-w-2xl animate-in slide-in-from-right duration-300"
+          asChild
+          forceMount
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             triggerRef.current?.focus();
           }}
         >
-          <header className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
-            <DialogPrimitive.Title className="m-0 min-w-0 text-row-title font-bold tracking-tight">
-              <CopyChip value={docPath} display={truncatePath(docPath)} />
-            </DialogPrimitive.Title>
-            <DialogPrimitive.Description className="sr-only">
-              Read-only contents of {docPath}
-            </DialogPrimitive.Description>
-            <DialogPrimitive.Close
-              aria-label="Close"
-              className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-chip-border bg-surface text-text-muted hover:border-border-strong hover:text-text"
-            >
-              <CloseIcon />
-            </DialogPrimitive.Close>
-          </header>
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            <DocViewerBody query={query} />
-          </div>
+          <motion.div
+            className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg shadow-lg sm:max-w-2xl"
+            initial={{ opacity: 0, x: 24, filter: "blur(2px)" }}
+            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, x: 24, filter: "blur(2px)" }}
+            transition={transition}
+          >
+            <header className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
+              <DialogPrimitive.Title className="m-0 min-w-0 text-row-title font-bold tracking-tight">
+                <CopyChip value={docPath} display={truncatePath(docPath)} />
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="sr-only">
+                Read-only contents of {docPath}
+              </DialogPrimitive.Description>
+              <DialogPrimitive.Close
+                aria-label="Close"
+                className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-chip-border bg-surface text-text-muted hover:border-border-strong hover:text-text"
+              >
+                <CloseIcon />
+              </DialogPrimitive.Close>
+            </header>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <DocViewerBody query={query} />
+            </div>
+          </motion.div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

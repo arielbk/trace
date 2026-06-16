@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -122,7 +122,7 @@ test("Escape dismisses the Sheet via onOpenChange(false)", async () => {
 
   fireEvent.keyDown(document, { key: "Escape" });
 
-  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(onOpenChange).toHaveBeenCalledWith(false);
 });
 
 test("the Close button dismisses the Sheet via onOpenChange(false)", async () => {
@@ -139,5 +139,5 @@ test("the Close button dismisses the Sheet via onOpenChange(false)", async () =>
 
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
-  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(onOpenChange).toHaveBeenCalledWith(false);
 });
