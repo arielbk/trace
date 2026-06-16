@@ -1425,6 +1425,115 @@ describe("TaskPage", () => {
     );
   });
 
+  test("clicking a same-task markdown link in state content opens the doc route", async () => {
+    const planPath = "/work/docs/plan.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      state: {
+        summary: undefined,
+        decisions: [],
+        currentState: [
+          `<p>Continue from <a href="plan.md">the plan</a>.</p>`,
+        ],
+        nextStep: undefined,
+        openQuestions: [],
+      },
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce(
+        new Response("<h1>Plan</h1>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage("/task/my-task");
+    await screen.findByText("the plan");
+
+    fireEvent.click(screen.getByRole("link", { name: "the plan" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      `/task/my-task/docs/${encodeURIComponent(planPath)}`,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Plan" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent(planPath)}`,
+    );
+  });
+
+  test("state content leaves unknown, external, and non-markdown links uncaptured", async () => {
+    const planPath = "/work/docs/plan.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      state: {
+        summary: undefined,
+        decisions: [],
+        currentState: [
+          [
+            `<a href="missing.md">missing markdown</a>`,
+            `<a href="https://example.com/plan.md">external markdown</a>`,
+            `<a href="data.json">data file</a>`,
+          ].join(" "),
+        ],
+        nextStep: undefined,
+        openQuestions: [],
+      },
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(timeline),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage("/task/my-task");
+    await screen.findByText("missing markdown");
+
+    fireEvent.click(screen.getByRole("link", { name: "missing markdown" }));
+    fireEvent.click(screen.getByRole("link", { name: "external markdown" }));
+    fireEvent.click(screen.getByRole("link", { name: "data file" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      "/task/my-task",
+    );
+    expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("renders not-found state on 404", async () => {
     vi.stubGlobal(
       "fetch",

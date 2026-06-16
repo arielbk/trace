@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { AnimatePresence } from "motion/react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
@@ -28,6 +28,7 @@ import {
   useTaskTimeline,
   useUnarchiveTask,
 } from "../lib/api.ts";
+import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
 
 export function TaskPage() {
   const { id = "", "*": routeDocPath } = useParams();
@@ -131,6 +132,26 @@ export function TaskTimelineView({
   const knownDocPaths = timeline.items.flatMap((item) =>
     item.type === "doc" ? [item.doc.path] : [],
   );
+
+  function navigateStateDocLink(event: MouseEvent<HTMLElement>) {
+    if (!onNavigateDocRoute) return;
+
+    const route = docRouteFromStateClick(event, {
+      taskRef: timeline.task.slug,
+      knownDocPaths,
+    });
+    if (!route) return;
+
+    event.preventDefault();
+    const target = event.target;
+    const anchor =
+      target instanceof Element ? target.closest("a[href]") : null;
+    if (anchor instanceof HTMLElement) {
+      docTriggerRef.current = anchor;
+    }
+    onNavigateDocRoute(route);
+  }
+
   const visibleItems = (
     timelineFilter === "all"
       ? timeline.items
@@ -205,7 +226,10 @@ export function TaskTimelineView({
           ) : null}
         </div>
       </div>
-      <LeftOffPanel state={timeline.state} />
+      <LeftOffPanel
+        state={timeline.state}
+        onDocLinkClick={navigateStateDocLink}
+      />
       <TokenSummary totals={timeline.tokenTotals} />
       <section className="mt-8">
         <div className="flex items-baseline gap-5 pb-1.5">
@@ -372,7 +396,13 @@ export function TaskTimelineView({
   );
 }
 
-export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
+export function LeftOffPanel({
+  state,
+  onDocLinkClick,
+}: {
+  state?: ParsedStateMd;
+  onDocLinkClick?: (event: MouseEvent<HTMLElement>) => void;
+}) {
   if (!state) {
     return (
       <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
@@ -389,7 +419,10 @@ export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
     state.openQuestions.length > 0;
 
   return (
-    <section className="mt-8 pt-6 border-t border-border">
+    <section
+      className="mt-8 pt-6 border-t border-border"
+      onClick={onDocLinkClick}
+    >
       <h2 className="m-0 mb-2.5 text-xs font-bold uppercase tracking-widest text-accent">
         Where you left off
       </h2>
@@ -475,6 +508,38 @@ export function LeftOffPanel({ state }: { state?: ParsedStateMd }) {
       </ClampedSection>
     </section>
   );
+}
+
+function docRouteFromStateClick(
+  event: MouseEvent<HTMLElement>,
+  {
+    taskRef,
+    knownDocPaths,
+  }: { taskRef: string; knownDocPaths: readonly string[] },
+): string | null {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return null;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+
+  const anchor = target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return null;
+
+  return resolveTaskDocLink({
+    href: anchor.getAttribute("href") ?? "",
+    baseDocPath: "state.md",
+    knownDocPaths,
+    taskRef,
+  });
 }
 
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
