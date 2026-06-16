@@ -16,7 +16,7 @@ without guessing from conversation scrollback.
 ### 1. Resolve the docs directory
 
 ```sh
-npx @arielbk/trace@0.2.0 skill docs-dir
+npx @arielbk/trace@0.3.0 skill docs-dir
 ```
 
 Two outcomes:
@@ -56,7 +56,7 @@ resolved `taskDocsDir` is `~/.trace/tasks/<slug>/docs/`, so the task `<slug>` is
 the directory name two levels above `docs/` — use it as the `add-doc` ref:
 
 ```sh
-npx @arielbk/trace@0.2.0 task add-doc <slug> <path> --description "<one-line description>"
+npx @arielbk/trace@0.3.0 task add-doc <slug> <path> --description "<one-line description>"
 ```
 
 - `<slug>` — the task slug extracted from `taskDocsDir` (the segment before
