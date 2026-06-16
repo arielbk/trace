@@ -29,6 +29,7 @@ import type {
   RegisterSessionInput,
   ReEntryManifest,
   Session,
+  SessionOrigin,
   SessionTool,
   Task,
   TaskDoc,
@@ -316,6 +317,10 @@ class NodeSqliteTaskStore implements TaskStore {
     const id = input.id.trim();
     const transcriptPath = input.transcriptPath.trim();
     const model = input.model?.trim() || null;
+    const parentSessionId = input.parentSessionId?.trim() || null;
+    const origin = input.origin ?? "root";
+    const subagentType = input.subagentType?.trim() || null;
+    const agentId = input.agentId?.trim() || null;
 
     if (id.length === 0) {
       throw new Error("Session id is required");
@@ -325,6 +330,9 @@ class NodeSqliteTaskStore implements TaskStore {
     }
     if (input.tool !== "claude" && input.tool !== "codex") {
       throw new Error("Session tool must be claude or codex");
+    }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
     }
 
     const existing = this.getSession(id);
@@ -346,6 +354,10 @@ class NodeSqliteTaskStore implements TaskStore {
       tool: input.tool,
       model,
       taskId: null,
+      parentSessionId,
+      origin,
+      subagentType,
+      agentId,
       createdAt: new Date().toISOString(),
       tokenTotals: totals,
     };
@@ -359,6 +371,10 @@ class NodeSqliteTaskStore implements TaskStore {
             tool,
             model,
             task_id,
+            parent_session_id,
+            origin,
+            subagent_type,
+            agent_id,
             created_at,
             input_tokens,
             output_tokens,
@@ -366,7 +382,7 @@ class NodeSqliteTaskStore implements TaskStore {
             cache_read_input_tokens,
             total_tokens
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -375,6 +391,10 @@ class NodeSqliteTaskStore implements TaskStore {
         session.tool,
         session.model,
         session.taskId,
+        session.parentSessionId,
+        session.origin,
+        session.subagentType,
+        session.agentId,
         session.createdAt,
         totals.inputTokens,
         totals.outputTokens,
@@ -779,6 +799,10 @@ type SessionRow = {
   tool: "claude" | "codex";
   model: string | null;
   task_id: string | null;
+  parent_session_id: string | null;
+  origin: SessionOrigin;
+  subagent_type: string | null;
+  agent_id: string | null;
   created_at: string;
   input_tokens: number;
   output_tokens: number;
@@ -816,6 +840,10 @@ function sessionFromRow(row: SessionRow): Session {
     tool: row.tool,
     model: row.model,
     taskId: row.task_id,
+    parentSessionId: row.parent_session_id,
+    origin: row.origin,
+    subagentType: row.subagent_type,
+    agentId: row.agent_id,
     createdAt: row.created_at,
     tokenTotals: {
       inputTokens: row.input_tokens,
@@ -825,6 +853,10 @@ function sessionFromRow(row: SessionRow): Session {
       totalTokens: row.total_tokens,
     },
   };
+}
+
+function isSessionOrigin(value: string): value is SessionOrigin {
+  return value === "root" || value === "subagent" || value === "spawned";
 }
 
 function taskDocFromRow(row: TaskDocRow): TaskDoc {

@@ -25,6 +25,7 @@ export type ActiveTask =
   | { kind: "none" };
 
 export type SessionTool = "claude" | "codex";
+export type SessionOrigin = "root" | "subagent" | "spawned";
 
 export type Session = {
   id: string;
@@ -32,6 +33,10 @@ export type Session = {
   tool: SessionTool;
   model: string | null;
   taskId: string | null;
+  parentSessionId: string | null;
+  origin: SessionOrigin;
+  subagentType: string | null;
+  agentId: string | null;
   createdAt: string;
   tokenTotals: TokenTotals;
 };
@@ -107,6 +112,10 @@ export type RegisterSessionInput = {
   transcriptPath: string;
   tool: SessionTool;
   model?: string | null;
+  parentSessionId?: string | null;
+  origin?: SessionOrigin;
+  subagentType?: string | null;
+  agentId?: string | null;
   tokenTotals?: Partial<TokenTotals>;
 };
 
