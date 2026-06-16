@@ -1358,6 +1358,73 @@ describe("TaskPage", () => {
     expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
   });
 
+  test("clicking a same-task markdown link inside the Sheet navigates to that doc route", async () => {
+    const planPath = "/work/docs/plan.md";
+    const nextPath = "/work/docs/notes/next.md";
+    const timeline = {
+      ...makeTimeline("my-task"),
+      items: [
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:01:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: planPath,
+            createdAt: "2026-06-01T00:01:00.000Z",
+          },
+          sizeBytes: null,
+        },
+        {
+          type: "doc" as const,
+          createdAt: "2026-06-01T00:02:00.000Z",
+          doc: {
+            taskId: "task-abc",
+            path: nextPath,
+            createdAt: "2026-06-01T00:02:00.000Z",
+          },
+          sizeBytes: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      })
+      .mockResolvedValueOnce(
+        new Response('<p><a href="notes/next.md">Next doc</a></p>', {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("<h1>Next</h1>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRoutedTaskPage(
+      `/task/my-task/docs/${encodeURIComponent(planPath)}`,
+    );
+    await screen.findByText("Next doc");
+
+    fireEvent.click(screen.getByRole("link", { name: "Next doc" }));
+
+    expect(screen.getByTestId("location-path")).toHaveTextContent(
+      `/task/my-task/docs/${encodeURIComponent(nextPath)}`,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Next" }),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/my-task/docs?path=${encodeURIComponent(nextPath)}`,
+    );
+  });
+
   test("renders not-found state on 404", async () => {
     vi.stubGlobal(
       "fetch",

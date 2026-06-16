@@ -57,6 +57,7 @@ export function TaskPage() {
       timeline={query.data}
       routedDocPath={routeDocPath ?? null}
       onOpenDoc={(path) => navigate(docRoute(query.data.task.slug, path))}
+      onNavigateDocRoute={(route) => navigate(route)}
       onCloseDoc={() =>
         navigate(`/task/${encodeURIComponent(query.data.task.slug)}`)
       }
@@ -76,6 +77,7 @@ export function TaskTimelineView({
   archivedAt: archivedAtProp,
   routedDocPath,
   onOpenDoc,
+  onNavigateDocRoute,
   onCloseDoc,
   onArchive,
   onUnarchive,
@@ -85,6 +87,7 @@ export function TaskTimelineView({
   archivedAt?: string | null;
   routedDocPath?: string | null;
   onOpenDoc?: (path: string) => void;
+  onNavigateDocRoute?: (route: string) => void;
   onCloseDoc?: () => void;
   onArchive?: () => void | Promise<void>;
   onUnarchive?: () => void | Promise<void>;
@@ -125,6 +128,9 @@ export function TaskTimelineView({
     (item) => item.type === "session",
   ).length;
   const docCount = timeline.items.filter((item) => item.type === "doc").length;
+  const knownDocPaths = timeline.items.flatMap((item) =>
+    item.type === "doc" ? [item.doc.path] : [],
+  );
   const visibleItems = (
     timelineFilter === "all"
       ? timeline.items
@@ -353,7 +359,9 @@ export function TaskTimelineView({
             key={selectedDocPath}
             taskRef={timeline.task.slug}
             docPath={selectedDocPath}
+            knownDocPaths={knownDocPaths}
             triggerRef={docTriggerRef}
+            onNavigateDocRoute={onNavigateDocRoute}
             onOpenChange={(open) => {
               if (!open) closeDoc();
             }}

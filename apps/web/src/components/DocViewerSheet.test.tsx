@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -13,6 +19,10 @@ function makeQueryClient() {
 function renderSheet(
   docPath: string,
   onOpenChange: (open: boolean) => void = () => {},
+  options: {
+    knownDocPaths?: readonly string[];
+    onNavigateDocRoute?: (route: string) => void;
+  } = {},
 ) {
   const triggerRef = createRef<HTMLElement>();
   return render(
@@ -20,8 +30,10 @@ function renderSheet(
       <DocViewerSheet
         taskRef="my-task"
         docPath={docPath}
+        knownDocPaths={options.knownDocPaths}
         triggerRef={triggerRef}
         onOpenChange={onOpenChange}
+        onNavigateDocRoute={options.onNavigateDocRoute}
       />
     </QueryClientProvider>,
   );
@@ -140,4 +152,38 @@ test("the Close button dismisses the Sheet via onOpenChange(false)", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
   expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+
+test("does not intercept unknown, external, or non-markdown links", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        [
+          '<a href="missing.md">Missing</a>',
+          '<a href="https://example.com/plan.md">External</a>',
+          '<a href="data.json">Data</a>',
+        ].join(" "),
+        { status: 200, headers: { "content-type": "text/html" } },
+      ),
+    ),
+  );
+  const onNavigateDocRoute = vi.fn();
+
+  renderSheet("/work/docs/plan.md", () => {}, {
+    knownDocPaths: ["/work/docs/plan.md", "/work/docs/next.md"],
+    onNavigateDocRoute,
+  });
+  await screen.findByRole("link", { name: "Missing" });
+
+  for (const name of ["Missing", "External", "Data"]) {
+    const event = createEvent.click(screen.getByRole("link", { name }), {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    fireEvent(screen.getByRole("link", { name }), event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(onNavigateDocRoute).not.toHaveBeenCalled();
 });

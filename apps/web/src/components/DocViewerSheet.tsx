@@ -1,9 +1,10 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
-import type { RefObject } from "react";
+import type { MouseEvent, RefObject } from "react";
 import { truncatePath } from "../format.ts";
 import { HttpError, type DocContents, useDocContents } from "../lib/api.ts";
+import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
 import { CopyChip } from "./CopyChip.tsx";
 
 const docViewerEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
@@ -16,12 +17,16 @@ const docViewerEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
 export function DocViewerSheet({
   taskRef,
   docPath,
+  knownDocPaths = [],
   onOpenChange,
+  onNavigateDocRoute,
   triggerRef,
 }: {
   taskRef: string;
   docPath: string;
+  knownDocPaths?: readonly string[];
   onOpenChange: (open: boolean) => void;
+  onNavigateDocRoute?: (route: string) => void;
   triggerRef: RefObject<HTMLElement | null>;
 }) {
   const query = useDocContents(taskRef, docPath);
@@ -75,7 +80,21 @@ export function DocViewerSheet({
               </DialogPrimitive.Close>
             </header>
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <DocViewerBody query={query} />
+              <DocViewerBody
+                query={query}
+                onClick={(event) => {
+                  if (!onNavigateDocRoute) return;
+                  const route = docLinkRouteFromClick(event, {
+                    taskRef,
+                    docPath,
+                    knownDocPaths,
+                  });
+                  if (!route) return;
+
+                  event.preventDefault();
+                  onNavigateDocRoute(route);
+                }}
+              />
             </div>
           </motion.div>
         </DialogPrimitive.Content>
@@ -84,7 +103,13 @@ export function DocViewerSheet({
   );
 }
 
-function DocViewerBody({ query }: { query: UseQueryResult<DocContents, Error> }) {
+function DocViewerBody({
+  query,
+  onClick,
+}: {
+  query: UseQueryResult<DocContents, Error>;
+  onClick?: (event: MouseEvent<HTMLDivElement>) => void;
+}) {
   if (query.isPending) {
     return <p className="text-text-muted">Loading…</p>;
   }
@@ -101,6 +126,7 @@ function DocViewerBody({ query }: { query: UseQueryResult<DocContents, Error> })
     return (
       <div
         className="doc-viewer-prose text-base text-text leading-relaxed"
+        onClick={onClick}
         dangerouslySetInnerHTML={{ __html: query.data.body }}
       />
     );
@@ -116,6 +142,43 @@ function DocViewerBody({ query }: { query: UseQueryResult<DocContents, Error> })
       </pre>
     </div>
   );
+}
+
+function docLinkRouteFromClick(
+  event: MouseEvent<HTMLDivElement>,
+  {
+    taskRef,
+    docPath,
+    knownDocPaths,
+  }: {
+    taskRef: string;
+    docPath: string;
+    knownDocPaths: readonly string[];
+  },
+): string | null {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return null;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+
+  const anchor = target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return null;
+
+  return resolveTaskDocLink({
+    href: anchor.getAttribute("href") ?? "",
+    baseDocPath: docPath,
+    knownDocPaths,
+    taskRef,
+  });
 }
 
 function docErrorMessage(error: Error): string {
