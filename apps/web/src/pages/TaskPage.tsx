@@ -6,6 +6,7 @@ import {
   freshTokenTotal,
   type SessionTool,
   type TaskTimeline,
+  type TaskTimelineItem,
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
@@ -70,6 +71,81 @@ export function TaskPage() {
 
 function docRoute(taskRef: string, docPath: string): string {
   return `/task/${encodeURIComponent(taskRef)}/docs/${encodeURIComponent(docPath)}`;
+}
+
+type RenderTimelineItem = {
+  item: TaskTimelineItem;
+  depth: number;
+};
+
+function nestTimelineItems(items: TaskTimelineItem[]): RenderTimelineItem[] {
+  const visibleSessionIds = new Set(
+    items
+      .filter((item) => item.type === "session")
+      .map((item) => item.session.id),
+  );
+  const childSessionsByParent = new Map<string, TaskTimelineItem[]>();
+
+  for (const item of items) {
+    if (item.type !== "session") continue;
+    const parentId = item.session.parentSessionId;
+    if (!parentId || !visibleSessionIds.has(parentId)) continue;
+
+    const childSessions = childSessionsByParent.get(parentId) ?? [];
+    childSessions.push(item);
+    childSessionsByParent.set(parentId, childSessions);
+  }
+
+  const nestedItems: RenderTimelineItem[] = [];
+  const emittedSessionIds = new Set<string>();
+
+  function appendSession(item: TaskTimelineItem, depth: number) {
+    if (item.type !== "session" || emittedSessionIds.has(item.session.id)) {
+      return;
+    }
+
+    emittedSessionIds.add(item.session.id);
+    nestedItems.push({ item, depth });
+
+    for (const child of childSessionsByParent.get(item.session.id) ?? []) {
+      appendSession(child, depth + 1);
+    }
+  }
+
+  for (const item of items) {
+    if (item.type !== "session") {
+      nestedItems.push({ item, depth: 0 });
+      continue;
+    }
+
+    if (emittedSessionIds.has(item.session.id)) continue;
+    const parentId = item.session.parentSessionId;
+    if (parentId && visibleSessionIds.has(parentId)) continue;
+
+    appendSession(item, 0);
+  }
+
+  return nestedItems;
+}
+
+function timelineDepthStyle(depth: number): CSSProperties | undefined {
+  if (depth === 0) return undefined;
+
+  return { marginLeft: `${depth * 1.75}rem` };
+}
+
+function sessionOriginBadge(
+  session: Extract<TaskTimelineItem, { type: "session" }>["session"],
+): string | null {
+  if (session.origin === "subagent") {
+    return `↳ ${session.subagentType ?? "subagent"}`;
+  }
+
+  if (session.origin === "spawned") {
+    return "↳ spawned session";
+  }
+
+  return null;
 }
 
 export function TaskTimelineView({
@@ -159,6 +235,7 @@ export function TaskTimelineView({
   )
     .slice()
     .reverse();
+  const renderItems = nestTimelineItems(visibleItems);
 
   function toggleFilter(filter: "session" | "doc") {
     setTimelineFilter((current) => (current === filter ? "all" : filter));
@@ -280,58 +357,71 @@ export function TaskTimelineView({
               aria-hidden="true"
               data-testid="timeline-spine"
             />
-            {visibleItems.map((item) => {
-              return item.type === "session" ? (
-                <li
-                  className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
-                  key={`session:${item.session.id}`}
-                >
-                  <div className="relative z-10 flex justify-center">
-                    <TypeIcon type={item.session.tool} />
-                  </div>
-                  <div className="min-w-0">
-                    {item.sessionName ? (
-                      <span className="text-base font-semibold">
-                        {item.sessionName}
-                      </span>
-                    ) : (
-                      <CopyChip
-                        value={item.session.transcriptPath}
-                        display={truncatePath(item.session.transcriptPath)}
-                      />
-                    )}
-                    <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
-                      {item.session.model ? (
-                        <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                          {item.session.model}
+            {renderItems.map(({ item, depth }) => {
+              if (item.type === "session") {
+                const originBadge = sessionOriginBadge(item.session);
+
+                return (
+                  <li
+                    className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
+                    data-timeline-depth={depth}
+                    key={`session:${item.session.id}`}
+                    style={timelineDepthStyle(depth)}
+                  >
+                    <div className="relative z-10 flex justify-center">
+                      <TypeIcon type={item.session.tool} />
+                    </div>
+                    <div className="min-w-0">
+                      {item.sessionName ? (
+                        <span className="text-base font-semibold">
+                          {item.sessionName}
                         </span>
-                      ) : null}
-                      <span
-                        className="font-mono"
-                        title={formatTokenBreakdown(item.session.tokenTotals)}
-                      >
-                        {hasCapturedTokens(item.session.tokenTotals) ? (
-                          <>
-                            {formatTokensCompact(
-                              item.session.tokenTotals.inputTokens,
-                            )}{" "}
-                            in{" · "}
-                            {formatTokensCompact(
-                              item.session.tokenTotals.outputTokens,
-                            )}{" "}
-                            out
-                          </>
-                        ) : (
-                          "tokens unavailable"
-                        )}
-                      </span>
-                      <span className="ml-auto text-text-muted text-sm">
-                        {formatRelativeTime(item.createdAt, now)}
-                      </span>
-                    </p>
-                  </div>
-                </li>
-              ) : (
+                      ) : (
+                        <CopyChip
+                          value={item.session.transcriptPath}
+                          display={truncatePath(item.session.transcriptPath)}
+                        />
+                      )}
+                      <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
+                        {item.session.model ? (
+                          <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                            {item.session.model}
+                          </span>
+                        ) : null}
+                        {originBadge ? (
+                          <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                            {originBadge}
+                          </span>
+                        ) : null}
+                        <span
+                          className="font-mono"
+                          title={formatTokenBreakdown(item.session.tokenTotals)}
+                        >
+                          {hasCapturedTokens(item.session.tokenTotals) ? (
+                            <>
+                              {formatTokensCompact(
+                                item.session.tokenTotals.inputTokens,
+                              )}{" "}
+                              in{" · "}
+                              {formatTokensCompact(
+                                item.session.tokenTotals.outputTokens,
+                              )}{" "}
+                              out
+                            </>
+                          ) : (
+                            "tokens unavailable"
+                          )}
+                        </span>
+                        <span className="ml-auto text-text-muted text-sm">
+                          {formatRelativeTime(item.createdAt, now)}
+                        </span>
+                      </p>
+                    </div>
+                  </li>
+                );
+              }
+
+              return (
                 <li key={`doc:${item.doc.path}`}>
                   <div
                     className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"

@@ -61,6 +61,10 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           tool: "claude",
           model: "claude-opus-4-7",
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 10,
             outputTokens: 5,
@@ -81,6 +85,10 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 7,
             outputTokens: 3,
@@ -161,6 +169,10 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 0,
             outputTokens: 0,
@@ -260,6 +272,10 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
           tool: "claude",
           model: "claude-opus-4-7",
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 10,
             outputTokens: 5,
@@ -664,6 +680,88 @@ function baseTimeline(
   };
 }
 
+function sessionTimelineItem({
+  id,
+  createdAt,
+  parentSessionId = null,
+  origin = "root",
+  subagentType = null,
+}: {
+  id: string;
+  createdAt: string;
+  parentSessionId?: string | null;
+  origin?: "root" | "subagent" | "spawned";
+  subagentType?: string | null;
+}): TaskTimeline["items"][number] {
+  return {
+    type: "session",
+    createdAt,
+    session: {
+      id,
+      transcriptPath: `/tmp/${id}.jsonl`,
+      tool: "claude",
+      model: null,
+      taskId: "task-1",
+      parentSessionId,
+      origin,
+      subagentType,
+      agentId: null,
+      tokenTotals: {
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 2,
+      },
+      createdAt,
+    },
+    sessionName: id,
+  };
+}
+
+test("TaskTimelineView nests child sessions beneath their parent with origin badges", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "subagent-session",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "researcher",
+      }),
+      sessionTimelineItem({
+        id: "spawned-session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  const rows = screen.getAllByRole("listitem");
+  expect(rows.map((row) => row.textContent)).toEqual([
+    expect.stringContaining("parent-session"),
+    expect.stringContaining("spawned-session"),
+    expect.stringContaining("subagent-session"),
+  ]);
+  expect(rows[0]).toHaveAttribute("data-timeline-depth", "0");
+  expect(rows[1]).toHaveAttribute("data-timeline-depth", "1");
+  expect(rows[2]).toHaveAttribute("data-timeline-depth", "1");
+  expect(screen.getByText("↳ researcher")).toBeInTheDocument();
+  expect(screen.getByText("↳ spawned session")).toBeInTheDocument();
+});
+
 test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {
   const timeline = baseTimeline();
   const html = renderToStaticMarkup(
@@ -895,6 +993,10 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "claude",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 1,
             outputTokens: 1,
@@ -925,6 +1027,10 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 0,
             outputTokens: 0,
@@ -994,6 +1100,10 @@ function filterableTimeline(): TaskTimeline {
           tool: "claude",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 1,
             outputTokens: 1,
