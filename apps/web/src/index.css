@@ -370,6 +370,15 @@
 .left-off-prose a { color: var(--color-accent); text-decoration: underline; }
 .left-off-prose strong { color: var(--color-text); font-weight: 650; }
 
+/*
+ * Inline markdown for the single-line state fields (decisions, open questions).
+ * Body text sits at the muted tone; emphasis pops to the brighter --color-text,
+ * matching the "Current state" prose treatment above.
+ */
+.state-inline strong { color: var(--color-text); font-weight: 650; }
+.state-inline a { color: var(--color-accent); text-decoration: underline; }
+.state-inline code { font-family: var(--font-mono); font-size: 0.85em; }
+
 /* Block-level markdown rendered for the read-only doc viewer Sheet. */
 .doc-viewer-prose > :first-child { margin-top: 0; }
 .doc-viewer-prose > :last-child { margin-bottom: 0; }
@@ -384,6 +393,7 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
+  color: var(--color-text);
 }
 .doc-viewer-prose h1 { font-size: 1.6em; }
 .doc-viewer-prose h2 { font-size: 1.35em; }

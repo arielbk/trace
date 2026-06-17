@@ -732,7 +732,7 @@ export function LeftOffPanel({
                           aria-hidden="true"
                         />
                         <span
-                          className="text-sm leading-normal text-text"
+                          className="state-inline text-sm leading-normal text-text-muted"
                           dangerouslySetInnerHTML={{ __html: d }}
                         />
                       </li>
@@ -748,8 +748,8 @@ export function LeftOffPanel({
                     </h3>
                     <div className="flex gap-2.5">
                       <NextStepArrow />
-                      <span
-                        className="text-sm font-medium leading-normal text-text"
+                      <div
+                        className="left-off-prose text-sm font-medium leading-normal text-text-muted"
                         dangerouslySetInnerHTML={{ __html: state.nextStep }}
                       />
                     </div>
@@ -768,7 +768,7 @@ export function LeftOffPanel({
                             aria-hidden="true"
                           />
                           <span
-                            className="text-sm leading-normal text-text"
+                            className="state-inline text-sm leading-normal text-text-muted"
                             dangerouslySetInnerHTML={{ __html: q }}
                           />
                         </li>

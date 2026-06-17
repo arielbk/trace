@@ -38,7 +38,7 @@ Add the parsed state to the timeline API.
       "<p>The parser slice is in place.</p>",
       "<p>Downstream slices can consume the returned shape.</p>",
     ],
-    nextStep: "Add the parsed state to the timeline API.",
+    nextStep: "<p>Add the parsed state to the timeline API.</p>",
     openQuestions: [
       "Should the panel show <del>stale</del> archived tasks?",
     ],
@@ -63,6 +63,21 @@ A later commit landed too.
   ]);
 });
 
+test("parseStateMd preserves a numbered list inside Next step as block markdown", () => {
+  const state = parseStateMd(`# Mid-flight
+
+## Next step
+
+1. Wire up the locator family.
+2. Backfill the parent attribution.
+3. Ship it.
+`);
+
+  expect(state.nextStep).toBe(
+    "<ol>\n<li>Wire up the locator family.</li>\n<li>Backfill the parent attribution.</li>\n<li>Ship it.</li>\n</ol>",
+  );
+});
+
 test("parseStateMd gracefully omits missing sections", () => {
   const state = parseStateMd(`# Partial handoff
 
@@ -79,7 +94,7 @@ Wire the API response into the page.
     summary: "Partial handoff",
     decisions: ["Use the existing timeline endpoint."],
     currentState: [],
-    nextStep: "Wire the API response into the page.",
+    nextStep: "<p>Wire the API response into the page.</p>",
     openQuestions: [],
   });
 });

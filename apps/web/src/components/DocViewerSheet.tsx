@@ -125,7 +125,7 @@ function DocViewerBody({
   if (query.data.contentType.startsWith("text/html")) {
     return (
       <div
-        className="doc-viewer-prose text-base text-text leading-relaxed"
+        className="doc-viewer-prose text-base text-text-muted leading-relaxed"
         onClick={onClick}
         dangerouslySetInnerHTML={{ __html: query.data.body }}
       />
