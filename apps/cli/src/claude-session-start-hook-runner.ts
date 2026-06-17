@@ -1,8 +1,5 @@
 import {
-  createStoreSessionLocator,
   inferSessionIdentity,
-  openTraceStore,
-  resolveTraceParentSession,
 } from "@trace/core";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -66,27 +63,17 @@ export function runClaudeSessionStartHook(
 
   let result: { exitCode: number; stdout: string; stderr: string };
   try {
-    const parentSessionId = resolveSpawnedParentSessionId(env);
-    const registerArgs = [
-      "session",
-      "register",
-      "--id",
-      identity.id ?? input.session_id,
-      "--transcript",
-      identity.transcriptPath ?? input.transcript_path,
-      "--tool",
-      identity.tool,
-    ];
-    if (parentSessionId) {
-      registerArgs.push(
-        "--parent-session",
-        parentSessionId,
-        "--origin",
-        "spawned",
-      );
-    }
     result = runTraceCli(
-      registerArgs,
+      [
+        "session",
+        "register",
+        "--id",
+        identity.id ?? input.session_id,
+        "--transcript",
+        identity.transcriptPath ?? input.transcript_path,
+        "--tool",
+        identity.tool,
+      ],
       env,
     );
   } catch (error) {
@@ -125,23 +112,6 @@ export function runClaudeSessionStartHook(
   }
 
   return { ...result, stdout: nudge };
-}
-
-function resolveSpawnedParentSessionId(
-  env: Record<string, string | undefined>,
-): string | null {
-  if (!env.TRACE_PARENT_SESSION?.trim()) return null;
-
-  const store = openTraceStore(resolveDbPath(env));
-  try {
-    const parent = resolveTraceParentSession(
-      env,
-      createStoreSessionLocator(store),
-    );
-    return parent?.id ?? null;
-  } finally {
-    store.close();
-  }
 }
 
 // Ask the active-task query what this session is bound to and turn its answer

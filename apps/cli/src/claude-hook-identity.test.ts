@@ -74,10 +74,11 @@ test.each(["startup", "resume", "clear", "compact"])(
   },
 );
 
-test("hook links a spawned child to its traced parent session", () => {
+test("hook ignores legacy spawned-parent env and self-registers as root", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-hook-parent-"));
   const databasePath = join(dir, "trace.sqlite");
   const env = { HOME: dir, TRACE_DB: databasePath };
+  const legacyParentEnv = ["TRACE", "PARENT", "SESSION"].join("_");
 
   try {
     const taskId = runTraceCli(["task", "create", "parented"], env).stdout.trim();
@@ -102,7 +103,7 @@ test("hook links a spawned child to its traced parent session", () => {
         transcript_path: join(dir, "child.jsonl"),
         hook_event_name: "SessionStart",
       }),
-      { ...env, TRACE_PARENT_SESSION: "parent-session" },
+      { ...env, [legacyParentEnv]: "parent-session" },
     );
 
     expect(result.exitCode).toBe(0);
@@ -124,8 +125,8 @@ test("hook links a spawned child to its traced parent session", () => {
     )?.session;
 
     expect(child).toMatchObject({
-      parentSessionId: "parent-session",
-      origin: "spawned",
+      parentSessionId: null,
+      origin: "root",
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
