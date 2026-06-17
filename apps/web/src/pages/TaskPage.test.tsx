@@ -719,7 +719,7 @@ function sessionTimelineItem({
   };
 }
 
-test("TaskTimelineView nests child sessions beneath their parent with origin badges", () => {
+test("TaskTimelineView collapses a root's subagent fan behind a disclosure that toggles open", () => {
   const timeline: TaskTimeline = {
     ...baseTimeline(),
     items: [
@@ -749,20 +749,21 @@ test("TaskTimelineView nests child sessions beneath their parent with origin bad
     </MemoryRouter>,
   );
 
-  const rows = screen.getAllByRole("listitem");
-  expect(rows.map((row) => row.textContent)).toEqual([
-    expect.stringContaining("parent-session"),
-    expect.stringContaining("spawned-session"),
-    expect.stringContaining("subagent-session"),
-  ]);
-  expect(rows[0]).toHaveAttribute("data-timeline-depth", "0");
-  expect(rows[1]).toHaveAttribute("data-timeline-depth", "1");
-  expect(rows[2]).toHaveAttribute("data-timeline-depth", "1");
-  expect(screen.getByText("↳ researcher")).toBeInTheDocument();
-  expect(screen.getByText("↳ spawned session")).toBeInTheDocument();
-  // Each child row carries an elbow connector tying it back to the parent rail;
-  // the depth-0 parent has none.
-  expect(screen.getAllByTestId("timeline-connector")).toHaveLength(2);
+  // Collapsed by default: the parent shows, the fan is summarised, and the
+  // children are not yet rendered.
+  const toggle = screen.getByRole("button", { name: /1 subagent · 1 spawned/i });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByText("parent-session")).toBeInTheDocument();
+  expect(screen.queryByText("subagent-session")).not.toBeInTheDocument();
+  expect(screen.queryByText("spawned-session")).not.toBeInTheDocument();
+
+  // Opening the disclosure reveals both children, leading each with its name.
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("subagent-session")).toBeInTheDocument();
+  expect(screen.getByText("spawned-session")).toBeInTheDocument();
+  // The spawned child is tagged; subagent children lead with their type alone.
+  expect(screen.getByText("spawned")).toBeInTheDocument();
 });
 
 test("TaskTimelineView leads nameless child rows with their origin instead of a stacked path chip", () => {
@@ -818,6 +819,10 @@ test("TaskTimelineView leads nameless child rows with their origin instead of a 
     <MemoryRouter>
       <TaskTimelineView timeline={timeline} />
     </MemoryRouter>,
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: /1 subagent · 1 spawned/i }),
   );
 
   // The origin/type leads the row as its title…
