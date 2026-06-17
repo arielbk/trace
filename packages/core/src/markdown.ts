@@ -13,6 +13,7 @@ linkSafeRenderer.link = function link(token: Tokens.Link): string {
 export function renderMarkdown(text: string): string {
   return parse(text.trim(), {
     async: false,
+    breaks: true,
     renderer: linkSafeRenderer,
   }).trim();
 }

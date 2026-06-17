@@ -31,6 +31,18 @@ test("renderMarkdown strips unsafe link protocols to plain text", () => {
   expect(renderMarkdown("[bad](file:///etc/passwd)")).toBe("<p>bad</p>");
 });
 
+test("renderMarkdown turns single newlines into line breaks", () => {
+  expect(renderMarkdown("line one\nline two")).toBe(
+    "<p>line one<br>line two</p>",
+  );
+});
+
+test("renderMarkdown keeps double newlines as separate paragraphs", () => {
+  expect(renderMarkdown("para one\n\npara two")).toBe(
+    "<p>para one</p>\n<p>para two</p>",
+  );
+});
+
 test("renderMarkdown renders fenced code blocks", () => {
   expect(renderMarkdown("```js\nconsole.log(1);\n```")).toBe(
     '<pre><code class="language-js">console.log(1);\n</code></pre>',

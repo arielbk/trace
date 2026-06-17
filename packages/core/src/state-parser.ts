@@ -68,7 +68,7 @@ export function parseStateMd(text: string): ParsedStateMd {
 
   result.decisions = parseListOrParagraphs(sections.get("decisions") ?? []);
   result.currentState = parseBlocks(sections.get("currentState") ?? []);
-  result.nextStep = parseFirstParagraph(sections.get("nextStep") ?? []);
+  result.nextStep = parseFirstBlock(sections.get("nextStep") ?? []);
   result.openQuestions = parseListOrParagraphs(
     sections.get("openQuestions") ?? [],
   );
@@ -114,9 +114,14 @@ function splitBlocks(lines: string[]): string[] {
     .filter((block) => block.length > 0);
 }
 
-function parseFirstParagraph(lines: string[]): string | undefined {
-  const paragraph = splitParagraphs(lines).find(isMeaningfulValue);
-  return paragraph ? renderInlineMarkdown(paragraph) : undefined;
+/**
+ * Render the first blank-line-separated block of the section as block-level
+ * markdown. Unlike paragraph parsing this preserves intra-block newlines, so a
+ * numbered or bulleted "next step" becomes a real list instead of a run-on line.
+ */
+function parseFirstBlock(lines: string[]): string | undefined {
+  const block = splitBlocks(lines).find(isMeaningfulValue);
+  return block ? renderMarkdown(block) : undefined;
 }
 
 function splitParagraphs(lines: string[]): string[] {
