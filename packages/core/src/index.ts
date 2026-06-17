@@ -18,6 +18,7 @@ export type {
   Session,
   SessionOrigin,
   SessionTool,
+  SetSessionParentInput,
   Task,
   TaskDoc,
   TaskStore,

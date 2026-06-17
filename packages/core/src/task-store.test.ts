@@ -468,6 +468,130 @@ test("session register round-trips parent attribution fields", () => {
   }
 });
 
+test("session set-parent promotes an existing root session without clobbering registration fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+    const registered = store.registerSession({
+      id: "child-session",
+      transcriptPath: "/tmp/child-session.jsonl",
+      tool: "claude",
+      model: "claude-opus-4-7",
+      tokenTotals: { inputTokens: 12, totalTokens: 12 },
+    });
+
+    const promoted = store.setSessionParent({
+      id: registered.id,
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    expect(promoted).toMatchObject({
+      id: registered.id,
+      transcriptPath: "/tmp/child-session.jsonl",
+      tool: "claude",
+      model: "claude-opus-4-7",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(promoted.tokenTotals.inputTokens).toBe(12);
+    expect(store.getSession(registered.id)).toEqual(promoted);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates an unknown child as a codex virtual session", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "codex-thread-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    expect(child).toMatchObject({
+      id: "codex-thread-1",
+      transcriptPath: "codex:codex-thread-1",
+      tool: "codex",
+      model: null,
+      parentSessionId: parent.id,
+      origin: "spawned",
+      subagentType: null,
+      agentId: null,
+    });
+    expect(store.getSession(child.id)).toEqual(child);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session register enriches a set-parent-created child without wiping its attribution", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+    store.setSessionParent({
+      id: "codex-thread-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    const registered = store.registerSession({
+      id: "codex-thread-1",
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+      tokenTotals: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
+    });
+
+    expect(registered).toMatchObject({
+      id: "codex-thread-1",
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(registered.tokenTotals).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 5,
+      totalTokens: 25,
+    });
+    expect(store.getSession(registered.id)).toEqual(registered);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("migration keeps existing session rows readable with a null model", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

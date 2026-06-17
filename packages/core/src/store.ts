@@ -30,6 +30,7 @@ import type {
   ReEntryManifest,
   Session,
   SessionOrigin,
+  SetSessionParentInput,
   SessionTool,
   Task,
   TaskDoc,
@@ -337,14 +338,74 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const existing = this.getSession(id);
     if (existing) {
-      // Upgrade a virtual codex: URI to a real file path when scan now has one.
-      if (existing.transcriptPath.startsWith("codex:") && !transcriptPath.startsWith("codex:")) {
-        this.#sqlite
-          .prepare("UPDATE sessions SET transcript_path = ? WHERE id = ?")
-          .run(transcriptPath, id);
-        return this.#refreshSession({ ...existing, transcriptPath });
-      }
-      return existing;
+      const totals = tokenTotalsFromUsage(input.tokenTotals);
+      const next = {
+        ...existing,
+        transcriptPath:
+          existing.transcriptPath.startsWith("codex:") &&
+          !transcriptPath.startsWith("codex:")
+            ? transcriptPath
+            : existing.transcriptPath,
+        model: existing.model ?? model,
+        parentSessionId: existing.parentSessionId ?? parentSessionId,
+        origin:
+          existing.origin === "root" && origin !== "root"
+            ? origin
+            : existing.origin,
+        subagentType: existing.subagentType ?? subagentType,
+        agentId: existing.agentId ?? agentId,
+        tokenTotals:
+          existing.tokenTotals.totalTokens === 0 && totals.totalTokens > 0
+            ? totals
+            : existing.tokenTotals,
+      };
+
+      const changed =
+        next.transcriptPath !== existing.transcriptPath ||
+        next.model !== existing.model ||
+        next.parentSessionId !== existing.parentSessionId ||
+        next.origin !== existing.origin ||
+        next.subagentType !== existing.subagentType ||
+        next.agentId !== existing.agentId ||
+        next.tokenTotals !== existing.tokenTotals;
+
+      if (!changed) return existing;
+
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE sessions
+            SET
+              transcript_path = ?,
+              model = ?,
+              parent_session_id = ?,
+              origin = ?,
+              subagent_type = ?,
+              agent_id = ?,
+              input_tokens = ?,
+              output_tokens = ?,
+              cache_creation_input_tokens = ?,
+              cache_read_input_tokens = ?,
+              total_tokens = ?
+            WHERE id = ?
+          `,
+        )
+        .run(
+          next.transcriptPath,
+          next.model,
+          next.parentSessionId,
+          next.origin,
+          next.subagentType,
+          next.agentId,
+          next.tokenTotals.inputTokens,
+          next.tokenTotals.outputTokens,
+          next.tokenTotals.cacheCreationInputTokens,
+          next.tokenTotals.cacheReadInputTokens,
+          next.tokenTotals.totalTokens,
+          id,
+        );
+
+      return this.#refreshSession(next);
     }
 
     const totals = tokenTotalsFromUsage(input.tokenTotals);
@@ -404,6 +465,39 @@ class NodeSqliteTaskStore implements TaskStore {
       );
 
     return session;
+  }
+
+  setSessionParent(input: SetSessionParentInput): Session {
+    const id = input.id.trim();
+    const parentSessionId = input.parentSessionId.trim();
+    const origin = input.origin;
+
+    if (id.length === 0) {
+      throw new Error("Session id is required");
+    }
+    if (parentSessionId.length === 0) {
+      throw new Error("Parent session id is required");
+    }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
+    }
+
+    const existing = this.getSession(id);
+    if (!existing) {
+      return this.registerSession({
+        id,
+        transcriptPath: `codex:${id}`,
+        tool: "codex",
+        parentSessionId,
+        origin,
+      });
+    }
+
+    this.#sqlite
+      .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
+      .run(parentSessionId, origin, id);
+
+    return { ...existing, parentSessionId, origin };
   }
 
   assignSession(sessionId: string, taskId: string): Session {

@@ -119,6 +119,12 @@ export type RegisterSessionInput = {
   tokenTotals?: Partial<TokenTotals>;
 };
 
+export type SetSessionParentInput = {
+  id: string;
+  parentSessionId: string;
+  origin: SessionOrigin;
+};
+
 export type TaskStore = {
   createTask(title: string, projectRoot?: string, description?: string): Task;
   getTask(id: string): Task | null;
@@ -132,6 +138,7 @@ export type TaskStore = {
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;
+  setSessionParent(input: SetSessionParentInput): Session;
   assignSession(sessionId: string, taskId: string): Session;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];

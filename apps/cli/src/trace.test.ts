@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { openTraceStore } from "@trace/core";
 import { runTraceCli } from "./trace.ts";
 
 function tmp(prefix: string): string {
@@ -67,6 +68,106 @@ test("hook session-start registers a Claude session from stdin", () => {
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent requires --parent", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const env = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  try {
+    const result = runTraceCli(
+      ["session", "set-parent", "child-session", "--origin", "spawned"],
+      env,
+      sandbox,
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Usage: trace session set-parent");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates a codex placeholder that session register later enriches", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const databasePath = join(home, "trace.sqlite");
+  const env = { HOME: home, TRACE_DB: databasePath };
+
+  try {
+    const parent = runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "parent-session",
+        "--transcript",
+        join(sandbox, "parent.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+      sandbox,
+    );
+    expect(parent.exitCode).toBe(0);
+
+    const linked = runTraceCli(
+      [
+        "session",
+        "set-parent",
+        "codex-thread-1",
+        "--parent",
+        "parent-session",
+        "--origin",
+        "spawned",
+      ],
+      env,
+      sandbox,
+    );
+    expect(linked.exitCode).toBe(0);
+
+    const registered = runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "codex-thread-1",
+        "--transcript",
+        join(sandbox, "codex-thread-1.jsonl"),
+        "--tool",
+        "codex",
+        "--model",
+        "gpt-5-codex",
+        "--input-tokens",
+        "10",
+        "--total-tokens",
+        "10",
+      ],
+      env,
+      sandbox,
+    );
+    expect(registered.exitCode).toBe(0);
+
+    const store = openTraceStore(databasePath);
+    const child = store.getSession("codex-thread-1");
+    store.close();
+
+    expect(child).toMatchObject({
+      id: "codex-thread-1",
+      transcriptPath: join(sandbox, "codex-thread-1.jsonl"),
+      tool: "codex",
+      model: "gpt-5-codex",
+      parentSessionId: "parent-session",
+      origin: "spawned",
+    });
+    expect(child?.tokenTotals.inputTokens).toBe(10);
+    expect(child?.tokenTotals.totalTokens).toBe(10);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
   }
 });
 

@@ -14,6 +14,7 @@ import {
   type Session,
   type SessionOrigin,
   type SessionTool,
+  type SetSessionParentInput,
   type Task,
   type TaskDoc,
   type TokenTotals,
@@ -368,6 +369,42 @@ function parseSessionRegisterArgs(args: string[]): {
   }
 
   return { id, transcriptPath, tool, model, parentSessionId, origin, tokenTotals };
+}
+
+function sessionSetParentUsage(): string {
+  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>]";
+}
+
+function parseSessionSetParentArgs(args: string[]): SetSessionParentInput {
+  const id = args[0];
+  if (!id || looksLikeFlag(id)) throw new Error(sessionSetParentUsage());
+
+  let parentSessionId: string | undefined;
+  let origin: string = "spawned";
+
+  let index = 1;
+  while (index < args.length) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!flag || !value) throw new Error(sessionSetParentUsage());
+
+    if (flag === "--parent") {
+      parentSessionId = value;
+      index += 2;
+    } else if (flag === "--origin") {
+      origin = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (!parentSessionId) throw new Error(sessionSetParentUsage());
+  if (!isSessionOrigin(origin)) {
+    throw new Error("Session origin must be root, subagent, or spawned");
+  }
+
+  return { id, parentSessionId, origin };
 }
 
 function isSessionOrigin(value: string): value is SessionOrigin {
@@ -935,6 +972,22 @@ export function buildTraceCittyRoot(
               if (!taskId) return failure("Task id is required");
               return withStore(env, (store) => {
                 const session = store.assignSession(sessionId, taskId);
+                return success(formatSessionSummary(session));
+              });
+            },
+          }),
+
+          "set-parent": defineCommand({
+            meta: { description: "Set a session's parent attribution" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              let parsed: SetSessionParentInput;
+              try {
+                parsed = parseSessionSetParentArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              return withStore(env, (store) => {
+                const session = store.setSessionParent(parsed);
                 return success(formatSessionSummary(session));
               });
             },
