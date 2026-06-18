@@ -1,12 +1,6 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
-import {
-  getTranscriptAdapter,
-  inferSessionIdentity,
-  resolveTaskDocsDir,
-  scanClaudeCodeSessions,
-  scanCodexSessions,
-} from "@trace/core";
+import { inferSessionIdentity, resolveTaskDocsDir } from "@trace/core";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
@@ -23,13 +17,7 @@ import {
   type Env,
 } from "./commands/seam.ts";
 import {
-  parseClaudeScanArgs,
-  parseCodexScanArgs,
   parseRecallCandidatesArgs,
-  parseSessionActiveTaskArgs,
-  parseSessionRegisterArgs,
-  parseSessionSetParentArgs,
-  parseSessionTailLimit,
   parseSkillDocsDirArgs,
   parseSkillWorkOnTaskArgs,
   skillDocsDirUsage,
@@ -37,9 +25,7 @@ import {
   skillWorkOnTaskUsage,
 } from "./commands/parsers.ts";
 import {
-  formatActiveTask,
   formatReEntryManifest,
-  formatSessionSummary,
   formatSkillWorkOnTaskResult,
   resolveSkillTaskRef,
   taskNotFoundMessage,
@@ -53,6 +39,15 @@ import {
   taskTimelineOperation,
   taskUpdateOperation,
 } from "./commands/task-operations.ts";
+import {
+  sessionActiveTaskOperation,
+  sessionAssignOperation,
+  sessionListOperation,
+  sessionRegisterOperation,
+  sessionScanOperation,
+  sessionSetParentOperation,
+  sessionTailOperation,
+} from "./commands/session-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -170,133 +165,49 @@ export function buildTraceCittyRoot(
           register: defineCommand({
             meta: { description: "Register a session" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const parsedAttempt = attempt(() => parseSessionRegisterArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-              return withStore(env, (store) => {
-                const session = store.registerSession(parsed);
-                return success(`${session.id}\n`);
-              });
+              return sessionRegisterOperation(args, { env, cwd, stdin });
             },
           }),
 
           assign: defineCommand({
             meta: { description: "Assign a session to a task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const sessionId = args[0];
-              const taskId = args[1];
-              if (!sessionId) return failure("Session id is required");
-              if (!taskId) return failure("Task id is required");
-              return withStore(env, (store) => {
-                const session = store.assignSession(sessionId, taskId);
-                return success(formatSessionSummary(session));
-              });
+              return sessionAssignOperation(args, { env, cwd, stdin });
             },
           }),
 
           "set-parent": defineCommand({
             meta: { description: "Set a session's parent attribution" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const parsedAttempt = attempt(() => parseSessionSetParentArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-              return withStore(env, (store) => {
-                const session = store.setSessionParent(parsed);
-                return success(formatSessionSummary(session));
-              });
+              return sessionSetParentOperation(args, { env, cwd, stdin });
             },
           }),
 
           "active-task": defineCommand({
             meta: { description: "Get the active task for a session" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const parsedAttempt = attempt(() => parseSessionActiveTaskArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-
-              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
-              if (!projectRootAttempt.ok) return projectRootAttempt.result;
-              const projectRoot = projectRootAttempt.value;
-              return withStore(env, (store) => {
-                const activeTask = store.resolveActiveTask(parsed.id, projectRoot);
-                return success(`${JSON.stringify(formatActiveTask(activeTask))}\n`);
-              });
+              return sessionActiveTaskOperation(args, { env, cwd, stdin });
             },
           }),
 
           list: defineCommand({
             meta: { description: "List sessions" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (args[0] !== "--unassigned") {
-                return failure("Usage: trace session list --unassigned");
-              }
-              return withStore(env, (store) => {
-                return success(store.listUnassignedSessions().map(formatSessionSummary).join(""));
-              });
+              return sessionListOperation(args, { env, cwd, stdin });
             },
           }),
 
           tail: defineCommand({
             meta: { description: "Read the tail of a session transcript" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const sessionId = args[0];
-              if (!sessionId) return failure("Session id is required");
-              const limitAttempt = attempt(() => parseSessionTailLimit(args.slice(1)));
-              if (!limitAttempt.ok) return limitAttempt.result;
-              const limit = limitAttempt.value;
-              return withStore(env, (store) => {
-                const session = store.getSession(sessionId);
-                if (!session) return failure(`Session not found: ${sessionId}`, 1);
-                return success(
-                  getTranscriptAdapter(session.tool)
-                    .readTail({ transcriptPath: session.transcriptPath, limit })
-                    .map((message) => `${message.role}: ${message.text}\n`)
-                    .join(""),
-                );
-              });
+              return sessionTailOperation(args, { env, cwd, stdin });
             },
           }),
 
           scan: defineCommand({
             meta: { description: "Scan for sessions" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (args[0] === "--codex") {
-                const codexHomeAttempt = attempt(() => parseCodexScanArgs(args.slice(1), env));
-                if (!codexHomeAttempt.ok) return codexHomeAttempt.result;
-                const codexHome = codexHomeAttempt.value;
-                return withStore(env, (store) => {
-                  const sessions = scanCodexSessions(codexHome).map((session) =>
-                    store.registerSession({
-                      id: session.id,
-                      transcriptPath: session.transcriptPath,
-                      tool: session.tool,
-                      model: session.model,
-                      tokenTotals: session.tokenTotals,
-                    }),
-                  );
-                  return success(sessions.map(formatSessionSummary).join(""));
-                });
-              }
-
-              if (args[0] === "--claude") {
-                const projectsRootAttempt = attempt(() => parseClaudeScanArgs(args.slice(1), env));
-                if (!projectsRootAttempt.ok) return projectsRootAttempt.result;
-                const projectsRoot = projectsRootAttempt.value;
-                return withStore(env, (store) => {
-                  const sessions = scanClaudeCodeSessions(projectsRoot).map((session) =>
-                    store.registerSession({
-                      id: session.id,
-                      transcriptPath: session.transcriptPath,
-                      tool: session.tool,
-                      model: session.model,
-                      tokenTotals: session.tokenTotals,
-                    }),
-                  );
-                  return success(sessions.map(formatSessionSummary).join(""));
-                });
-              }
-
-              return failure("Usage: trace session scan --codex | --claude");
+              return sessionScanOperation(args, { env, cwd, stdin });
             },
           }),
         },
