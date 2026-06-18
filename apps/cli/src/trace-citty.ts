@@ -10,12 +10,8 @@ import {
   type ActiveTask,
   type ReEntryManifest,
   type Session,
-  type SessionOrigin,
-  type SessionTool,
-  type SetSessionParentInput,
   type Task,
   type TaskDoc,
-  type TokenTotals,
 } from "@trace/core";
 import {
   copyFileSync,
@@ -36,7 +32,6 @@ import {
   attempt,
   failure,
   isHelpFlag,
-  looksLikeFlag,
   rejectFlagTitle,
   resolveProjectRoot,
   success,
@@ -45,121 +40,27 @@ import {
   type Env,
   type Store,
 } from "./commands/seam.ts";
-
-function taskCreateUsage(): string {
-  return "Usage: trace task create <title> [--description <text>] [--project <dir>]";
-}
-
-function parseTaskCreateArgs(args: string[]): {
-  title: string;
-  description?: string;
-  project?: string;
-} {
-  const titleWords: string[] = [];
-  let description: string | undefined;
-  let project: string | undefined;
-
-  let index = 0;
-  while (index < args.length && !looksLikeFlag(args[index])) {
-    titleWords.push(args[index] as string);
-    index += 1;
-  }
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--description") {
-      const value = args[index + 1];
-      if (!value) throw new Error(taskCreateUsage());
-      description = value;
-      index += 2;
-    } else if (flag === "--project") {
-      const value = args[index + 1];
-      if (!value) throw new Error(taskCreateUsage());
-      project = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  const title = titleWords.join(" ");
-  if (title.length === 0) throw new Error(taskCreateUsage());
-  return { title, description, project };
-}
-
-function taskUpdateUsage(): string {
-  return "Usage: trace task update <ref> --description <text>";
-}
-
-function parseTaskUpdateArgs(args: string[]): { ref: string; description: string } {
-  const refWords: string[] = [];
-  let description: string | undefined;
-
-  let index = 0;
-  while (index < args.length && !looksLikeFlag(args[index])) {
-    refWords.push(args[index] as string);
-    index += 1;
-  }
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--description") {
-      const value = args[index + 1];
-      if (value === undefined) throw new Error(taskUpdateUsage());
-      description = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  const ref = refWords.join(" ");
-  if (ref.length === 0 || description === undefined) throw new Error(taskUpdateUsage());
-  return { ref, description };
-}
-
-function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--link] [--project <dir>]";
-}
-
-function parseTaskCaptureArgs(args: string[]): {
-  title: string;
-  docPath?: string;
-  link: boolean;
-  project?: string;
-} {
-  const titleWords: string[] = [];
-  let docPath: string | undefined;
-  let link = false;
-  let project: string | undefined;
-
-  let index = 0;
-  while (index < args.length && !looksLikeFlag(args[index])) {
-    titleWords.push(args[index] as string);
-    index += 1;
-  }
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--doc") {
-      const value = args[index + 1];
-      if (!value) throw new Error(taskCaptureUsage());
-      docPath = value;
-      index += 2;
-    } else if (flag === "--link") {
-      link = true;
-      index += 1;
-    } else if (flag === "--project") {
-      const value = args[index + 1];
-      if (!value) throw new Error(taskCaptureUsage());
-      project = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  const title = titleWords.join(" ");
-  if (title.length === 0) throw new Error(taskCaptureUsage());
-  return { title, docPath, link, project };
-}
+import {
+  parseAddDocDescription,
+  parseClaudeScanArgs,
+  parseCodexScanArgs,
+  parseRecallCandidatesArgs,
+  parseSessionActiveTaskArgs,
+  parseSessionRegisterArgs,
+  parseSessionSetParentArgs,
+  parseSessionTailLimit,
+  parseSkillDocsDirArgs,
+  parseSkillWorkOnTaskArgs,
+  parseTaskCaptureArgs,
+  parseTaskCreateArgs,
+  parseTaskUpdateArgs,
+  skillDocsDirUsage,
+  skillReEnterUsage,
+  skillWorkOnTaskUsage,
+  taskCaptureUsage,
+  taskCreateUsage,
+  taskUpdateUsage,
+} from "./commands/parsers.ts";
 
 function slugify(title: string): string {
   return (
@@ -228,27 +129,6 @@ function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {
   return `${taskRef}\t${doc.path}\n`;
 }
 
-function addDocUsage(): string {
-  return "Usage: trace task add-doc <ref> <path> [--description <text>]";
-}
-
-function parseAddDocDescription(flags: string[]): string | undefined {
-  let description: string | undefined;
-  let index = 0;
-  while (index < flags.length) {
-    const flag = flags[index];
-    if (flag === "--description") {
-      const value = flags[index + 1];
-      if (!value) throw new Error(addDocUsage());
-      description = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-  return description;
-}
-
 // Re-render the task's machine-owned state.md manifest footer from the docs
 // currently registered for the task. state.md is created when absent and is
 // excluded from its own manifest.
@@ -276,298 +156,6 @@ function formatActiveTask(
 ): { kind: "none" } | { kind: "bound" | "re-enter"; task: { title: string; slug: string } } {
   if (activeTask.kind === "none") return { kind: "none" };
   return { kind: activeTask.kind, task: { title: activeTask.task.title, slug: activeTask.task.slug } };
-}
-
-function parseNonNegativeInteger(value: string, flag: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${flag} must be a non-negative integer`);
-  }
-  return parsed;
-}
-
-function parseSessionRegisterArgs(args: string[]): {
-  id: string;
-  transcriptPath: string;
-  tool: SessionTool;
-  tokenTotals: Partial<TokenTotals>;
-  model?: string | null;
-  parentSessionId?: string | null;
-  origin?: SessionOrigin;
-} {
-  let id: string | undefined;
-  let transcriptPath: string | undefined;
-  let tool: string | undefined;
-  let model: string | null | undefined;
-  let parentSessionId: string | null | undefined;
-  let origin: string | undefined;
-  const tokenTotals: Partial<TokenTotals> = {};
-
-  for (let index = 0; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-
-    if (!flag || !value) throw new Error("Session register requires --id, --transcript, and --tool");
-
-    if (flag === "--id") id = value;
-    else if (flag === "--transcript") transcriptPath = value;
-    else if (flag === "--tool") tool = value;
-    else if (flag === "--model") model = value;
-    else if (flag === "--parent-session") parentSessionId = value;
-    else if (flag === "--origin") origin = value;
-    else if (flag === "--input-tokens") tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
-    else if (flag === "--output-tokens") tokenTotals.outputTokens = parseNonNegativeInteger(value, flag);
-    else if (flag === "--cache-creation-input-tokens") tokenTotals.cacheCreationInputTokens = parseNonNegativeInteger(value, flag);
-    else if (flag === "--cache-read-input-tokens") tokenTotals.cacheReadInputTokens = parseNonNegativeInteger(value, flag);
-    else if (flag === "--total-tokens") tokenTotals.totalTokens = parseNonNegativeInteger(value, flag);
-    else throw new Error(`Unknown option: ${flag}`);
-  }
-
-  if (!id || !transcriptPath || !tool) throw new Error("Session register requires --id, --transcript, and --tool");
-  if (tool !== "claude" && tool !== "codex") throw new Error("Session tool must be claude or codex");
-  if (origin !== undefined && !isSessionOrigin(origin)) {
-    throw new Error("Session origin must be root, subagent, or spawned");
-  }
-
-  return { id, transcriptPath, tool, model, parentSessionId, origin, tokenTotals };
-}
-
-function sessionSetParentUsage(): string {
-  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>]";
-}
-
-function parseSessionSetParentArgs(args: string[]): SetSessionParentInput {
-  const id = args[0];
-  if (!id || looksLikeFlag(id)) throw new Error(sessionSetParentUsage());
-
-  let parentSessionId: string | undefined;
-  let origin: string = "spawned";
-
-  let index = 1;
-  while (index < args.length) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag || !value) throw new Error(sessionSetParentUsage());
-
-    if (flag === "--parent") {
-      parentSessionId = value;
-      index += 2;
-    } else if (flag === "--origin") {
-      origin = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  if (!parentSessionId) throw new Error(sessionSetParentUsage());
-  if (!isSessionOrigin(origin)) {
-    throw new Error("Session origin must be root, subagent, or spawned");
-  }
-
-  return { id, parentSessionId, origin };
-}
-
-function isSessionOrigin(value: string): value is SessionOrigin {
-  return value === "root" || value === "subagent" || value === "spawned";
-}
-
-function sessionActiveTaskUsage(): string {
-  return "Usage: trace session active-task --id <session-id> [--project <dir>]";
-}
-
-function parseSessionActiveTaskArgs(args: string[]): { id: string; project?: string } {
-  let id: string | undefined;
-  let project: string | undefined;
-
-  let index = 0;
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--id") {
-      const value = args[index + 1];
-      if (!value) throw new Error(sessionActiveTaskUsage());
-      id = value;
-      index += 2;
-    } else if (flag === "--project") {
-      const value = args[index + 1];
-      if (!value) throw new Error(sessionActiveTaskUsage());
-      project = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  if (!id) throw new Error(sessionActiveTaskUsage());
-  return { id, project };
-}
-
-function parseSessionTailLimit(args: string[]): number | undefined {
-  if (args.length === 0) return undefined;
-  if (args.length !== 2 || args[0] !== "--limit") throw new Error("Session tail accepts --limit <count>");
-  return parseNonNegativeInteger(args[1] ?? "", "--limit");
-}
-
-function parseCodexScanArgs(args: string[], env: Env): string {
-  let codexHome = env.CODEX_HOME;
-
-  for (let index = 0; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag || !value) throw new Error("Codex scan accepts --codex-home <path>");
-    if (flag === "--codex-home") codexHome = value;
-    else throw new Error(`Unknown option: ${flag}`);
-  }
-
-  if (codexHome) return codexHome;
-  if (!env.HOME) throw new Error("Codex scan requires --codex-home when HOME is not set");
-  return `${env.HOME}/.codex`;
-}
-
-function parseClaudeScanArgs(args: string[], env: Env): string {
-  let projectsRoot: string | undefined;
-
-  for (let index = 0; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag || !value) throw new Error("Claude scan accepts --projects-root <path>");
-    if (flag === "--projects-root") projectsRoot = value;
-    else throw new Error(`Unknown option: ${flag}`);
-  }
-
-  if (projectsRoot) return projectsRoot;
-  if (!env.HOME) throw new Error("Claude scan requires --projects-root when HOME is not set");
-  return `${env.HOME}/.claude/projects`;
-}
-
-function skillWorkOnTaskUsage(): string {
-  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex>] [--model <name>] [--description <text>] [--project <dir>]";
-}
-
-function skillReEnterUsage(): string {
-  return "Usage: trace skill re-enter <ref>";
-}
-
-function skillDocsDirUsage(): string {
-  return "Usage: trace skill docs-dir [--id <session>] [--project <dir>]";
-}
-
-function recallCandidatesUsage(): string {
-  return "Usage: trace skill recall-candidates [--project <dir>]";
-}
-
-function parseSkillWorkOnTaskArgs(
-  args: string[],
-  env: Env,
-): {
-  id: string;
-  transcriptPath: string;
-  tool: SessionTool;
-  model?: string;
-  tokenTotals: Partial<TokenTotals>;
-  description?: string;
-  project?: string;
-} {
-  let id: string | undefined;
-  let transcriptPath: string | undefined;
-  let tool: string | undefined;
-  let model: string | undefined;
-  let description: string | undefined;
-  let project: string | undefined;
-
-  for (let index = 0; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-
-    if (!flag || !value) {
-      throw new Error(
-        "Skill work-on-task accepts --id, --transcript, --tool, --model, --description, and --project",
-      );
-    }
-
-    if (flag === "--id") id = value;
-    else if (flag === "--transcript") transcriptPath = value;
-    else if (flag === "--tool") tool = value;
-    else if (flag === "--model") model = value;
-    else if (flag === "--description") description = value;
-    else if (flag === "--project") project = value;
-    else throw new Error(`Unknown option: ${flag}`);
-  }
-
-  let toolOverride: SessionTool | undefined;
-  if (tool === undefined) {
-    toolOverride = undefined;
-  } else if (tool === "claude" || tool === "codex") {
-    toolOverride = tool;
-  } else {
-    throw new Error("Session tool must be claude or codex");
-  }
-
-  const identity = inferSessionIdentity(env, {
-    tool: toolOverride,
-    id,
-    transcriptPath,
-  });
-
-  if (identity.id === undefined || identity.transcriptPath === undefined) {
-    throw new Error(
-      "Skill work-on-task requires --id or a current session env var",
-    );
-  }
-
-  return {
-    id: identity.id,
-    transcriptPath: identity.transcriptPath,
-    tool: identity.tool,
-    model,
-    tokenTotals: {},
-    description,
-    project,
-  };
-}
-
-function parseRecallCandidatesArgs(args: string[]): string | undefined {
-  let project: string | undefined;
-
-  let index = 0;
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--project") {
-      const value = args[index + 1];
-      if (!value) throw new Error(recallCandidatesUsage());
-      project = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  return project;
-}
-
-function parseSkillDocsDirArgs(args: string[]): { id?: string; project?: string } {
-  let id: string | undefined;
-  let project: string | undefined;
-
-  let index = 0;
-  while (index < args.length) {
-    const flag = args[index];
-    if (flag === "--id") {
-      const value = args[index + 1];
-      if (!value) throw new Error(skillDocsDirUsage());
-      id = value;
-      index += 2;
-    } else if (flag === "--project") {
-      const value = args[index + 1];
-      if (!value) throw new Error(skillDocsDirUsage());
-      project = value;
-      index += 2;
-    } else {
-      throw new Error(`Unknown option: ${flag}`);
-    }
-  }
-
-  return { id, project };
 }
 
 function resolveSkillTaskRef(
