@@ -645,7 +645,14 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
     : "tokens unavailable";
   const meta = [session.model, tokenLine].filter(Boolean).join(" · ");
-  const kindBadge = isSpawned ? "spawned" : (session.subagentType ?? null);
+  // The kind badge only earns its place when the row leads with the session's
+  // own captured name. For a nameless child the title is already derived from
+  // the origin/type (sessionChildTitle), so the badge would just repeat it.
+  const kindBadge = item.sessionName
+    ? isSpawned
+      ? "spawned"
+      : (session.subagentType ?? null)
+    : null;
 
   return (
     <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
