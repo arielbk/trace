@@ -1,0 +1,161 @@
+import { inferSessionIdentity, resolveTaskDocsDir } from "@trace/core";
+import {
+  parseRecallCandidatesArgs,
+  parseSkillDocsDirArgs,
+  parseSkillWorkOnTaskArgs,
+  skillDocsDirUsage,
+  skillReEnterUsage,
+  skillWorkOnTaskUsage,
+} from "./parsers.ts";
+import {
+  formatReEntryManifest,
+  formatSkillWorkOnTaskResult,
+  resolveSkillTaskRef,
+  taskNotFoundMessage,
+} from "./formatters.ts";
+import {
+  attempt,
+  failure,
+  isHelpFlag,
+  rejectFlagTitle,
+  resolveProjectRoot,
+  success,
+  withStore,
+  type CommandResult,
+  type Env,
+} from "./seam.ts";
+
+export type CommandContext = { env: Env; cwd: string; stdin: string };
+
+export function skillWorkOnTaskOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  if (isHelpFlag(rawArgs[0])) return success(`${skillWorkOnTaskUsage()}\n`);
+  const titleError = rejectFlagTitle(rawArgs[0], "skill work-on-task");
+  if (titleError) return titleError;
+
+  const title = rawArgs[0];
+  if (!title) return failure("Task title is required");
+
+  const parsedAttempt = attempt(() =>
+    parseSkillWorkOnTaskArgs(rawArgs.slice(1), ctx.env),
+  );
+  if (!parsedAttempt.ok) return parsedAttempt.result;
+  const parsed = parsedAttempt.value;
+
+  const { description, project, ...registerInput } = parsed;
+
+  const projectRootAttempt = resolveProjectRoot(project, ctx.cwd);
+  if (!projectRootAttempt.ok) return projectRootAttempt.result;
+  const projectRoot = projectRootAttempt.value;
+
+  return withStore(ctx.env, (store, databasePath) => {
+    const session = store.registerSession(registerInput);
+
+    const resolvedTask =
+      resolveSkillTaskRef(store.listTasks(), title, (id) => store.getTask(id)) ??
+      store.createTask(title, projectRoot, description);
+
+    const task = resolvedTask.archivedAt
+      ? store.unarchiveTask(resolvedTask.id)
+      : resolvedTask;
+
+    const assigned = store.assignSession(session.id, task.id);
+
+    return success(formatSkillWorkOnTaskResult(assigned, task, databasePath));
+  });
+}
+
+export function skillRecallCandidatesOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const projectAttempt = attempt(() => parseRecallCandidatesArgs(rawArgs));
+  if (!projectAttempt.ok) return projectAttempt.result;
+  const project = projectAttempt.value;
+
+  const projectRootAttempt = resolveProjectRoot(project, ctx.cwd);
+  if (!projectRootAttempt.ok) return projectRootAttempt.result;
+  const projectRoot = projectRootAttempt.value;
+
+  return withStore(ctx.env, (store) => {
+    const candidates = store.recallCandidates(projectRoot);
+    return success(`${JSON.stringify(candidates)}\n`);
+  });
+}
+
+export function skillReEnterOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  if (isHelpFlag(rawArgs[0])) return success(`${skillReEnterUsage()}\n`);
+  const refError = rejectFlagTitle(rawArgs[0], "skill re-enter", "ref");
+  if (refError) return refError;
+
+  const ref = rawArgs[0];
+  if (!ref) return failure("Task slug or title is required");
+
+  return withStore(ctx.env, (store) => {
+    const tasks = store.listTasks();
+    const resolved = resolveSkillTaskRef(tasks, ref, (id) => store.getTask(id));
+    if (!resolved) return failure(taskNotFoundMessage(tasks, ref), 1);
+
+    const manifest = store.getReEntryManifest(resolved.id);
+    if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
+
+    const identity = inferSessionIdentity(ctx.env, {});
+    if (identity.id !== undefined && identity.transcriptPath !== undefined) {
+      const session = store.registerSession({
+        id: identity.id,
+        transcriptPath: identity.transcriptPath,
+        tool: identity.tool,
+      });
+      store.assignSession(session.id, resolved.id);
+    }
+
+    return success(formatReEntryManifest(manifest));
+  });
+}
+
+export function skillDocsDirOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  if (isHelpFlag(rawArgs[0])) return success(`${skillDocsDirUsage()}\n`);
+
+  const parsedAttempt = attempt(() => parseSkillDocsDirArgs(rawArgs));
+  if (!parsedAttempt.ok) return parsedAttempt.result;
+  const parsed = parsedAttempt.value;
+
+  const identity = inferSessionIdentity(ctx.env, { id: parsed.id });
+  if (identity.id === undefined) {
+    return failure("Skill docs-dir requires --id or a current session env var");
+  }
+
+  const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd);
+  if (!projectRootAttempt.ok) return projectRootAttempt.result;
+  const projectRoot = projectRootAttempt.value;
+
+  return withStore(ctx.env, (store, databasePath) => {
+    const activeTask = store.resolveActiveTask(identity.id as string, projectRoot);
+
+    if (activeTask.kind === "bound") {
+      return success(
+        `taskDocsDir: ${resolveTaskDocsDir(databasePath, activeTask.task.slug)}\n`,
+      );
+    }
+
+    if (activeTask.kind === "re-enter") {
+      return failure(
+        `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
+        1,
+      );
+    }
+
+    return failure(
+      "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
+      1,
+    );
+  });
+}
