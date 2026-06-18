@@ -23,6 +23,7 @@ export type ParsedClaudeCodeSession = {
   transcriptPath: string;
   tool: "claude";
   model: string | null;
+  title: string | null;
   tokenTotals: ClaudeCodeTokenTotals;
 };
 
@@ -40,9 +41,12 @@ type ClaudeUsage = {
 };
 
 type ClaudeJsonlEvent = {
+  type?: string;
   session_id?: string;
   sessionId?: string;
   usage?: ClaudeUsage;
+  customTitle?: string;
+  aiTitle?: string;
   message?: {
     session_id?: string;
     sessionId?: string;
@@ -57,6 +61,8 @@ export function parseClaudeCodeTranscript(
 ): ParsedClaudeCodeSession {
   let id: string | undefined;
   let model: string | undefined;
+  let customTitle: string | undefined;
+  let aiTitle: string | undefined;
   let tokenTotals = emptyTokenTotals();
 
   for (const line of input.transcript.split(/\r?\n/)) {
@@ -78,6 +84,14 @@ export function parseClaudeCodeTranscript(
       event.message?.sessionId;
     model ??= event.model ?? event.message?.model;
 
+    // `custom-title` is a user-set name and always wins; `ai-title` is
+    // Claude's generated name and can be re-emitted, so the last one wins.
+    if (event.type === "custom-title" && event.customTitle) {
+      customTitle = event.customTitle;
+    } else if (event.type === "ai-title" && event.aiTitle) {
+      aiTitle = event.aiTitle;
+    }
+
     tokenTotals = addTokenTotals(
       tokenTotals,
       tokenTotalsFromUsage(event.usage),
@@ -97,6 +111,7 @@ export function parseClaudeCodeTranscript(
     transcriptPath: input.transcriptPath,
     tool: "claude",
     model: model ?? null,
+    title: customTitle ?? aiTitle ?? null,
     tokenTotals,
   };
 }

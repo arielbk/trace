@@ -20,6 +20,7 @@ test("claude adapter answers identity, model, tokens, and message tail", () => {
     transcriptPath: claudeFixture,
     tool: "claude",
     model: "claude-opus-4-7",
+    title: null,
     tokenTotals: {
       inputTokens: 13,
       outputTokens: 25,
@@ -50,6 +51,7 @@ test("codex adapter answers identity, tokens, tail, and honors expected id", () 
     transcriptPath: codexFixture,
     tool: "codex",
     model: "gpt-5-codex",
+    title: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,
