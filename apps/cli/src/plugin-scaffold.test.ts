@@ -71,6 +71,9 @@ describe("plugin scaffold", () => {
           matcher?: string;
           hooks?: Array<{ type?: string; command?: string }>;
         }>;
+        SubagentStop?: Array<{
+          hooks?: Array<{ type?: string; command?: string }>;
+        }>;
       };
     };
     assert.deepEqual(hooks.hooks?.SessionStart, [
@@ -80,6 +83,16 @@ describe("plugin scaffold", () => {
           {
             type: "command",
             command: `${pinnedTraceCommand()} hook session-start`,
+          },
+        ],
+      },
+    ]);
+    assert.deepEqual(hooks.hooks?.SubagentStop, [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `${pinnedTraceCommand()} hook subagent-stop`,
           },
         ],
       },

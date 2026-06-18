@@ -18,6 +18,11 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const packageJsonPath = join(appRoot, "package.json");
 const traceBundle = join(appRoot, "dist", "trace.js");
 const hookBundle = join(appRoot, "dist", "claude-session-start-hook.js");
+const subagentHookBundle = join(
+  appRoot,
+  "dist",
+  "claude-subagent-stop-hook.js",
+);
 const distWebAssetsDir = join(appRoot, "dist", "web");
 
 describe("CLI bundle", () => {
@@ -39,7 +44,7 @@ describe("CLI bundle", () => {
     assert.match(buildScript, /\btsup\b/);
     assert.doesNotMatch(buildScript, /src\/build\.ts/);
 
-    for (const artifact of [traceBundle, hookBundle]) {
+    for (const artifact of [traceBundle, hookBundle, subagentHookBundle]) {
       assert.equal(existsSync(artifact), true);
       assert.notEqual(statSync(artifact).mode & 0o111, 0);
       const source = readFileSync(artifact, "utf8");
@@ -47,7 +52,10 @@ describe("CLI bundle", () => {
       assert.equal(source.includes("better-sqlite3"), false);
       assert.equal(source.includes("0002_session_model"), true);
     }
-    assert.equal(readFileSync(traceBundle, "utf8").startsWith("#!/usr/bin/env node"), true);
+    assert.equal(
+      readFileSync(traceBundle, "utf8").startsWith("#!/usr/bin/env node"),
+      true,
+    );
   });
 
   it("build copies web assets next to the CLI bundle", () => {
@@ -123,26 +131,71 @@ describe("CLI bundle", () => {
     copyFileSync(hookBundle, outsideHookBundle);
 
     try {
-      const output = execFileSync(
+      const output = execFileSync(process.execPath, [outsideHookBundle], {
+        input: JSON.stringify({
+          session_id: "hook-bundle-session",
+          transcript_path: transcriptPath,
+          hook_event_name: "SessionStart",
+          cwd: outsideDir,
+        }),
+        cwd: outsideDir,
+        encoding: "utf8",
+        env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
+      });
+
+      assert.equal(
+        output.includes("Trace: no task is bound to this session"),
+        true,
+      );
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("bundled SubagentStop hook runs outside the source tree", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "trace-subagent-bundle-home-"));
+    const outsideDir = mkdtempSync(
+      join(tmpdir(), "trace-subagent-bundle-outside-"),
+    );
+    const traceDb = join(fakeHome, "trace.sqlite");
+    const outsideHookBundle = join(outsideDir, "claude-subagent-stop-hook.js");
+    const parentTranscriptPath = join(outsideDir, "parent.jsonl");
+    copyFileSync(subagentHookBundle, outsideHookBundle);
+
+    try {
+      execFileSync(
         process.execPath,
-        [outsideHookBundle],
+        [
+          traceBundle,
+          "session",
+          "register",
+          "--id",
+          "parent-session",
+          "--transcript",
+          parentTranscriptPath,
+          "--tool",
+          "claude",
+        ],
         {
-          input: JSON.stringify({
-            session_id: "hook-bundle-session",
-            transcript_path: transcriptPath,
-            hook_event_name: "SessionStart",
-            cwd: outsideDir,
-          }),
           cwd: outsideDir,
           encoding: "utf8",
           env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
         },
       );
 
-      assert.equal(
-        output.includes("Trace: no task is bound to this session"),
-        true,
-      );
+      const output = execFileSync(process.execPath, [outsideHookBundle], {
+        input: JSON.stringify({
+          session_id: "parent-session",
+          transcript_path: parentTranscriptPath,
+          hook_event_name: "SubagentStop",
+        }),
+        cwd: outsideDir,
+        encoding: "utf8",
+        env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
+      });
+
+      assert.equal(output, "");
     } finally {
       rmSync(fakeHome, { recursive: true, force: true });
       rmSync(outsideDir, { recursive: true, force: true });

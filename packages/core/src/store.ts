@@ -29,6 +29,8 @@ import type {
   RegisterSessionInput,
   ReEntryManifest,
   Session,
+  SessionOrigin,
+  SetSessionParentInput,
   SessionTool,
   Task,
   TaskDoc,
@@ -316,6 +318,10 @@ class NodeSqliteTaskStore implements TaskStore {
     const id = input.id.trim();
     const transcriptPath = input.transcriptPath.trim();
     const model = input.model?.trim() || null;
+    const parentSessionId = input.parentSessionId?.trim() || null;
+    const origin = input.origin ?? "root";
+    const subagentType = input.subagentType?.trim() || null;
+    const agentId = input.agentId?.trim() || null;
 
     if (id.length === 0) {
       throw new Error("Session id is required");
@@ -326,17 +332,80 @@ class NodeSqliteTaskStore implements TaskStore {
     if (input.tool !== "claude" && input.tool !== "codex") {
       throw new Error("Session tool must be claude or codex");
     }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
+    }
 
     const existing = this.getSession(id);
     if (existing) {
-      // Upgrade a virtual codex: URI to a real file path when scan now has one.
-      if (existing.transcriptPath.startsWith("codex:") && !transcriptPath.startsWith("codex:")) {
-        this.#sqlite
-          .prepare("UPDATE sessions SET transcript_path = ? WHERE id = ?")
-          .run(transcriptPath, id);
-        return this.#refreshSession({ ...existing, transcriptPath });
-      }
-      return existing;
+      const totals = tokenTotalsFromUsage(input.tokenTotals);
+      const next = {
+        ...existing,
+        transcriptPath:
+          existing.transcriptPath.startsWith("codex:") &&
+          !transcriptPath.startsWith("codex:")
+            ? transcriptPath
+            : existing.transcriptPath,
+        model: existing.model ?? model,
+        parentSessionId: existing.parentSessionId ?? parentSessionId,
+        origin:
+          existing.origin === "root" && origin !== "root"
+            ? origin
+            : existing.origin,
+        subagentType: existing.subagentType ?? subagentType,
+        agentId: existing.agentId ?? agentId,
+        tokenTotals:
+          existing.tokenTotals.totalTokens === 0 && totals.totalTokens > 0
+            ? totals
+            : existing.tokenTotals,
+      };
+
+      const changed =
+        next.transcriptPath !== existing.transcriptPath ||
+        next.model !== existing.model ||
+        next.parentSessionId !== existing.parentSessionId ||
+        next.origin !== existing.origin ||
+        next.subagentType !== existing.subagentType ||
+        next.agentId !== existing.agentId ||
+        next.tokenTotals !== existing.tokenTotals;
+
+      if (!changed) return existing;
+
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE sessions
+            SET
+              transcript_path = ?,
+              model = ?,
+              parent_session_id = ?,
+              origin = ?,
+              subagent_type = ?,
+              agent_id = ?,
+              input_tokens = ?,
+              output_tokens = ?,
+              cache_creation_input_tokens = ?,
+              cache_read_input_tokens = ?,
+              total_tokens = ?
+            WHERE id = ?
+          `,
+        )
+        .run(
+          next.transcriptPath,
+          next.model,
+          next.parentSessionId,
+          next.origin,
+          next.subagentType,
+          next.agentId,
+          next.tokenTotals.inputTokens,
+          next.tokenTotals.outputTokens,
+          next.tokenTotals.cacheCreationInputTokens,
+          next.tokenTotals.cacheReadInputTokens,
+          next.tokenTotals.totalTokens,
+          id,
+        );
+
+      return this.#refreshSession(next);
     }
 
     const totals = tokenTotalsFromUsage(input.tokenTotals);
@@ -346,6 +415,10 @@ class NodeSqliteTaskStore implements TaskStore {
       tool: input.tool,
       model,
       taskId: null,
+      parentSessionId,
+      origin,
+      subagentType,
+      agentId,
       createdAt: new Date().toISOString(),
       tokenTotals: totals,
     };
@@ -359,6 +432,10 @@ class NodeSqliteTaskStore implements TaskStore {
             tool,
             model,
             task_id,
+            parent_session_id,
+            origin,
+            subagent_type,
+            agent_id,
             created_at,
             input_tokens,
             output_tokens,
@@ -366,7 +443,7 @@ class NodeSqliteTaskStore implements TaskStore {
             cache_read_input_tokens,
             total_tokens
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -375,6 +452,10 @@ class NodeSqliteTaskStore implements TaskStore {
         session.tool,
         session.model,
         session.taskId,
+        session.parentSessionId,
+        session.origin,
+        session.subagentType,
+        session.agentId,
         session.createdAt,
         totals.inputTokens,
         totals.outputTokens,
@@ -384,6 +465,39 @@ class NodeSqliteTaskStore implements TaskStore {
       );
 
     return session;
+  }
+
+  setSessionParent(input: SetSessionParentInput): Session {
+    const id = input.id.trim();
+    const parentSessionId = input.parentSessionId.trim();
+    const origin = input.origin;
+
+    if (id.length === 0) {
+      throw new Error("Session id is required");
+    }
+    if (parentSessionId.length === 0) {
+      throw new Error("Parent session id is required");
+    }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
+    }
+
+    const existing = this.getSession(id);
+    if (!existing) {
+      return this.registerSession({
+        id,
+        transcriptPath: `codex:${id}`,
+        tool: "codex",
+        parentSessionId,
+        origin,
+      });
+    }
+
+    this.#sqlite
+      .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
+      .run(parentSessionId, origin, id);
+
+    return { ...existing, parentSessionId, origin };
   }
 
   assignSession(sessionId: string, taskId: string): Session {
@@ -779,6 +893,10 @@ type SessionRow = {
   tool: "claude" | "codex";
   model: string | null;
   task_id: string | null;
+  parent_session_id: string | null;
+  origin: SessionOrigin;
+  subagent_type: string | null;
+  agent_id: string | null;
   created_at: string;
   input_tokens: number;
   output_tokens: number;
@@ -816,6 +934,10 @@ function sessionFromRow(row: SessionRow): Session {
     tool: row.tool,
     model: row.model,
     taskId: row.task_id,
+    parentSessionId: row.parent_session_id,
+    origin: row.origin,
+    subagentType: row.subagent_type,
+    agentId: row.agent_id,
     createdAt: row.created_at,
     tokenTotals: {
       inputTokens: row.input_tokens,
@@ -825,6 +947,10 @@ function sessionFromRow(row: SessionRow): Session {
       totalTokens: row.total_tokens,
     },
   };
+}
+
+function isSessionOrigin(value: string): value is SessionOrigin {
+  return value === "root" || value === "subagent" || value === "spawned";
 }
 
 function taskDocFromRow(row: TaskDocRow): TaskDoc {

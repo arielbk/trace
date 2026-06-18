@@ -16,7 +16,9 @@ export type {
   ReEntryManifestDoc,
   ReEntryManifestSession,
   Session,
+  SessionOrigin,
   SessionTool,
+  SetSessionParentInput,
   Task,
   TaskDoc,
   TaskStore,
@@ -64,3 +66,10 @@ export type {
   SessionIdentity,
   SessionIdentityOverrides,
 } from "./session-identity.ts";
+export {
+  createStoreSessionLocator,
+  resolveTraceParentSession,
+} from "./session-locator.ts";
+export type { SessionLocator } from "./session-locator.ts";
+export { discoverClaudeCodeSubagentSessions } from "./subagent-discovery.ts";
+export type { DiscoverClaudeCodeSubagentSessionsInput } from "./subagent-discovery.ts";

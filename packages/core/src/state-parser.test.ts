@@ -78,6 +78,24 @@ test("parseStateMd preserves a numbered list inside Next step as block markdown"
   );
 });
 
+test("parseStateMd folds wrapped continuation lines into each decision", () => {
+  const state = parseStateMd(`# Mid-flight
+
+## Decisions made
+
+- **Tool-agnostic mechanism** (the pivot, now
+  fully realized): the spawner captures the child id and
+  hands it to a generic hook.
+- **\`set-parent\` is an upsert** — both write orders converge
+  so it is order-independent.
+`);
+
+  expect(state.decisions).toEqual([
+    "<strong>Tool-agnostic mechanism</strong> (the pivot, now fully realized): the spawner captures the child id and hands it to a generic hook.",
+    "<strong><code>set-parent</code> is an upsert</strong> — both write orders converge so it is order-independent.",
+  ]);
+});
+
 test("parseStateMd gracefully omits missing sections", () => {
   const state = parseStateMd(`# Partial handoff
 

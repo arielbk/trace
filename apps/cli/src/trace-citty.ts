@@ -12,7 +12,9 @@ import {
   type ActiveTask,
   type ReEntryManifest,
   type Session,
+  type SessionOrigin,
   type SessionTool,
+  type SetSessionParentInput,
   type Task,
   type TaskDoc,
   type TokenTotals,
@@ -32,6 +34,7 @@ import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
+import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 
 type CommandResult = { exitCode: number; stdout: string; stderr: string };
 type Env = Record<string, string | undefined>;
@@ -328,11 +331,15 @@ function parseSessionRegisterArgs(args: string[]): {
   tool: SessionTool;
   tokenTotals: Partial<TokenTotals>;
   model?: string | null;
+  parentSessionId?: string | null;
+  origin?: SessionOrigin;
 } {
   let id: string | undefined;
   let transcriptPath: string | undefined;
   let tool: string | undefined;
   let model: string | null | undefined;
+  let parentSessionId: string | null | undefined;
+  let origin: string | undefined;
   const tokenTotals: Partial<TokenTotals> = {};
 
   for (let index = 0; index < args.length; index += 2) {
@@ -345,6 +352,8 @@ function parseSessionRegisterArgs(args: string[]): {
     else if (flag === "--transcript") transcriptPath = value;
     else if (flag === "--tool") tool = value;
     else if (flag === "--model") model = value;
+    else if (flag === "--parent-session") parentSessionId = value;
+    else if (flag === "--origin") origin = value;
     else if (flag === "--input-tokens") tokenTotals.inputTokens = parseNonNegativeInteger(value, flag);
     else if (flag === "--output-tokens") tokenTotals.outputTokens = parseNonNegativeInteger(value, flag);
     else if (flag === "--cache-creation-input-tokens") tokenTotals.cacheCreationInputTokens = parseNonNegativeInteger(value, flag);
@@ -355,8 +364,51 @@ function parseSessionRegisterArgs(args: string[]): {
 
   if (!id || !transcriptPath || !tool) throw new Error("Session register requires --id, --transcript, and --tool");
   if (tool !== "claude" && tool !== "codex") throw new Error("Session tool must be claude or codex");
+  if (origin !== undefined && !isSessionOrigin(origin)) {
+    throw new Error("Session origin must be root, subagent, or spawned");
+  }
 
-  return { id, transcriptPath, tool, model, tokenTotals };
+  return { id, transcriptPath, tool, model, parentSessionId, origin, tokenTotals };
+}
+
+function sessionSetParentUsage(): string {
+  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>]";
+}
+
+function parseSessionSetParentArgs(args: string[]): SetSessionParentInput {
+  const id = args[0];
+  if (!id || looksLikeFlag(id)) throw new Error(sessionSetParentUsage());
+
+  let parentSessionId: string | undefined;
+  let origin: string = "spawned";
+
+  let index = 1;
+  while (index < args.length) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (!flag || !value) throw new Error(sessionSetParentUsage());
+
+    if (flag === "--parent") {
+      parentSessionId = value;
+      index += 2;
+    } else if (flag === "--origin") {
+      origin = value;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+
+  if (!parentSessionId) throw new Error(sessionSetParentUsage());
+  if (!isSessionOrigin(origin)) {
+    throw new Error("Session origin must be root, subagent, or spawned");
+  }
+
+  return { id, parentSessionId, origin };
+}
+
+function isSessionOrigin(value: string): value is SessionOrigin {
+  return value === "root" || value === "subagent" || value === "spawned";
 }
 
 function sessionActiveTaskUsage(): string {
@@ -702,6 +754,12 @@ export function buildTraceCittyRoot(
               return runClaudeSessionStartHook(stdin, env) as unknown as CommandResult;
             },
           }),
+          "subagent-stop": defineCommand({
+            meta: { description: "Discover Claude subagent sessions on stop" },
+            run(): CommandResult {
+              return runClaudeSubagentStopHook(stdin, env) as unknown as CommandResult;
+            },
+          }),
         },
       }),
 
@@ -914,6 +972,22 @@ export function buildTraceCittyRoot(
               if (!taskId) return failure("Task id is required");
               return withStore(env, (store) => {
                 const session = store.assignSession(sessionId, taskId);
+                return success(formatSessionSummary(session));
+              });
+            },
+          }),
+
+          "set-parent": defineCommand({
+            meta: { description: "Set a session's parent attribution" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              let parsed: SetSessionParentInput;
+              try {
+                parsed = parseSessionSetParentArgs(args);
+              } catch (error) {
+                return failure(error instanceof Error ? error.message : String(error));
+              }
+              return withStore(env, (store) => {
+                const session = store.setSessionParent(parsed);
                 return success(formatSessionSummary(session));
               });
             },

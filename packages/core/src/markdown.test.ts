@@ -31,9 +31,9 @@ test("renderMarkdown strips unsafe link protocols to plain text", () => {
   expect(renderMarkdown("[bad](file:///etc/passwd)")).toBe("<p>bad</p>");
 });
 
-test("renderMarkdown turns single newlines into line breaks", () => {
+test("renderMarkdown reflows single newlines so hard-wrapped prose joins", () => {
   expect(renderMarkdown("line one\nline two")).toBe(
-    "<p>line one<br>line two</p>",
+    "<p>line one\nline two</p>",
   );
 });
 

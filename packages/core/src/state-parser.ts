@@ -89,11 +89,31 @@ function firstContentLine(lines: string[]): string | undefined {
 }
 
 function parseListOrParagraphs(lines: string[]): string[] {
-  const items = lines
-    .map((line) => /^\s*(?:[-*+]|\d+[.)])\s+(.+)$/.exec(line)?.[1]?.trim())
-    .filter((line): line is string => Boolean(line));
+  const items: string[] = [];
+  let current: string | undefined;
+  let sawList = false;
 
-  const values = items.length > 0 ? items : splitParagraphs(lines);
+  for (const line of lines) {
+    const marker = /^\s*(?:[-*+]|\d+[.)])\s+(.+)$/.exec(line);
+    if (marker) {
+      sawList = true;
+      if (current !== undefined) items.push(current);
+      current = marker[1]?.trim() ?? "";
+    } else if (current !== undefined) {
+      // A wrapped continuation line folds into the current item; a blank line
+      // ends it so the next bullet starts a fresh item.
+      const continuation = line.trim();
+      if (continuation.length === 0) {
+        items.push(current);
+        current = undefined;
+      } else {
+        current = `${current} ${continuation}`;
+      }
+    }
+  }
+  if (current !== undefined) items.push(current);
+
+  const values = sawList ? items : splitParagraphs(lines);
   return values.filter(isMeaningfulValue).map(renderInlineMarkdown);
 }
 

@@ -61,6 +61,10 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           tool: "claude",
           model: "claude-opus-4-7",
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 10,
             outputTokens: 5,
@@ -81,6 +85,10 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 7,
             outputTokens: 3,
@@ -161,6 +169,10 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 0,
             outputTokens: 0,
@@ -260,6 +272,10 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
           tool: "claude",
           model: "claude-opus-4-7",
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 10,
             outputTokens: 5,
@@ -664,6 +680,159 @@ function baseTimeline(
   };
 }
 
+function sessionTimelineItem({
+  id,
+  createdAt,
+  parentSessionId = null,
+  origin = "root",
+  subagentType = null,
+}: {
+  id: string;
+  createdAt: string;
+  parentSessionId?: string | null;
+  origin?: "root" | "subagent" | "spawned";
+  subagentType?: string | null;
+}): TaskTimeline["items"][number] {
+  return {
+    type: "session",
+    createdAt,
+    session: {
+      id,
+      transcriptPath: `/tmp/${id}.jsonl`,
+      tool: "claude",
+      model: null,
+      taskId: "task-1",
+      parentSessionId,
+      origin,
+      subagentType,
+      agentId: null,
+      tokenTotals: {
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 2,
+      },
+      createdAt,
+    },
+    sessionName: id,
+  };
+}
+
+test("TaskTimelineView collapses a root's subagent fan behind a disclosure that toggles open", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "subagent-session",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "researcher",
+      }),
+      sessionTimelineItem({
+        id: "spawned-session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // Collapsed by default: the parent shows, the fan is summarised, and the
+  // children are not yet rendered.
+  const toggle = screen.getByRole("button", { name: /1 subagent · 1 spawned/i });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByText("parent-session")).toBeInTheDocument();
+  expect(screen.queryByText("subagent-session")).not.toBeInTheDocument();
+  expect(screen.queryByText("spawned-session")).not.toBeInTheDocument();
+
+  // Opening the disclosure reveals both children, leading each with its name.
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("subagent-session")).toBeInTheDocument();
+  expect(screen.getByText("spawned-session")).toBeInTheDocument();
+  // The spawned child is tagged; subagent children lead with their type alone.
+  expect(screen.getByText("spawned")).toBeInTheDocument();
+});
+
+test("TaskTimelineView leads nameless child rows with their origin instead of a stacked path chip", () => {
+  const namelessChild = (
+    overrides: Partial<
+      Extract<TaskTimeline["items"][number], { type: "session" }>["session"]
+    >,
+  ): TaskTimeline["items"][number] => ({
+    type: "session",
+    createdAt: "2026-05-29T00:02:00.000Z",
+    session: {
+      id: "child",
+      transcriptPath: "/tmp/agent-OHuLCSQdcF.jsonl",
+      tool: "claude",
+      model: null,
+      taskId: "task-1",
+      parentSessionId: "parent-session",
+      origin: "subagent",
+      subagentType: "Explore",
+      agentId: "OHuLCSQdcF",
+      tokenTotals: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 0,
+      },
+      createdAt: "2026-05-29T00:02:00.000Z",
+      ...overrides,
+    },
+    sessionName: null,
+  });
+
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      namelessChild({}),
+      namelessChild({
+        id: "child-2",
+        origin: "spawned",
+        subagentType: null,
+        transcriptPath: "/tmp/NmfFfDhFZt.jsonl",
+        agentId: null,
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(
+    screen.getByRole("button", { name: /1 subagent · 1 spawned/i }),
+  );
+
+  // The origin/type leads the row as its title…
+  expect(screen.getByText("Explore")).toBeInTheDocument();
+  expect(screen.getByText("Spawned session")).toBeInTheDocument();
+  // …and the redundant origin-badge pill is gone, since the title now says it.
+  expect(screen.queryByText("↳ Explore")).not.toBeInTheDocument();
+  expect(screen.queryByText("↳ spawned session")).not.toBeInTheDocument();
+});
+
 test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {
   const timeline = baseTimeline();
   const html = renderToStaticMarkup(
@@ -895,6 +1064,10 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "claude",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 1,
             outputTokens: 1,
@@ -925,6 +1098,10 @@ test("TaskTimelineView renders a single continuous timeline spine across items",
           tool: "codex",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 0,
             outputTokens: 0,
@@ -994,6 +1171,10 @@ function filterableTimeline(): TaskTimeline {
           tool: "claude",
           model: null,
           taskId: "task-1",
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
           tokenTotals: {
             inputTokens: 1,
             outputTokens: 1,

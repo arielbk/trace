@@ -74,6 +74,65 @@ test.each(["startup", "resume", "clear", "compact"])(
   },
 );
 
+test("hook ignores legacy spawned-parent env and self-registers as root", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-hook-parent-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { HOME: dir, TRACE_DB: databasePath };
+  const legacyParentEnv = ["TRACE", "PARENT", "SESSION"].join("_");
+
+  try {
+    const taskId = runTraceCli(["task", "create", "parented"], env).stdout.trim();
+    runTraceCli(
+      [
+        "session",
+        "register",
+        "--id",
+        "parent-session",
+        "--transcript",
+        join(dir, "parent.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      env,
+    );
+    runTraceCli(["session", "assign", "parent-session", taskId], env);
+
+    const result = runClaudeSessionStartHook(
+      JSON.stringify({
+        session_id: "child-session",
+        transcript_path: join(dir, "child.jsonl"),
+        hook_event_name: "SessionStart",
+      }),
+      { ...env, [legacyParentEnv]: "parent-session" },
+    );
+
+    expect(result.exitCode).toBe(0);
+    runTraceCli(["session", "assign", "child-session", taskId], env);
+    const timeline = JSON.parse(
+      runTraceCli(["task", "timeline", taskId, "--json"], env).stdout,
+    ) as {
+      items: Array<{
+        type: string;
+        session?: {
+          id: string;
+          parentSessionId: string | null;
+          origin: string;
+        };
+      }>;
+    };
+    const child = timeline.items.find(
+      (item) => item.type === "session" && item.session?.id === "child-session",
+    )?.session;
+
+    expect(child).toMatchObject({
+      parentSessionId: null,
+      origin: "root",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("hook still rejects input missing session_id", () => {
   const result = runClaudeSessionStartHook(
     JSON.stringify({ transcript_path: "/tmp/x.jsonl" }),
