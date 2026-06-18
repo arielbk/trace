@@ -5,6 +5,7 @@ import {
   inferSessionIdentity,
   openTraceStore,
   resolveProjectRootArg,
+  resolveSessionName,
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
@@ -260,7 +261,12 @@ function formatTaskSummary(task: Task): string {
 }
 
 function formatSessionSummary(session: Session): string {
-  return `${session.id}\t${session.tool}\t${session.transcriptPath}\n`;
+  // The resolved conversation name (stored title, else first-line synthesis)
+  // rides as a trailing column so the leading id/tool/transcript fields other
+  // tooling reads stay put; it is omitted entirely when no name resolves.
+  const name = resolveSessionName(session);
+  const base = `${session.id}\t${session.tool}\t${session.transcriptPath}`;
+  return name ? `${base}\t${name}\n` : `${base}\n`;
 }
 
 function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {

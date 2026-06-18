@@ -1,8 +1,21 @@
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
-import type { SessionTool } from "./types.ts";
+import type { Session, SessionTool } from "./types.ts";
 
 const SESSION_NAME_MAX_LENGTH = 60;
+
+/**
+ * The single place session display-name precedence lives: the conversation
+ * `title` Claude wrote into the transcript wins; absent that, fall back to the
+ * first-line synthesis of the transcript. Both the web timeline and the CLI
+ * session summary resolve names through here so the rule is never duplicated.
+ */
+export function resolveSessionName(
+  session: Pick<Session, "title" | "transcriptPath" | "tool">,
+): string | null {
+  if (session.title) return session.title;
+  return readSessionName(session.transcriptPath, session.tool);
+}
 
 export function deriveSessionName(
   transcript: string,

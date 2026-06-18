@@ -943,6 +943,34 @@ test("task docs are empty when the task docs directory does not exist", () => {
   }
 });
 
+test("task timeline surfaces a stored session title as the session name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "titled-timeline-session",
+      transcriptPath: "/tmp/titled-timeline.jsonl",
+      tool: "claude",
+      title: "Wire up the payment provider",
+    });
+    store.assignSession(session.id, task.id);
+
+    const timeline = store.getTaskTimeline(task.id)!;
+    const item = timeline.items.find((i) => i.type === "session");
+    expect(item).toMatchObject({
+      type: "session",
+      sessionName: "Wire up the payment provider",
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task timeline aggregates assigned sessions, docs, and token totals", async () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

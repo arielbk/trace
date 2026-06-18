@@ -20,7 +20,7 @@ import {
   emptyTokenTotals,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
-import { readSessionName } from "./session-name.ts";
+import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
@@ -563,7 +563,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "session",
           createdAt: session.createdAt,
           session,
-          sessionName: readSessionName(session.transcriptPath, session.tool),
+          sessionName: resolveSessionName(session),
         }),
       ),
       ...docs.map(
