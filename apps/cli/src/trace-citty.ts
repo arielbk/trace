@@ -7,11 +7,7 @@ import {
   scanClaudeCodeSessions,
   scanCodexSessions,
   updateStateManifest,
-  type ActiveTask,
-  type ReEntryManifest,
-  type Session,
   type Task,
-  type TaskDoc,
 } from "@trace/core";
 import {
   copyFileSync,
@@ -61,6 +57,17 @@ import {
   taskCreateUsage,
   taskUpdateUsage,
 } from "./commands/parsers.ts";
+import {
+  formatActiveTask,
+  formatReEntryManifest,
+  formatSessionSummary,
+  formatSkillWorkOnTaskResult,
+  formatTask,
+  formatTaskDocSummary,
+  formatTaskSummary,
+  resolveSkillTaskRef,
+  taskNotFoundMessage,
+} from "./commands/formatters.ts";
 
 function slugify(title: string): string {
   return (
@@ -93,42 +100,6 @@ function linkRepoDocs(projectRoot: string, title: string, docsDir: string): void
   symlinkSync(docsDir, linkPath);
 }
 
-function formatTask(task: Task, sessions: Session[] = [], docs: TaskDoc[] = []): string {
-  const lines = [
-    `slug: ${task.slug}`,
-    `id: ${task.id}`,
-    `title: ${task.title}`,
-    ...(task.description ? [`description: ${task.description}`] : []),
-    `createdAt: ${task.createdAt}`,
-    `projectRoot: ${task.projectRoot}`,
-  ];
-
-  if (sessions.length > 0) {
-    lines.push(
-      "sessions:",
-      ...sessions.map((session) => `- ${formatSessionSummary(session).trimEnd()}`),
-    );
-  }
-
-  if (docs.length > 0) {
-    lines.push("docs:", ...docs.map((doc) => `- ${doc.path}`));
-  }
-
-  return [...lines, ""].join("\n");
-}
-
-function formatTaskSummary(task: Task): string {
-  return `${task.slug}\t${task.title}\n`;
-}
-
-function formatSessionSummary(session: Session): string {
-  return `${session.id}\t${session.tool}\t${session.transcriptPath}\n`;
-}
-
-function formatTaskDocSummary(taskRef: string, doc: TaskDoc): string {
-  return `${taskRef}\t${doc.path}\n`;
-}
-
 // Re-render the task's machine-owned state.md manifest footer from the docs
 // currently registered for the task. state.md is created when absent and is
 // excluded from its own manifest.
@@ -149,111 +120,6 @@ function renderTaskDocManifest(
     }));
   mkdirSync(docsDir, { recursive: true });
   updateStateManifest(statePath, task.title, entries);
-}
-
-function formatActiveTask(
-  activeTask: ActiveTask,
-): { kind: "none" } | { kind: "bound" | "re-enter"; task: { title: string; slug: string } } {
-  if (activeTask.kind === "none") return { kind: "none" };
-  return { kind: activeTask.kind, task: { title: activeTask.task.title, slug: activeTask.task.slug } };
-}
-
-function resolveSkillTaskRef(
-  tasks: Task[],
-  ref: string,
-  getById: (id: string) => Task | null,
-): Task | null {
-  const trimmed = ref.trim();
-  if (trimmed.length === 0) return null;
-
-  const byId = getById(trimmed);
-  if (byId) return byId;
-
-  const bySlug = tasks.find((task) => task.slug === trimmed);
-  if (bySlug) return bySlug;
-
-  const normalized = trimmed.toLowerCase();
-  const byTitle = tasks.find(
-    (task) => task.title.trim().toLowerCase() === normalized,
-  );
-  return byTitle ?? null;
-}
-
-function taskNotFoundMessage(tasks: Task[], ref: string): string {
-  const needle = ref.trim().toLowerCase();
-  const near = tasks
-    .filter(
-      (task) =>
-        needle.length > 0 &&
-        (task.slug.includes(needle) || task.title.toLowerCase().includes(needle)),
-    )
-    .slice(0, 5);
-
-  const lines = [`Task not found: ${ref}`];
-  if (near.length > 0) {
-    lines.push("Near candidates:");
-    for (const task of near) {
-      lines.push(`  ${task.slug} — ${task.title}`);
-    }
-  }
-  return lines.join("\n");
-}
-
-function formatSkillWorkOnTaskResult(
-  session: Session,
-  task: Task,
-  databasePath: string,
-): string {
-  if (!session.taskId) {
-    return formatSessionSummary(session);
-  }
-
-  return [
-    formatSessionSummary(session).trimEnd(),
-    `taskDocsDir: ${resolveTaskDocsDir(databasePath, task.slug)}`,
-    "",
-  ].join("\n");
-}
-
-function formatReEntryManifest(manifest: ReEntryManifest): string {
-  const lines = [
-    "task:",
-    `  id: ${manifest.task.id}`,
-    `  title: ${manifest.task.title}`,
-    ...(manifest.task.description
-      ? [`  description: ${manifest.task.description}`]
-      : []),
-    `  projectRoot: ${manifest.task.projectRoot}`,
-  ];
-
-  if (manifest.state) {
-    lines.push("state:", `  path: ${manifest.state.path}`);
-  }
-
-  lines.push(`taskDocsDir: ${manifest.taskDocsDir}`);
-
-  if (manifest.docs.length === 0) {
-    lines.push("docs: []");
-  } else {
-    lines.push("docs:", ...manifest.docs.map((doc) => `- path: ${doc.path}`));
-  }
-
-  if (manifest.sessions.length === 0) {
-    lines.push("sessions: []");
-  } else {
-    lines.push(
-      "sessions:",
-      ...manifest.sessions.flatMap((session) => [
-        `- id: ${session.id}`,
-        `  tool: ${session.tool}`,
-        `  transcript: ${session.transcriptPath}`,
-        `  mostRecent: ${session.isMostRecent ? "true" : "false"}`,
-        ...(session.model ? [`  model: ${session.model}`] : []),
-      ]),
-    );
-  }
-
-  return [...lines, ""].join("\n");
 }
 
 // Builds the citty root command tree for a single invocation.
