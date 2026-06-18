@@ -645,6 +645,7 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
     : "tokens unavailable";
   const meta = [session.model, tokenLine].filter(Boolean).join(" · ");
+  const kindBadge = isSpawned ? "spawned" : (session.subagentType ?? null);
 
   return (
     <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
@@ -654,9 +655,9 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[13px] font-semibold text-text">{title}</span>
-          {isSpawned ? (
+          {kindBadge ? (
             <span className="inline-flex items-center font-mono text-[9px] font-bold uppercase tracking-wider leading-relaxed px-1.5 rounded text-chip-text bg-chip-bg border border-chip-border">
-              spawned
+              {kindBadge}
             </span>
           ) : null}
         </div>
