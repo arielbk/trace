@@ -3,8 +3,6 @@ import type { CommandDef } from "citty";
 import {
   getTranscriptAdapter,
   inferSessionIdentity,
-  openTraceStore,
-  resolveProjectRootArg,
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
@@ -30,60 +28,23 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { resolveDbPath } from "./db-path.ts";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
-
-type CommandResult = { exitCode: number; stdout: string; stderr: string };
-type Env = Record<string, string | undefined>;
-type Store = ReturnType<typeof openTraceStore>;
-
-function success(stdout: string): CommandResult {
-  return { exitCode: 0, stdout, stderr: "" };
-}
-
-function failure(stderr: string, exitCode = 2): CommandResult {
-  return { exitCode, stdout: "", stderr: `${stderr}\n` };
-}
-
-function isHelpFlag(token: string | undefined): boolean {
-  return token === "--help" || token === "-h";
-}
-
-function looksLikeFlag(token: string | undefined): boolean {
-  return token !== undefined && token.startsWith("-");
-}
-
-function rejectFlagTitle(
-  token: string | undefined,
-  command: string,
-  noun = "title",
-): CommandResult | null {
-  if (!looksLikeFlag(token)) return null;
-  return failure(`Usage: trace ${command} <${noun}>`);
-}
-
-function withStore(
-  env: Env,
-  callback: (store: Store, databasePath: string) => CommandResult,
-): CommandResult {
-  let databasePath: string;
-  try {
-    databasePath = resolveDbPath(env);
-  } catch (error) {
-    return failure(error instanceof Error ? error.message : String(error));
-  }
-  const store = openTraceStore(databasePath);
-  try {
-    return callback(store, databasePath);
-  } catch (error) {
-    return failure(error instanceof Error ? error.message : String(error));
-  } finally {
-    store.close();
-  }
-}
+import {
+  attempt,
+  failure,
+  isHelpFlag,
+  looksLikeFlag,
+  rejectFlagTitle,
+  resolveProjectRoot,
+  success,
+  withStore,
+  type CommandResult,
+  type Env,
+  type Store,
+} from "./commands/seam.ts";
 
 function taskCreateUsage(): string {
   return "Usage: trace task create <title> [--description <text>] [--project <dir>]";
@@ -773,19 +734,13 @@ export function buildTraceCittyRoot(
               const titleError = rejectFlagTitle(args[0], "task create");
               if (titleError) return titleError;
 
-              let parsed: { title: string; description?: string; project?: string };
-              try {
-                parsed = parseTaskCreateArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseTaskCreateArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
 
-              let projectRoot: string;
-              try {
-                projectRoot = resolveProjectRootArg(parsed.project, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
+              if (!projectRootAttempt.ok) return projectRootAttempt.result;
+              const projectRoot = projectRootAttempt.value;
 
               return withStore(env, (store) => {
                 const task = store.createTask(parsed.title, projectRoot, parsed.description);
@@ -799,20 +754,17 @@ export function buildTraceCittyRoot(
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               if (isHelpFlag(args[0])) return success(`${taskUpdateUsage()}\n`);
 
-              let parsed: { ref: string; description: string };
-              try {
-                parsed = parseTaskUpdateArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseTaskUpdateArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
 
               return withStore(env, (store) => {
-                let task: Task;
-                try {
-                  task = store.updateTaskDescription(parsed.ref, parsed.description);
-                } catch (error) {
-                  return failure(error instanceof Error ? error.message : String(error), 1);
-                }
+                const taskAttempt = attempt(
+                  () => store.updateTaskDescription(parsed.ref, parsed.description),
+                  1,
+                );
+                if (!taskAttempt.ok) return taskAttempt.result;
+                const task = taskAttempt.value;
                 return success(
                   formatTask(task, store.listSessionsForTask(task.id), store.listDocsForTask(task.id)),
                 );
@@ -827,19 +779,13 @@ export function buildTraceCittyRoot(
               const titleError = rejectFlagTitle(args[0], "task capture");
               if (titleError) return titleError;
 
-              let parsed: { title: string; docPath?: string; link: boolean; project?: string };
-              try {
-                parsed = parseTaskCaptureArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseTaskCaptureArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
 
-              let projectRoot: string;
-              try {
-                projectRoot = resolveProjectRootArg(parsed.project, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
+              if (!projectRootAttempt.ok) return projectRootAttempt.result;
+              const projectRoot = projectRootAttempt.value;
 
               return withStore(env, (store, databasePath) => {
                 const contents = parsed.docPath
@@ -919,12 +865,9 @@ export function buildTraceCittyRoot(
               if (!taskId) return failure("Task id is required");
               if (!path) return failure("Task doc path is required");
 
-              let description: string | undefined;
-              try {
-                description = parseAddDocDescription(args.slice(2));
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const descriptionAttempt = attempt(() => parseAddDocDescription(args.slice(2)));
+              if (!descriptionAttempt.ok) return descriptionAttempt.result;
+              const description = descriptionAttempt.value;
 
               return withStore(env, (store, databasePath) => {
                 const task = store.getTaskByRef(taskId);
@@ -944,18 +887,9 @@ export function buildTraceCittyRoot(
           register: defineCommand({
             meta: { description: "Register a session" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              let parsed: {
-                id: string;
-                transcriptPath: string;
-                tool: SessionTool;
-                tokenTotals: Partial<TokenTotals>;
-                model?: string | null;
-              };
-              try {
-                parsed = parseSessionRegisterArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseSessionRegisterArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
               return withStore(env, (store) => {
                 const session = store.registerSession(parsed);
                 return success(`${session.id}\n`);
@@ -980,12 +914,9 @@ export function buildTraceCittyRoot(
           "set-parent": defineCommand({
             meta: { description: "Set a session's parent attribution" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              let parsed: SetSessionParentInput;
-              try {
-                parsed = parseSessionSetParentArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseSessionSetParentArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
               return withStore(env, (store) => {
                 const session = store.setSessionParent(parsed);
                 return success(formatSessionSummary(session));
@@ -996,18 +927,13 @@ export function buildTraceCittyRoot(
           "active-task": defineCommand({
             meta: { description: "Get the active task for a session" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              let parsed: { id: string; project?: string };
-              try {
-                parsed = parseSessionActiveTaskArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
-              let projectRoot: string;
-              try {
-                projectRoot = resolveProjectRootArg(parsed.project, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseSessionActiveTaskArgs(args));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
+
+              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
+              if (!projectRootAttempt.ok) return projectRootAttempt.result;
+              const projectRoot = projectRootAttempt.value;
               return withStore(env, (store) => {
                 const activeTask = store.resolveActiveTask(parsed.id, projectRoot);
                 return success(`${JSON.stringify(formatActiveTask(activeTask))}\n`);
@@ -1032,12 +958,9 @@ export function buildTraceCittyRoot(
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               const sessionId = args[0];
               if (!sessionId) return failure("Session id is required");
-              let limit: number | undefined;
-              try {
-                limit = parseSessionTailLimit(args.slice(1));
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const limitAttempt = attempt(() => parseSessionTailLimit(args.slice(1)));
+              if (!limitAttempt.ok) return limitAttempt.result;
+              const limit = limitAttempt.value;
               return withStore(env, (store) => {
                 const session = store.getSession(sessionId);
                 if (!session) return failure(`Session not found: ${sessionId}`, 1);
@@ -1055,12 +978,9 @@ export function buildTraceCittyRoot(
             meta: { description: "Scan for sessions" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               if (args[0] === "--codex") {
-                let codexHome: string;
-                try {
-                  codexHome = parseCodexScanArgs(args.slice(1), env);
-                } catch (error) {
-                  return failure(error instanceof Error ? error.message : String(error));
-                }
+                const codexHomeAttempt = attempt(() => parseCodexScanArgs(args.slice(1), env));
+                if (!codexHomeAttempt.ok) return codexHomeAttempt.result;
+                const codexHome = codexHomeAttempt.value;
                 return withStore(env, (store) => {
                   const sessions = scanCodexSessions(codexHome).map((session) =>
                     store.registerSession({
@@ -1076,12 +996,9 @@ export function buildTraceCittyRoot(
               }
 
               if (args[0] === "--claude") {
-                let projectsRoot: string;
-                try {
-                  projectsRoot = parseClaudeScanArgs(args.slice(1), env);
-                } catch (error) {
-                  return failure(error instanceof Error ? error.message : String(error));
-                }
+                const projectsRootAttempt = attempt(() => parseClaudeScanArgs(args.slice(1), env));
+                if (!projectsRootAttempt.ok) return projectsRootAttempt.result;
+                const projectsRoot = projectsRootAttempt.value;
                 return withStore(env, (store) => {
                   const sessions = scanClaudeCodeSessions(projectsRoot).map((session) =>
                     store.registerSession({
@@ -1115,21 +1032,15 @@ export function buildTraceCittyRoot(
               const title = args[0];
               if (!title) return failure("Task title is required");
 
-              let parsed: ReturnType<typeof parseSkillWorkOnTaskArgs>;
-              try {
-                parsed = parseSkillWorkOnTaskArgs(args.slice(1), env);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedAttempt = attempt(() => parseSkillWorkOnTaskArgs(args.slice(1), env));
+              if (!parsedAttempt.ok) return parsedAttempt.result;
+              const parsed = parsedAttempt.value;
 
               const { description, project, ...registerInput } = parsed;
 
-              let workOnTaskProjectRoot: string;
-              try {
-                workOnTaskProjectRoot = resolveProjectRootArg(project, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const projectRootAttempt = resolveProjectRoot(project, cwd);
+              if (!projectRootAttempt.ok) return projectRootAttempt.result;
+              const workOnTaskProjectRoot = projectRootAttempt.value;
 
               return withStore(env, (store, databasePath) => {
                 const session = store.registerSession(registerInput);
@@ -1153,19 +1064,13 @@ export function buildTraceCittyRoot(
           "recall-candidates": defineCommand({
             meta: { description: "List recall candidates as JSON" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              let recallProject: string | undefined;
-              try {
-                recallProject = parseRecallCandidatesArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const recallProjectAttempt = attempt(() => parseRecallCandidatesArgs(args));
+              if (!recallProjectAttempt.ok) return recallProjectAttempt.result;
+              const recallProject = recallProjectAttempt.value;
 
-              let recallProjectRoot: string;
-              try {
-                recallProjectRoot = resolveProjectRootArg(recallProject, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const recallProjectRootAttempt = resolveProjectRoot(recallProject, cwd);
+              if (!recallProjectRootAttempt.ok) return recallProjectRootAttempt.result;
+              const recallProjectRoot = recallProjectRootAttempt.value;
 
               return withStore(env, (store) => {
                 const candidates = store.recallCandidates(recallProjectRoot);
@@ -1217,12 +1122,9 @@ export function buildTraceCittyRoot(
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               if (isHelpFlag(args[0])) return success(`${skillDocsDirUsage()}\n`);
 
-              let parsedDocsDir: { id?: string; project?: string };
-              try {
-                parsedDocsDir = parseSkillDocsDirArgs(args);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const parsedDocsDirAttempt = attempt(() => parseSkillDocsDirArgs(args));
+              if (!parsedDocsDirAttempt.ok) return parsedDocsDirAttempt.result;
+              const parsedDocsDir = parsedDocsDirAttempt.value;
 
               const identity = inferSessionIdentity(env, { id: parsedDocsDir.id });
               if (identity.id === undefined) {
@@ -1231,12 +1133,9 @@ export function buildTraceCittyRoot(
                 );
               }
 
-              let docsDirProjectRoot: string;
-              try {
-                docsDirProjectRoot = resolveProjectRootArg(parsedDocsDir.project, cwd);
-              } catch (error) {
-                return failure(error instanceof Error ? error.message : String(error));
-              }
+              const docsDirProjectRootAttempt = resolveProjectRoot(parsedDocsDir.project, cwd);
+              if (!docsDirProjectRootAttempt.ok) return docsDirProjectRootAttempt.result;
+              const docsDirProjectRoot = docsDirProjectRootAttempt.value;
 
               return withStore(env, (store, databasePath) => {
                 const activeTask = store.resolveActiveTask(
