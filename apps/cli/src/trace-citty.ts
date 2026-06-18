@@ -6,20 +6,7 @@ import {
   resolveTaskDocsDir,
   scanClaudeCodeSessions,
   scanCodexSessions,
-  updateStateManifest,
-  type Task,
 } from "@trace/core";
-import {
-  copyFileSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, join, relative } from "node:path";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
@@ -34,10 +21,8 @@ import {
   withStore,
   type CommandResult,
   type Env,
-  type Store,
 } from "./commands/seam.ts";
 import {
-  parseAddDocDescription,
   parseClaudeScanArgs,
   parseCodexScanArgs,
   parseRecallCandidatesArgs,
@@ -47,80 +32,27 @@ import {
   parseSessionTailLimit,
   parseSkillDocsDirArgs,
   parseSkillWorkOnTaskArgs,
-  parseTaskCaptureArgs,
-  parseTaskCreateArgs,
-  parseTaskUpdateArgs,
   skillDocsDirUsage,
   skillReEnterUsage,
   skillWorkOnTaskUsage,
-  taskCaptureUsage,
-  taskCreateUsage,
-  taskUpdateUsage,
 } from "./commands/parsers.ts";
 import {
   formatActiveTask,
   formatReEntryManifest,
   formatSessionSummary,
   formatSkillWorkOnTaskResult,
-  formatTask,
-  formatTaskDocSummary,
-  formatTaskSummary,
   resolveSkillTaskRef,
   taskNotFoundMessage,
 } from "./commands/formatters.ts";
-
-function slugify(title: string): string {
-  return (
-    title
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "task"
-  );
-}
-
-function linkRepoDocs(projectRoot: string, title: string, docsDir: string): void {
-  const linkPath = join(projectRoot, "docs", slugify(title));
-  mkdirSync(join(projectRoot, "docs"), { recursive: true });
-
-  let existing: ReturnType<typeof lstatSync> | null = null;
-  try {
-    existing = lstatSync(linkPath);
-  } catch {
-    existing = null;
-  }
-
-  if (existing?.isSymbolicLink()) {
-    if (realpathSync(linkPath) === realpathSync(docsDir)) return;
-    rmSync(linkPath);
-  } else if (existing) {
-    throw new Error(`docs path already exists and is not a symlink: ${linkPath}`);
-  }
-
-  symlinkSync(docsDir, linkPath);
-}
-
-// Re-render the task's machine-owned state.md manifest footer from the docs
-// currently registered for the task. state.md is created when absent and is
-// excluded from its own manifest.
-function renderTaskDocManifest(
-  store: Store,
-  databasePath: string,
-  task: Task,
-): void {
-  const docsDir = resolveTaskDocsDir(databasePath, task.slug);
-  const statePath = join(docsDir, "state.md");
-  const entries = store
-    .listDocsForTask(task.id)
-    .filter((doc) => basename(doc.path) !== "state.md")
-    .map((doc) => ({
-      label: basename(doc.path),
-      href: relative(docsDir, doc.path) || basename(doc.path),
-      ...(doc.description ? { description: doc.description } : {}),
-    }));
-  mkdirSync(docsDir, { recursive: true });
-  updateStateManifest(statePath, task.title, entries);
-}
+import {
+  taskAddDocOperation,
+  taskCaptureOperation,
+  taskCreateOperation,
+  taskListOperation,
+  taskShowOperation,
+  taskTimelineOperation,
+  taskUpdateOperation,
+} from "./commands/task-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -184,152 +116,49 @@ export function buildTraceCittyRoot(
           create: defineCommand({
             meta: { description: "Create a new task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${taskCreateUsage()}\n`);
-              const titleError = rejectFlagTitle(args[0], "task create");
-              if (titleError) return titleError;
-
-              const parsedAttempt = attempt(() => parseTaskCreateArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-
-              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
-              if (!projectRootAttempt.ok) return projectRootAttempt.result;
-              const projectRoot = projectRootAttempt.value;
-
-              return withStore(env, (store) => {
-                const task = store.createTask(parsed.title, projectRoot, parsed.description);
-                return success(`${task.slug}\n`);
-              });
+              return taskCreateOperation(args, { env, cwd, stdin });
             },
           }),
 
           update: defineCommand({
             meta: { description: "Update a task description" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${taskUpdateUsage()}\n`);
-
-              const parsedAttempt = attempt(() => parseTaskUpdateArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-
-              return withStore(env, (store) => {
-                const taskAttempt = attempt(
-                  () => store.updateTaskDescription(parsed.ref, parsed.description),
-                  1,
-                );
-                if (!taskAttempt.ok) return taskAttempt.result;
-                const task = taskAttempt.value;
-                return success(
-                  formatTask(task, store.listSessionsForTask(task.id), store.listDocsForTask(task.id)),
-                );
-              });
+              return taskUpdateOperation(args, { env, cwd, stdin });
             },
           }),
 
           capture: defineCommand({
             meta: { description: "Capture a document as a new task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${taskCaptureUsage()}\n`);
-              const titleError = rejectFlagTitle(args[0], "task capture");
-              if (titleError) return titleError;
-
-              const parsedAttempt = attempt(() => parseTaskCaptureArgs(args));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-
-              const projectRootAttempt = resolveProjectRoot(parsed.project, cwd);
-              if (!projectRootAttempt.ok) return projectRootAttempt.result;
-              const projectRoot = projectRootAttempt.value;
-
-              return withStore(env, (store, databasePath) => {
-                const contents = parsed.docPath
-                  ? readFileSync(parsed.docPath, "utf8")
-                  : readFileSync(0, "utf8");
-                const docFileName = parsed.docPath ? basename(parsed.docPath) : "capture.md";
-
-                const task = store.createTask(parsed.title, projectRoot);
-                const docsDir = resolveTaskDocsDir(databasePath, task.id);
-                mkdirSync(docsDir, { recursive: true });
-                const docPath = join(docsDir, docFileName);
-                if (parsed.docPath) {
-                  copyFileSync(parsed.docPath, docPath);
-                } else {
-                  writeFileSync(docPath, contents);
-                }
-
-                store.addTaskDoc(task.id, docPath);
-
-                if (parsed.link) {
-                  linkRepoDocs(projectRoot, parsed.title, docsDir);
-                }
-
-                return success(`${task.id}\n`);
-              });
+              return taskCaptureOperation(args, { env, cwd, stdin });
             },
           }),
 
           show: defineCommand({
             meta: { description: "Show task details" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const id = args[0];
-              if (!id) return failure("Task id is required");
-
-              return withStore(env, (store) => {
-                const task = store.getTaskByRef(id);
-                if (!task) return failure(`Task not found: ${id}`, 1);
-                return success(
-                  formatTask(task, store.listSessionsForTask(task.id), store.listDocsForTask(task.id)),
-                );
-              });
+              return taskShowOperation(args, { env, cwd, stdin });
             },
           }),
 
           list: defineCommand({
             meta: { description: "List all tasks" },
             run(): CommandResult {
-              return withStore(env, (store) => {
-                return success(store.listTasks().map(formatTaskSummary).join(""));
-              });
+              return taskListOperation([], { env, cwd, stdin });
             },
           }),
 
           timeline: defineCommand({
             meta: { description: "Show task timeline as JSON" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const id = args[0];
-              const format = args[1];
-
-              if (!id) return failure("Task id is required");
-              if (format !== "--json") return failure("Task timeline currently requires --json");
-
-              return withStore(env, (store) => {
-                const timeline = store.getTaskTimeline(id);
-                if (!timeline) return failure(`Task not found: ${id}`, 1);
-                return success(`${JSON.stringify(timeline)}\n`);
-              });
+              return taskTimelineOperation(args, { env, cwd, stdin });
             },
           }),
 
           "add-doc": defineCommand({
             meta: { description: "Add a document to a task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const taskId = args[0];
-              const path = args[1];
-
-              if (!taskId) return failure("Task id is required");
-              if (!path) return failure("Task doc path is required");
-
-              const descriptionAttempt = attempt(() => parseAddDocDescription(args.slice(2)));
-              if (!descriptionAttempt.ok) return descriptionAttempt.result;
-              const description = descriptionAttempt.value;
-
-              return withStore(env, (store, databasePath) => {
-                const task = store.getTaskByRef(taskId);
-                if (!task) return failure(`Task not found: ${taskId}`, 1);
-                const doc = store.addTaskDoc(task.id, path, description);
-                renderTaskDocManifest(store, databasePath, task);
-                return success(formatTaskDocSummary(task.slug, doc));
-              });
+              return taskAddDocOperation(args, { env, cwd, stdin });
             },
           }),
         },
