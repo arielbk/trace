@@ -1,35 +1,15 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
-import { inferSessionIdentity, resolveTaskDocsDir } from "@trace/core";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 import {
-  attempt,
   failure,
-  isHelpFlag,
-  rejectFlagTitle,
-  resolveProjectRoot,
   success,
-  withStore,
   type CommandResult,
   type Env,
 } from "./commands/seam.ts";
-import {
-  parseRecallCandidatesArgs,
-  parseSkillDocsDirArgs,
-  parseSkillWorkOnTaskArgs,
-  skillDocsDirUsage,
-  skillReEnterUsage,
-  skillWorkOnTaskUsage,
-} from "./commands/parsers.ts";
-import {
-  formatReEntryManifest,
-  formatSkillWorkOnTaskResult,
-  resolveSkillTaskRef,
-  taskNotFoundMessage,
-} from "./commands/formatters.ts";
 import {
   taskAddDocOperation,
   taskCaptureOperation,
@@ -48,6 +28,12 @@ import {
   sessionSetParentOperation,
   sessionTailOperation,
 } from "./commands/session-operations.ts";
+import {
+  skillDocsDirOperation,
+  skillReEnterOperation,
+  skillRecallCandidatesOperation,
+  skillWorkOnTaskOperation,
+} from "./commands/skill-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -219,142 +205,28 @@ export function buildTraceCittyRoot(
           "work-on-task": defineCommand({
             meta: { description: "Bind current session to a task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${skillWorkOnTaskUsage()}\n`);
-              const titleError = rejectFlagTitle(args[0], "skill work-on-task");
-              if (titleError) return titleError;
-
-              const title = args[0];
-              if (!title) return failure("Task title is required");
-
-              const parsedAttempt = attempt(() => parseSkillWorkOnTaskArgs(args.slice(1), env));
-              if (!parsedAttempt.ok) return parsedAttempt.result;
-              const parsed = parsedAttempt.value;
-
-              const { description, project, ...registerInput } = parsed;
-
-              const projectRootAttempt = resolveProjectRoot(project, cwd);
-              if (!projectRootAttempt.ok) return projectRootAttempt.result;
-              const workOnTaskProjectRoot = projectRootAttempt.value;
-
-              return withStore(env, (store, databasePath) => {
-                const session = store.registerSession(registerInput);
-
-                const resolvedTask =
-                  resolveSkillTaskRef(store.listTasks(), title, (id) =>
-                    store.getTask(id),
-                  ) ?? store.createTask(title, workOnTaskProjectRoot, description);
-
-                const task = resolvedTask.archivedAt
-                  ? store.unarchiveTask(resolvedTask.id)
-                  : resolvedTask;
-
-                const assigned = store.assignSession(session.id, task.id);
-
-                return success(formatSkillWorkOnTaskResult(assigned, task, databasePath));
-              });
+              return skillWorkOnTaskOperation(args, { env, cwd, stdin });
             },
           }),
 
           "recall-candidates": defineCommand({
             meta: { description: "List recall candidates as JSON" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              const recallProjectAttempt = attempt(() => parseRecallCandidatesArgs(args));
-              if (!recallProjectAttempt.ok) return recallProjectAttempt.result;
-              const recallProject = recallProjectAttempt.value;
-
-              const recallProjectRootAttempt = resolveProjectRoot(recallProject, cwd);
-              if (!recallProjectRootAttempt.ok) return recallProjectRootAttempt.result;
-              const recallProjectRoot = recallProjectRootAttempt.value;
-
-              return withStore(env, (store) => {
-                const candidates = store.recallCandidates(recallProjectRoot);
-                return success(`${JSON.stringify(candidates)}\n`);
-              });
+              return skillRecallCandidatesOperation(args, { env, cwd, stdin });
             },
           }),
 
           "re-enter": defineCommand({
             meta: { description: "Re-enter a task by ref" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${skillReEnterUsage()}\n`);
-              const refError = rejectFlagTitle(args[0], "skill re-enter", "ref");
-              if (refError) return refError;
-
-              const ref = args[0];
-              if (!ref) return failure("Task slug or title is required");
-
-              return withStore(env, (store) => {
-                const tasks = store.listTasks();
-                const resolved = resolveSkillTaskRef(tasks, ref, (id) =>
-                  store.getTask(id),
-                );
-                if (!resolved) return failure(taskNotFoundMessage(tasks, ref), 1);
-
-                const manifest = store.getReEntryManifest(resolved.id);
-                if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
-
-                const identity = inferSessionIdentity(env, {});
-                if (
-                  identity.id !== undefined &&
-                  identity.transcriptPath !== undefined
-                ) {
-                  const session = store.registerSession({
-                    id: identity.id,
-                    transcriptPath: identity.transcriptPath,
-                    tool: identity.tool,
-                  });
-                  store.assignSession(session.id, resolved.id);
-                }
-
-                return success(formatReEntryManifest(manifest));
-              });
+              return skillReEnterOperation(args, { env, cwd, stdin });
             },
           }),
 
           "docs-dir": defineCommand({
             meta: { description: "Get the docs directory for the active task" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
-              if (isHelpFlag(args[0])) return success(`${skillDocsDirUsage()}\n`);
-
-              const parsedDocsDirAttempt = attempt(() => parseSkillDocsDirArgs(args));
-              if (!parsedDocsDirAttempt.ok) return parsedDocsDirAttempt.result;
-              const parsedDocsDir = parsedDocsDirAttempt.value;
-
-              const identity = inferSessionIdentity(env, { id: parsedDocsDir.id });
-              if (identity.id === undefined) {
-                return failure(
-                  "Skill docs-dir requires --id or a current session env var",
-                );
-              }
-
-              const docsDirProjectRootAttempt = resolveProjectRoot(parsedDocsDir.project, cwd);
-              if (!docsDirProjectRootAttempt.ok) return docsDirProjectRootAttempt.result;
-              const docsDirProjectRoot = docsDirProjectRootAttempt.value;
-
-              return withStore(env, (store, databasePath) => {
-                const activeTask = store.resolveActiveTask(
-                  identity.id as string,
-                  docsDirProjectRoot,
-                );
-
-                if (activeTask.kind === "bound") {
-                  return success(
-                    `taskDocsDir: ${resolveTaskDocsDir(databasePath, activeTask.task.slug)}\n`,
-                  );
-                }
-
-                if (activeTask.kind === "re-enter") {
-                  return failure(
-                    `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
-                    1,
-                  );
-                }
-
-                return failure(
-                  "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
-                  1,
-                );
-              });
+              return skillDocsDirOperation(args, { env, cwd, stdin });
             },
           }),
         },
