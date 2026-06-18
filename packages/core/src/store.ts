@@ -318,6 +318,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const id = input.id.trim();
     const transcriptPath = input.transcriptPath.trim();
     const model = input.model?.trim() || null;
+    const title = input.title?.trim() || null;
     const parentSessionId = input.parentSessionId?.trim() || null;
     const origin = input.origin ?? "root";
     const subagentType = input.subagentType?.trim() || null;
@@ -347,6 +348,7 @@ class NodeSqliteTaskStore implements TaskStore {
             ? transcriptPath
             : existing.transcriptPath,
         model: existing.model ?? model,
+        title: existing.title ?? title,
         parentSessionId: existing.parentSessionId ?? parentSessionId,
         origin:
           existing.origin === "root" && origin !== "root"
@@ -363,6 +365,7 @@ class NodeSqliteTaskStore implements TaskStore {
       const changed =
         next.transcriptPath !== existing.transcriptPath ||
         next.model !== existing.model ||
+        next.title !== existing.title ||
         next.parentSessionId !== existing.parentSessionId ||
         next.origin !== existing.origin ||
         next.subagentType !== existing.subagentType ||
@@ -378,6 +381,7 @@ class NodeSqliteTaskStore implements TaskStore {
             SET
               transcript_path = ?,
               model = ?,
+              title = ?,
               parent_session_id = ?,
               origin = ?,
               subagent_type = ?,
@@ -393,6 +397,7 @@ class NodeSqliteTaskStore implements TaskStore {
         .run(
           next.transcriptPath,
           next.model,
+          next.title,
           next.parentSessionId,
           next.origin,
           next.subagentType,
@@ -414,6 +419,7 @@ class NodeSqliteTaskStore implements TaskStore {
       transcriptPath,
       tool: input.tool,
       model,
+      title,
       taskId: null,
       parentSessionId,
       origin,
@@ -431,6 +437,7 @@ class NodeSqliteTaskStore implements TaskStore {
             transcript_path,
             tool,
             model,
+            title,
             task_id,
             parent_session_id,
             origin,
@@ -443,7 +450,7 @@ class NodeSqliteTaskStore implements TaskStore {
             cache_read_input_tokens,
             total_tokens
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -451,6 +458,7 @@ class NodeSqliteTaskStore implements TaskStore {
         session.transcriptPath,
         session.tool,
         session.model,
+        session.title,
         session.taskId,
         session.parentSessionId,
         session.origin,
@@ -696,13 +704,16 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   #refreshSession(session: Session): Session {
-    let fresh: { tokenTotals: TokenTotals; model: string | null } | null = null;
+    let fresh: {
+      tokenTotals: TokenTotals;
+      title: string | null;
+    } | null = null;
     try {
       const adapter = getTranscriptAdapter(session.tool);
       const parsed = adapter.parseFile(session.transcriptPath, {
         expectedId: session.id,
       });
-      fresh = { tokenTotals: parsed.tokenTotals, model: parsed.model };
+      fresh = { tokenTotals: parsed.tokenTotals, title: parsed.title };
     } catch {
       // Missing file or unparseable transcript — return stored values untouched.
       return session;
@@ -710,19 +721,25 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const totals = fresh.tokenTotals;
     const stored = session.tokenTotals;
-    const changed =
+    const totalsChanged =
       totals.inputTokens !== stored.inputTokens ||
       totals.outputTokens !== stored.outputTokens ||
       totals.cacheCreationInputTokens !== stored.cacheCreationInputTokens ||
       totals.cacheReadInputTokens !== stored.cacheReadInputTokens ||
       totals.totalTokens !== stored.totalTokens;
 
-    if (changed) {
+    // Only adopt a freshly parsed title; a transcript that no longer reports a
+    // title (e.g. a truncated tail) must not clobber a previously stored one.
+    const title = fresh.title ?? session.title;
+    const titleChanged = title !== session.title;
+
+    if (totalsChanged || titleChanged) {
       this.#sqlite
         .prepare(
           `
             UPDATE sessions
             SET
+              title = ?,
               input_tokens = ?,
               output_tokens = ?,
               cache_creation_input_tokens = ?,
@@ -732,6 +749,7 @@ class NodeSqliteTaskStore implements TaskStore {
           `,
         )
         .run(
+          title,
           totals.inputTokens,
           totals.outputTokens,
           totals.cacheCreationInputTokens,
@@ -741,7 +759,7 @@ class NodeSqliteTaskStore implements TaskStore {
         );
     }
 
-    return { ...session, tokenTotals: totals };
+    return { ...session, title, tokenTotals: totals };
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left
@@ -892,6 +910,7 @@ type SessionRow = {
   transcript_path: string;
   tool: "claude" | "codex";
   model: string | null;
+  title: string | null;
   task_id: string | null;
   parent_session_id: string | null;
   origin: SessionOrigin;
@@ -933,6 +952,7 @@ function sessionFromRow(row: SessionRow): Session {
     transcriptPath: row.transcript_path,
     tool: row.tool,
     model: row.model,
+    title: row.title,
     taskId: row.task_id,
     parentSessionId: row.parent_session_id,
     origin: row.origin,
