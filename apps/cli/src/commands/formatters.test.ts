@@ -22,6 +22,7 @@ const session: Session = {
   transcriptPath: "/tmp/session.jsonl",
   tool: "codex",
   model: "gpt-5-codex",
+  title: null,
   taskId: "task-1",
   parentSessionId: null,
   origin: "root",

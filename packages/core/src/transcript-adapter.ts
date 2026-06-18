@@ -19,6 +19,7 @@ export type ParsedTranscript = {
   transcriptPath: string;
   tool: SessionTool;
   model: string | null;
+  title: string | null;
   tokenTotals: TokenTotals;
 };
 

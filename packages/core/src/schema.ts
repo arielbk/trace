@@ -22,6 +22,7 @@ export const sessions = sqliteTable("sessions", {
   transcriptPath: text("transcript_path").notNull(),
   tool: text("tool", { enum: ["claude", "codex"] }).notNull(),
   model: text("model"),
+  title: text("title"),
   taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
   parentSessionId: text("parent_session_id").references(
     (): AnySQLiteColumn => sessions.id,

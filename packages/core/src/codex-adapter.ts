@@ -22,6 +22,7 @@ export type ParsedCodexSession = {
   transcriptPath: string;
   tool: "codex";
   model: string | null;
+  title: string | null;
   tokenTotals: CodexTokenTotals;
 };
 
@@ -156,6 +157,8 @@ export function parseCodexTranscript(
     transcriptPath: input.transcriptPath,
     tool: "codex",
     model: model ?? null,
+    // Codex transcripts carry no conversation name; titles are out of scope.
+    title: null,
     tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
   };
 }

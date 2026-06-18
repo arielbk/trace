@@ -32,6 +32,7 @@ export type Session = {
   transcriptPath: string;
   tool: SessionTool;
   model: string | null;
+  title: string | null;
   taskId: string | null;
   parentSessionId: string | null;
   origin: SessionOrigin;
@@ -112,6 +113,7 @@ export type RegisterSessionInput = {
   transcriptPath: string;
   tool: SessionTool;
   model?: string | null;
+  title?: string | null;
   parentSessionId?: string | null;
   origin?: SessionOrigin;
   subagentType?: string | null;

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
-import { deriveSessionName } from "./session-name.ts";
+import { deriveSessionName, resolveSessionName } from "./session-name.ts";
 
 function makeTranscript(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
@@ -109,4 +112,48 @@ test("names a Codex session from its first prompt turn", () => {
     JSON.stringify({ type: "user_message", message: "Run tests" }),
   ].join("\n");
   expect(deriveSessionName(transcript, "codex")).toBe("Inspect failing test");
+});
+
+test("resolveSessionName prefers the stored conversation title", () => {
+  expect(
+    resolveSessionName({
+      title: "Refactor the checkout flow",
+      transcriptPath: "/tmp/does-not-exist.jsonl",
+      tool: "claude",
+    }),
+  ).toBe("Refactor the checkout flow");
+});
+
+test("resolveSessionName falls back to first-line synthesis when title is null", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-resolve-name-"));
+  const transcriptPath = join(dir, "session.jsonl");
+  try {
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({ type: "system", session_id: "s1" }),
+        JSON.stringify({
+          type: "user",
+          session_id: "s1",
+          message: { role: "user", content: "Plan the onboarding flow" },
+        }),
+      ].join("\n"),
+    );
+
+    expect(
+      resolveSessionName({ title: null, transcriptPath, tool: "claude" }),
+    ).toBe("Plan the onboarding flow");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolveSessionName is null when there is no title and no synthesizable name", () => {
+  expect(
+    resolveSessionName({
+      title: null,
+      transcriptPath: "/tmp/does-not-exist.jsonl",
+      tool: "claude",
+    }),
+  ).toBeNull();
 });

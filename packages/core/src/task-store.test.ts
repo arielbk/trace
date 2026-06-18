@@ -117,6 +117,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "origin",
         "subagent_type",
         "agent_id",
+        "title",
       ]);
     } finally {
       database.close();
@@ -427,6 +428,37 @@ test("session register round-trips explicit and absent models idempotently", () 
   }
 });
 
+test("session register round-trips explicit and absent titles", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const withTitle = store.registerSession({
+      id: "with-title",
+      transcriptPath: "/tmp/with-title.jsonl",
+      tool: "claude",
+      title: "Refactor the checkout flow",
+    });
+    const withoutTitle = store.registerSession({
+      id: "without-title",
+      transcriptPath: "/tmp/without-title.jsonl",
+      tool: "codex",
+    });
+
+    expect(withTitle.title).toBe("Refactor the checkout flow");
+    expect(withoutTitle.title).toBe(null);
+    expect(store.getSession("with-title")!.title).toBe(
+      "Refactor the checkout flow",
+    );
+    expect(store.getSession("without-title")!.title).toBe(null);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("session register round-trips parent attribution fields", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -669,6 +701,7 @@ test("migration keeps existing session rows readable with a null model", () => {
         transcriptPath: "/tmp/old-session.jsonl",
         tool: "claude",
         model: null,
+        title: null,
         taskId: "task-1",
         parentSessionId: null,
         origin: "root",
@@ -903,6 +936,34 @@ test("task docs are empty when the task docs directory does not exist", () => {
     const task = store.createTask("checkout");
 
     expect(store.listDocsForTask(task.id)).toEqual([]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task timeline surfaces a stored session title as the session name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "titled-timeline-session",
+      transcriptPath: "/tmp/titled-timeline.jsonl",
+      tool: "claude",
+      title: "Wire up the payment provider",
+    });
+    store.assignSession(session.id, task.id);
+
+    const timeline = store.getTaskTimeline(task.id)!;
+    const item = timeline.items.find((i) => i.type === "session");
+    expect(item).toMatchObject({
+      type: "session",
+      sessionName: "Wire up the payment provider",
+    });
 
     store.close();
   } finally {
@@ -1354,6 +1415,53 @@ test("getSession refreshes token totals from transcript and persists them", () =
     unlinkSync(transcriptPath);
     const persisted = store.getSession(session.id);
     expect(persisted!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession refreshes a stored title when the transcript's title changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(
+    transcriptPath,
+    `${JSON.stringify({
+      type: "ai-title",
+      sessionId: "titled-session",
+      aiTitle: "First generated name",
+    })}\n`,
+  );
+
+  try {
+    const store = openTraceStore(databasePath);
+    const session = store.registerSession({
+      id: "titled-session",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(session.title).toBe(null);
+
+    // First read refreshes the title from the transcript and persists it.
+    expect(store.getSession(session.id)!.title).toBe("First generated name");
+
+    // Claude re-emits ai-title when it renames the conversation; the refresh
+    // path should pick up the new name.
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({
+        type: "ai-title",
+        sessionId: "titled-session",
+        aiTitle: "Renamed conversation",
+      })}\n`,
+    );
+    expect(store.getSession(session.id)!.title).toBe("Renamed conversation");
+
+    // Deleting the transcript falls back to the persisted (refreshed) title.
+    unlinkSync(transcriptPath);
+    expect(store.getSession(session.id)!.title).toBe("Renamed conversation");
 
     store.close();
   } finally {
