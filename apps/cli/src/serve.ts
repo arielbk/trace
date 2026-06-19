@@ -94,31 +94,64 @@ export function createServeRequestListener(
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
-    const response = handleTraceApiRequest(
-      databasePath,
-      req.method ?? "GET",
-      url,
-    );
+    const method = req.method ?? "GET";
 
-    if (response) {
-      writeTraceApiResponse(res, response);
-      return;
+    const dispatch = (body?: string): void => {
+      const response = handleTraceApiRequest(databasePath, method, url, body);
+
+      if (response) {
+        writeTraceApiResponse(res, response);
+        return;
+      }
+
+      serveOrFallback(res, url, assetsDir);
+    };
+
+    // Only methods that carry a payload need their body buffered, and only when
+    // `req` is a real stream (tests drive a bare {method,url} object).
+    if (methodMayHaveBody(method) && typeof req.on === "function") {
+      collectRequestBody(req, dispatch);
+    } else {
+      dispatch();
     }
-
-    const urlPath = url.split("?", 1)[0] ?? url;
-    const assetFile = assetsDir
-      ? (resolveAssetFile(assetsDir, urlPath) ??
-        // SPA fallback: client-side routes resolve to index.html.
-        resolveAssetFile(assetsDir, "/index.html"))
-      : null;
-    if (assetFile) {
-      serveFile(res, assetFile);
-      return;
-    }
-
-    res.statusCode = 404;
-    res.end();
   };
+}
+
+/** HTTP methods whose request body the API may need to read. */
+function methodMayHaveBody(method: string): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH";
+}
+
+/** Buffer a request body to a UTF-8 string, then hand it to `onBody`. */
+function collectRequestBody(
+  req: IncomingMessage,
+  onBody: (body: string) => void,
+): void {
+  const chunks: Buffer[] = [];
+  req.on("data", (chunk: Buffer) => chunks.push(chunk));
+  req.on("end", () => onBody(Buffer.concat(chunks).toString("utf8")));
+  req.on("error", () => onBody(""));
+}
+
+/** Serve a static asset for `url`, falling back to index.html, else 404. */
+function serveOrFallback(
+  res: ServerResponse,
+  url: string,
+  assetsDir?: string,
+): void {
+  const urlPath = url.split("?", 1)[0] ?? url;
+  const assetFile = assetsDir
+    ? (resolveAssetFile(assetsDir, urlPath) ??
+      // SPA fallback: client-side routes resolve to index.html.
+      resolveAssetFile(assetsDir, "/index.html"))
+    : null;
+  if (assetFile) {
+    serveFile(res, assetFile);
+    return;
+  }
+
+  res.statusCode = 404;
+  res.end();
 }
 
 type BrowserSpawn = (
