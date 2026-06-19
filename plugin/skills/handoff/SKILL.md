@@ -21,7 +21,7 @@ a wrap-up verb, not a general note-taking verb.
 Follow the `trace-doc-placement` skill's resolution flow verbatim:
 
 ```sh
-npx @arielbk/trace@0.5.0 skill docs-dir
+npx @arielbk/trace@0.6.0 skill docs-dir
 ```
 
 **Exit 0 — session is bound.** stdout contains `taskDocsDir: <path>`. Extract
