@@ -193,6 +193,27 @@ test("clicking a checkbox persists the new state to the checkbox endpoint", asyn
   );
 });
 
+test("clicking the line text toggles the line's checkbox, like a label", async () => {
+  const fetchMock = checkboxFetchMock();
+  vi.stubGlobal("fetch", fetchMock);
+
+  renderSheet("/work/docs/plan.md");
+  const label = await screen.findByText("First");
+
+  const [firstBox] = screen.getAllByRole("checkbox") as HTMLInputElement[];
+  expect(firstBox!.checked).toBe(false);
+  fireEvent.click(label);
+  expect(firstBox!.checked).toBe(true); // optimistic flip from the text click
+
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "/work/docs/plan.md", index: 0, checked: true }),
+    }),
+  );
+});
+
 test("reverts the optimistic checkbox flip when the server rejects", async () => {
   const fetchMock = vi.fn().mockImplementation((url: string) => {
     if (typeof url === "string" && url.includes("/docs/checkbox")) {

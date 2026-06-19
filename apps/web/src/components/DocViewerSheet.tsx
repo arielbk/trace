@@ -198,14 +198,34 @@ function checkboxToggleFromClick(
   event: MouseEvent<HTMLDivElement>,
 ): { input: HTMLInputElement; index: number; checked: boolean } | null {
   const target = event.target;
-  if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return null;
+  if (!(target instanceof Element)) return null;
 
-  const raw = target.getAttribute("data-checkbox-index");
+  // Direct click on the box — the browser has already flipped it.
+  if (target instanceof HTMLInputElement && target.type === "checkbox") {
+    return readCheckbox(target, target.checked);
+  }
+
+  // Click elsewhere on the task-list line toggles the line's box, like a native
+  // <label>. Anchors keep their own navigation behaviour.
+  if (target.closest("a[href]")) return null;
+  const input = target.closest("li")?.querySelector(":scope > input[type='checkbox']");
+  if (!(input instanceof HTMLInputElement)) return null;
+  // No native flip happened here, so toggle the input ourselves to keep the
+  // optimistic UI in sync before persisting.
+  const checked = !input.checked;
+  input.checked = checked;
+  return readCheckbox(input, checked);
+}
+
+function readCheckbox(
+  input: HTMLInputElement,
+  checked: boolean,
+): { input: HTMLInputElement; index: number; checked: boolean } | null {
+  const raw = input.getAttribute("data-checkbox-index");
   if (raw === null) return null;
   const index = Number(raw);
   if (!Number.isInteger(index) || index < 0) return null;
-
-  return { input: target, index, checked: target.checked };
+  return { input, index, checked };
 }
 
 function docErrorMessage(error: Error): string {
