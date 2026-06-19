@@ -52,6 +52,23 @@ export async function postUnarchive(ref: string): Promise<{ id: string; archived
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
+export async function postToggleCheckbox(
+  ref: string,
+  path: string,
+  index: number,
+  checked: boolean,
+): Promise<{ ok: true }> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/docs/checkbox`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path, index, checked }),
+  });
+  if (!res.ok) {
+    throw new HttpError(res.status, `POST checkbox ${ref} failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ ok: true }>;
+}
+
 export function useTasks() {
   return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks });
 }
@@ -74,6 +91,29 @@ export function useArchiveTask() {
     onSuccess: (_data, ref) => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+    },
+  });
+}
+
+export function useToggleCheckbox() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      ref,
+      path,
+      index,
+      checked,
+    }: {
+      ref: string;
+      path: string;
+      index: number;
+      checked: boolean;
+    }) => postToggleCheckbox(ref, path, index, checked),
+    // Reconcile the rendered doc with disk on both success and error. On error
+    // the optimistic DOM flip is reverted by the click handler; refetching the
+    // doc-contents also restores the authoritative render.
+    onSettled: (_data, _err, { ref, path }) => {
+      void qc.invalidateQueries({ queryKey: ["doc-contents", ref, path] });
     },
   });
 }
