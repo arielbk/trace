@@ -189,10 +189,22 @@ export function taskCaptureOperation(
       writeFileSync(docPath, contents);
     }
 
-    store.addTaskDoc(task.id, docPath);
+    store.addTaskDoc(task.id, docPath, {
+      title: parsed.docTitle ?? parsed.title,
+      description: parsed.description,
+    });
 
     if (parsed.link) {
       linkRepoDocs(projectRoot, parsed.title, docsDir);
+    }
+
+    if (parsed.description === undefined) {
+      return {
+        exitCode: 0,
+        stdout: `${task.id}\n`,
+        stderr:
+          "Reminder: no --description given; add one with `task add-doc` so the doc reads well in the manifest.\n",
+      };
     }
 
     return success(`${task.id}\n`);

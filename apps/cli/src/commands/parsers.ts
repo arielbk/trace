@@ -78,17 +78,21 @@ export function parseTaskUpdateArgs(args: string[]): { ref: string; description:
 }
 
 export function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--link] [--project <dir>]";
+  return "Usage: trace task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <dir>]";
 }
 
 export function parseTaskCaptureArgs(args: string[]): {
   title: string;
   docPath?: string;
+  docTitle?: string;
+  description?: string;
   link: boolean;
   project?: string;
 } {
   const titleWords: string[] = [];
   let docPath: string | undefined;
+  let docTitle: string | undefined;
+  let description: string | undefined;
   let link = false;
   let project: string | undefined;
 
@@ -103,6 +107,16 @@ export function parseTaskCaptureArgs(args: string[]): {
       const value = args[index + 1];
       if (!value) throw new Error(taskCaptureUsage());
       docPath = value;
+      index += 2;
+    } else if (flag === "--title") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      docTitle = value;
+      index += 2;
+    } else if (flag === "--description") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      description = value;
       index += 2;
     } else if (flag === "--link") {
       link = true;
@@ -119,7 +133,7 @@ export function parseTaskCaptureArgs(args: string[]): {
 
   const title = titleWords.join(" ");
   if (title.length === 0) throw new Error(taskCaptureUsage());
-  return { title, docPath, link, project };
+  return { title, docPath, docTitle, description, link, project };
 }
 
 export function addDocUsage(): string {
