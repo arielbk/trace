@@ -130,19 +130,24 @@ function buildTimelineTree(items: TaskTimelineItem[]): TimelineRoot[] {
   return roots;
 }
 
-// "3 subagents · 1 spawned" — the disclosure header summarising a root's fan.
+// "3 subagents · 412.0K tokens" — the disclosure header summarising a root's
+// fan. The count segment reports subagents only (falling back to the total
+// session count when the fan has none), while the token total sums fresh spend
+// across EVERY child — subagents and spawned alike — so the figure stays correct
+// once spawned attribution lands.
 function fanOutLabel(children: SessionTimelineItem[]): string {
   const subagents = children.filter(
     (c) => c.session.origin === "subagent",
   ).length;
-  const spawned = children.filter((c) => c.session.origin === "spawned").length;
-  const parts: string[] = [];
-  if (subagents) parts.push(`${subagents} subagent${subagents > 1 ? "s" : ""}`);
-  if (spawned) parts.push(`${spawned} spawned`);
-  if (parts.length === 0) {
-    parts.push(`${children.length} session${children.length > 1 ? "s" : ""}`);
-  }
-  return parts.join(" · ");
+  const countSegment =
+    subagents > 0
+      ? `${subagents} subagent${subagents > 1 ? "s" : ""}`
+      : `${children.length} session${children.length > 1 ? "s" : ""}`;
+  const tokenTotal = children.reduce(
+    (sum, c) => sum + freshTokenTotal(c.session.tokenTotals),
+    0,
+  );
+  return `${countSegment} · ${formatTokensCompact(tokenTotal)} tokens`;
 }
 
 function sessionOriginBadge(

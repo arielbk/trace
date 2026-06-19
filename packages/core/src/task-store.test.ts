@@ -392,6 +392,183 @@ test("session register and assign lifecycle keeps one task per session", () => {
   }
 });
 
+test("assignSession cascades the task_id to NULL-only descendants", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    // (a) a child discovered before the parent bind — still NULL.
+    store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    // (b) a grandchild down a spawned chain — also NULL.
+    store.registerSession({
+      id: "grandchild",
+      transcriptPath: "/tmp/grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: "child",
+      origin: "spawned",
+    });
+    // (c) a descendant already assigned to another task — left untouched.
+    store.registerSession({
+      id: "foreign-child",
+      transcriptPath: "/tmp/foreign-child.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    store.assignSession("foreign-child", otherTask.id);
+
+    store.assignSession(parent.id, task.id);
+
+    expect(store.getSession(parent.id)!.taskId).toBe(task.id);
+    expect(store.getSession("child")!.taskId).toBe(task.id);
+    expect(store.getSession("grandchild")!.taskId).toBe(task.id);
+    expect(store.getSession("foreign-child")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("assignSession with no descendants is a no-op for the rest of the tree", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const leaf = store.registerSession({
+      id: "leaf",
+      transcriptPath: "/tmp/leaf.jsonl",
+      tool: "claude",
+    });
+    const unrelated = store.registerSession({
+      id: "unrelated",
+      transcriptPath: "/tmp/unrelated.jsonl",
+      tool: "claude",
+    });
+
+    const assigned = store.assignSession(leaf.id, task.id);
+
+    expect(assigned.taskId).toBe(task.id);
+    expect(store.getSession(unrelated.id)!.taskId).toBe(null);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent cascades a bound parent's task_id to the attached child and NULL descendants", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(parent.id, task.id);
+
+    // A child discovered before it was attached to the parent — still NULL.
+    const child = store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+    });
+    // A NULL grandchild already hanging off the child.
+    store.registerSession({
+      id: "grandchild",
+      transcriptPath: "/tmp/grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: child.id,
+      origin: "spawned",
+    });
+    // A descendant already bound to another task — must stay put.
+    store.registerSession({
+      id: "foreign-grandchild",
+      transcriptPath: "/tmp/foreign-grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: child.id,
+      origin: "subagent",
+    });
+    store.assignSession("foreign-grandchild", otherTask.id);
+
+    const attached = store.setSessionParent({
+      id: child.id,
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+
+    expect(attached.taskId).toBe(task.id);
+    expect(store.getSession("child")!.taskId).toBe(task.id);
+    expect(store.getSession("grandchild")!.taskId).toBe(task.id);
+    expect(store.getSession("foreign-grandchild")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent leaves a child already on another task untouched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(parent.id, task.id);
+
+    const child = store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(child.id, otherTask.id);
+
+    const attached = store.setSessionParent({
+      id: child.id,
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+
+    expect(attached.taskId).toBe(otherTask.id);
+    expect(store.getSession("child")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("session register round-trips explicit and absent models idempotently", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

@@ -690,12 +690,19 @@ function sessionTimelineItem({
   parentSessionId = null,
   origin = "root",
   subagentType = null,
+  tokenTotals,
 }: {
   id: string;
   createdAt: string;
   parentSessionId?: string | null;
   origin?: "root" | "subagent" | "spawned";
   subagentType?: string | null;
+  tokenTotals?: Partial<
+    Extract<
+      TaskTimeline["items"][number],
+      { type: "session" }
+    >["session"]["tokenTotals"]
+  >;
 }): TaskTimeline["items"][number] {
   return {
     type: "session",
@@ -717,6 +724,7 @@ function sessionTimelineItem({
         cacheCreationInputTokens: 0,
         cacheReadInputTokens: 0,
         totalTokens: 2,
+        ...tokenTotals,
       },
       createdAt,
     },
@@ -755,8 +763,11 @@ test("TaskTimelineView collapses a root's subagent fan behind a disclosure that 
   );
 
   // Collapsed by default: the parent shows, the fan is summarised, and the
-  // children are not yet rendered.
-  const toggle = screen.getByRole("button", { name: /1 subagent · 1 spawned/i });
+  // children are not yet rendered. The header counts subagents only and sums
+  // tokens across every child in the fan.
+  const toggle = screen.getByRole("button", {
+    name: /1 subagent · 4 tokens/i,
+  });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(screen.getByText("parent-session")).toBeInTheDocument();
   expect(screen.queryByText("subagent-session")).not.toBeInTheDocument();
@@ -828,7 +839,7 @@ test("TaskTimelineView leads nameless child rows with their origin instead of a 
   );
 
   fireEvent.click(
-    screen.getByRole("button", { name: /1 subagent · 1 spawned/i }),
+    screen.getByRole("button", { name: /1 subagent · 0 tokens/i }),
   );
 
   // The origin/type leads the row as its title…
@@ -837,6 +848,122 @@ test("TaskTimelineView leads nameless child rows with their origin instead of a 
   // …and the redundant origin-badge pill is gone, since the title now says it.
   expect(screen.queryByText("↳ Explore")).not.toBeInTheDocument();
   expect(screen.queryByText("↳ spawned session")).not.toBeInTheDocument();
+});
+
+test("fan-out header sums tokens across ALL children, including spawned ones", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "subagent-session",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "researcher",
+        tokenTotals: { inputTokens: 100_000, outputTokens: 0 },
+      }),
+      sessionTimelineItem({
+        id: "spawned-session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+        tokenTotals: { inputTokens: 312_000, outputTokens: 0 },
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // Count reflects subagents only (1, not 2) while the token total folds in the
+  // spawned child's 312K — so the header stays right once spawned attribution
+  // lands. 100K + 312K = 412.0K.
+  expect(
+    screen.getByRole("button", { name: /1 subagent · 412\.0K tokens/i }),
+  ).toBeInTheDocument();
+});
+
+test("fan-out header pluralises the subagent count", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "sub-a",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "researcher",
+        tokenTotals: { inputTokens: 1_000, outputTokens: 0 },
+      }),
+      sessionTimelineItem({
+        id: "sub-b",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "writer",
+        tokenTotals: { inputTokens: 1_000, outputTokens: 0 },
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(
+    screen.getByRole("button", { name: /2 subagents · 2\.0K tokens/i }),
+  ).toBeInTheDocument();
+});
+
+test("fan-out header falls back to session count when there are no subagents", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "spawned-a",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+        tokenTotals: { inputTokens: 5_000, outputTokens: 0 },
+      }),
+      sessionTimelineItem({
+        id: "spawned-b",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+        tokenTotals: { inputTokens: 5_000, outputTokens: 0 },
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // No subagents → the count segment falls back to the total session count, and
+  // the token total still sums every child (5K + 5K = 10.0K).
+  expect(
+    screen.getByRole("button", { name: /2 sessions · 10\.0K tokens/i }),
+  ).toBeInTheDocument();
 });
 
 test("TaskTimelineView header shows breadcrumb with task slug, not raw title", () => {
