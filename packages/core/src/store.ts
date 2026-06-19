@@ -490,22 +490,31 @@ class NodeSqliteTaskStore implements TaskStore {
       throw new Error("Session origin must be root, subagent, or spawned");
     }
 
+    // If the parent is already bound to a task, the newly-attached child (and
+    // its NULL-only descendants) inherit it via the same cascade as on assign.
+    const parentTaskId = this.getSession(parentSessionId)?.taskId ?? null;
+
     const existing = this.getSession(id);
     if (!existing) {
-      return this.registerSession({
+      const created = this.registerSession({
         id,
         transcriptPath: `codex:${id}`,
         tool: "codex",
         parentSessionId,
         origin,
       });
+      if (parentTaskId === null) return created;
+      this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
+      return this.getSession(id) ?? created;
     }
 
     this.#sqlite
       .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
       .run(parentSessionId, origin, id);
 
-    return { ...existing, parentSessionId, origin };
+    if (parentTaskId === null) return { ...existing, parentSessionId, origin };
+    this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
+    return this.getSession(id) ?? { ...existing, parentSessionId, origin };
   }
 
   assignSession(sessionId: string, taskId: string): Session {
