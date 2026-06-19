@@ -100,8 +100,8 @@ there genuinely are none.>
 ```
 
 **Do not write a docs footer.** The list of other docs in this task is a
-machine-owned region rendered automatically by `trace task add-doc`. It is
-delimited by HTML-comment fence markers:
+machine-owned region rendered automatically by `trace task add-doc` (and
+`update-doc`). It is delimited by HTML-comment fence markers:
 
 ```
 <!-- trace:docs-manifest:start -->

@@ -66,10 +66,23 @@ npx @arielbk/trace@0.6.0 task add-doc <slug> <path> --description "<one-line des
   recommended; it is rendered next to the link in state.md's manifest footer so
   a re-entering agent can scan the index without opening each doc). Omit the
   flag only when no meaningful one-liner exists.
+- `--title` — an explicit display title; defaults to the doc's H1 or filename.
 
 This re-renders the machine-owned docs-manifest footer in the task's state.md,
 so the manifest stays current without a manual handoff. After registering,
 report the full path so the user sees where it landed.
+
+`add-doc` registers a doc once; on an already-registered `(slug, path)` it
+no-ops. To set or change a title/description **after** registration — including
+on filesystem-discovered native docs like state.md, tasks.md, and log.md that
+were never explicitly registered — use `update-doc`, which upserts the row:
+
+```sh
+npx @arielbk/trace@0.6.0 task update-doc <slug> <path> --description "<one-line description>"
+```
+
+Pass `--title`/`--description` to set a field, `--title ""`/`--description ""`
+to clear it; omitted flags are left untouched.
 
 ## Notes
 
