@@ -26,6 +26,10 @@ export async function fetchTaskTimeline(id: string): Promise<TaskTimeline> {
 export type DocContents = {
   contentType: string;
   body: string;
+  /** Resolved display title (explicit title → first H1 → filename). */
+  title: string;
+  /** One-line description, present only when the doc was registered with one. */
+  description?: string;
 };
 
 export async function fetchDocContents(ref: string, docPath: string): Promise<DocContents> {
@@ -37,7 +41,25 @@ export async function fetchDocContents(ref: string, docPath: string): Promise<Do
   if (!res.ok) {
     throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
   }
-  return { contentType, body };
+  const title = decodeHeader(res.headers.get("x-doc-title")) ?? basename(docPath);
+  const description = decodeHeader(res.headers.get("x-doc-description"));
+  return { contentType, body, title, ...(description ? { description } : {}) };
+}
+
+/** Decode a url-encoded response header, tolerating malformed input. */
+function decodeHeader(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/** Final path segment — the filename fallback when no title header is sent. */
+function basename(path: string): string {
+  const segments = path.split(/[/\\]/).filter(Boolean);
+  return segments.at(-1) ?? path;
 }
 
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {

@@ -1,13 +1,17 @@
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, resolve, sep } from "node:path";
+import { resolveDocTitle } from "./display-title.ts";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+import type { AddTaskDocOptions } from "./types.ts";
 
 export type TraceApiResponse = {
   status: number;
   body: string;
   contentType?: string;
+  /** Extra response headers applied verbatim by {@link writeTraceApiResponse}. */
+  headers?: Record<string, string>;
 };
 
 /**
@@ -116,7 +120,24 @@ export function handleTraceApiRequest(
         );
         if (!docPath) return badRequest("path query parameter is required");
 
-        return readTaskDocContents(databasePath, task.slug, docPath);
+        // Carry the registered doc's explicit title/description (if any) into
+        // the read so the title resolver can prefer them over a parsed H1.
+        const resolvedReq = resolveInBoundsDocPath(
+          databasePath,
+          task.slug,
+          docPath,
+        );
+        const docMeta = resolvedReq
+          ? store
+              .listDocsForTask(task.id)
+              .find(
+                (doc) =>
+                  resolveInBoundsDocPath(databasePath, task.slug, doc.path) ===
+                  resolvedReq,
+              )
+          : undefined;
+
+        return readTaskDocContents(databasePath, task.slug, docPath, docMeta);
       } finally {
         store.close();
       }
@@ -145,6 +166,11 @@ export function writeTraceApiResponse(
   sink.statusCode = response.status;
   if (response.contentType) {
     sink.setHeader("content-type", response.contentType);
+  }
+  if (response.headers) {
+    for (const [name, value] of Object.entries(response.headers)) {
+      sink.setHeader(name, value);
+    }
   }
   sink.end(response.body);
 }
@@ -189,6 +215,7 @@ function readTaskDocContents(
   databasePath: string,
   taskSlug: string,
   docPath: string,
+  docMeta?: AddTaskDocOptions,
 ): TraceApiResponse {
   const resolved = resolveInBoundsDocPath(databasePath, taskSlug, docPath);
   if (!resolved) {
@@ -213,16 +240,50 @@ function readTaskDocContents(
     return { status: 500, body: "Doc could not be read" };
   }
 
+  // Resolve the display title server-side (explicit title → first H1 →
+  // filename) where the raw markdown is in hand, and carry it plus the
+  // description to the viewer as url-encoded headers — the body stays the raw
+  // rendered doc so the existing content transport is untouched.
+  const headers = docDisplayHeaders(docPath, content, docMeta);
+
   const extension = extname(resolved).toLowerCase();
   if (extension === ".md") {
-    return { status: 200, body: renderMarkdown(content), contentType: "text/html" };
+    return {
+      status: 200,
+      body: renderMarkdown(content),
+      contentType: "text/html",
+      headers,
+    };
   }
 
   return {
     status: 200,
     body: content,
     contentType: DOC_TEXT_CONTENT_TYPES[extension] ?? "text/plain",
+    headers,
   };
+}
+
+/**
+ * Build the `X-Doc-Title`/`X-Doc-Description` headers for a doc read. The title
+ * is always present (the resolver's filename floor guarantees it); the
+ * description rides along only when the doc was registered with one. Values are
+ * url-encoded so arbitrary text survives the header transport.
+ */
+function docDisplayHeaders(
+  docPath: string,
+  content: string,
+  docMeta?: AddTaskDocOptions,
+): Record<string, string> {
+  const title = resolveDocTitle({ path: docPath, title: docMeta?.title }, content);
+  const headers: Record<string, string> = {
+    "x-doc-title": encodeURIComponent(title),
+  };
+  const description = docMeta?.description?.trim();
+  if (description) {
+    headers["x-doc-description"] = encodeURIComponent(description);
+  }
+  return headers;
 }
 
 /**

@@ -326,6 +326,100 @@ test("GET /api/tasks/:ref/docs returns raw text and a content type for a non-mar
   }
 });
 
+test("GET /api/tasks/:ref/docs carries the doc's explicit title and description as headers", () => {
+  let taskId = "";
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    const task = store.createTask("checkout");
+    taskId = task.id;
+    taskSlug = task.slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "notes.md");
+  writeFileSync(docPath, "# H1 heading\n\nBody.");
+  const store = openTraceStore(databasePath);
+  try {
+    store.addTaskDoc(taskId, docPath, {
+      title: "Deployment plan",
+      description: "How the rollout works",
+    });
+  } finally {
+    store.close();
+  }
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+    // Explicit title wins over the H1, and the description rides along — both
+    // url-encoded so arbitrary text survives the header transport.
+    expect(decodeURIComponent(response!.headers!["x-doc-title"]!)).toBe(
+      "Deployment plan",
+    );
+    expect(decodeURIComponent(response!.headers!["x-doc-description"]!)).toBe(
+      "How the rollout works",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs resolves the title from the first H1 when there is no explicit title", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "notes.md");
+  writeFileSync(docPath, "# Parsed from heading\n\nBody.");
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+    expect(decodeURIComponent(response!.headers!["x-doc-title"]!)).toBe(
+      "Parsed from heading",
+    );
+    // No description was registered, so no header at all (not an empty one).
+    expect(response!.headers?.["x-doc-description"]).toBeUndefined();
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/docs falls back to the filename when there is no title or H1", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "bare.md");
+  writeFileSync(docPath, "Just body text, no heading.");
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs?path=${encodeURIComponent(docPath)}`,
+    );
+    expect(response!.status).toBe(200);
+    expect(decodeURIComponent(response!.headers!["x-doc-title"]!)).toBe(
+      "bare.md",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("GET /api/tasks/:ref/docs rejects a doc path outside the task's docs directory", () => {
   let taskSlug = "";
   const { databasePath, cleanup } = withSeededDatabase((store) => {

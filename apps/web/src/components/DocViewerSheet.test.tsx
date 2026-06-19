@@ -120,6 +120,53 @@ test("displays the doc's basename as the Sheet title", async () => {
   expect(await screen.findByRole("heading", { name: "plan.md" })).toBeInTheDocument();
 });
 
+test("renders the resolved title as the heading with the description below it", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<p>Body text</p>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html",
+          "x-doc-title": encodeURIComponent("Deployment plan"),
+          "x-doc-description": encodeURIComponent("How the rollout works"),
+        },
+      }),
+    ),
+  );
+
+  renderSheet("/work/docs/plan.md");
+
+  expect(
+    await screen.findByRole("heading", { name: "Deployment plan" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("How the rollout works")).toBeInTheDocument();
+  // The path is demoted but still present as a copy affordance.
+  expect(screen.getByText("plan.md")).toBeInTheDocument();
+});
+
+test("shows a clean title-only header for a bare doc with no description", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response("<p>Body text</p>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html",
+          "x-doc-title": encodeURIComponent("bare.md"),
+        },
+      }),
+    ),
+  );
+
+  renderSheet("/work/docs/bare.md");
+
+  expect(
+    await screen.findByRole("heading", { name: "bare.md" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId("doc-viewer-description")).not.toBeInTheDocument();
+});
+
 test("Escape dismisses the Sheet via onOpenChange(false)", async () => {
   vi.stubGlobal(
     "fetch",

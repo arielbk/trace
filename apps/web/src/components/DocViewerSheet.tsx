@@ -30,6 +30,10 @@ export function DocViewerSheet({
   triggerRef: RefObject<HTMLElement | null>;
 }) {
   const query = useDocContents(taskRef, docPath);
+  // The resolved title arrives with the doc contents; until it loads (or on an
+  // error) fall back to the filename so the heading is never empty.
+  const title = query.data?.title ?? truncatePath(docPath);
+  const description = query.data?.description;
   const toggleCheckbox = useToggleCheckbox();
   const shouldReduceMotion = useReducedMotion();
   const transition = shouldReduceMotion
@@ -67,12 +71,25 @@ export function DocViewerSheet({
             transition={transition}
           >
             <header className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
-              <DialogPrimitive.Title className="m-0 min-w-0 text-row-title font-bold tracking-tight">
-                <CopyChip value={docPath} display={truncatePath(docPath)} />
-              </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="sr-only">
-                Read-only contents of {docPath}
-              </DialogPrimitive.Description>
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <DialogPrimitive.Title className="m-0 min-w-0 text-row-title font-bold tracking-tight">
+                  {title}
+                </DialogPrimitive.Title>
+                {description ? (
+                  <p
+                    data-testid="doc-viewer-description"
+                    className="m-0 text-sm text-text-muted leading-relaxed"
+                  >
+                    {description}
+                  </p>
+                ) : null}
+                <DialogPrimitive.Description className="sr-only">
+                  Read-only contents of {docPath}
+                </DialogPrimitive.Description>
+                <div className="text-xs">
+                  <CopyChip value={docPath} display={truncatePath(docPath)} />
+                </div>
+              </div>
               <DialogPrimitive.Close
                 aria-label="Close"
                 className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-chip-border bg-surface text-text-muted hover:border-border-strong hover:text-text"
