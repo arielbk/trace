@@ -1052,6 +1052,109 @@ test("addTaskDoc persists and reads back an optional title", () => {
   }
 });
 
+test("updateTaskDoc sets title and description on an existing registered doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md");
+
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Checkout Spec",
+      description: "The spec",
+    });
+    expect(updated.title).toBe("Checkout Spec");
+    expect(updated.description).toBe("The spec");
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(updated);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc leaves an omitted field untouched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Original Title",
+      description: "Original description",
+    });
+
+    // Only --title given; description must survive untouched.
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      title: "New Title",
+    });
+    expect(updated.title).toBe("New Title");
+    expect(updated.description).toBe("Original description");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc clears a field when given an empty string", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Original Title",
+      description: "Original description",
+    });
+
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      description: "",
+    });
+    expect(updated.title).toBe("Original Title");
+    expect("description" in updated).toBe(false);
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(updated);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc inserts a row for a doc that was never registered", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    // No prior addTaskDoc — mirrors a filesystem-discovered native doc that
+    // has no task_docs row yet.
+    const updated = store.updateTaskDoc(task.id, "/tmp/state.md", {
+      title: "Session state",
+      description: "Where the work stands",
+    });
+    expect(updated.title).toBe("Session state");
+    expect(updated.description).toBe("Where the work stands");
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/state.md")).toEqual(updated);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task docs include files written to the task docs directory without registration", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");

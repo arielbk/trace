@@ -3,10 +3,29 @@ import {
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseTaskCreateArgs,
+  parseUpdateDocOptions,
   sessionRegisterUsage,
   sessionSetParentUsage,
   taskCreateUsage,
+  updateDocUsage,
 } from "./parsers.ts";
+
+test("parseUpdateDocOptions parses non-empty title and description as set values", () => {
+  expect(
+    parseUpdateDocOptions(["--title", "Checkout Spec", "--description", "The spec"]),
+  ).toEqual({ title: "Checkout Spec", description: "The spec" });
+});
+
+test("parseUpdateDocOptions maps an empty flag value to null and omits absent flags", () => {
+  // Empty --description clears (null); --title is absent so it stays untouched.
+  expect(parseUpdateDocOptions(["--description", ""])).toEqual({
+    description: null,
+  });
+});
+
+test("parseUpdateDocOptions throws usage when neither field is given", () => {
+  expect(() => parseUpdateDocOptions([])).toThrow(updateDocUsage());
+});
 
 test("parseTaskCreateArgs parses a title with optional description and project", () => {
   expect(

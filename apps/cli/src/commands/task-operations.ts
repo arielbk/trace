@@ -20,6 +20,7 @@ import {
   parseTaskCaptureArgs,
   parseTaskCreateArgs,
   parseTaskUpdateArgs,
+  parseUpdateDocOptions,
   taskCaptureUsage,
   taskCreateUsage,
   taskUpdateUsage,
@@ -203,7 +204,7 @@ export function taskCaptureOperation(
         exitCode: 0,
         stdout: `${task.id}\n`,
         stderr:
-          "Reminder: no --description given; add one with `task add-doc` so the doc reads well in the manifest.\n",
+          "Reminder: no --description given; add one with `task update-doc` so the doc reads well in the manifest.\n",
       };
     }
 
@@ -271,6 +272,29 @@ export function taskAddDocOperation(
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
     const doc = store.addTaskDoc(task.id, path, options);
+    renderTaskDocManifest(store, databasePath, task);
+    return success(formatTaskDocSummary(task.slug, doc));
+  });
+}
+
+export function taskUpdateDocOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const taskId = rawArgs[0];
+  const path = rawArgs[1];
+
+  if (!taskId) return failure("Task id is required");
+  if (!path) return failure("Task doc path is required");
+
+  const optionsAttempt = attempt(() => parseUpdateDocOptions(rawArgs.slice(2)));
+  if (!optionsAttempt.ok) return optionsAttempt.result;
+  const options = optionsAttempt.value;
+
+  return withStore(ctx.env, (store, databasePath) => {
+    const task = store.getTaskByRef(taskId);
+    if (!task) return failure(`Task not found: ${taskId}`, 1);
+    const doc = store.updateTaskDoc(task.id, path, options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });

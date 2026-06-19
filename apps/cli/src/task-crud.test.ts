@@ -635,6 +635,43 @@ test("add-doc --title --description round-trips both onto the task doc", () => {
   }
 });
 
+test("update-doc rewrites an existing doc's title and description in the manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, "spec.md");
+    writeFileSync(docPath, "# Heading ignored\n");
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", slug, docPath, "--title", "Old", "--description", "Old desc"],
+      { encoding: "utf8", env },
+    );
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "update-doc", slug, docPath, "--title", "New Title", "--description", "New desc"],
+      { encoding: "utf8", env },
+    );
+
+    const state = readFileSync(join(docsDir, "state.md"), "utf8");
+    expect(state).toContain("- [New Title](spec.md) — New desc");
+    expect(state).not.toContain("Old");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task show and skill re-enter list docs written under the trace task docs directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");

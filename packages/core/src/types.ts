@@ -62,6 +62,15 @@ export type AddTaskDocOptions = {
   description?: string;
 };
 
+// A field-level update to a registered (or about-to-be-inserted) doc. Each
+// field is tri-state: `undefined` leaves the stored value untouched, `null`
+// (or an empty/whitespace string) clears it to NULL, and a non-empty string
+// sets it. At least one field should be present at the call site.
+export type UpdateTaskDocOptions = {
+  title?: string | null;
+  description?: string | null;
+};
+
 export type TokenTotals = {
   inputTokens: number;
   outputTokens: number;
@@ -158,6 +167,11 @@ export type TaskStore = {
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;
   addTaskDoc(taskId: string, path: string, options?: AddTaskDocOptions): TaskDoc;
+  updateTaskDoc(
+    taskId: string,
+    path: string,
+    options: UpdateTaskDocOptions,
+  ): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
   close(): void;

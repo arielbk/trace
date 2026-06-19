@@ -166,6 +166,40 @@ export function parseAddDocOptions(flags: string[]): {
   return { title, description };
 }
 
+export function updateDocUsage(): string {
+  return "Usage: trace task update-doc <ref> <path> [--title <text>] [--description <text>]";
+}
+
+export function parseUpdateDocOptions(flags: string[]): {
+  title?: string | null;
+  description?: string | null;
+} {
+  const result: { title?: string | null; description?: string | null } = {};
+  let index = 0;
+  while (index < flags.length) {
+    const flag = flags[index];
+    if (flag === "--title" || flag === "--description") {
+      const value = flags[index + 1];
+      if (value === undefined) throw new Error(updateDocUsage());
+      // A present-but-empty (or whitespace) value clears the field; a non-empty
+      // value sets the trimmed text. Absent flags never reach here, so they
+      // stay omitted (untouched).
+      const trimmed = value.trim();
+      const normalized = trimmed.length === 0 ? null : trimmed;
+      if (flag === "--title") result.title = normalized;
+      else result.description = normalized;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+  // Nothing to change is a usage error, not a silent no-op.
+  if (result.title === undefined && result.description === undefined) {
+    throw new Error(updateDocUsage());
+  }
+  return result;
+}
+
 export function parseNonNegativeInteger(value: string, flag: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {

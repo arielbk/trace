@@ -133,6 +133,10 @@ test("task capture without --description still exits 0 but prints a reminder", (
     const result = taskCaptureOperation(["Captured task", "--doc", docPath], ctx);
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain("--description");
+    // The reminder must point at `update-doc`: `add-doc` no-ops on the doc
+    // capture just created (existing (task_id, path) row returns early).
+    expect(result.stderr).toContain("task update-doc");
+    expect(result.stderr).not.toContain("task add-doc");
 
     const taskId = result.stdout.trim();
     expect(taskId.length).toBeGreaterThan(0);

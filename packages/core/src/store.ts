@@ -40,6 +40,7 @@ import type {
   TaskTimeline,
   TaskTimelineItem,
   TokenTotals,
+  UpdateTaskDocOptions,
 } from "./types.ts";
 
 export function openTraceStore(databasePath: string): TaskStore {
@@ -717,6 +718,57 @@ class NodeSqliteTaskStore implements TaskStore {
     return doc;
   }
 
+  updateTaskDoc(
+    taskId: string,
+    path: string,
+    options: UpdateTaskDocOptions,
+  ): TaskDoc {
+    const task = this.getTaskByRef(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+
+    const normalizedPath = path.trim();
+    if (normalizedPath.length === 0) {
+      throw new Error("Task doc path is required");
+    }
+
+    const existing = this.getTaskDoc(task.id, normalizedPath);
+
+    // Each field is tri-state: an absent option leaves the stored value
+    // untouched, an empty/whitespace string (or null) clears it, and a
+    // non-empty string sets it.
+    const nextTitle = resolveDocFieldUpdate(options.title, existing?.title);
+    const nextDescription = resolveDocFieldUpdate(
+      options.description,
+      existing?.description,
+    );
+
+    if (existing) {
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE task_docs
+            SET title = ?, description = ?
+            WHERE task_id = ? AND path = ?
+          `,
+        )
+        .run(nextTitle, nextDescription, task.id, normalizedPath);
+      return toTaskDoc(task.id, normalizedPath, existing.createdAt, nextTitle, nextDescription);
+    }
+
+    // Insert-on-update: no row exists yet (e.g. a filesystem-discovered native
+    // doc that was never registered), so create one carrying the metadata.
+    const createdAt = new Date().toISOString();
+    this.#sqlite
+      .prepare(
+        `
+          INSERT INTO task_docs (task_id, path, created_at, title, description)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+      )
+      .run(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
+    return toTaskDoc(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
+  }
+
   listDocsForTask(taskId: string): TaskDoc[] {
     const task = this.getTaskByRef(taskId);
     const id = task?.id ?? taskId;
@@ -1040,6 +1092,34 @@ function taskDocFromRow(row: TaskDocRow): TaskDoc {
   // absent rather than carrying a null so round-trips stay clean.
   if (row.title != null) doc.title = row.title;
   if (row.description != null) doc.description = row.description;
+  return doc;
+}
+
+// Resolve a tri-state field update against the stored value: `undefined`
+// leaves the existing value intact, while an empty/whitespace string (or null)
+// clears it and a non-empty string sets the trimmed value.
+function resolveDocFieldUpdate(
+  option: string | null | undefined,
+  existing: string | undefined,
+): string | null {
+  if (option === undefined) return existing ?? null;
+  if (option === null) return null;
+  const trimmed = option.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+// Build a TaskDoc from resolved column values, keeping null fields absent so
+// round-trips match taskDocFromRow's clean-absence convention.
+function toTaskDoc(
+  taskId: string,
+  path: string,
+  createdAt: string,
+  title: string | null,
+  description: string | null,
+): TaskDoc {
+  const doc: TaskDoc = { taskId, path, createdAt };
+  if (title != null) doc.title = title;
+  if (description != null) doc.description = description;
   return doc;
 }
 
