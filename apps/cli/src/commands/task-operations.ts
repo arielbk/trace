@@ -1,4 +1,9 @@
-import { resolveTaskDocsDir, updateStateManifest, type Task } from "@trace/core";
+import {
+  resolveDocTitle,
+  resolveTaskDocsDir,
+  updateStateManifest,
+  type Task,
+} from "@trace/core";
 import {
   copyFileSync,
   lstatSync,
@@ -70,6 +75,17 @@ export function linkRepoDocs(projectRoot: string, title: string, docsDir: string
   symlinkSync(docsDir, linkPath);
 }
 
+// Read a doc's body for title resolution, returning null when it can't be read
+// (missing file, external/symlinked path, permissions). A null body simply
+// lets resolveDocTitle fall through to the filename.
+function readDocContent(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // Re-render the task's machine-owned state.md manifest footer from the docs
 // currently registered for the task. state.md is created when absent and is
 // excluded from its own manifest.
@@ -84,7 +100,11 @@ export function renderTaskDocManifest(
     .listDocsForTask(task.id)
     .filter((doc) => basename(doc.path) !== "state.md")
     .map((doc) => ({
-      label: basename(doc.path),
+      // Resolve the display title once, through the shared fallback chain
+      // (explicit title → first H1 → filename). Read the file body when it is
+      // available so the H1 branch can fire; unreadable docs fall through to
+      // the filename floor.
+      label: resolveDocTitle(doc, readDocContent(doc.path)),
       href: relative(docsDir, doc.path) || basename(doc.path),
       ...(doc.description ? { description: doc.description } : {}),
     }));
