@@ -69,12 +69,24 @@ export async function postToggleCheckbox(
   return res.json() as Promise<{ ok: true }>;
 }
 
+// Poll while the tab is visible so writes from other processes (binds, subagent
+// discovery, hooks) land on an open board without a manual reload; never polls a
+// backgrounded tab.
+const LIVE_REFRESH = {
+  refetchInterval: 1000 * 5,
+  refetchIntervalInBackground: false,
+} as const;
+
 export function useTasks() {
-  return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks });
+  return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...LIVE_REFRESH });
 }
 
 export function useTaskTimeline(id: string) {
-  return useQuery({ queryKey: ["task-timeline", id], queryFn: () => fetchTaskTimeline(id) });
+  return useQuery({
+    queryKey: ["task-timeline", id],
+    queryFn: () => fetchTaskTimeline(id),
+    ...LIVE_REFRESH,
+  });
 }
 
 export function useDocContents(ref: string, docPath: string) {
