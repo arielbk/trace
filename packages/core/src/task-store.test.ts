@@ -1006,7 +1006,9 @@ test("addTaskDoc persists and reads back an optional description", () => {
     const store = openTraceStore(databasePath);
     const task = store.createTask("checkout");
 
-    const described = store.addTaskDoc(task.id, "/tmp/spec.md", "The spec");
+    const described = store.addTaskDoc(task.id, "/tmp/spec.md", {
+      description: "The spec",
+    });
     expect(described.description).toBe("The spec");
 
     const undescribed = store.addTaskDoc(task.id, "/tmp/notes.md");
@@ -1015,6 +1017,34 @@ test("addTaskDoc persists and reads back an optional description", () => {
     const reread = store.listDocsForTask(task.id);
     expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(described);
     expect(reread.find((d) => d.path === "/tmp/notes.md")).toEqual(undescribed);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("addTaskDoc persists and reads back an optional title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const titled = store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Checkout Spec",
+      description: "The spec",
+    });
+    expect(titled.title).toBe("Checkout Spec");
+    expect(titled.description).toBe("The spec");
+
+    const untitled = store.addTaskDoc(task.id, "/tmp/notes.md");
+    expect("title" in untitled).toBe(false);
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(titled);
+    expect(reread.find((d) => d.path === "/tmp/notes.md")).toEqual(untitled);
 
     store.close();
   } finally {

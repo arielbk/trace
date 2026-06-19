@@ -515,6 +515,51 @@ test("add-doc --description renders a fenced manifest footer into a created stat
   }
 });
 
+test("add-doc --title --description round-trips both onto the task doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "add-doc",
+        slug,
+        "/tmp/spec.md",
+        "--title",
+        "Checkout Spec",
+        "--description",
+        "The spec",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const timeline = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "timeline", slug, "--json"],
+        { encoding: "utf8", env },
+      ),
+    );
+    const doc = timeline.items.find(
+      (item: { type: string }) => item.type === "doc",
+    )?.doc;
+    expect(doc.title).toBe("Checkout Spec");
+    expect(doc.description).toBe("The spec");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task show and skill re-enter list docs written under the trace task docs directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");

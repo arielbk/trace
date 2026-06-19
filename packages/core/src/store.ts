@@ -25,6 +25,7 @@ import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   ActiveTask,
+  AddTaskDocOptions,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -673,7 +674,11 @@ class NodeSqliteTaskStore implements TaskStore {
     };
   }
 
-  addTaskDoc(taskId: string, path: string, description?: string): TaskDoc {
+  addTaskDoc(
+    taskId: string,
+    path: string,
+    options?: AddTaskDocOptions,
+  ): TaskDoc {
     const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
@@ -685,22 +690,30 @@ class NodeSqliteTaskStore implements TaskStore {
     const existing = this.getTaskDoc(task.id, normalizedPath);
     if (existing) return existing;
 
-    const normalizedDescription = description?.trim();
+    const normalizedTitle = options?.title?.trim();
+    const normalizedDescription = options?.description?.trim();
     const doc: TaskDoc = {
       taskId: task.id,
       path: normalizedPath,
       createdAt: new Date().toISOString(),
+      ...(normalizedTitle ? { title: normalizedTitle } : {}),
       ...(normalizedDescription ? { description: normalizedDescription } : {}),
     };
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO task_docs (task_id, path, created_at, description)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO task_docs (task_id, path, created_at, title, description)
+          VALUES (?, ?, ?, ?, ?)
         `,
       )
-      .run(doc.taskId, doc.path, doc.createdAt, doc.description ?? null);
+      .run(
+        doc.taskId,
+        doc.path,
+        doc.createdAt,
+        doc.title ?? null,
+        doc.description ?? null,
+      );
     return doc;
   }
 
@@ -711,7 +724,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const registeredDocs = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at, description
+          SELECT task_id, path, created_at, title, description
           FROM task_docs
           WHERE task_id = ?
           ORDER BY created_at ASC, path ASC
@@ -864,7 +877,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const row = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at, description
+          SELECT task_id, path, created_at, title, description
           FROM task_docs
           WHERE task_id = ? AND path = ?
         `,
@@ -971,6 +984,7 @@ type TaskDocRow = {
   task_id: string;
   path: string;
   created_at: string;
+  title: string | null;
   description: string | null;
 };
 
@@ -1022,8 +1036,9 @@ function taskDocFromRow(row: TaskDocRow): TaskDoc {
     path: row.path,
     createdAt: row.created_at,
   };
-  // A null column means the doc was registered without a description; keep the
-  // field absent rather than carrying a null so round-trips stay clean.
+  // A null column means the doc was registered without that field; keep it
+  // absent rather than carrying a null so round-trips stay clean.
+  if (row.title != null) doc.title = row.title;
   if (row.description != null) doc.description = row.description;
   return doc;
 }

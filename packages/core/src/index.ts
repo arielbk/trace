@@ -13,6 +13,7 @@ export { renderManifest, updateStateManifest } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export type {
   ActiveTask,
+  AddTaskDocOptions,
   RegisterSessionInput,
   ReEntryManifest,
   ReEntryManifestDoc,

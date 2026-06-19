@@ -46,8 +46,19 @@ export type TaskDoc = {
   taskId: string;
   path: string;
   createdAt: string;
+  // Optional explicit title; absent on docs registered without one. When
+  // present it wins the resolved-title fallback chain over a parsed H1 or the
+  // filename across the manifest, viewer, and timeline surfaces.
+  title?: string;
   // Optional one-line description; absent on docs registered without one. It is
   // the source of truth the state.md manifest footer renders from.
+  description?: string;
+};
+
+// Optional metadata captured alongside a doc registration. Both fields are
+// absent on docs added without them; empty/whitespace values normalize away.
+export type AddTaskDocOptions = {
+  title?: string;
   description?: string;
 };
 
@@ -146,7 +157,7 @@ export type TaskStore = {
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;
-  addTaskDoc(taskId: string, path: string, description?: string): TaskDoc;
+  addTaskDoc(taskId: string, path: string, options?: AddTaskDocOptions): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
   close(): void;

@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { basename, join, relative } from "node:path";
 import {
-  parseAddDocDescription,
+  parseAddDocOptions,
   parseTaskCaptureArgs,
   parseTaskCreateArgs,
   parseTaskUpdateArgs,
@@ -231,14 +231,14 @@ export function taskAddDocOperation(
   if (!taskId) return failure("Task id is required");
   if (!path) return failure("Task doc path is required");
 
-  const descriptionAttempt = attempt(() => parseAddDocDescription(rawArgs.slice(2)));
-  if (!descriptionAttempt.ok) return descriptionAttempt.result;
-  const description = descriptionAttempt.value;
+  const optionsAttempt = attempt(() => parseAddDocOptions(rawArgs.slice(2)));
+  if (!optionsAttempt.ok) return optionsAttempt.result;
+  const options = optionsAttempt.value;
 
   return withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
-    const doc = store.addTaskDoc(task.id, path, description);
+    const doc = store.addTaskDoc(task.id, path, options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });

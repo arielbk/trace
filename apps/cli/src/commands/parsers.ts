@@ -123,15 +123,24 @@ export function parseTaskCaptureArgs(args: string[]): {
 }
 
 export function addDocUsage(): string {
-  return "Usage: trace task add-doc <ref> <path> [--description <text>]";
+  return "Usage: trace task add-doc <ref> <path> [--title <text>] [--description <text>]";
 }
 
-export function parseAddDocDescription(flags: string[]): string | undefined {
+export function parseAddDocOptions(flags: string[]): {
+  title?: string;
+  description?: string;
+} {
+  let title: string | undefined;
   let description: string | undefined;
   let index = 0;
   while (index < flags.length) {
     const flag = flags[index];
-    if (flag === "--description") {
+    if (flag === "--title") {
+      const value = flags[index + 1];
+      if (!value) throw new Error(addDocUsage());
+      title = value;
+      index += 2;
+    } else if (flag === "--description") {
       const value = flags[index + 1];
       if (!value) throw new Error(addDocUsage());
       description = value;
@@ -140,7 +149,7 @@ export function parseAddDocDescription(flags: string[]): string | undefined {
       throw new Error(`Unknown option: ${flag}`);
     }
   }
-  return description;
+  return { title, description };
 }
 
 export function parseNonNegativeInteger(value: string, flag: string): number {
