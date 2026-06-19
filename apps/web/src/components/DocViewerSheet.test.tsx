@@ -154,6 +154,69 @@ test("the Close button dismisses the Sheet via onOpenChange(false)", async () =>
   expect(onOpenChange).toHaveBeenCalledWith(false);
 });
 
+function checkboxFetchMock() {
+  return vi.fn().mockImplementation((url: string) => {
+    if (typeof url === "string" && url.includes("/docs/checkbox")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(
+        '<ul><li><input data-checkbox-index="0" type="checkbox"> First</li>' +
+          '<li><input checked="" data-checkbox-index="1" type="checkbox"> Second</li></ul>',
+        { status: 200, headers: { "content-type": "text/html" } },
+      ),
+    );
+  });
+}
+
+test("clicking a checkbox persists the new state to the checkbox endpoint", async () => {
+  const fetchMock = checkboxFetchMock();
+  vi.stubGlobal("fetch", fetchMock);
+
+  renderSheet("/work/docs/plan.md");
+  await screen.findByText("First");
+
+  const [firstBox] = screen.getAllByRole("checkbox");
+  fireEvent.click(firstBox!);
+
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "/work/docs/plan.md", index: 0, checked: true }),
+    }),
+  );
+});
+
+test("reverts the optimistic checkbox flip when the server rejects", async () => {
+  const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (typeof url === "string" && url.includes("/docs/checkbox")) {
+      return Promise.resolve(new Response("boom", { status: 500 }));
+    }
+    return Promise.resolve(
+      new Response('<ul><li><input data-checkbox-index="0" type="checkbox"> First</li></ul>', {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  renderSheet("/work/docs/plan.md");
+  await screen.findByText("First");
+
+  const box = screen.getByRole("checkbox") as HTMLInputElement;
+  fireEvent.click(box);
+  expect(box.checked).toBe(true); // optimistic flip
+
+  await vi.waitFor(() => expect(box.checked).toBe(false)); // reverted on error
+});
+
 test("does not intercept unknown, external, or non-markdown links", async () => {
   vi.stubGlobal(
     "fetch",

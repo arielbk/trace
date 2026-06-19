@@ -14,10 +14,12 @@ import {
   fetchTaskTimeline,
   fetchTasks,
   HttpError,
+  postToggleCheckbox,
   useArchiveTask,
   useDocContents,
   useTasks,
   useTaskTimeline,
+  useToggleCheckbox,
   useUnarchiveTask,
 } from "./api.ts";
 
@@ -290,6 +292,153 @@ describe("useDocContents", () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect((result.current.error as HttpError).status).toBe(404);
+  });
+});
+
+// ─── postToggleCheckbox ───────────────────────────────────────────────────────
+
+describe("postToggleCheckbox", () => {
+  test("POSTs the path/index/checked body as JSON to the checkbox endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await postToggleCheckbox("my-task", "/work/docs/plan.md", 2, true);
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "/work/docs/plan.md", index: 2, checked: true }),
+    });
+  });
+
+  test("throws HttpError with status on non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
+    );
+
+    const error = await postToggleCheckbox("my-task", "/work/docs/plan.md", 0, false).catch(
+      (e) => e,
+    );
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 500 });
+  });
+});
+
+// ─── useToggleCheckbox ────────────────────────────────────────────────────────
+
+describe("useToggleCheckbox", () => {
+  test("posts the correct ref/path/index/checked body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useToggleCheckbox(), {
+      wrapper: wrapper(client),
+    });
+
+    result.current.mutate({ ref: "my-task", path: "/work/docs/plan.md", index: 3, checked: true });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "/work/docs/plan.md", index: 3, checked: true }),
+    });
+  });
+
+  test("invalidates the doc-contents query key for the toggled doc on settle", async () => {
+    let docFetches = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/docs?path=")) {
+        docFetches++;
+        return Promise.resolve(
+          new Response("<p>Doc</p>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({
+        doc: useDocContents("my-task", "/work/docs/plan.md"),
+        toggle: useToggleCheckbox(),
+      }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.doc.isSuccess).toBe(true));
+    const initialDocFetches = docFetches;
+
+    result.current.toggle.mutate({
+      ref: "my-task",
+      path: "/work/docs/plan.md",
+      index: 0,
+      checked: true,
+    });
+    await waitFor(() => expect(result.current.toggle.isSuccess).toBe(true));
+
+    await waitFor(() => expect(docFetches).toBeGreaterThan(initialDocFetches));
+  });
+
+  test("invalidates the doc-contents query even when the post fails (revert path)", async () => {
+    let docFetches = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/docs?path=")) {
+        docFetches++;
+        return Promise.resolve(
+          new Response("<p>Doc</p>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("boom", { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({
+        doc: useDocContents("my-task", "/work/docs/plan.md"),
+        toggle: useToggleCheckbox(),
+      }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.doc.isSuccess).toBe(true));
+    const initialDocFetches = docFetches;
+
+    result.current.toggle.mutate({
+      ref: "my-task",
+      path: "/work/docs/plan.md",
+      index: 0,
+      checked: true,
+    });
+    await waitFor(() => expect(result.current.toggle.isError).toBe(true));
+
+    await waitFor(() => expect(docFetches).toBeGreaterThan(initialDocFetches));
   });
 });
 
