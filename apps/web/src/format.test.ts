@@ -5,6 +5,7 @@ import {
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  resolveDocDisplayTitle,
   truncateId,
   truncatePath,
 } from "./format.ts";
@@ -145,6 +146,30 @@ describe("collapseHomePath", () => {
 
   test("returns home itself as ~", () => {
     expect(collapseHomePath("/Users/alice", "/Users/alice")).toBe("~");
+  });
+});
+
+describe("resolveDocDisplayTitle", () => {
+  test("prefers an explicit title over the filename", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "Launch plan" }),
+    ).toBe("Launch plan");
+  });
+
+  test("trims a padded explicit title", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "  Launch plan  " }),
+    ).toBe("Launch plan");
+  });
+
+  test("falls back to the filename when there is no title", () => {
+    expect(resolveDocDisplayTitle({ path: "/work/docs/plan.md" })).toBe("plan.md");
+  });
+
+  test("falls back to the filename when the title is blank/whitespace", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "   " }),
+    ).toBe("plan.md");
   });
 });
 
