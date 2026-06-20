@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTraceStore } from "@trace/core";
 import { expect, test } from "vitest";
 import {
+  taskCaptureOperation,
   taskCreateOperation,
   taskListOperation,
   taskShowOperation,
@@ -71,6 +72,88 @@ test("task list prints task summaries", () => {
       stdout: "checkout\tCheckout\nreview\tReview\n",
       stderr: "",
     });
+  });
+});
+
+test("task capture defaults the doc title to the task title", () => {
+  withTempContext((ctx) => {
+    const docPath = join(ctx.cwd, "notes.md");
+    writeFileSync(docPath, "some captured body\n");
+
+    const result = taskCaptureOperation(["Captured task", "--doc", docPath], ctx);
+    expect(result.exitCode).toBe(0);
+    const taskId = result.stdout.trim();
+
+    const store = openTraceStore(ctx.env.TRACE_DB as string);
+    try {
+      const [doc] = store.listDocsForTask(taskId);
+      expect(doc?.title).toBe("Captured task");
+    } finally {
+      store.close();
+    }
+  });
+});
+
+test("task capture --title and --description persist on the doc", () => {
+  withTempContext((ctx) => {
+    const docPath = join(ctx.cwd, "notes.md");
+    writeFileSync(docPath, "some captured body\n");
+
+    const result = taskCaptureOperation(
+      [
+        "Captured task",
+        "--doc",
+        docPath,
+        "--title",
+        "Spec sketch",
+        "--description",
+        "First cut",
+      ],
+      ctx,
+    );
+    expect(result.exitCode).toBe(0);
+    const taskId = result.stdout.trim();
+
+    const store = openTraceStore(ctx.env.TRACE_DB as string);
+    try {
+      const [doc] = store.listDocsForTask(taskId);
+      expect(doc?.title).toBe("Spec sketch");
+      expect(doc?.description).toBe("First cut");
+    } finally {
+      store.close();
+    }
+  });
+});
+
+test("task capture without --description still exits 0 but prints a reminder", () => {
+  withTempContext((ctx) => {
+    const docPath = join(ctx.cwd, "notes.md");
+    writeFileSync(docPath, "some captured body\n");
+
+    const result = taskCaptureOperation(["Captured task", "--doc", docPath], ctx);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("--description");
+    // The reminder must point at `update-doc`: `add-doc` no-ops on the doc
+    // capture just created (existing (task_id, path) row returns early).
+    expect(result.stderr).toContain("task update-doc");
+    expect(result.stderr).not.toContain("task add-doc");
+
+    const taskId = result.stdout.trim();
+    expect(taskId.length).toBeGreaterThan(0);
+  });
+});
+
+test("task capture with --description stays quiet", () => {
+  withTempContext((ctx) => {
+    const docPath = join(ctx.cwd, "notes.md");
+    writeFileSync(docPath, "some captured body\n");
+
+    const result = taskCaptureOperation(
+      ["Captured task", "--doc", docPath, "--description", "All set"],
+      ctx,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
   });
 });
 

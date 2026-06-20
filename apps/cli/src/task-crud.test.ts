@@ -508,8 +508,165 @@ test("add-doc --description renders a fenced manifest footer into a created stat
     expect(existsSync(statePath)).toBe(true);
     const state = readFileSync(statePath, "utf8");
     expect(state).toContain("<!-- trace:docs-manifest:start -->");
-    expect(state).toContain("- [spec.md](spec.md) — The spec");
+    // The doc has no explicit title; its `# Spec` H1 resolves as the label.
+    expect(state).toContain("- [Spec](spec.md) — The spec");
     expect(state).toContain("<!-- trace:docs-manifest:end -->");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("add-doc --title renders the explicit title and description in the manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, "spec.md");
+    writeFileSync(docPath, "# Heading ignored\n");
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "add-doc",
+        slug,
+        docPath,
+        "--title",
+        "Checkout Spec",
+        "--description",
+        "The spec",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const state = readFileSync(join(docsDir, "state.md"), "utf8");
+    // Explicit title wins over the H1; description trails after the em dash.
+    expect(state).toContain("- [Checkout Spec](spec.md) — The spec");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("add-doc with no title, H1, or description falls back to the filename and a clean line", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, "notes.md");
+    // No explicit title, no ATX H1 (only a `## ` subheading) — basename floor.
+    writeFileSync(docPath, "## Subheading only\n\nbody\n");
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", slug, docPath],
+      { encoding: "utf8", env },
+    );
+
+    const state = readFileSync(join(docsDir, "state.md"), "utf8");
+    // Filename label, and no trailing " — " because there's no description.
+    expect(state).toContain("- [notes.md](notes.md)\n");
+    expect(state).not.toContain("- [notes.md](notes.md) —");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("add-doc --title --description round-trips both onto the task doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "add-doc",
+        slug,
+        "/tmp/spec.md",
+        "--title",
+        "Checkout Spec",
+        "--description",
+        "The spec",
+      ],
+      { encoding: "utf8", env },
+    );
+
+    const timeline = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [traceBin, "task", "timeline", slug, "--json"],
+        { encoding: "utf8", env },
+      ),
+    );
+    const doc = timeline.items.find(
+      (item: { type: string }) => item.type === "doc",
+    )?.doc;
+    expect(doc.title).toBe("Checkout Spec");
+    expect(doc.description).toBe("The spec");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("update-doc rewrites an existing doc's title and description in the manifest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, "spec.md");
+    writeFileSync(docPath, "# Heading ignored\n");
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", slug, docPath, "--title", "Old", "--description", "Old desc"],
+      { encoding: "utf8", env },
+    );
+
+    execFileSync(
+      process.execPath,
+      [traceBin, "task", "update-doc", slug, docPath, "--title", "New Title", "--description", "New desc"],
+      { encoding: "utf8", env },
+    );
+
+    const state = readFileSync(join(docsDir, "state.md"), "utf8");
+    expect(state).toContain("- [New Title](spec.md) — New desc");
+    expect(state).not.toContain("Old");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -78,17 +78,21 @@ export function parseTaskUpdateArgs(args: string[]): { ref: string; description:
 }
 
 export function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--link] [--project <dir>]";
+  return "Usage: trace task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <dir>]";
 }
 
 export function parseTaskCaptureArgs(args: string[]): {
   title: string;
   docPath?: string;
+  docTitle?: string;
+  description?: string;
   link: boolean;
   project?: string;
 } {
   const titleWords: string[] = [];
   let docPath: string | undefined;
+  let docTitle: string | undefined;
+  let description: string | undefined;
   let link = false;
   let project: string | undefined;
 
@@ -103,6 +107,16 @@ export function parseTaskCaptureArgs(args: string[]): {
       const value = args[index + 1];
       if (!value) throw new Error(taskCaptureUsage());
       docPath = value;
+      index += 2;
+    } else if (flag === "--title") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      docTitle = value;
+      index += 2;
+    } else if (flag === "--description") {
+      const value = args[index + 1];
+      if (!value) throw new Error(taskCaptureUsage());
+      description = value;
       index += 2;
     } else if (flag === "--link") {
       link = true;
@@ -119,19 +133,28 @@ export function parseTaskCaptureArgs(args: string[]): {
 
   const title = titleWords.join(" ");
   if (title.length === 0) throw new Error(taskCaptureUsage());
-  return { title, docPath, link, project };
+  return { title, docPath, docTitle, description, link, project };
 }
 
 export function addDocUsage(): string {
-  return "Usage: trace task add-doc <ref> <path> [--description <text>]";
+  return "Usage: trace task add-doc <ref> <path> [--title <text>] [--description <text>]";
 }
 
-export function parseAddDocDescription(flags: string[]): string | undefined {
+export function parseAddDocOptions(flags: string[]): {
+  title?: string;
+  description?: string;
+} {
+  let title: string | undefined;
   let description: string | undefined;
   let index = 0;
   while (index < flags.length) {
     const flag = flags[index];
-    if (flag === "--description") {
+    if (flag === "--title") {
+      const value = flags[index + 1];
+      if (!value) throw new Error(addDocUsage());
+      title = value;
+      index += 2;
+    } else if (flag === "--description") {
       const value = flags[index + 1];
       if (!value) throw new Error(addDocUsage());
       description = value;
@@ -140,7 +163,41 @@ export function parseAddDocDescription(flags: string[]): string | undefined {
       throw new Error(`Unknown option: ${flag}`);
     }
   }
-  return description;
+  return { title, description };
+}
+
+export function updateDocUsage(): string {
+  return "Usage: trace task update-doc <ref> <path> [--title <text>] [--description <text>]";
+}
+
+export function parseUpdateDocOptions(flags: string[]): {
+  title?: string | null;
+  description?: string | null;
+} {
+  const result: { title?: string | null; description?: string | null } = {};
+  let index = 0;
+  while (index < flags.length) {
+    const flag = flags[index];
+    if (flag === "--title" || flag === "--description") {
+      const value = flags[index + 1];
+      if (value === undefined) throw new Error(updateDocUsage());
+      // A present-but-empty (or whitespace) value clears the field; a non-empty
+      // value sets the trimmed text. Absent flags never reach here, so they
+      // stay omitted (untouched).
+      const trimmed = value.trim();
+      const normalized = trimmed.length === 0 ? null : trimmed;
+      if (flag === "--title") result.title = normalized;
+      else result.description = normalized;
+      index += 2;
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+  // Nothing to change is a usage error, not a silent no-op.
+  if (result.title === undefined && result.description === undefined) {
+    throw new Error(updateDocUsage());
+  }
+  return result;
 }
 
 export function parseNonNegativeInteger(value: string, flag: string): number {

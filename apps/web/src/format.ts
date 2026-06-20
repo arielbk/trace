@@ -84,6 +84,22 @@ export function truncatePath(path: string): string {
   return segments.at(-1) ?? path;
 }
 
+/**
+ * Browser-safe resolved display title for a doc: explicit `title` (trimmed)
+ * when present and non-blank, otherwise the path's filename. This is the
+ * client-side branch of the shared `resolveDocTitle` fallback chain — the H1
+ * branch is unavailable here because the timeline JSON carries no file content,
+ * and the core resolver imports `node:path` so it is not browser-safe. Keep this
+ * in step with the floor/whitespace behaviour of `resolveDocTitle`.
+ */
+export function resolveDocDisplayTitle(doc: {
+  path: string;
+  title?: string;
+}): string {
+  const trimmed = doc.title?.trim();
+  return trimmed ? trimmed : truncatePath(doc.path);
+}
+
 const MONTHS = [
   "Jan",
   "Feb",

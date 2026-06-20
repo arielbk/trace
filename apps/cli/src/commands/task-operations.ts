@@ -1,4 +1,9 @@
-import { resolveTaskDocsDir, updateStateManifest, type Task } from "@trace/core";
+import {
+  resolveDocTitle,
+  resolveTaskDocsDir,
+  updateStateManifest,
+  type Task,
+} from "@trace/core";
 import {
   copyFileSync,
   lstatSync,
@@ -11,10 +16,11 @@ import {
 } from "node:fs";
 import { basename, join, relative } from "node:path";
 import {
-  parseAddDocDescription,
+  parseAddDocOptions,
   parseTaskCaptureArgs,
   parseTaskCreateArgs,
   parseTaskUpdateArgs,
+  parseUpdateDocOptions,
   taskCaptureUsage,
   taskCreateUsage,
   taskUpdateUsage,
@@ -70,6 +76,17 @@ export function linkRepoDocs(projectRoot: string, title: string, docsDir: string
   symlinkSync(docsDir, linkPath);
 }
 
+// Read a doc's body for title resolution, returning null when it can't be read
+// (missing file, external/symlinked path, permissions). A null body simply
+// lets resolveDocTitle fall through to the filename.
+function readDocContent(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // Re-render the task's machine-owned state.md manifest footer from the docs
 // currently registered for the task. state.md is created when absent and is
 // excluded from its own manifest.
@@ -84,7 +101,11 @@ export function renderTaskDocManifest(
     .listDocsForTask(task.id)
     .filter((doc) => basename(doc.path) !== "state.md")
     .map((doc) => ({
-      label: basename(doc.path),
+      // Resolve the display title once, through the shared fallback chain
+      // (explicit title → first H1 → filename). Read the file body when it is
+      // available so the H1 branch can fire; unreadable docs fall through to
+      // the filename floor.
+      label: resolveDocTitle(doc, readDocContent(doc.path)),
       href: relative(docsDir, doc.path) || basename(doc.path),
       ...(doc.description ? { description: doc.description } : {}),
     }));
@@ -169,10 +190,22 @@ export function taskCaptureOperation(
       writeFileSync(docPath, contents);
     }
 
-    store.addTaskDoc(task.id, docPath);
+    store.addTaskDoc(task.id, docPath, {
+      title: parsed.docTitle ?? parsed.title,
+      description: parsed.description,
+    });
 
     if (parsed.link) {
       linkRepoDocs(projectRoot, parsed.title, docsDir);
+    }
+
+    if (parsed.description === undefined) {
+      return {
+        exitCode: 0,
+        stdout: `${task.id}\n`,
+        stderr:
+          "Reminder: no --description given; add one with `task update-doc` so the doc reads well in the manifest.\n",
+      };
     }
 
     return success(`${task.id}\n`);
@@ -231,14 +264,37 @@ export function taskAddDocOperation(
   if (!taskId) return failure("Task id is required");
   if (!path) return failure("Task doc path is required");
 
-  const descriptionAttempt = attempt(() => parseAddDocDescription(rawArgs.slice(2)));
-  if (!descriptionAttempt.ok) return descriptionAttempt.result;
-  const description = descriptionAttempt.value;
+  const optionsAttempt = attempt(() => parseAddDocOptions(rawArgs.slice(2)));
+  if (!optionsAttempt.ok) return optionsAttempt.result;
+  const options = optionsAttempt.value;
 
   return withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
-    const doc = store.addTaskDoc(task.id, path, description);
+    const doc = store.addTaskDoc(task.id, path, options);
+    renderTaskDocManifest(store, databasePath, task);
+    return success(formatTaskDocSummary(task.slug, doc));
+  });
+}
+
+export function taskUpdateDocOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const taskId = rawArgs[0];
+  const path = rawArgs[1];
+
+  if (!taskId) return failure("Task id is required");
+  if (!path) return failure("Task doc path is required");
+
+  const optionsAttempt = attempt(() => parseUpdateDocOptions(rawArgs.slice(2)));
+  if (!optionsAttempt.ok) return optionsAttempt.result;
+  const options = optionsAttempt.value;
+
+  return withStore(ctx.env, (store, databasePath) => {
+    const task = store.getTaskByRef(taskId);
+    if (!task) return failure(`Task not found: ${taskId}`, 1);
+    const doc = store.updateTaskDoc(task.id, path, options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });

@@ -21,6 +21,7 @@ import {
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
 import {
@@ -512,6 +513,23 @@ export function TaskTimelineView({
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="min-w-0 text-row-title font-bold tracking-tight truncate">
+                          {resolveDocDisplayTitle(item.doc)}
+                        </span>
+                        <span className="ml-auto font-mono text-crumb text-text-muted whitespace-nowrap">
+                          {formatRelativeTime(item.createdAt, now)}
+                        </span>
+                      </div>
+                      {item.doc.description ? (
+                        <p
+                          data-testid="timeline-doc-description"
+                          title={item.doc.description}
+                          className="mt-1 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description line-clamp-1"
+                        >
+                          {item.doc.description}
+                        </p>
+                      ) : null}
+                      <p className="flex flex-wrap gap-2 items-center mt-1.5 text-text-muted m-0">
                         <span
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
@@ -521,17 +539,12 @@ export function TaskTimelineView({
                             display={truncatePath(item.doc.path)}
                           />
                         </span>
-                        <span className="ml-auto font-mono text-crumb text-text-muted whitespace-nowrap">
-                          {formatRelativeTime(item.createdAt, now)}
-                        </span>
-                      </div>
-                      {item.sizeBytes !== null ? (
-                        <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
+                        {item.sizeBytes !== null ? (
                           <span className="font-mono tabular-nums">
                             {formatBytes(item.sizeBytes)}
                           </span>
-                        </p>
-                      ) : null}
+                        ) : null}
+                      </p>
                     </div>
                   </div>
                 </li>

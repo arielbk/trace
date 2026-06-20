@@ -328,6 +328,105 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
   expect(html).not.toContain(`>${docPath}<`);
 });
 
+test("TaskTimelineView doc row leads with resolved title + description, path demoted", () => {
+  const docPath = "/work/trace-v2/docs/web-redesign/plan.md";
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        doc: {
+          taskId: "task-1",
+          path: docPath,
+          createdAt: "2026-05-29T00:03:00.000Z",
+          title: "Web redesign plan",
+          description: "Phased rollout of the new board layout",
+        },
+        sizeBytes: null,
+      },
+    ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // Resolved title leads the row; the description renders beneath it.
+  expect(html).toContain("Web redesign plan");
+  expect(html).toContain("Phased rollout of the new board layout");
+  // The description is capped to a single line, with the full text on hover so
+  // a clamped one is still readable.
+  expect(html).toContain("line-clamp-1");
+  expect(html).toContain('title="Phased rollout of the new board layout"');
+  // The path is still copyable (demoted to the chip), tail-only as body text.
+  expect(html).toContain(">plan.md<");
+  expect(html).toContain(`title="${docPath}"`);
+  expect(html).not.toContain(`>${docPath}<`);
+});
+
+test("TaskTimelineView doc row falls back to filename and omits an empty description", () => {
+  const docPath = "/work/trace-v2/docs/notes.md";
+  const timeline: TaskTimeline = {
+    task: {
+      id: "task-1",
+      slug: "usable-v1",
+      title: "usable v1",
+      projectRoot: "/work/trace-v2",
+      createdAt: "2026-05-29T00:00:00.000Z",
+      archivedAt: null,
+    },
+    items: [
+      {
+        type: "doc",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        doc: {
+          taskId: "task-1",
+          path: docPath,
+          createdAt: "2026-05-29T00:03:00.000Z",
+        },
+        sizeBytes: null,
+      },
+    ],
+    lastActivityAt: "2026-05-29T00:00:00.000Z",
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  // With no explicit title the filename is the floor.
+  expect(html).toContain(">notes.md<");
+  // No description element renders when there is none.
+  expect(html).not.toContain("timeline-doc-description");
+});
+
 test("TaskTimelineView stat cards show the cache split, compact with exact on hover", () => {
   const timeline: TaskTimeline = {
     task: {
