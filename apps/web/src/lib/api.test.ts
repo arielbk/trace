@@ -225,35 +225,10 @@ describe("fetchDocContents", () => {
 
     const result = await fetchDocContents("my-task", "/work/docs/plan.md");
 
-    expect(result).toEqual({
-      contentType: "text/html",
-      body: "<h1>Plan</h1>",
-      title: "plan.md",
-    });
+    expect(result).toEqual({ contentType: "text/html", body: "<h1>Plan</h1>" });
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/tasks/my-task/docs?path=${encodeURIComponent("/work/docs/plan.md")}`,
     );
-  });
-
-  test("decodes the resolved title and description from response headers", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response("<p>Body</p>", {
-          status: 200,
-          headers: {
-            "content-type": "text/html",
-            "x-doc-title": encodeURIComponent("Deployment plan"),
-            "x-doc-description": encodeURIComponent("How the rollout works"),
-          },
-        }),
-      ),
-    );
-
-    const result = await fetchDocContents("my-task", "/work/docs/plan.md");
-
-    expect(result.title).toBe("Deployment plan");
-    expect(result.description).toBe("How the rollout works");
   });
 
   test("resolves to raw text with its content-type for a non-markdown doc", async () => {
@@ -269,11 +244,7 @@ describe("fetchDocContents", () => {
 
     const result = await fetchDocContents("my-task", "/work/docs/data.json");
 
-    expect(result).toEqual({
-      contentType: "application/json",
-      body: '{"a":1}',
-      title: "data.json",
-    });
+    expect(result).toEqual({ contentType: "application/json", body: '{"a":1}' });
   });
 
   test("throws HttpError with status and body message on non-OK response", async () => {
@@ -307,11 +278,7 @@ describe("useDocContents", () => {
       wrapper: wrapper(client),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({
-      contentType: "text/html",
-      body: "<p>Hello</p>",
-      title: "plan.md",
-    });
+    expect(result.current.data).toEqual({ contentType: "text/html", body: "<p>Hello</p>" });
   });
 
   test("surfaces a 404 as a query error carrying status 404", async () => {
