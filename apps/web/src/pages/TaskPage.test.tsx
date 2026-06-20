@@ -372,6 +372,10 @@ test("TaskTimelineView doc row leads with resolved title + description, path dem
   // Resolved title leads the row; the description renders beneath it.
   expect(html).toContain("Web redesign plan");
   expect(html).toContain("Phased rollout of the new board layout");
+  // The description is capped to a single line, with the full text on hover so
+  // a clamped one is still readable.
+  expect(html).toContain("line-clamp-1");
+  expect(html).toContain('title="Phased rollout of the new board layout"');
   // The path is still copyable (demoted to the chip), tail-only as body text.
   expect(html).toContain(">plan.md<");
   expect(html).toContain(`title="${docPath}"`);

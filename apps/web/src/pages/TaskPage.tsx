@@ -523,7 +523,8 @@ export function TaskTimelineView({
                       {item.doc.description ? (
                         <p
                           data-testid="timeline-doc-description"
-                          className="mt-1 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description"
+                          title={item.doc.description}
+                          className="mt-1 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description line-clamp-1"
                         >
                           {item.doc.description}
                         </p>
