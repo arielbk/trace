@@ -3,12 +3,18 @@ import {
   hasProseBody,
   inferSessionIdentity,
   readProseFingerprint,
+  renderManifest,
+  renderProseMarker,
   resolveTaskDocsDir,
+  stripFence,
   type DocFingerprintInput,
 } from "@trace/core";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { renderTaskDocManifest } from "./task-operations.ts";
+import {
+  buildManifestEntries,
+  renderTaskDocManifest,
+} from "./task-operations.ts";
 import {
   failure,
   isHelpFlag,
@@ -97,6 +103,83 @@ export function stateCheckOperation(
     }
 
     return success(`${JSON.stringify(verdict)}\n`);
+  });
+}
+
+// Global form of the prose marker, used to strip any prior marker before
+// stamping a fresh one. Mirrors the pattern owned by `prose-fingerprint.ts`.
+const PROSE_MARKER_GLOBAL =
+  /<!--\s*trace:prose-fingerprint:[0-9a-f]+\s*-->/g;
+
+// `trace state reflect <task>` — recompute the current docs fingerprint and
+// stamp it into state.md's machine-owned prose marker, preserving the prose
+// above the docs-manifest fence and the fence itself. Run by a human (or hook)
+// after the living-state prose has been written/updated, so a subsequent
+// `trace state check` sees the prose as reconciled with the current docs.
+export function stateReflectOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  if (isHelpFlag(rawArgs[0]))
+    return success("Usage: trace state reflect <task>\n");
+  const ref = rawArgs[0];
+  if (!ref) return failure("Task id is required");
+
+  return withStore(ctx.env, (store, databasePath) => {
+    const task = store.getTaskByRef(ref);
+    if (!task) return failure(`Task not found: ${ref}`, 1);
+
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+    const statePath = join(docsDir, "state.md");
+
+    const nonStateDocs = store
+      .listDocsForTask(task.id)
+      .filter((doc) => basename(doc.path) !== "state.md");
+
+    const fingerprintInputs: DocFingerprintInput[] = nonStateDocs.map((doc) => ({
+      path: relative(docsDir, doc.path),
+      content: existsSync(doc.path) ? readFileSync(doc.path, "utf8") : "",
+    }));
+    const fingerprint = computeDocsFingerprint(fingerprintInputs);
+
+    // With no non-state doc there is nothing to reflect on; mirror `check` and
+    // leave state.md untouched (it should not exist yet).
+    if (nonStateDocs.length === 0) {
+      return success(
+        `${JSON.stringify({
+          stateExists: existsSync(statePath),
+          statePath,
+          fingerprint,
+        })}\n`,
+      );
+    }
+
+    const present = existsSync(statePath);
+    const existing = present
+      ? readFileSync(statePath, "utf8")
+      : `# ${task.title}\n`;
+
+    // Strip the fence to isolate the authored prose, drop any prior marker, then
+    // re-append the freshly-computed marker at the end of the prose. Re-rendering
+    // the fence from the current docs restores it below a `---` divider — and is
+    // byte-identical when the docs are unchanged.
+    const prose = stripFence(existing).replace(PROSE_MARKER_GLOBAL, "");
+    const proseWithMarker = `${prose.replace(/\s+$/, "")}\n\n${renderProseMarker(
+      fingerprint,
+    )}`;
+    const entries = buildManifestEntries(store, databasePath, task);
+    const next = renderManifest(proseWithMarker, entries);
+
+    // Write-if-changed so repeat reflects (same docs, same prose) are a true
+    // byte-identical no-op with no mtime bump.
+    if (!present || existing !== next) {
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(statePath, next);
+    }
+
+    return success(
+      `${JSON.stringify({ stateExists: true, statePath, fingerprint })}\n`,
+    );
   });
 }
 

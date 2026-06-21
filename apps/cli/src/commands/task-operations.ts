@@ -2,6 +2,7 @@ import {
   resolveDocTitle,
   resolveTaskDocsDir,
   updateStateManifest,
+  type ManifestEntry,
   type Task,
 } from "@trace/core";
 import {
@@ -98,20 +99,29 @@ export function renderTaskDocManifest(
 ): void {
   const docsDir = resolveTaskDocsDir(databasePath, task.slug);
   const statePath = join(docsDir, "state.md");
-  const entries = store
+  const entries = buildManifestEntries(store, databasePath, task);
+  mkdirSync(docsDir, { recursive: true });
+  updateStateManifest(statePath, task.title, entries);
+}
+
+// Build the rendered manifest rows for a task's currently-registered non-state
+// docs, resolving each display title through the shared fallback chain (explicit
+// title → first H1 → filename) and reading the file body so the H1 branch can
+// fire. state.md is excluded from its own manifest.
+export function buildManifestEntries(
+  store: Store,
+  databasePath: string,
+  task: Task,
+): ManifestEntry[] {
+  const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+  return store
     .listDocsForTask(task.id)
     .filter((doc) => basename(doc.path) !== "state.md")
     .map((doc) => ({
-      // Resolve the display title once, through the shared fallback chain
-      // (explicit title → first H1 → filename). Read the file body when it is
-      // available so the H1 branch can fire; unreadable docs fall through to
-      // the filename floor.
       label: resolveDocTitle(doc, readDocContent(doc.path)),
       href: relative(docsDir, doc.path) || basename(doc.path),
       ...(doc.description ? { description: doc.description } : {}),
     }));
-  mkdirSync(docsDir, { recursive: true });
-  updateStateManifest(statePath, task.title, entries);
 }
 
 export function taskCreateOperation(

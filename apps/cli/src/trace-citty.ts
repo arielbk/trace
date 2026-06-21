@@ -37,7 +37,10 @@ import {
   skillWorkOnTaskOperation,
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
-import { stateCheckOperation } from "./commands/state-operations.ts";
+import {
+  stateCheckOperation,
+  stateReflectOperation,
+} from "./commands/state-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -240,6 +243,13 @@ export function buildTraceCittyRoot(
             meta: { description: "Reconcile a task's state.md docs footer" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return stateCheckOperation(args, { env, cwd, stdin });
+            },
+          }),
+
+          reflect: defineCommand({
+            meta: { description: "Stamp the prose fingerprint into state.md" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return stateReflectOperation(args, { env, cwd, stdin });
             },
           }),
         },

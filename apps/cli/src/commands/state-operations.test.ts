@@ -13,7 +13,10 @@ import { join } from "node:path";
 import { openTraceStore, resolveTaskDocsDir } from "@trace/core";
 import { expect, test } from "vitest";
 import { taskCreateOperation } from "./task-operations.ts";
-import { stateCheckOperation } from "./state-operations.ts";
+import {
+  stateCheckOperation,
+  stateReflectOperation,
+} from "./state-operations.ts";
 import type { Env } from "./seam.ts";
 
 function withTempContext(run: (ctx: { env: Env; cwd: string; stdin: string }) => void): void {
@@ -177,6 +180,113 @@ test("state check is a no-op verdict when the marker matches the current fingerp
     const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
 
     expect(verdict.needsProsePass).toBe(false);
+  });
+});
+
+test("state reflect then check returns a no-op verdict (needsProsePass false)", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-reflect");
+
+    // Seed the footer, then a human writes prose above it.
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace("# Checkout flow\n", "# Checkout flow\n\n## Summary\n\nDid the thing.\n"),
+    );
+
+    stateReflectOperation([slug], ctx);
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+    expect(verdict.needsProsePass).toBe(false);
+  });
+});
+
+test("state reflect preserves the prose and the docs-manifest fence", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-preserve");
+
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace("# Checkout flow\n", "# Checkout flow\n\n## Summary\n\nDid the thing.\n"),
+    );
+
+    stateReflectOperation([slug], ctx);
+
+    const written = readFileSync(statePath, "utf8");
+    // Prose above the fence is preserved.
+    expect(written).toContain("## Summary");
+    expect(written).toContain("Did the thing.");
+    // The docs-manifest fence is preserved.
+    expect(written).toContain("<!-- trace:docs-manifest:start -->");
+    expect(written).toContain("- [spec.md](spec.md) — The spec");
+    // The prose marker is stamped above the fence.
+    const markerIdx = written.indexOf("<!-- trace:prose-fingerprint:");
+    const fenceIdx = written.indexOf("<!-- trace:docs-manifest:start -->");
+    expect(markerIdx).toBeGreaterThan(-1);
+    expect(markerIdx).toBeLessThan(fenceIdx);
+  });
+});
+
+test("state reflect advances the marker even when prose text is unchanged", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const databasePath = ctx.env.TRACE_DB as string;
+    const docsDir = resolveTaskDocsDir(databasePath, slug);
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-advance");
+
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace("# Checkout flow\n", "# Checkout flow\n\n## Summary\n\nDid the thing.\n"),
+    );
+
+    stateReflectOperation([slug], ctx);
+    const markerA = JSON.parse(stateReflectOperation([slug], ctx).stdout).fingerprint;
+
+    // Change a doc on disk so the docs fingerprint moves; prose text is left alone.
+    writeFileSync(join(docsDir, "spec.md"), "Spec body, revised.\n");
+
+    const markerB = JSON.parse(stateReflectOperation([slug], ctx).stdout).fingerprint;
+    expect(markerB).not.toBe(markerA);
+
+    const written = readFileSync(statePath, "utf8");
+    expect(written).toContain("## Summary");
+    expect(written).toContain(`<!-- trace:prose-fingerprint:${markerB} -->`);
+  });
+});
+
+test("state reflect is a byte-identical no-op on repeat", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-idempotent");
+
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace("# Checkout flow\n", "# Checkout flow\n\n## Summary\n\nDid the thing.\n"),
+    );
+
+    stateReflectOperation([slug], ctx);
+    const first = readFileSync(statePath, "utf8");
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(statePath, past, past);
+    const beforeMtime = statSync(statePath).mtimeMs;
+
+    stateReflectOperation([slug], ctx);
+
+    expect(readFileSync(statePath, "utf8")).toBe(first);
+    expect(statSync(statePath).mtimeMs).toBe(beforeMtime);
   });
 });
 
