@@ -20,6 +20,7 @@ import {
   resolveSkillTaskRef,
   taskNotFoundMessage,
 } from "./formatters.ts";
+import { reconcileStateFooter } from "./task-operations.ts";
 import {
   attempt,
   failure,
@@ -69,6 +70,11 @@ export function skillWorkOnTaskOperation(
       : resolvedTask;
 
     const assigned = store.assignSession(session.id, task.id);
+
+    // Materialize the docs-manifest footer at the bind seam so a task that
+    // already has a native doc (spec-first, task created after) gets a complete
+    // state.md on bind — no `trace state check` required.
+    reconcileStateFooter(store, databasePath, task);
 
     return success(
       `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,

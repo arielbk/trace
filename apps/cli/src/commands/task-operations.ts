@@ -104,6 +104,24 @@ export function renderTaskDocManifest(
   updateStateManifest(statePath, task.title, entries);
 }
 
+// Reconcile the task's state.md footer, but only once the task has at least one
+// non-state doc — an empty task should not sprout a bare manifest (mirroring the
+// guard in `trace state check`). Idempotent (write-if-changed in
+// `updateStateManifest`), so calling it on every bind is a safe no-op when the
+// footer is already current.
+export function reconcileStateFooter(
+  store: Store,
+  databasePath: string,
+  task: Task,
+): void {
+  const hasNonStateDoc = store
+    .listDocsForTask(task.id)
+    .some((doc) => basename(doc.path) !== "state.md");
+  if (hasNonStateDoc) {
+    renderTaskDocManifest(store, databasePath, task);
+  }
+}
+
 // Build the rendered manifest rows for a task's currently-registered non-state
 // docs, resolving each display title through the shared fallback chain (explicit
 // title → first H1 → filename) and reading the file body so the H1 branch can

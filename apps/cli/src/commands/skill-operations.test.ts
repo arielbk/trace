@@ -1,7 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, resolveTaskDocsDir } from "@trace/core";
 import { expect, test, vi } from "vitest";
 import {
   skillDocsDirOperation,
@@ -46,6 +53,79 @@ function withTempContext(run: (ctx: { env: Env; cwd: string; stdin: string }) =>
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// Spec-first precondition: create a task and register a native doc under its
+// docs dir, but leave state.md unrendered — reproducing "spec first, create
+// task after, bind later" where the footer has never been materialized.
+function seedTaskWithDoc(
+  ctx: { env: Env; cwd: string },
+  title: string,
+  fileName: string,
+  body: string,
+): { slug: string; statePath: string } {
+  const databasePath = ctx.env.TRACE_DB as string;
+  const store = openTraceStore(databasePath);
+  try {
+    const task = store.createTask(title, ctx.cwd);
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+    mkdirSync(docsDir, { recursive: true });
+    const docPath = join(docsDir, fileName);
+    writeFileSync(docPath, body);
+    store.addTaskDoc(task.id, docPath, { description: "The spec" });
+    return { slug: task.slug, statePath: join(docsDir, "state.md") };
+  } finally {
+    store.close();
+  }
+}
+
+test("skill work-on-task materializes the state.md footer on bind for a task with a native doc", () => {
+  withTempContext((ctx) => {
+    const { statePath } = seedTaskWithDoc(ctx, "Checkout flow", "spec.md", "Spec body.\n");
+    expect(existsSync(statePath)).toBe(false);
+
+    skillWorkOnTaskOperation(
+      [
+        "Checkout flow",
+        "--id",
+        "claude-bind-1",
+        "--transcript",
+        join(ctx.cwd, "claude-bind-1.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      ctx,
+    );
+
+    // The footer materialized at the bind seam — no `trace state check` ran.
+    expect(existsSync(statePath)).toBe(true);
+    const written = readFileSync(statePath, "utf8");
+    expect(written).toContain("# Checkout flow");
+    expect(written).toContain("- [spec.md](spec.md) — The spec");
+  });
+});
+
+test("skill work-on-task does not materialize state.md for a task with no non-state docs", () => {
+  withTempContext((ctx) => {
+    skillWorkOnTaskOperation(
+      [
+        "Empty task",
+        "--id",
+        "claude-bind-2",
+        "--transcript",
+        join(ctx.cwd, "claude-bind-2.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      ctx,
+    );
+
+    const statePath = join(
+      resolveTaskDocsDir(ctx.env.TRACE_DB as string, "empty-task"),
+      "state.md",
+    );
+    expect(existsSync(statePath)).toBe(false);
+  });
+});
 
 test("skill work-on-task creates a task and binds the session", () => {
   withTempContext((ctx) => {
