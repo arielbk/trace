@@ -70,8 +70,11 @@ export function updateStateManifest(
   title: string,
   entries: ManifestEntry[],
 ): void {
-  const existing = existsSync(stateMdPath)
-    ? readFileSync(stateMdPath, "utf8")
-    : `# ${title}\n`;
-  writeFileSync(stateMdPath, renderManifest(existing, entries));
+  const present = existsSync(stateMdPath);
+  const existing = present ? readFileSync(stateMdPath, "utf8") : `# ${title}\n`;
+  const next = renderManifest(existing, entries);
+  // Write-if-changed: skip the write (and the mtime bump) when the rendered
+  // output already matches what's on disk, so re-running check is a true no-op.
+  if (present && existing === next) return;
+  writeFileSync(stateMdPath, next);
 }

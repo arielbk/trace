@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -112,6 +112,27 @@ test("updateStateManifest creates a minimal state.md when absent", () => {
     // No empty prose headings in the minimal scaffold.
     expect(written).not.toContain("## Decisions");
     expect(written).not.toContain("## Next step");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateStateManifest does not rewrite when content is unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-manifest-"));
+  const statePath = join(dir, "state.md");
+  const entries = [{ label: "spec.md", href: "spec.md", description: "The spec" }];
+
+  try {
+    updateStateManifest(statePath, "Checkout flow", entries);
+
+    // Pin mtime to a fixed point in the past; a rewrite would bump it to now.
+    const past = new Date("2020-01-01T00:00:00Z");
+    utimesSync(statePath, past, past);
+    const before = statSync(statePath).mtimeMs;
+
+    updateStateManifest(statePath, "Checkout flow", entries);
+
+    expect(statSync(statePath).mtimeMs).toBe(before);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

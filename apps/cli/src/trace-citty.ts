@@ -37,6 +37,7 @@ import {
   skillWorkOnTaskOperation,
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
+import { stateCheckOperation } from "./commands/state-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -227,6 +228,18 @@ export function buildTraceCittyRoot(
             },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return sessionDiscoverSubagentsOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      state: defineCommand({
+        meta: { description: "Maintain a task's state.md" },
+        subCommands: {
+          check: defineCommand({
+            meta: { description: "Reconcile a task's state.md docs footer" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return stateCheckOperation(args, { env, cwd, stdin });
             },
           }),
         },
