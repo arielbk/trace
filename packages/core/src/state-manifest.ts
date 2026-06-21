@@ -31,7 +31,7 @@ function renderFence(entries: ManifestEntry[]): string {
  * inserted just before it) from `content`, returning the prose above it. Prose
  * is left untouched when no fence is present.
  */
-function stripFence(content: string): string {
+export function stripFence(content: string): string {
   const start = content.indexOf(FENCE_START);
   if (start === -1) return content;
   const endMarker = content.indexOf(FENCE_END, start);

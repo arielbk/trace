@@ -50,6 +50,26 @@ function seedNativeDoc(
   }
 }
 
+// Bind a Claude session to the task and surface that session id on the env, so
+// `state check` resolves an explicit binding (the prose-pass gate).
+function bindSession(ctx: { env: Env }, slug: string, sessionId: string): void {
+  const databasePath = ctx.env.TRACE_DB as string;
+  const store = openTraceStore(databasePath);
+  try {
+    const task = store.getTaskByRef(slug);
+    if (!task) throw new Error(`task not found: ${slug}`);
+    store.registerSession({
+      id: sessionId,
+      transcriptPath: `claude:${sessionId}`,
+      tool: "claude",
+    });
+    store.assignSession(sessionId, task.id);
+  } finally {
+    store.close();
+  }
+  ctx.env.CLAUDE_CODE_SESSION_ID = sessionId;
+}
+
 test("state check creates state.md with the rendered footer for a task with a native doc", () => {
   withTempContext((ctx) => {
     const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
@@ -84,6 +104,79 @@ test("state check is a byte-identical no-op on a second run", () => {
 
     expect(readFileSync(statePath, "utf8")).toBe(first);
     expect(statSync(statePath).mtimeMs).toBe(beforeMtime);
+  });
+});
+
+test("state check abstains from needsProsePass when the session has no explicit binding", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    seedNativeDoc(ctx, slug, "spec.md", "Spec body, no heading.\n");
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+
+    expect(verdict.needsProsePass).toBeUndefined();
+    // The footer still reconciles even without a binding.
+    expect(verdict.stateExists).toBe(true);
+    // The fingerprint is always reported.
+    expect(typeof verdict.fingerprint).toBe("string");
+    expect(verdict.fingerprint.length).toBeGreaterThan(0);
+  });
+});
+
+test("state check seeds: needsProsePass with mode=seed when bound and no prose body", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    seedNativeDoc(ctx, slug, "spec.md", "Spec body, no heading.\n");
+    bindSession(ctx, slug, "session-seed");
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+
+    expect(verdict.needsProsePass).toBe(true);
+    expect(verdict.mode).toBe("seed");
+    expect(verdict.reason).toContain("trace state reflect");
+    expect(verdict.changedDocs).toContain("spec.md");
+  });
+});
+
+test("state check drifts: mode=refresh when bound, prose present, but marker absent", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-refresh");
+
+    // First check seeds the footer; then a human writes prose above it.
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace("# Checkout flow\n", "# Checkout flow\n\n## Summary\n\nDid the thing.\n"),
+    );
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+
+    expect(verdict.needsProsePass).toBe(true);
+    expect(verdict.mode).toBe("refresh");
+  });
+});
+
+test("state check is a no-op verdict when the marker matches the current fingerprint", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-clean");
+
+    // Seed the footer, write prose, and stamp the current fingerprint marker.
+    const firstVerdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+    const seeded = readFileSync(statePath, "utf8");
+    const withProseAndMarker = seeded.replace(
+      "# Checkout flow\n",
+      `# Checkout flow\n\n## Summary\n\nDid the thing.\n\n<!-- trace:prose-fingerprint:${firstVerdict.fingerprint} -->\n`,
+    );
+    writeFileSync(statePath, withProseAndMarker);
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+
+    expect(verdict.needsProsePass).toBe(false);
   });
 });
 
