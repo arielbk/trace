@@ -20,6 +20,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx @arielbk/trace@0.7.0 hook stop"
+          }
+        ]
+      }
     ]
   }
 }

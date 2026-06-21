@@ -56,7 +56,9 @@ if (isDirectRun) {
   const args = process.argv.slice(2);
   const stdin =
     args[0] === "hook" &&
-    (args[1] === "session-start" || args[1] === "subagent-stop")
+    (args[1] === "session-start" ||
+      args[1] === "subagent-stop" ||
+      args[1] === "stop")
       ? readFileSync(0, "utf8")
       : "";
   const result = runTraceCli(args, process.env, process.cwd(), stdin);

@@ -3,6 +3,7 @@ import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
+import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 import {
   failure,
@@ -93,6 +94,12 @@ export function buildTraceCittyRoot(
             meta: { description: "Discover Claude subagent sessions on stop" },
             run(): CommandResult {
               return runClaudeSubagentStopHook(stdin, env) as unknown as CommandResult;
+            },
+          }),
+          stop: defineCommand({
+            meta: { description: "Block the main agent's turn on state.md drift" },
+            run(): CommandResult {
+              return runClaudeStopHook(stdin, env) as unknown as CommandResult;
             },
           }),
         },
