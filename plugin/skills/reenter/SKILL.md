@@ -53,8 +53,9 @@ Treat the command's output as a manifest and consume it in this order:
    re-derive it.
 2. If the manifest carries a `state:` field, **read that file first** and treat
    it as the authoritative snapshot of where the task stands. It is the living
-   state file written by the `handoff` skill — one summary line, decisions made,
-   current state, next step, and open questions. Open with a recap drawn from it.
+   state file written by the `trace-state` skill — one summary line, decisions
+   made, current state, next step, and open questions. Open with a recap drawn
+   from it.
 3. After reading `state.md`, pull other docs from `docs:` **only when**
    `state.md` links to them or the current work explicitly needs them. Do not
    read every sibling doc by default.

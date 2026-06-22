@@ -1,18 +1,28 @@
 ---
-name: trace-handoff
-description: Distill the current session into the bound task's living state file (`state.md`). Use when the user signals they are wrapping up, moving to a new chat, handing off, or says phrases like "let's hand this off", "wrap this up", "new chat", "end of session", or "save state".
+name: trace-state
+description: Distill the current session into the bound task's living state file (`state.md`) — its prose sections, in the structure the board and re-entry read. Use when the user signals they are wrapping up, moving to a new chat, handing off, or says phrases like "let's hand this off", "hand off", "wrap this up", "new chat", "end of session", or "save state"; and whenever a Trace trigger (the `Stop` hook or `trace state check`) reports that `state.md`'s prose has drifted from — or is missing for — the task's current docs.
 ---
 
-# Trace handoff
+# Trace state
 
-Use this skill when the user signals they are wrapping up a session —
-"let's hand this off", "new chat", "wrap this up", "save state", or any
-equivalent. The skill captures where things stand into a single living
-`state.md` in the bound task's docs dir. Running it a second time updates
-the same file in place; there is never a second file.
+Use this skill to bring the bound task's living `state.md` up to date. It has
+two triggers, the same operation either way:
 
-Do **not** use this skill mid-session to checkpoint arbitrary progress. It is
-a wrap-up verb, not a general note-taking verb.
+- **The user is wrapping up** — "let's hand this off", "hand off", "new chat",
+  "wrap this up", "save state", or any equivalent. The classic handoff.
+- **The prose has drifted** — a Trace trigger (the main-agent `Stop` hook, or
+  `trace state check`) reports the task's docs have moved ahead of `state.md`'s
+  prose, or that `state.md` has no prose yet. The agent is still warm from the
+  doc work, so it writes the prose now rather than leaving it for a future
+  re-entry to guess at.
+
+The skill captures where things stand into a single living `state.md` in the
+bound task's docs dir, using the exact section structure below. Running it a
+second time updates the same file in place; there is never a second file.
+
+You do not need to debounce this yourself — the drift trigger only fires on a
+real docs change (a fingerprint gate), so this is not a per-turn note-taking
+verb. Write `state.md` whenever a trigger above asks for it.
 
 ## Flow
 
@@ -39,7 +49,7 @@ verb:
 
 If the user agrees and the bind completes, capture the emitted
 `taskDocsDir: <path>` and continue to step 2. If the user declines, explain
-that handoff requires a bound task, write nothing, and stop.
+that this skill requires a bound task, write nothing, and stop.
 
 ### 2. Read any existing `state.md`
 
@@ -116,10 +126,24 @@ verbatim** — write your prose sections above it and leave everything from the
 hand-write an "Other docs in this task" footer; doing so would duplicate the
 rendered manifest.
 
-### 5. Confirm
+### 5. Stamp the fingerprint
+
+After writing the prose, stamp `state.md` so Trace records that the prose now
+reflects the current docs:
+
+```sh
+npx @arielbk/trace@0.7.0 state reflect <slug>
+```
+
+This advances the prose-fingerprint marker. Skipping it leaves the marker stale,
+so the next session's `Stop` hook (or `trace state check`) would block again for
+drift even though the prose is fresh. Always run it after a prose write —
+whether you got here from a wrap-up or from a drift trigger.
+
+### 6. Confirm
 
 After writing, report the full path of the file written and the one-line
-summary you used, so the user can confirm the handoff captured what they
+summary you used, so the user can confirm the state file captured what they
 intended.
 
 ## Notes
