@@ -97,8 +97,8 @@ export function stateCheckOperation(
         verdict.changedDocs = fingerprintInputs.map((doc) => doc.path).sort();
         verdict.reason =
           verdict.mode === "seed"
-            ? `state.md has no prose yet — write the living-state prose, then run \`trace state reflect ${task.slug}\` to stamp it.`
-            : `state.md prose has drifted from the current docs — update it, then run \`trace state reflect ${task.slug}\` to stamp it.`;
+            ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`trace state reflect ${task.slug}\` when done).`
+            : `state.md prose has drifted from the current docs — invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${task.slug}\` when done).`;
       }
     }
 

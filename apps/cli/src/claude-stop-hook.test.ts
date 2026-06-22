@@ -81,6 +81,9 @@ test("Stop hook blocks with a reflect reason when a bound task's prose has drift
 
     expect(result.exitCode).toBe(0);
     expect(result.decision).toBe("block");
+    // The reason routes the warm agent at the skill that owns the state.md
+    // template, and still names the reflect command that stamps it.
+    expect(result.reason).toContain("trace-state");
     expect(result.reason).toContain(`trace state reflect ${slug}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
