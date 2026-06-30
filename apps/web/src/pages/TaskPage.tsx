@@ -24,6 +24,7 @@ import {
   resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
+import { resumeCommand } from "../resume.ts";
 import {
   HttpError,
   useArchiveTask,
@@ -409,6 +410,10 @@ export function TaskTimelineView({
                 const childTitle = item.sessionName
                   ? null
                   : sessionChildTitle(item.session);
+                const resumeCopyValue =
+                  item.session.origin === "root"
+                    ? resumeCommand(item.session)
+                    : null;
 
                 return (
                   <li className="relative" key={`session:${item.session.id}`}>
@@ -426,14 +431,22 @@ export function TaskTimelineView({
                             <span className="text-base font-semibold">
                               {childTitle}
                             </span>
-                          ) : (
+                          ) : resumeCopyValue ? (
                             <CopyChip
-                              value={item.session.transcriptPath}
-                              display={truncatePath(
-                                item.session.transcriptPath,
-                              )}
+                              value={resumeCopyValue}
+                              display="Resume"
                             />
+                          ) : (
+                            <span className="text-base font-semibold">
+                              {truncatePath(item.session.transcriptPath)}
+                            </span>
                           )}
+                          {item.sessionName && resumeCopyValue ? (
+                            <CopyChip
+                              value={resumeCopyValue}
+                              display="Resume"
+                            />
+                          ) : null}
                           <span className="ml-auto font-mono text-crumb text-text-muted whitespace-nowrap">
                             {formatRelativeTime(item.createdAt, now)}
                           </span>
@@ -448,14 +461,6 @@ export function TaskTimelineView({
                             <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
                               {originBadge}
                             </span>
-                          ) : null}
-                          {childTitle ? (
-                            <CopyChip
-                              value={item.session.transcriptPath}
-                              display={truncatePath(
-                                item.session.transcriptPath,
-                              )}
-                            />
                           ) : null}
                           <span
                             className="font-mono"
