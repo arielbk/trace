@@ -145,6 +145,8 @@ export type SetSessionParentInput = {
   id: string;
   parentSessionId: string;
   origin: SessionOrigin;
+  tool?: SessionTool;
+  transcriptPath?: string;
 };
 
 export type TaskStore = {

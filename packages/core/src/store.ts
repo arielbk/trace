@@ -500,8 +500,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!existing) {
       const created = this.registerSession({
         id,
-        transcriptPath: `codex:${id}`,
-        tool: "codex",
+        transcriptPath: input.transcriptPath ?? `codex:${id}`,
+        tool: input.tool ?? "codex",
         parentSessionId,
         origin,
       });
