@@ -815,13 +815,18 @@ class NodeSqliteTaskStore implements TaskStore {
     let fresh: {
       tokenTotals: TokenTotals;
       title: string | null;
+      model: string | null;
     } | null = null;
     try {
       const adapter = getTranscriptAdapter(session.tool);
       const parsed = adapter.parseFile(session.transcriptPath, {
         expectedId: session.id,
       });
-      fresh = { tokenTotals: parsed.tokenTotals, title: parsed.title };
+      fresh = {
+        tokenTotals: parsed.tokenTotals,
+        title: parsed.title,
+        model: parsed.model,
+      };
     } catch {
       // Missing file or unparseable transcript — return stored values untouched.
       return session;
@@ -841,13 +846,18 @@ class NodeSqliteTaskStore implements TaskStore {
     const title = fresh.title ?? session.title;
     const titleChanged = title !== session.title;
 
-    if (totalsChanged || titleChanged) {
+    // Same rule for model: a stored model survives a parse that yields null.
+    const model = fresh.model ?? session.model;
+    const modelChanged = model !== session.model;
+
+    if (totalsChanged || titleChanged || modelChanged) {
       this.#sqlite
         .prepare(
           `
             UPDATE sessions
             SET
               title = ?,
+              model = ?,
               input_tokens = ?,
               output_tokens = ?,
               cache_creation_input_tokens = ?,
@@ -858,6 +868,7 @@ class NodeSqliteTaskStore implements TaskStore {
         )
         .run(
           title,
+          model,
           totals.inputTokens,
           totals.outputTokens,
           totals.cacheCreationInputTokens,
@@ -867,7 +878,7 @@ class NodeSqliteTaskStore implements TaskStore {
         );
     }
 
-    return { ...session, title, tokenTotals: totals };
+    return { ...session, title, model, tokenTotals: totals };
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left

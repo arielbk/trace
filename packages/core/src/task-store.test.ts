@@ -1732,6 +1732,69 @@ test("getSession refreshes token totals from transcript and persists them", () =
   }
 });
 
+test("getSession backfills a null model from the transcript and persists it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const session = store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(session.model).toBe(null);
+
+    // Read back — should backfill the model from the transcript.
+    const refreshed = store.getSession(session.id);
+    expect(refreshed!.model).toBe("claude-opus-4-7");
+
+    // Delete the transcript — should return the persisted (backfilled) model.
+    unlinkSync(transcriptPath);
+    const persisted = store.getSession(session.id);
+    expect(persisted!.model).toBe("claude-opus-4-7");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession does not clobber a stored model when a fresh parse yields null", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(store.getSession("claude-session-1")!.model).toBe(
+      "claude-opus-4-7",
+    );
+
+    // Transcript no longer carries a model (e.g. a truncated tail) — the
+    // previously stored model must survive.
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ type: "assistant", session_id: "claude-session-1", message: { id: "msg_1" } })}\n`,
+    );
+    expect(store.getSession("claude-session-1")!.model).toBe(
+      "claude-opus-4-7",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("getSession refreshes a stored title when the transcript's title changes", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
