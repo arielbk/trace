@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildReEnterPrompt,
   collapseHomePath,
+  formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -170,6 +171,28 @@ describe("resolveDocDisplayTitle", () => {
     expect(
       resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "   " }),
     ).toBe("plan.md");
+  });
+});
+
+describe("formatModelName", () => {
+  test("formats an opus id with a dotted minor version", () => {
+    expect(formatModelName("claude-opus-4-8")).toBe("Opus 4.8");
+  });
+
+  test("formats a sonnet id with no minor version", () => {
+    expect(formatModelName("claude-sonnet-5")).toBe("Sonnet 5");
+  });
+
+  test("strips a trailing release date from a dated haiku variant", () => {
+    expect(formatModelName("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
+  });
+
+  test("formats a codex id readably", () => {
+    expect(formatModelName("gpt-5-codex")).toBe("GPT-5 Codex");
+  });
+
+  test("falls back to the raw string for an unrecognised id", () => {
+    expect(formatModelName("some-unknown-model-id")).toBe("some-unknown-model-id");
   });
 });
 

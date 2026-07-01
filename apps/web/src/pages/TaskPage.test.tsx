@@ -144,7 +144,9 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   expect(html).not.toContain("M19.503 0H4.496");
   expect(html).not.toContain("points=&quot;9 8 5 12 9 16&quot;");
   // Model chip renders only when a model is known — no em dash fallback pill.
-  expect(html).toContain("claude-opus-4-7");
+  // The raw model ID is formatted into a human-readable display name.
+  expect(html).toContain("Opus 4.7");
+  expect(html).not.toContain("claude-opus-4-7");
   expect(html).not.toContain(">—<");
   // Per-session tokens show the input/output split, not the cache-inflated total.
   expect(html).toContain("10 in");
