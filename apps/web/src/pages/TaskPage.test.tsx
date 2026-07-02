@@ -253,7 +253,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
   expect(html).not.toContain("2026-05-29T00:03:00.000Z");
 });
 
-test("TaskTimelineView shows transcript and doc paths as truncated copy chips", () => {
+test("TaskTimelineView shows root resume commands and doc paths as copy chips", () => {
   const transcriptPath = "/Users/me/.trace/sessions/session-abc.jsonl";
   const docPath = "/work/trace-v2/docs/web-redesign/web-redesign.tasks.md";
   const timeline: TaskTimeline = {
@@ -318,9 +318,15 @@ test("TaskTimelineView shows transcript and doc paths as truncated copy chips", 
     </MemoryRouter>,
   );
 
-  // Tails are shown; the full paths are copyable via the chip title.
-  expect(html).toContain(">session-abc.jsonl<");
-  expect(html).toContain(`title="${transcriptPath}"`);
+  // Root sessions expose a resume command instead of their transcript path;
+  // an unnamed root falls back to "Untitled session" as its title, matching
+  // the task list's "Untitled task" fallback.
+  expect(html).toContain(">Untitled session<");
+  expect(html).toContain(">Resume<");
+  expect(html).toContain(`title="claude --resume session-1"`);
+  expect(html).not.toContain(">session-abc.jsonl<");
+  expect(html).not.toContain(`title="${transcriptPath}"`);
+  expect(html).not.toContain("Copy /Users/me/.trace/sessions/session-abc.jsonl");
   expect(html).toContain(">web-redesign.tasks.md<");
   expect(html).toContain(`title="${docPath}"`);
   // The full paths never render as bare body text.
@@ -786,16 +792,20 @@ function baseTimeline(
 function sessionTimelineItem({
   id,
   createdAt,
+  tool = "claude",
   parentSessionId = null,
   origin = "root",
   subagentType = null,
+  sessionName = id,
   tokenTotals,
 }: {
   id: string;
   createdAt: string;
+  tool?: "claude" | "codex";
   parentSessionId?: string | null;
   origin?: "root" | "subagent" | "spawned";
   subagentType?: string | null;
+  sessionName?: string | null;
   tokenTotals?: Partial<
     Extract<
       TaskTimeline["items"][number],
@@ -809,7 +819,7 @@ function sessionTimelineItem({
     session: {
       id,
       transcriptPath: `/tmp/${id}.jsonl`,
-      tool: "claude",
+      tool,
       model: null,
       title: null,
       taskId: "task-1",
@@ -827,9 +837,138 @@ function sessionTimelineItem({
       },
       createdAt,
     },
-    sessionName: id,
+    sessionName,
   };
 }
+
+test("TaskTimelineView copies Claude and Codex resume commands from root rows", async () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "claude-root",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        tool: "claude",
+        sessionName: "Named Claude session",
+      }),
+      sessionTimelineItem({
+        id: "codex-root",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        tool: "codex",
+        sessionName: null,
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByTitle("claude --resume claude-root"));
+  fireEvent.click(screen.getByTitle("codex resume codex-root"));
+
+  await waitFor(() => {
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "claude --resume claude-root",
+    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "codex resume codex-root",
+    );
+  });
+  expect(
+    screen.queryByRole("button", { name: "Copy /tmp/claude-root.jsonl" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Copy /tmp/codex-root.jsonl" }),
+  ).not.toBeInTheDocument();
+});
+
+test("TaskTimelineView fades the timestamp and reveals Resume on hover, mirroring the task list row pattern", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "claude-root",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        sessionName: null,
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  const row = screen.getByTestId("timeline-session-row");
+  const time = screen.getByTestId("timeline-row-time");
+  const resume = screen.getByTestId("timeline-row-resume");
+
+  expect(time).not.toHaveClass("is-exit");
+  expect(resume).toHaveClass("is-exit");
+
+  fireEvent.mouseEnter(row);
+
+  expect(time).toHaveClass("is-exit");
+  expect(resume).not.toHaveClass("is-exit");
+
+  fireEvent.mouseLeave(row);
+
+  expect(time).not.toHaveClass("is-exit");
+  expect(resume).toHaveClass("is-exit");
+});
+
+test("TaskTimelineView omits resume and transcript copy controls from child rows", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "parent-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+      }),
+      sessionTimelineItem({
+        id: "subagent-session",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "subagent",
+        subagentType: "researcher",
+      }),
+      sessionTimelineItem({
+        id: "spawned-session",
+        createdAt: "2026-05-29T00:03:00.000Z",
+        parentSessionId: "parent-session",
+        origin: "spawned",
+        tool: "codex",
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /1 subagent/i }));
+
+  expect(
+    screen.queryByRole("button", {
+      name: "Copy claude --resume subagent-session",
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Copy codex resume spawned-session" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Copy /tmp/subagent-session.jsonl" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Copy /tmp/spawned-session.jsonl" }),
+  ).not.toBeInTheDocument();
+});
 
 test("TaskTimelineView collapses a root's subagent fan behind a disclosure that toggles open", () => {
   const timeline: TaskTimeline = {
