@@ -13,6 +13,7 @@ import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { cn } from "../lib/utils.ts";
@@ -403,97 +404,15 @@ export function TaskTimelineView({
             {timelineRoots.map((root) => {
               if (root.kind === "session") {
                 const { item } = root;
-                // When a session has no name of its own, lead the row with its
-                // origin/type and demote the temp transcript path into the meta
-                // line, rather than stacking two pills.
-                const originBadge = sessionOriginBadge(item.session);
-                const childTitle = item.sessionName
-                  ? null
-                  : sessionChildTitle(item.session);
-                const resumeCopyValue =
-                  item.session.origin === "root"
-                    ? resumeCommand(item.session)
-                    : null;
-
                 return (
-                  <li className="relative" key={`session:${item.session.id}`}>
-                    <div className="grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
-                      <div className="relative z-10 flex justify-center">
-                        <TypeIcon type={item.session.tool} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-baseline gap-2 flex-wrap">
-                          {item.sessionName ? (
-                            <span className="text-base font-semibold">
-                              {item.sessionName}
-                            </span>
-                          ) : childTitle ? (
-                            <span className="text-base font-semibold">
-                              {childTitle}
-                            </span>
-                          ) : resumeCopyValue ? (
-                            <CopyChip
-                              value={resumeCopyValue}
-                              display="Resume"
-                            />
-                          ) : (
-                            <span className="text-base font-semibold">
-                              {truncatePath(item.session.transcriptPath)}
-                            </span>
-                          )}
-                          {item.sessionName && resumeCopyValue ? (
-                            <CopyChip
-                              value={resumeCopyValue}
-                              display="Resume"
-                            />
-                          ) : null}
-                          <span className="ml-auto font-mono text-crumb text-text-muted whitespace-nowrap">
-                            {formatRelativeTime(item.createdAt, now)}
-                          </span>
-                        </div>
-                        <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
-                          {item.session.model ? (
-                            <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                              {item.session.model}
-                            </span>
-                          ) : null}
-                          {originBadge && !childTitle ? (
-                            <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                              {originBadge}
-                            </span>
-                          ) : null}
-                          <span
-                            className="font-mono"
-                            title={formatTokenBreakdown(
-                              item.session.tokenTotals,
-                            )}
-                          >
-                            {hasCapturedTokens(item.session.tokenTotals) ? (
-                              <>
-                                {formatTokensCompact(
-                                  item.session.tokenTotals.inputTokens,
-                                )}{" "}
-                                in{" · "}
-                                {formatTokensCompact(
-                                  item.session.tokenTotals.outputTokens,
-                                )}{" "}
-                                out
-                              </>
-                            ) : (
-                              "tokens unavailable"
-                            )}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                    {root.children.length > 0 ? (
-                      <SubagentGroup
-                        childItems={root.children}
-                        expanded={!!expandedGroups[item.session.id]}
-                        onToggle={() => toggleGroup(item.session.id)}
-                      />
-                    ) : null}
-                  </li>
+                  <SessionRootRow
+                    key={`session:${item.session.id}`}
+                    item={item}
+                    childItems={root.children}
+                    expanded={!!expandedGroups[item.session.id]}
+                    onToggle={() => toggleGroup(item.session.id)}
+                    now={now}
+                  />
                 );
               }
 
@@ -574,6 +493,121 @@ export function TaskTimelineView({
         ) : null}
       </AnimatePresence>
     </main>
+  );
+}
+
+// A root session's timeline row. Hover state lives here (not lifted to the
+// parent list) so each row fades its own time ↔ Resume pair independently,
+// mirroring the task list's per-row meta ↔ actions swap (TaskRow.tsx) with
+// the same `t-text-swap`/`is-exit` transition so the affordance reads as one
+// pattern across the app.
+function SessionRootRow({
+  item,
+  childItems,
+  expanded,
+  onToggle,
+  now,
+}: {
+  item: SessionTimelineItem;
+  childItems: SessionTimelineItem[];
+  expanded: boolean;
+  onToggle: () => void;
+  now?: Date;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  // When a session has no name of its own, lead the row with its origin/type
+  // and demote the temp transcript path into the meta line, rather than
+  // stacking two pills.
+  const originBadge = sessionOriginBadge(item.session);
+  const childTitle = item.sessionName ? null : sessionChildTitle(item.session);
+  const resumeCopyValue =
+    item.session.origin === "root" ? resumeCommand(item.session) : null;
+  const title = item.sessionName ?? childTitle;
+
+  return (
+    <li
+      className="relative"
+      data-testid="timeline-session-row"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+        <div className="relative z-10 flex justify-center">
+          <TypeIcon type={item.session.tool} />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            {title ? (
+              <span className="text-base font-semibold">{title}</span>
+            ) : (
+              <span className="text-base font-normal italic text-text-muted">
+                Untitled session
+              </span>
+            )}
+            <span
+              data-testid="timeline-row-time"
+              className={cn(
+                "t-text-swap ml-auto font-mono text-crumb text-text-muted whitespace-nowrap",
+                isHovered && resumeCopyValue && "is-exit",
+              )}
+            >
+              {formatRelativeTime(item.createdAt, now)}
+            </span>
+          </div>
+          <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
+            {item.session.model ? (
+              <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                {item.session.model}
+              </span>
+            ) : null}
+            {originBadge && !childTitle ? (
+              <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                {originBadge}
+              </span>
+            ) : null}
+            <span
+              className="font-mono"
+              title={formatTokenBreakdown(item.session.tokenTotals)}
+            >
+              {hasCapturedTokens(item.session.tokenTotals) ? (
+                <>
+                  {formatTokensCompact(item.session.tokenTotals.inputTokens)}{" "}
+                  in{" · "}
+                  {formatTokensCompact(item.session.tokenTotals.outputTokens)}{" "}
+                  out
+                </>
+              ) : (
+                "tokens unavailable"
+              )}
+            </span>
+          </p>
+        </div>
+        {resumeCopyValue ? (
+          <span
+            data-testid="timeline-row-resume"
+            className={cn(
+              "t-text-swap absolute top-1/2 right-3 -translate-y-1/2",
+              isHovered
+                ? "pointer-events-auto"
+                : "is-exit pointer-events-none",
+            )}
+          >
+            <CopyPromptButton
+              label="Resume"
+              copyLabel="Copy resume command"
+              value={resumeCopyValue}
+            />
+          </span>
+        ) : null}
+      </div>
+      {childItems.length > 0 ? (
+        <SubagentGroup
+          childItems={childItems}
+          expanded={expanded}
+          onToggle={onToggle}
+        />
+      ) : null}
+    </li>
   );
 }
 

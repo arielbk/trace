@@ -318,7 +318,10 @@ test("TaskTimelineView shows root resume commands and doc paths as copy chips", 
     </MemoryRouter>,
   );
 
-  // Root sessions expose a resume command instead of their transcript path.
+  // Root sessions expose a resume command instead of their transcript path;
+  // an unnamed root falls back to "Untitled session" as its title, matching
+  // the task list's "Untitled task" fallback.
+  expect(html).toContain(">Untitled session<");
   expect(html).toContain(">Resume<");
   expect(html).toContain(`title="claude --resume session-1"`);
   expect(html).not.toContain(">session-abc.jsonl<");
@@ -863,12 +866,8 @@ test("TaskTimelineView copies Claude and Codex resume commands from root rows", 
     </MemoryRouter>,
   );
 
-  fireEvent.click(
-    screen.getByRole("button", { name: "Copy claude --resume claude-root" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Copy codex resume codex-root" }),
-  );
+  fireEvent.click(screen.getByTitle("claude --resume claude-root"));
+  fireEvent.click(screen.getByTitle("codex resume codex-root"));
 
   await waitFor(() => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -884,6 +883,42 @@ test("TaskTimelineView copies Claude and Codex resume commands from root rows", 
   expect(
     screen.queryByRole("button", { name: "Copy /tmp/codex-root.jsonl" }),
   ).not.toBeInTheDocument();
+});
+
+test("TaskTimelineView fades the timestamp and reveals Resume on hover, mirroring the task list row pattern", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "claude-root",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        sessionName: null,
+      }),
+    ],
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  const row = screen.getByTestId("timeline-session-row");
+  const time = screen.getByTestId("timeline-row-time");
+  const resume = screen.getByTestId("timeline-row-resume");
+
+  expect(time).not.toHaveClass("is-exit");
+  expect(resume).toHaveClass("is-exit");
+
+  fireEvent.mouseEnter(row);
+
+  expect(time).toHaveClass("is-exit");
+  expect(resume).not.toHaveClass("is-exit");
+
+  fireEvent.mouseLeave(row);
+
+  expect(time).not.toHaveClass("is-exit");
+  expect(resume).toHaveClass("is-exit");
 });
 
 test("TaskTimelineView omits resume and transcript copy controls from child rows", () => {
