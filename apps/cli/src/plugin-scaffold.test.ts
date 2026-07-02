@@ -276,7 +276,7 @@ describe("plugin scaffold", () => {
     assert.match(source, /(do not|don't|no)[\s\S]{0,80}work-on-task/i);
   });
 
-  it("ships a board skill that fires only on open-the-board intent and runs serve", () => {
+  it("ships a board skill that fires only on open-the-board intent and opens the board itself", () => {
     assert.equal(existsSync(boardSkill), true);
 
     const source = readFileSync(boardSkill, "utf8");
@@ -294,12 +294,20 @@ describe("plugin scaffold", () => {
     assert.equal(source.includes(pinnedTraceCommand()), true);
     assert.match(source, /\bserve\b/);
 
-    // It carries the read-the-URL-off-stdout and don't-background guidance
-    // lifted from the trace skill's old "Open the task board" section.
+    // The agent opens the board itself rather than instructing the user: it
+    // starts serve as a background process and never asks them to run a command.
+    assert.match(source, /open the board for the user yourself/i);
+    assert.match(source, /never ask them to run a command/i);
+    assert.match(source, /background/i);
+
+    // Before spawning it checks the default port so a running board is reused
+    // instead of duplicated.
+    assert.match(source, /127\.0\.0\.1:4317/);
+
+    // It still reads the URL off stdout and reports it to the user.
     assert.match(source, /trace serve listening on http:\/\//);
     assert.match(source, /next available port/i);
-    assert.match(source, /Tell the user the URL/);
-    assert.match(source, /Do not start the server in the background/);
-    assert.match(source, /stops it with Ctrl-C/);
+    assert.match(source, /tell the user the URL/i);
+    assert.match(source, /stops the server with Ctrl-C/);
   });
 });
