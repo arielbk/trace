@@ -755,6 +755,75 @@ test("session set-parent creates an unknown child as a codex virtual session", (
   }
 });
 
+test("session set-parent creates an unknown child with the given tool and transcript", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "claude-child-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+      tool: "claude",
+      transcriptPath: "/tmp/claude-child-1.jsonl",
+    });
+
+    expect(child).toMatchObject({
+      id: "claude-child-1",
+      transcriptPath: "/tmp/claude-child-1.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(store.getSession(child.id)).toEqual(child);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates an unknown child with an explicit codex tool and transcript", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "codex-thread-2",
+      parentSessionId: parent.id,
+      origin: "spawned",
+      tool: "codex",
+      transcriptPath: "/tmp/codex-thread-2-rollout.jsonl",
+    });
+
+    expect(child).toMatchObject({
+      id: "codex-thread-2",
+      transcriptPath: "/tmp/codex-thread-2-rollout.jsonl",
+      tool: "codex",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("session register enriches a set-parent-created child without wiping its attribution", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

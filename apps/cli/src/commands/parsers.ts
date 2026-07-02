@@ -259,7 +259,7 @@ export function parseSessionRegisterArgs(args: string[]): {
 }
 
 export function sessionSetParentUsage(): string {
-  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>]";
+  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>] [--tool <tool>] [--transcript <path>]";
 }
 
 export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput {
@@ -268,6 +268,8 @@ export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput
 
   let parentSessionId: string | undefined;
   let origin: string = "spawned";
+  let tool: string | undefined;
+  let transcriptPath: string | undefined;
 
   let index = 1;
   while (index < args.length) {
@@ -281,6 +283,12 @@ export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput
     } else if (flag === "--origin") {
       origin = value;
       index += 2;
+    } else if (flag === "--tool") {
+      tool = value;
+      index += 2;
+    } else if (flag === "--transcript") {
+      transcriptPath = value;
+      index += 2;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
@@ -290,8 +298,17 @@ export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput
   if (!isSessionOrigin(origin)) {
     throw new Error("Session origin must be root, subagent, or spawned");
   }
+  if (tool !== undefined && tool !== "claude" && tool !== "codex") {
+    throw new Error("Session tool must be claude or codex");
+  }
 
-  return { id, parentSessionId, origin };
+  return {
+    id,
+    parentSessionId,
+    origin,
+    ...(tool !== undefined ? { tool } : {}),
+    ...(transcriptPath !== undefined ? { transcriptPath } : {}),
+  };
 }
 
 export function isSessionOrigin(value: string): value is SessionOrigin {

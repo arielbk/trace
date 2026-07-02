@@ -105,3 +105,47 @@ test("parseSessionSetParentArgs throws the usage string when the child id is mis
     sessionSetParentUsage(),
   );
 });
+
+test("parseSessionSetParentArgs parses --tool and --transcript", () => {
+  expect(
+    parseSessionSetParentArgs([
+      "child-session",
+      "--parent",
+      "parent-session",
+      "--origin",
+      "spawned",
+      "--tool",
+      "claude",
+      "--transcript",
+      "/tmp/child-session.jsonl",
+    ]),
+  ).toEqual({
+    id: "child-session",
+    parentSessionId: "parent-session",
+    origin: "spawned",
+    tool: "claude",
+    transcriptPath: "/tmp/child-session.jsonl",
+  });
+});
+
+test("parseSessionSetParentArgs leaves tool and transcript unset when absent", () => {
+  expect(
+    parseSessionSetParentArgs(["child-session", "--parent", "parent-session"]),
+  ).toEqual({
+    id: "child-session",
+    parentSessionId: "parent-session",
+    origin: "spawned",
+  });
+});
+
+test("parseSessionSetParentArgs rejects an invalid --tool value", () => {
+  expect(() =>
+    parseSessionSetParentArgs([
+      "child-session",
+      "--parent",
+      "parent-session",
+      "--tool",
+      "gemini",
+    ]),
+  ).toThrow("Session tool must be claude or codex");
+});
