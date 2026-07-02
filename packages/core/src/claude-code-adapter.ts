@@ -82,7 +82,10 @@ export function parseClaudeCodeTranscript(
       event.sessionId ??
       event.message?.session_id ??
       event.message?.sessionId;
-    model ??= event.model ?? event.message?.model;
+    const candidateModel = event.model ?? event.message?.model;
+    if (!model && candidateModel && candidateModel !== "<synthetic>") {
+      model = candidateModel;
+    }
 
     // `custom-title` is a user-set name and always wins; `ai-title` is
     // Claude's generated name and can be re-emitted, so the last one wins.

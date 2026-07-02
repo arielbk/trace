@@ -210,3 +210,38 @@ test("Claude Code transcript adapter returns null when model is absent", () => {
     null,
   );
 });
+
+test("Claude Code transcript adapter skips <synthetic> and resolves the real model", () => {
+  const transcriptPath = "/tmp/claude-synthetic-model.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic",
+      message: { model: "<synthetic>", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic",
+      message: { model: "claude-opus-4-7", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).model).toBe(
+    "claude-opus-4-7",
+  );
+});
+
+test("Claude Code transcript adapter returns null for a synthetic-only transcript", () => {
+  const transcriptPath = "/tmp/claude-synthetic-only.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic-only",
+      message: { model: "<synthetic>", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).model).toBe(
+    null,
+  );
+});

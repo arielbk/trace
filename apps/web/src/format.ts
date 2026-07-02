@@ -146,6 +146,29 @@ export function collapseHomePath(path: string, home: string = ""): string {
   return path;
 }
 
+const CLAUDE_MODEL_RE = /^claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*?)(?:-\d{8})?$/;
+const CODEX_MODEL_RE = /^gpt-(\d+(?:-\d+)*)-codex$/;
+
+/**
+ * Render a raw model ID readably: `"claude-opus-4-8"` → `"Opus 4.8"`,
+ * `"claude-haiku-4-5-20251001"` → `"Haiku 4.5"` (trailing release date
+ * dropped), `"gpt-5-codex"` → `"GPT-5 Codex"`. An unrecognised ID is
+ * returned unchanged.
+ */
+export function formatModelName(id: string): string {
+  const claudeMatch = CLAUDE_MODEL_RE.exec(id);
+  if (claudeMatch?.[1] && claudeMatch[2]) {
+    const family = claudeMatch[1];
+    const version = claudeMatch[2];
+    return `${family[0]?.toUpperCase()}${family.slice(1)} ${version.replace(/-/g, ".")}`;
+  }
+  const codexMatch = CODEX_MODEL_RE.exec(id);
+  if (codexMatch?.[1]) {
+    return `GPT-${codexMatch[1].replace(/-/g, ".")} Codex`;
+  }
+  return id;
+}
+
 /** `"May 20, 2026"` — UTC-based so output is stable regardless of machine timezone. */
 function formatAbsoluteDate(epochMs: number): string {
   const d = new Date(epochMs);

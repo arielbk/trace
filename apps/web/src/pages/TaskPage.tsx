@@ -19,6 +19,7 @@ import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
+  formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
@@ -557,7 +558,7 @@ function SessionRootRow({
           <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
             {item.session.model ? (
               <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                {item.session.model}
+                {formatModelName(item.session.model)}
               </span>
             ) : null}
             {originBadge && !childTitle ? (
@@ -701,7 +702,9 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
   const tokenLine = hasCapturedTokens(session.tokenTotals)
     ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
     : "tokens unavailable";
-  const meta = [session.model, tokenLine].filter(Boolean).join(" · ");
+  const meta = [session.model ? formatModelName(session.model) : null, tokenLine]
+    .filter(Boolean)
+    .join(" · ");
   // The kind badge only earns its place when the row leads with the session's
   // own captured name. For a nameless child the title is already derived from
   // the origin/type (sessionChildTitle), so the badge would just repeat it.
