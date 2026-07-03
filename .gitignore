@@ -49,3 +49,4 @@ docs/**/qa-artifacts/
 
 # task-docs symlink laid down by the trace plugin (absolute home path — never ship)
 /docs/skill-routing-eval
+/docs/skeleton-loaders
