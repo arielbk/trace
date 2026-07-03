@@ -6,7 +6,7 @@ Replace the bare `Loading...` strings on the task list and task detail pages wit
 
 ### `heading-fix` — Task-detail heading no longer shoves the time down
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `TaskPage` header row — a task with a long title renders with "Last active …" pinned on the same row as the `h1`, not wrapped below it.
 

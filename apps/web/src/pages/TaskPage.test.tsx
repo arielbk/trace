@@ -1240,6 +1240,30 @@ test("TaskTimelineView header shows Last active timestamp", () => {
   expect(html).toContain("10m ago");
 });
 
+test("TaskTimelineView keeps Last active pinned to the heading row for a long title", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline({
+      title:
+        "An extremely long task title that should wrap across multiple lines instead of forcing the Last active block onto its own row",
+    }),
+  };
+
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  const heading = screen.getByRole("heading", { level: 1 });
+  const headerRow = heading.parentElement;
+  // The heading row must not wrap flex items onto separate lines: the long
+  // title should shrink/wrap its own text instead, keeping "Last active" on
+  // the same row.
+  expect(headerRow).not.toHaveClass("flex-wrap");
+  const lastActiveNode = screen.getAllByText(/Last active/)[0];
+  expect(headerRow?.contains(lastActiveNode ?? null)).toBe(true);
+});
+
 test("TaskTimelineView header shows Re-enter button with prompt as title", () => {
   const timeline = baseTimeline();
   const html = renderToStaticMarkup(

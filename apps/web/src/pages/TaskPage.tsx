@@ -312,8 +312,8 @@ export function TaskTimelineView({
         </Link>
       </div>
       <div className="pt-3">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <h1 className="m-0 text-page-title font-extrabold tracking-tight leading-tight">
+        <div className="flex items-start justify-between gap-5">
+          <h1 className="m-0 min-w-0 text-page-title font-extrabold tracking-tight leading-tight">
             {timeline.task.title}
           </h1>
           <div className="flex items-center gap-1.5 pt-2 shrink-0 font-mono text-crumb text-text-muted">
