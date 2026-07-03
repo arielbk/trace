@@ -30,7 +30,7 @@ Replace the bare `Loading...` strings on the task list and task detail pages wit
 
 ### `detail-skeleton` — Cross-fade skeleton for the task detail page
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `TaskPage` while its query is loading renders a header + description + timeline skeleton that cross-fades into the real content once data arrives — replacing the `Loading...` string, reusing the `t-skel` CSS and `useSkeletonReveal` hook from `list-skeleton`.
 

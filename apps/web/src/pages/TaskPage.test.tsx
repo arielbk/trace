@@ -1817,6 +1817,54 @@ function makeTimeline(
 }
 
 describe("TaskPage", () => {
+  test("renders a pulsing skeleton while the task query is pending, not a bare Loading string", () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+
+    const { container } = render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={["/tasks/my-task"]}>
+          <Routes>
+            <Route path="/tasks/:id" element={<TaskPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      container.querySelectorAll(".task-detail-skeleton").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+  });
+
+  test("skeleton is replaced by the real timeline once the task query resolves", async () => {
+    const timeline = makeTimeline("my-task");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(timeline),
+      }),
+    );
+
+    const { container } = render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter initialEntries={["/tasks/my-task"]}>
+          <Routes>
+            <Route path="/tasks/:id" element={<TaskPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("My task");
+    await waitFor(() => {
+      expect(container.querySelectorAll(".task-detail-skeleton").length).toBe(
+        0,
+      );
+    });
+  });
+
   test("renders the timeline title when fetch succeeds", async () => {
     const timeline = makeTimeline("my-task");
     vi.stubGlobal(
