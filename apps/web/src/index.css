@@ -206,9 +206,9 @@
   --skel-pulse-dur: 1000ms;
   --skel-pulse-count: 1;
   --skel-pulse-min: 0.5;
-  --skel-reveal-dur: 400ms;
+  --skel-reveal-dur: 250ms;
   --skel-reveal-blur: 2px;
-  --skel-reveal-ease: ease-in-out;
+  --skel-reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme="dark"] {

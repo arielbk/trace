@@ -43,7 +43,9 @@ export function TaskPage() {
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
 
-  const { showSkeleton, revealed } = useSkeletonReveal(!query.isLoading);
+  const { showSkeleton, showContent, revealed } = useSkeletonReveal(
+    !query.isLoading,
+  );
 
   if (query.error instanceof HttpError && query.error.status === 404)
     return (
@@ -53,12 +55,12 @@ export function TaskPage() {
     );
 
   const data = query.data;
-  if (!showSkeleton && !data) return null;
+  if (!showSkeleton && !(showContent && data)) return null;
 
   return (
     <div className={cn("t-skel", revealed && "is-revealed")}>
       {showSkeleton ? <TaskDetailSkeleton pulsing={!revealed} /> : null}
-      {revealed && data ? (
+      {showContent && data ? (
         <div className="t-skel-content">
           <TaskTimelineView
             timeline={data}
@@ -87,21 +89,47 @@ function TaskDetailSkeleton({ pulsing }: { pulsing: boolean }) {
   return (
     <main
       className={cn(
-        "task-detail-skeleton t-skel-skeleton max-w-app mx-auto px-5 pb-16 flex flex-col gap-1",
+        "task-detail-skeleton t-skel-skeleton max-w-app mx-auto px-5 pb-16",
         pulsing && "is-pulsing",
       )}
     >
+      {/* AppHeader crumb row */}
       <div className="flex items-center justify-between gap-4 py-header-y">
-        <span className="t-skel-bar h-4 w-24" />
+        <span className="t-skel-bar h-4 w-40" />
         <span className="t-skel-bar h-4 w-4 rounded-full" />
       </div>
+      {/* "All tasks" back link */}
       <span className="t-skel-bar h-4 w-20 mt-3" />
-      <div className="flex items-start justify-between gap-5 mt-6">
+      {/* Title + "Last active" */}
+      <div className="flex items-start justify-between gap-5 pt-3">
         <span className="t-skel-bar h-8 w-96 max-w-full" />
-        <span className="t-skel-bar h-4 w-28 shrink-0" />
+        <span className="t-skel-bar h-4 w-28 shrink-0 mt-1.5" />
       </div>
-      <span className="t-skel-bar h-4 w-72 max-w-full mt-1" />
-      <ul className="mt-8 m-0 p-0 list-none flex flex-col gap-4">
+      {/* Description */}
+      <span className="t-skel-bar h-4 w-72 max-w-full mt-3" />
+      {/* Re-enter / archive button row */}
+      <div className="flex items-center gap-2 mt-5">
+        <span className="t-skel-bar h-8 w-28 rounded-control" />
+        <span className="t-skel-bar h-8 w-24 rounded-control ml-auto" />
+      </div>
+      {/* "Where you left off" panel */}
+      <div className="mt-8 pt-6 border-t border-border flex flex-col gap-2">
+        <span className="t-skel-bar h-3 w-32" />
+        <span className="t-skel-bar h-4 w-80 max-w-full mt-1" />
+        <span className="t-skel-bar h-4 w-64 max-w-full" />
+      </div>
+      {/* Token summary */}
+      <div className="mt-8 pt-6 border-t border-border flex gap-11">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <span className="t-skel-bar h-3 w-12" />
+            <span className="t-skel-bar h-7 w-16" />
+          </div>
+        ))}
+      </div>
+      {/* Activity timeline */}
+      <span className="t-skel-bar h-5 w-24 mt-8" />
+      <ul className="mt-4 m-0 p-0 list-none flex flex-col gap-4">
         {Array.from({ length: 4 }, (_, i) => (
           <li key={i} className="grid timeline-grid gap-3.5 items-start">
             <span className="t-skel-bar size-10 rounded-md" />

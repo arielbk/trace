@@ -1817,7 +1817,7 @@ function makeTimeline(
 }
 
 describe("TaskPage", () => {
-  test("renders a pulsing skeleton while the task query is pending, not a bare Loading string", () => {
+  test("renders a pulsing skeleton once a slow task query outlasts the delay, not a bare Loading string", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 
     const { container } = render(
@@ -1830,9 +1830,12 @@ describe("TaskPage", () => {
       </QueryClientProvider>,
     );
 
-    expect(
-      container.querySelectorAll(".task-detail-skeleton").length,
-    ).toBeGreaterThan(0);
+    // The skeleton is deferred past the delay so a fast load never flashes it.
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(".task-detail-skeleton").length,
+      ).toBeGreaterThan(0);
+    });
     expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
   });
 

@@ -49,7 +49,9 @@ export function TasksPage() {
     );
   }
 
-  const { showSkeleton, revealed } = useSkeletonReveal(!tasksQuery.isPending);
+  const { showSkeleton, showContent, revealed } = useSkeletonReveal(
+    !tasksQuery.isPending,
+  );
   const tasks = tasksQuery.data ?? [];
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
@@ -76,13 +78,18 @@ export function TasksPage() {
         <h1 className="m-0 text-page-title font-extrabold">
           Tasks
         </h1>
-        {revealed ? (
+        {showContent ? (
           <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
             {subtitle}
           </p>
-        ) : null}
+        ) : (
+          <span
+            className="t-skel-bar mt-subtitle-top block h-3.5 w-44"
+            aria-hidden="true"
+          />
+        )}
       </div>
-      {revealed ? (
+      {showContent ? (
         <FilterBar
           projects={getProjectCounts(tasks)}
           selectedProject={selectedProject}
@@ -91,12 +98,20 @@ export function TasksPage() {
           onShowArchivedChange={setShowArchived}
           triggerCount={displayedTasks.length}
         />
-      ) : null}
+      ) : (
+        <div
+          className="flex items-center gap-3 flex-wrap pb-3"
+          aria-hidden="true"
+        >
+          <span className="t-skel-bar h-8 w-32 rounded-control" />
+          <span className="t-skel-bar h-5 w-28 rounded-full ml-auto" />
+        </div>
+      )}
       <div className={cn("t-skel", revealed && "is-revealed")}>
         {showSkeleton ? (
           <TaskListSkeleton pulsing={!revealed} />
         ) : null}
-        {revealed ? (
+        {showContent ? (
           <div className="t-skel-content">
             <TaskList
               tasks={displayedTasks}
