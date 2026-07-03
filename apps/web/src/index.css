@@ -201,6 +201,14 @@
   --check-ease-rotate: cubic-bezier(0.22, 1, 0.36, 1);
   --check-ease-bob: cubic-bezier(0.34, 1.35, 0.64, 1);
   --check-ease-path: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* transitions-dev: skeleton reveal */
+  --skel-pulse-dur: 1000ms;
+  --skel-pulse-count: 1;
+  --skel-pulse-min: 0.5;
+  --skel-reveal-dur: 400ms;
+  --skel-reveal-blur: 2px;
+  --skel-reveal-ease: ease-in-out;
 }
 
 [data-theme="dark"] {
@@ -343,12 +351,64 @@
 }
 @keyframes t-check-draw { to { stroke-dashoffset: 0; } }
 
+/*
+ * transitions-dev: skeleton reveal (14-skeleton-reveal). The skeleton starts
+ * in normal flow so it establishes the slot's height (list/timeline height
+ * varies with row count, unlike a fixed-size card); once revealed, it
+ * detaches into an absolute overlay so the now-mounted real content drives
+ * layout while the two layers cross-fade over the same duration/ease.
+ */
+.t-skel { position: relative; }
+.t-skel-skeleton,
+.t-skel-content {
+  transition:
+    opacity var(--skel-reveal-dur) var(--skel-reveal-ease),
+    filter  var(--skel-reveal-dur) var(--skel-reveal-ease);
+}
+.t-skel-skeleton {
+  opacity: 1;
+  filter: blur(0);
+}
+.t-skel-content {
+  opacity: 0;
+  filter: blur(var(--skel-reveal-blur));
+}
+.t-skel.is-revealed .t-skel-skeleton {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  filter: blur(var(--skel-reveal-blur));
+  pointer-events: none;
+}
+.t-skel.is-revealed .t-skel-content {
+  opacity: 1;
+  filter: blur(0);
+}
+
+.t-skel-bar {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--color-chip-bg);
+}
+/* Place the animation on the skeleton's direct children (rows), not on
+   .t-skel-skeleton itself, so its opacity/filter stay free for the reveal
+   cross-fade above. */
+.t-skel-skeleton.is-pulsing > * {
+  animation: t-skel-pulse var(--skel-pulse-dur) ease-in-out var(--skel-pulse-count);
+}
+@keyframes t-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--skel-pulse-min); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .t-text-swap { transition: none !important; }
   .t-dropdown { transition: none !important; }
   .t-icon-swap .t-icon { transition: none !important; }
   .t-success-check { animation: none !important; opacity: 1; }
   .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }
+  .t-skel-skeleton, .t-skel-content { transition: none !important; }
+  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
 }
 
 /*

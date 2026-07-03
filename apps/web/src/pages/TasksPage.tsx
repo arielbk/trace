@@ -14,6 +14,7 @@ import {
 import { AppHeader } from "../components/AppHeader.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
+import { useSkeletonReveal } from "../components/useSkeletonReveal.ts";
 import { cn } from "../lib/utils.ts";
 import {
   byActivityDesc,
@@ -48,13 +49,7 @@ export function TasksPage() {
     );
   }
 
-  if (tasksQuery.isPending)
-    return (
-      <main>
-        <p>Loading...</p>
-      </main>
-    );
-
+  const { showSkeleton, revealed } = useSkeletonReveal(!tasksQuery.isPending);
   const tasks = tasksQuery.data ?? [];
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
@@ -81,25 +76,62 @@ export function TasksPage() {
         <h1 className="m-0 text-page-title font-extrabold">
           Tasks
         </h1>
-        <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
-          {subtitle}
-        </p>
+        {revealed ? (
+          <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
+            {subtitle}
+          </p>
+        ) : null}
       </div>
-      <FilterBar
-        projects={getProjectCounts(tasks)}
-        selectedProject={selectedProject}
-        onProjectChange={setSelectedProject}
-        showArchived={showArchived}
-        onShowArchivedChange={setShowArchived}
-        triggerCount={displayedTasks.length}
-      />
-      <TaskList
-        tasks={displayedTasks}
-        onArchive={handleArchive}
-        onUnarchive={handleUnarchive}
-        hiddenArchivedCount={archivedHidden}
-      />
+      {revealed ? (
+        <FilterBar
+          projects={getProjectCounts(tasks)}
+          selectedProject={selectedProject}
+          onProjectChange={setSelectedProject}
+          showArchived={showArchived}
+          onShowArchivedChange={setShowArchived}
+          triggerCount={displayedTasks.length}
+        />
+      ) : null}
+      <div className={cn("t-skel", revealed && "is-revealed")}>
+        {showSkeleton ? (
+          <TaskListSkeleton pulsing={!revealed} />
+        ) : null}
+        {revealed ? (
+          <div className="t-skel-content">
+            <TaskList
+              tasks={displayedTasks}
+              onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
+              hiddenArchivedCount={archivedHidden}
+            />
+          </div>
+        ) : null}
+      </div>
     </main>
+  );
+}
+
+function TaskListSkeleton({ pulsing }: { pulsing: boolean }) {
+  return (
+    <ul
+      className={cn("t-skel-skeleton flex flex-col pt-1 m-0 p-0 list-none", pulsing && "is-pulsing")}
+    >
+      {Array.from({ length: 6 }, (_, i) => (
+        <li
+          key={i}
+          className="task-row-skeleton flex items-center gap-row-gap px-3 -mx-3 py-row-y"
+        >
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <span className="t-skel-bar h-4 w-56 max-w-full" />
+            <span className="t-skel-bar h-3 w-32" />
+          </div>
+          <div className="flex w-row-meta flex-shrink-0 flex-col items-end gap-1.5">
+            <span className="t-skel-bar h-3 w-16" />
+            <span className="t-skel-bar h-3 w-12" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -18,7 +18,7 @@ Replace the bare `Loading...` strings on the task list and task detail pages wit
 
 ### `list-skeleton` — Cross-fade skeleton for the task list (+ shared primitive)
 
-**Status:** not-started
+**Status:** done
 
 **Outside-in:** `TasksPage` while its query is pending renders a pulsing row skeleton in the list slot that cross-fades (fade + cross-blur) into the real `TaskRow` list once data arrives — replacing the `Loading...` string.
 

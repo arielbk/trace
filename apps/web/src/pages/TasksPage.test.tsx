@@ -80,6 +80,36 @@ function makeQueryWrapper() {
 }
 
 describe("TasksPage", () => {
+  test("renders a pulsing row skeleton while the tasks query is pending, not a bare Loading string", () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+
+    expect(
+      container.querySelectorAll(".task-row-skeleton").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+  });
+
+  test("skeleton rows are replaced by real task rows once data arrives", async () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(tasks), { status: 200 }),
+      ),
+    );
+
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    await screen.findByText("CLI work");
+    expect(container.querySelectorAll(".task-row-skeleton").length).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".task-row-skeleton").length).toBe(0);
+    });
+  });
+
   test("renders task titles from the query payload", async () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
