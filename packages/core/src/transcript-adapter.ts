@@ -20,6 +20,7 @@ export type ParsedTranscript = {
   transcriptPath: string;
   tool: SessionTool;
   model: string | null;
+  title: string | null;
   tokenTotals: TokenTotals;
   // Live context-window occupancy when the tool exposes it (Cursor); absent
   // otherwise. Not persisted — surfaced through to the refreshed session.

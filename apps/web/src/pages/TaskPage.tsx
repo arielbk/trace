@@ -1,17 +1,19 @@
 import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
   type SessionTool,
   type TaskTimeline,
+  type TaskTimelineItem,
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
+import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
@@ -20,11 +22,14 @@ import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
   formatContextUsage,
+  formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
+import { resumeCommand } from "../resume.ts";
 import {
   HttpError,
   useArchiveTask,
@@ -75,6 +80,114 @@ function docRoute(taskRef: string, docPath: string): string {
   return `/task/${encodeURIComponent(taskRef)}/docs/${encodeURIComponent(docPath)}`;
 }
 
+type SessionTimelineItem = Extract<TaskTimelineItem, { type: "session" }>;
+
+type TimelineRoot =
+  | { kind: "doc"; item: Extract<TaskTimelineItem, { type: "doc" }> }
+  | { kind: "session"; item: SessionTimelineItem; children: SessionTimelineItem[] };
+
+// Group every descendant session (subagents + spawned sessions, depth-first)
+// under the root session that launched them, so a root's whole fan collapses
+// behind one disclosure. Docs and orphaned children (parent not in view) stay
+// at the top level.
+function buildTimelineTree(items: TaskTimelineItem[]): TimelineRoot[] {
+  const visibleSessionIds = new Set(
+    items
+      .filter((item) => item.type === "session")
+      .map((item) => item.session.id),
+  );
+  const childrenByParent = new Map<string, SessionTimelineItem[]>();
+
+  for (const item of items) {
+    if (item.type !== "session") continue;
+    const parentId = item.session.parentSessionId;
+    if (!parentId || !visibleSessionIds.has(parentId)) continue;
+
+    const siblings = childrenByParent.get(parentId) ?? [];
+    siblings.push(item);
+    childrenByParent.set(parentId, siblings);
+  }
+
+  function descendants(sessionId: string): SessionTimelineItem[] {
+    const out: SessionTimelineItem[] = [];
+    for (const child of childrenByParent.get(sessionId) ?? []) {
+      out.push(child);
+      out.push(...descendants(child.session.id));
+    }
+    return out;
+  }
+
+  const roots: TimelineRoot[] = [];
+  for (const item of items) {
+    if (item.type === "doc") {
+      roots.push({ kind: "doc", item });
+      continue;
+    }
+
+    const parentId = item.session.parentSessionId;
+    if (parentId && visibleSessionIds.has(parentId)) continue;
+
+    roots.push({
+      kind: "session",
+      item,
+      children: descendants(item.session.id),
+    });
+  }
+
+  return roots;
+}
+
+// "3 subagents · 412.0K tokens" — the disclosure header summarising a root's
+// fan. The count segment reports subagents only (falling back to the total
+// session count when the fan has none), while the token total sums fresh spend
+// across EVERY child — subagents and spawned alike — so the figure stays correct
+// once spawned attribution lands.
+function fanOutLabel(children: SessionTimelineItem[]): string {
+  const subagents = children.filter(
+    (c) => c.session.origin === "subagent",
+  ).length;
+  const countSegment =
+    subagents > 0
+      ? `${subagents} subagent${subagents > 1 ? "s" : ""}`
+      : `${children.length} session${children.length > 1 ? "s" : ""}`;
+  const tokenTotal = children.reduce(
+    (sum, c) => sum + freshTokenTotal(c.session.tokenTotals),
+    0,
+  );
+  return `${countSegment} · ${formatTokensCompact(tokenTotal)} tokens`;
+}
+
+function sessionOriginBadge(
+  session: Extract<TaskTimelineItem, { type: "session" }>["session"],
+): string | null {
+  if (session.origin === "subagent") {
+    return `↳ ${session.subagentType ?? "subagent"}`;
+  }
+
+  if (session.origin === "spawned") {
+    return "↳ spawned session";
+  }
+
+  return null;
+}
+
+// Title for a child session that has no captured name of its own. Leading with
+// the origin/type reads as a real name and avoids stacking a meaningless temp
+// transcript path above the origin badge.
+function sessionChildTitle(
+  session: Extract<TaskTimelineItem, { type: "session" }>["session"],
+): string | null {
+  if (session.origin === "subagent") {
+    return session.subagentType ?? "Subagent";
+  }
+
+  if (session.origin === "spawned") {
+    return "Spawned session";
+  }
+
+  return null;
+}
+
 export function TaskTimelineView({
   timeline,
   now,
@@ -104,6 +217,10 @@ export function TaskTimelineView({
   const [timelineFilter, setTimelineFilter] = useState<
     "all" | "session" | "doc"
   >("all");
+  // Subagent fans start collapsed and are tracked by their root session id.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+    {},
+  );
   const [localSelectedDocPath, setLocalSelectedDocPath] = useState<
     string | null
   >(null);
@@ -162,9 +279,14 @@ export function TaskTimelineView({
   )
     .slice()
     .reverse();
+  const timelineRoots = buildTimelineTree(visibleItems);
 
   function toggleFilter(filter: "session" | "doc") {
     setTimelineFilter((current) => (current === filter ? "all" : filter));
+  }
+
+  function toggleGroup(id: string) {
+    setExpandedGroups((current) => ({ ...current, [id]: !current[id] }));
   }
 
   return (
@@ -283,60 +405,23 @@ export function TaskTimelineView({
               aria-hidden="true"
               data-testid="timeline-spine"
             />
-            {visibleItems.map((item) => {
-              return item.type === "session" ? (
-                <li
-                  className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface"
-                  key={`session:${item.session.id}`}
-                >
-                  <div className="relative z-10 flex justify-center">
-                    <TypeIcon type={item.session.tool} />
-                  </div>
-                  <div className="min-w-0">
-                    {item.sessionName ? (
-                      <span className="text-base font-semibold">
-                        {item.sessionName}
-                      </span>
-                    ) : (
-                      <CopyChip
-                        value={item.session.transcriptPath}
-                        display={truncatePath(item.session.transcriptPath)}
-                      />
-                    )}
-                    <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
-                      {item.session.model ? (
-                        <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
-                          {item.session.model}
-                        </span>
-                      ) : null}
-                      <span
-                        className="font-mono"
-                        title={formatTokenBreakdown(item.session.tokenTotals)}
-                      >
-                        {hasCapturedTokens(item.session.tokenTotals) ? (
-                          <>
-                            {formatTokensCompact(
-                              item.session.tokenTotals.inputTokens,
-                            )}{" "}
-                            in{" · "}
-                            {formatTokensCompact(
-                              item.session.tokenTotals.outputTokens,
-                            )}{" "}
-                            out
-                          </>
-                        ) : item.session.contextTokens ? (
-                          formatContextUsage(item.session.contextTokens)
-                        ) : (
-                          "tokens unavailable"
-                        )}
-                      </span>
-                      <span className="ml-auto text-text-muted text-sm">
-                        {formatRelativeTime(item.createdAt, now)}
-                      </span>
-                    </p>
-                  </div>
-                </li>
-              ) : (
+            {timelineRoots.map((root) => {
+              if (root.kind === "session") {
+                const { item } = root;
+                return (
+                  <SessionRootRow
+                    key={`session:${item.session.id}`}
+                    item={item}
+                    childItems={root.children}
+                    expanded={!!expandedGroups[item.session.id]}
+                    onToggle={() => toggleGroup(item.session.id)}
+                    now={now}
+                  />
+                );
+              }
+
+              const { item } = root;
+              return (
                 <li key={`doc:${item.doc.path}`}>
                   <div
                     className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"
@@ -355,24 +440,38 @@ export function TaskTimelineView({
                       <TypeIcon type="doc" />
                     </div>
                     <div className="min-w-0">
-                      <span
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <CopyChip
-                          value={item.doc.path}
-                          display={truncatePath(item.doc.path)}
-                        />
-                      </span>
-                      <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted m-0">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="min-w-0 text-row-title font-bold tracking-tight truncate">
+                          {resolveDocDisplayTitle(item.doc)}
+                        </span>
+                        <span className="ml-auto font-mono text-crumb text-text-muted whitespace-nowrap">
+                          {formatRelativeTime(item.createdAt, now)}
+                        </span>
+                      </div>
+                      {item.doc.description ? (
+                        <p
+                          data-testid="timeline-doc-description"
+                          title={item.doc.description}
+                          className="mt-1 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description line-clamp-1"
+                        >
+                          {item.doc.description}
+                        </p>
+                      ) : null}
+                      <p className="flex flex-wrap gap-2 items-center mt-1.5 text-text-muted m-0">
+                        <span
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <CopyChip
+                            value={item.doc.path}
+                            display={truncatePath(item.doc.path)}
+                          />
+                        </span>
                         {item.sizeBytes !== null ? (
                           <span className="font-mono tabular-nums">
                             {formatBytes(item.sizeBytes)}
                           </span>
                         ) : null}
-                        <span className="ml-auto text-text-muted text-sm">
-                          {formatRelativeTime(item.createdAt, now)}
-                        </span>
                       </p>
                     </div>
                   </div>
@@ -398,6 +497,252 @@ export function TaskTimelineView({
         ) : null}
       </AnimatePresence>
     </main>
+  );
+}
+
+// A root session's timeline row. Hover state lives here (not lifted to the
+// parent list) so each row fades its own time ↔ Resume pair independently,
+// mirroring the task list's per-row meta ↔ actions swap (TaskRow.tsx) with
+// the same `t-text-swap`/`is-exit` transition so the affordance reads as one
+// pattern across the app.
+function SessionRootRow({
+  item,
+  childItems,
+  expanded,
+  onToggle,
+  now,
+}: {
+  item: SessionTimelineItem;
+  childItems: SessionTimelineItem[];
+  expanded: boolean;
+  onToggle: () => void;
+  now?: Date;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  // When a session has no name of its own, lead the row with its origin/type
+  // and demote the temp transcript path into the meta line, rather than
+  // stacking two pills.
+  const originBadge = sessionOriginBadge(item.session);
+  const childTitle = item.sessionName ? null : sessionChildTitle(item.session);
+  const resumeCopyValue =
+    item.session.origin === "root" ? resumeCommand(item.session) : null;
+  const title = item.sessionName ?? childTitle;
+
+  return (
+    <li
+      className="relative"
+      data-testid="timeline-session-row"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+        <div className="relative z-10 flex justify-center">
+          <TypeIcon type={item.session.tool} />
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            {title ? (
+              <span className="text-base font-semibold">{title}</span>
+            ) : (
+              <span className="text-base font-normal italic text-text-muted">
+                Untitled session
+              </span>
+            )}
+            <span
+              data-testid="timeline-row-time"
+              className={cn(
+                "t-text-swap ml-auto font-mono text-crumb text-text-muted whitespace-nowrap",
+                isHovered && resumeCopyValue && "is-exit",
+              )}
+            >
+              {formatRelativeTime(item.createdAt, now)}
+            </span>
+          </div>
+          <p className="flex flex-wrap gap-2 items-center mt-1 text-text-muted wrap-anywhere m-0">
+            {item.session.model ? (
+              <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                {formatModelName(item.session.model)}
+              </span>
+            ) : null}
+            {originBadge && !childTitle ? (
+              <span className="inline-flex items-center w-fit min-h-chip-min px-2 rounded-full text-xs font-bold leading-none text-chip-text bg-chip-bg border border-chip-border">
+                {originBadge}
+              </span>
+            ) : null}
+            <span
+              className="font-mono"
+              title={formatTokenBreakdown(item.session.tokenTotals)}
+            >
+              {hasCapturedTokens(item.session.tokenTotals) ? (
+                <>
+                  {formatTokensCompact(item.session.tokenTotals.inputTokens)}{" "}
+                  in{" · "}
+                  {formatTokensCompact(item.session.tokenTotals.outputTokens)}{" "}
+                  out
+                </>
+              ) : item.session.contextTokens ? (
+                formatContextUsage(item.session.contextTokens)
+              ) : (
+                "tokens unavailable"
+              )}
+            </span>
+          </p>
+        </div>
+        {resumeCopyValue ? (
+          <span
+            data-testid="timeline-row-resume"
+            className={cn(
+              "t-text-swap absolute top-1/2 right-3 -translate-y-1/2",
+              isHovered
+                ? "pointer-events-auto"
+                : "is-exit pointer-events-none",
+            )}
+          >
+            <CopyPromptButton
+              label="Resume"
+              copyLabel="Copy resume command"
+              value={resumeCopyValue}
+            />
+          </span>
+        ) : null}
+      </div>
+      {childItems.length > 0 ? (
+        <SubagentGroup
+          childItems={childItems}
+          expanded={expanded}
+          onToggle={onToggle}
+        />
+      ) : null}
+    </li>
+  );
+}
+
+// Shared "Smooth ease out" curve — the transitions.dev token also used by the
+// doc viewer sheet, so panel-style reveals across the app feel of a piece.
+const subagentLaneEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
+// Collapsible disclosure holding a root session's subagent + spawned fan. The
+// header is the toggle; Motion tweens the lane's height/opacity so children
+// slide in rather than snapping. Aligned under the root row's content column.
+function SubagentGroup({
+  childItems,
+  expanded,
+  onToggle,
+}: {
+  childItems: SessionTimelineItem[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+  return (
+    <div className="ml-[3.375rem] mt-2 mb-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex items-center gap-1.5 bg-transparent border-0 py-1 px-0 cursor-pointer text-text-muted hover:text-text"
+      >
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none"
+          style={{ transform: `rotate(${expanded ? 90 : 0}deg)` }}
+          aria-hidden="true"
+        >
+          <polyline points="9 6 15 12 9 18" />
+        </svg>
+        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.06em] leading-none whitespace-nowrap">
+          {fanOutLabel(childItems)}
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            key="lane"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={
+              shouldReduceMotion
+                ? { duration: 0 }
+                : { duration: 0.24, ease: subagentLaneEase }
+            }
+            // The height tween needs overflow:hidden, but that also clips each
+            // child row's leftward hover bleed (-ml-3). Widen the clip box with
+            // matching horizontal padding + negative margin so the bleed shows.
+            className="px-3 -mx-3"
+            style={{ overflow: "hidden" }}
+          >
+            <ul className="list-none m-0 p-0 mt-2 flex flex-col gap-1">
+              {childItems.map((child) => (
+                <SubagentChildRow
+                  key={`session:${child.session.id}`}
+                  item={child}
+                />
+              ))}
+            </ul>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// One compact child row inside a subagent lane. Leads with the subagent type
+// (or the spawned session's name), tags spawned sessions, and demotes model +
+// token spend to a single muted meta line.
+function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
+  const { session } = item;
+  const isSpawned = session.origin === "spawned";
+  const title =
+    item.sessionName ??
+    sessionChildTitle(session) ??
+    truncatePath(session.transcriptPath);
+  const tokenLine = hasCapturedTokens(session.tokenTotals)
+    ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
+    : session.contextTokens
+      ? formatContextUsage(session.contextTokens)
+      : "tokens unavailable";
+  const meta = [session.model ? formatModelName(session.model) : null, tokenLine]
+    .filter(Boolean)
+    .join(" · ");
+  // The kind badge only earns its place when the row leads with the session's
+  // own captured name. For a nameless child the title is already derived from
+  // the origin/type (sessionChildTitle), so the badge would just repeat it.
+  const kindBadge = item.sessionName
+    ? isSpawned
+      ? "spawned"
+      : (session.subagentType ?? null)
+    : null;
+
+  return (
+    <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+      <div className="flex justify-center pt-px">
+        <TypeIcon type={session.tool} size="sm" />
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[13px] font-semibold text-text">{title}</span>
+          {kindBadge ? (
+            <span className="inline-flex items-center font-mono text-[9px] font-bold uppercase tracking-wider leading-relaxed px-1.5 rounded text-chip-text bg-chip-bg border border-chip-border">
+              {kindBadge}
+            </span>
+          ) : null}
+        </div>
+        <div
+          className="mt-1 font-mono text-[10.5px] text-text-muted tabular-nums wrap-anywhere"
+          title={formatTokenBreakdown(session.tokenTotals)}
+        >
+          {meta}
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -462,7 +807,7 @@ export function LeftOffPanel({
                           aria-hidden="true"
                         />
                         <span
-                          className="text-sm leading-normal text-text"
+                          className="state-inline text-sm leading-normal text-text-muted"
                           dangerouslySetInnerHTML={{ __html: d }}
                         />
                       </li>
@@ -478,8 +823,8 @@ export function LeftOffPanel({
                     </h3>
                     <div className="flex gap-2.5">
                       <NextStepArrow />
-                      <span
-                        className="text-sm font-medium leading-normal text-text"
+                      <div
+                        className="left-off-prose text-sm font-medium leading-normal text-text-muted"
                         dangerouslySetInnerHTML={{ __html: state.nextStep }}
                       />
                     </div>
@@ -498,7 +843,7 @@ export function LeftOffPanel({
                             aria-hidden="true"
                           />
                           <span
-                            className="text-sm leading-normal text-text"
+                            className="state-inline text-sm leading-normal text-text-muted"
                             dangerouslySetInnerHTML={{ __html: q }}
                           />
                         </li>
@@ -583,16 +928,25 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
 };
 
 /** Inline SVG glyph for each timeline entry type; colored via the type token. */
-function TypeIcon({ type }: { type: SessionTool | "doc" }) {
+function TypeIcon({
+  type,
+  size = "lg",
+}: {
+  type: SessionTool | "doc";
+  size?: "lg" | "sm";
+}) {
+  const box = size === "sm" ? "w-6 h-6" : "w-10 h-10";
+  const glyph = size === "sm" ? 18 : 30;
+  const docGlyph = size === "sm" ? 13 : 20;
   return (
     <span
-      className={`type-icon type-icon-${type} inline-flex items-center justify-center w-10 h-10 rounded-md ${type === "cursor" ? "relative overflow-hidden" : "border"}`}
+      className={`type-icon type-icon-${type} inline-flex items-center justify-center ${box} rounded-md ${type === "cursor" ? "relative overflow-hidden" : "border"}`}
       style={TYPE_ICON_STYLES[type]}
       role="img"
       aria-label={TYPE_LABELS[type]}
     >
       {type === "claude" ? (
-        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width={glyph} height={glyph} aria-hidden="true">
           <path
             d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
             fill="currentColor"
@@ -601,8 +955,8 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
       ) : type === "codex" ? (
         <svg
           viewBox="2.75 2.75 18.5 18.5"
-          width="30"
-          height="30"
+          width={glyph}
+          height={glyph}
           aria-hidden="true"
         >
           <path
@@ -645,7 +999,12 @@ function TypeIcon({ type }: { type: SessionTool | "doc" }) {
           />
         </>
       ) : (
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width={docGlyph}
+          height={docGlyph}
+          aria-hidden="true"
+        >
           <path
             d="M6 3h7l5 5v13H6z"
             fill="none"

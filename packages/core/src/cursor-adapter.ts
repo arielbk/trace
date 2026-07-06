@@ -51,6 +51,7 @@ function parsedFromSession(
     id: session.composerId,
     transcriptPath,
     tool: "cursor",
+    title: session.title?.trim() || null,
     model: session.model,
     tokenTotals: tokenTotalsFromCursor(session.tokenTotals),
     contextTokens: session.contextTokens,

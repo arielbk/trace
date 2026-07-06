@@ -50,6 +50,7 @@ test("parse maps a CursorSession to a ParsedTranscript via the composerId locato
     id: "composer-1",
     transcriptPath: "cursor:composer-1",
     tool: "cursor",
+    title: "Wire the cursor adapter",
     model: "claude-opus-4-7",
     tokenTotals: {
       inputTokens: 17,

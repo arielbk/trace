@@ -1,4 +1,6 @@
-import { inferSessionIdentity } from "@trace/core";
+import {
+  inferSessionIdentity,
+} from "@trace/core";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolveDbPath } from "./db-path.ts";

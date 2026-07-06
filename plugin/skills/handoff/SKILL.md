@@ -21,7 +21,7 @@ a wrap-up verb, not a general note-taking verb.
 Follow the `trace-doc-placement` skill's resolution flow verbatim:
 
 ```sh
-npx @arielbk/trace@0.3.0 skill docs-dir
+npx @arielbk/trace@0.7.0 skill docs-dir
 ```
 
 **Exit 0 — session is bound.** stdout contains `taskDocsDir: <path>`. Extract
@@ -100,8 +100,8 @@ there genuinely are none.>
 ```
 
 **Do not write a docs footer.** The list of other docs in this task is a
-machine-owned region rendered automatically by `trace task add-doc`. It is
-delimited by HTML-comment fence markers:
+machine-owned region rendered automatically by `trace task add-doc` (and
+`update-doc`). It is delimited by HTML-comment fence markers:
 
 ```
 <!-- trace:docs-manifest:start -->

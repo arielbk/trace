@@ -373,6 +373,15 @@
 .left-off-prose a { color: var(--color-accent); text-decoration: underline; }
 .left-off-prose strong { color: var(--color-text); font-weight: 650; }
 
+/*
+ * Inline markdown for the single-line state fields (decisions, open questions).
+ * Body text sits at the muted tone; emphasis pops to the brighter --color-text,
+ * matching the "Current state" prose treatment above.
+ */
+.state-inline strong { color: var(--color-text); font-weight: 650; }
+.state-inline a { color: var(--color-accent); text-decoration: underline; }
+.state-inline code { font-family: var(--font-mono); font-size: 0.85em; }
+
 /* Block-level markdown rendered for the read-only doc viewer Sheet. */
 .doc-viewer-prose > :first-child { margin-top: 0; }
 .doc-viewer-prose > :last-child { margin-bottom: 0; }
@@ -387,6 +396,7 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.25;
+  color: var(--color-text);
 }
 .doc-viewer-prose h1 { font-size: 1.6em; }
 .doc-viewer-prose h2 { font-size: 1.35em; }
@@ -444,6 +454,26 @@
   text-align: left;
 }
 .doc-viewer-prose th { background: var(--color-surface); font-weight: 650; }
+
+/* Interactive task-list checkboxes — the one editable element in the doc viewer.
+   Drop the list bullet for task items so the box sits in the gutter; keep the box
+   accent-filled and pointer-cursored, with default (no custom) transitions. */
+.doc-viewer-prose li:has(> input[type="checkbox"]) {
+  list-style: none;
+}
+.doc-viewer-prose input[type="checkbox"] {
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.5em 0 -1.55em;
+  vertical-align: -0.16em;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  border-radius: 0.25em;
+}
+.doc-viewer-prose input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* ClampedSection: collapse long content behind a Show more toggle. */
 .left-off-clamp {

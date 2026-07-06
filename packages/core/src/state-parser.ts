@@ -68,7 +68,7 @@ export function parseStateMd(text: string): ParsedStateMd {
 
   result.decisions = parseListOrParagraphs(sections.get("decisions") ?? []);
   result.currentState = parseBlocks(sections.get("currentState") ?? []);
-  result.nextStep = parseFirstParagraph(sections.get("nextStep") ?? []);
+  result.nextStep = parseFirstBlock(sections.get("nextStep") ?? []);
   result.openQuestions = parseListOrParagraphs(
     sections.get("openQuestions") ?? [],
   );
@@ -89,11 +89,31 @@ function firstContentLine(lines: string[]): string | undefined {
 }
 
 function parseListOrParagraphs(lines: string[]): string[] {
-  const items = lines
-    .map((line) => /^\s*(?:[-*+]|\d+[.)])\s+(.+)$/.exec(line)?.[1]?.trim())
-    .filter((line): line is string => Boolean(line));
+  const items: string[] = [];
+  let current: string | undefined;
+  let sawList = false;
 
-  const values = items.length > 0 ? items : splitParagraphs(lines);
+  for (const line of lines) {
+    const marker = /^\s*(?:[-*+]|\d+[.)])\s+(.+)$/.exec(line);
+    if (marker) {
+      sawList = true;
+      if (current !== undefined) items.push(current);
+      current = marker[1]?.trim() ?? "";
+    } else if (current !== undefined) {
+      // A wrapped continuation line folds into the current item; a blank line
+      // ends it so the next bullet starts a fresh item.
+      const continuation = line.trim();
+      if (continuation.length === 0) {
+        items.push(current);
+        current = undefined;
+      } else {
+        current = `${current} ${continuation}`;
+      }
+    }
+  }
+  if (current !== undefined) items.push(current);
+
+  const values = sawList ? items : splitParagraphs(lines);
   return values.filter(isMeaningfulValue).map(renderInlineMarkdown);
 }
 
@@ -114,9 +134,14 @@ function splitBlocks(lines: string[]): string[] {
     .filter((block) => block.length > 0);
 }
 
-function parseFirstParagraph(lines: string[]): string | undefined {
-  const paragraph = splitParagraphs(lines).find(isMeaningfulValue);
-  return paragraph ? renderInlineMarkdown(paragraph) : undefined;
+/**
+ * Render the first blank-line-separated block of the section as block-level
+ * markdown. Unlike paragraph parsing this preserves intra-block newlines, so a
+ * numbered or bulleted "next step" becomes a real list instead of a run-on line.
+ */
+function parseFirstBlock(lines: string[]): string | undefined {
+  const block = splitBlocks(lines).find(isMeaningfulValue);
+  return block ? renderMarkdown(block) : undefined;
 }
 
 function splitParagraphs(lines: string[]): string[] {

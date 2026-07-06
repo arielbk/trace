@@ -6,18 +6,23 @@ export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
 export type { ParsedStateMd } from "./state-parser.ts";
-export { renderMarkdown } from "./markdown.ts";
+export { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
+export { resolveDocTitle } from "./display-title.ts";
+export type { ResolvableDoc } from "./display-title.ts";
 export { renderManifest, updateStateManifest } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export type {
   ActiveTask,
+  AddTaskDocOptions,
   ContextTokens,
   RegisterSessionInput,
   ReEntryManifest,
   ReEntryManifestDoc,
   ReEntryManifestSession,
   Session,
+  SessionOrigin,
   SessionTool,
+  SetSessionParentInput,
   Task,
   TaskDoc,
   TaskStore,
@@ -59,9 +64,20 @@ export {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";
-export { deriveSessionName, readSessionName } from "./session-name.ts";
+export {
+  deriveSessionName,
+  readSessionName,
+  resolveSessionName,
+} from "./session-name.ts";
 export { inferSessionIdentity } from "./session-identity.ts";
 export type {
   SessionIdentity,
   SessionIdentityOverrides,
 } from "./session-identity.ts";
+export {
+  createStoreSessionLocator,
+  resolveTraceParentSession,
+} from "./session-locator.ts";
+export type { SessionLocator } from "./session-locator.ts";
+export { discoverClaudeCodeSubagentSessions } from "./subagent-discovery.ts";
+export type { DiscoverClaudeCodeSubagentSessionsInput } from "./subagent-discovery.ts";

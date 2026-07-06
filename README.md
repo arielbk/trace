@@ -148,6 +148,35 @@ others carry the whole loop in a single entry skill.
   hook) or by backfill (where it doesn't).
 - Per-task docs at `~/.trace/tasks/<slug>/docs/` — the known place re-entry looks.
 
+## Registering Spawned Children
+
+A spawner that launches separate child CLI sessions can attribute those children
+without knowing anything about Trace internals. Capture each child session id
+from the child tool's machine-readable stream, then run:
+
+```sh
+trace session set-parent <child-session-id> --parent <parent-session-id> --origin spawned
+```
+
+The parent session must already exist in the Trace store. The child may already
+exist, or it may be unknown when the command runs. Unknown children are seeded as
+virtual Codex sessions with a `codex:<child-session-id>` transcript URI; a later
+`trace session register` or Codex scan enriches the row with the real transcript
+and tool details without dropping the parent attribution.
+
+For generic spawners, expose a per-child hook named `TRACE_SPAWN_HOOK`. Treat an
+unset hook as a no-op. When it is set, substitute `{parent}` and `{child}` with
+the captured ids and invoke it exactly once per child:
+
+```sh
+TRACE_SPAWN_HOOK='trace session set-parent {child} --parent {parent} --origin spawned'
+```
+
+Ralph is the worked example of this contract: it captures Claude children from
+`session_id` events and Codex children from `thread.started.thread_id`, records
+the `<parent><tab><child>` pair in its own sink, then runs the hook. Any other
+spawner can follow the same pattern with its own way of discovering child ids.
+
 ## Status
 
 Same-tool re-entry — work in an agent, clear, re-enter, keep going — is the core

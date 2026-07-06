@@ -109,7 +109,7 @@ test("GET /api/tasks/:id/timeline includes parsed state when state.md exists", (
       summary: "Checkout is resumable",
       decisions: ["Keep parsing in <strong>core</strong>"],
       currentState: ["<p>Endpoint work is <code>in progress</code>.</p>"],
-      nextStep: "Render the panel.",
+      nextStep: "<p>Render the panel.</p>",
       openQuestions: [],
     });
     expect(timeline.lastActivityAt).toEqual(expect.any(String));
@@ -441,6 +441,130 @@ test("GET /api/tasks/:ref/docs is read-only: the doc on disk is unchanged after 
 
     expect(readFileSync(docPath, "utf8")).toBe(original);
     expect(statSync(docPath).mtimeMs).toBe(statBefore.mtimeMs);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/docs/checkbox flips the addressed marker in the on-disk file", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "todo.md");
+  writeFileSync(docPath, "- [ ] first\n- [ ] second\n");
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: docPath, index: 1, checked: true }),
+    );
+    expect(response!.status).toBe(200);
+    expect(readFileSync(docPath, "utf8")).toBe("- [ ] first\n- [x] second\n");
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/docs/checkbox rejects a path outside the task's docs directory", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const outsidePath = join(docsDir, "..", "..", "secret.md");
+  writeFileSync(outsidePath, "- [ ] secret\n");
+
+  try {
+    const traversal = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: "../../secret.md", index: 0, checked: true }),
+    );
+    expect(traversal!.status).toBe(400);
+    // The out-of-bounds file is untouched.
+    expect(readFileSync(outsidePath, "utf8")).toBe("- [ ] secret\n");
+  } finally {
+    rmSync(outsidePath, { force: true });
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/docs/checkbox handles an out-of-range index gracefully", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "todo.md");
+  const original = "- [ ] only one\n";
+  writeFileSync(docPath, original);
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: docPath, index: 5, checked: true }),
+    );
+    expect(response!.status).toBe(200);
+    expect(readFileSync(docPath, "utf8")).toBe(original);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/docs/checkbox rejects non-POST methods, unknown tasks, and malformed bodies", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "todo.md");
+  writeFileSync(docPath, "- [ ] first\n");
+
+  try {
+    const body = JSON.stringify({ path: docPath, index: 0, checked: true });
+
+    const wrongMethod = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      body,
+    );
+    expect(wrongMethod!.status).toBe(405);
+
+    const unknownTask = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/does-not-exist/docs/checkbox`,
+      body,
+    );
+    expect(unknownTask!.status).toBe(404);
+
+    const badJson = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      "not json",
+    );
+    expect(badJson!.status).toBe(400);
+
+    const missingFields = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: docPath }),
+    );
+    expect(missingFields!.status).toBe(400);
   } finally {
     cleanup();
   }

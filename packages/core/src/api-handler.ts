@@ -1,7 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, resolve, sep } from "node:path";
-import { renderMarkdown } from "./markdown.ts";
+import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 
 export type TraceApiResponse = {
@@ -34,6 +34,7 @@ export function handleTraceApiRequest(
   databasePath: string,
   method: string,
   rawUrl: string,
+  body?: string,
 ): TraceApiResponse | null {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
 
@@ -82,6 +83,21 @@ export function handleTraceApiRequest(
       try {
         const timeline = store.getTaskTimeline(decodeURIComponent(match[1]));
         return timeline ? json(timeline) : notFound();
+      } finally {
+        store.close();
+      }
+    }
+
+    const checkboxMatch = /^\/api\/tasks\/([^/]+)\/docs\/checkbox\/?$/.exec(
+      path,
+    );
+    if (checkboxMatch?.[1]) {
+      if (method !== "POST") return methodNotAllowed();
+      const store = openTraceStore(databasePath);
+      try {
+        const task = store.getTaskByRef(decodeURIComponent(checkboxMatch[1]));
+        if (!task) return notFound();
+        return toggleTaskDocCheckbox(databasePath, task.slug, body);
       } finally {
         store.close();
       }
@@ -174,10 +190,8 @@ function readTaskDocContents(
   taskSlug: string,
   docPath: string,
 ): TraceApiResponse {
-  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
-  const resolved = resolve(docsDir, docPath);
-
-  if (!resolved.startsWith(docsDir + sep)) {
+  const resolved = resolveInBoundsDocPath(databasePath, taskSlug, docPath);
+  if (!resolved) {
     return badRequest("Doc path is outside the task's docs directory");
   }
 
@@ -209,4 +223,72 @@ function readTaskDocContents(
     body: content,
     contentType: DOC_TEXT_CONTENT_TYPES[extension] ?? "text/plain",
   };
+}
+
+/**
+ * Resolve `docPath` against the task's docs directory, returning the absolute
+ * path or `null` if it escapes that directory. The single guard against path
+ * traversal (and against out-of-bounds registered doc paths) shared by the
+ * read-only viewer and the checkbox writer.
+ */
+function resolveInBoundsDocPath(
+  databasePath: string,
+  taskSlug: string,
+  docPath: string,
+): string | null {
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  const resolved = resolve(docsDir, docPath);
+  return resolved.startsWith(docsDir + sep) ? resolved : null;
+}
+
+/**
+ * Apply a checkbox toggle to a task doc: read the in-bounds `.md`, flip the Nth
+ * task-list marker via {@link toggleTaskListCheckbox}, and write it back. An
+ * out-of-range index is a safe no-op (the unchanged content is written). The
+ * body must be JSON `{ path: string, index: integer, checked: boolean }`.
+ */
+function toggleTaskDocCheckbox(
+  databasePath: string,
+  taskSlug: string,
+  body: string | undefined,
+): TraceApiResponse {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body ?? "");
+  } catch {
+    return badRequest("Request body must be JSON");
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    return badRequest("Body requires { path, index, checked }");
+  }
+  const { path: docPath, index, checked } = parsed as Record<string, unknown>;
+  if (
+    typeof docPath !== "string" ||
+    !Number.isInteger(index) ||
+    typeof checked !== "boolean"
+  ) {
+    return badRequest("Body requires { path, index, checked }");
+  }
+
+  const resolved = resolveInBoundsDocPath(databasePath, taskSlug, docPath);
+  if (!resolved) {
+    return badRequest("Doc path is outside the task's docs directory");
+  }
+
+  let content: string;
+  try {
+    content = readFileSync(resolved, "utf8");
+  } catch {
+    return notFound();
+  }
+
+  const updated = toggleTaskListCheckbox(content, index as number, checked);
+  try {
+    writeFileSync(resolved, updated);
+  } catch {
+    return { status: 500, body: "Doc could not be written" };
+  }
+
+  return json({ ok: true });
 }

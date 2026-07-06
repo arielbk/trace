@@ -3,9 +3,11 @@ import {
   buildReEnterPrompt,
   collapseHomePath,
   formatContextUsage,
+  formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  resolveDocDisplayTitle,
   truncateId,
   truncatePath,
 } from "./format.ts";
@@ -158,6 +160,52 @@ describe("collapseHomePath", () => {
 
   test("returns home itself as ~", () => {
     expect(collapseHomePath("/Users/alice", "/Users/alice")).toBe("~");
+  });
+});
+
+describe("resolveDocDisplayTitle", () => {
+  test("prefers an explicit title over the filename", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "Launch plan" }),
+    ).toBe("Launch plan");
+  });
+
+  test("trims a padded explicit title", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "  Launch plan  " }),
+    ).toBe("Launch plan");
+  });
+
+  test("falls back to the filename when there is no title", () => {
+    expect(resolveDocDisplayTitle({ path: "/work/docs/plan.md" })).toBe("plan.md");
+  });
+
+  test("falls back to the filename when the title is blank/whitespace", () => {
+    expect(
+      resolveDocDisplayTitle({ path: "/work/docs/plan.md", title: "   " }),
+    ).toBe("plan.md");
+  });
+});
+
+describe("formatModelName", () => {
+  test("formats an opus id with a dotted minor version", () => {
+    expect(formatModelName("claude-opus-4-8")).toBe("Opus 4.8");
+  });
+
+  test("formats a sonnet id with no minor version", () => {
+    expect(formatModelName("claude-sonnet-5")).toBe("Sonnet 5");
+  });
+
+  test("strips a trailing release date from a dated haiku variant", () => {
+    expect(formatModelName("claude-haiku-4-5-20251001")).toBe("Haiku 4.5");
+  });
+
+  test("formats a codex id readably", () => {
+    expect(formatModelName("gpt-5-codex")).toBe("GPT-5 Codex");
+  });
+
+  test("falls back to the raw string for an unrecognised id", () => {
+    expect(formatModelName("some-unknown-model-id")).toBe("some-unknown-model-id");
   });
 });
 

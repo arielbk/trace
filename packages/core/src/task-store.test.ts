@@ -113,6 +113,11 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "cache_read_input_tokens",
         "total_tokens",
         "model",
+        "parent_session_id",
+        "origin",
+        "subagent_type",
+        "agent_id",
+        "title",
       ]);
     } finally {
       database.close();
@@ -387,6 +392,183 @@ test("session register and assign lifecycle keeps one task per session", () => {
   }
 });
 
+test("assignSession cascades the task_id to NULL-only descendants", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    // (a) a child discovered before the parent bind — still NULL.
+    store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    // (b) a grandchild down a spawned chain — also NULL.
+    store.registerSession({
+      id: "grandchild",
+      transcriptPath: "/tmp/grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: "child",
+      origin: "spawned",
+    });
+    // (c) a descendant already assigned to another task — left untouched.
+    store.registerSession({
+      id: "foreign-child",
+      transcriptPath: "/tmp/foreign-child.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    store.assignSession("foreign-child", otherTask.id);
+
+    store.assignSession(parent.id, task.id);
+
+    expect(store.getSession(parent.id)!.taskId).toBe(task.id);
+    expect(store.getSession("child")!.taskId).toBe(task.id);
+    expect(store.getSession("grandchild")!.taskId).toBe(task.id);
+    expect(store.getSession("foreign-child")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("assignSession with no descendants is a no-op for the rest of the tree", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const leaf = store.registerSession({
+      id: "leaf",
+      transcriptPath: "/tmp/leaf.jsonl",
+      tool: "claude",
+    });
+    const unrelated = store.registerSession({
+      id: "unrelated",
+      transcriptPath: "/tmp/unrelated.jsonl",
+      tool: "claude",
+    });
+
+    const assigned = store.assignSession(leaf.id, task.id);
+
+    expect(assigned.taskId).toBe(task.id);
+    expect(store.getSession(unrelated.id)!.taskId).toBe(null);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent cascades a bound parent's task_id to the attached child and NULL descendants", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(parent.id, task.id);
+
+    // A child discovered before it was attached to the parent — still NULL.
+    const child = store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+    });
+    // A NULL grandchild already hanging off the child.
+    store.registerSession({
+      id: "grandchild",
+      transcriptPath: "/tmp/grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: child.id,
+      origin: "spawned",
+    });
+    // A descendant already bound to another task — must stay put.
+    store.registerSession({
+      id: "foreign-grandchild",
+      transcriptPath: "/tmp/foreign-grandchild.jsonl",
+      tool: "claude",
+      parentSessionId: child.id,
+      origin: "subagent",
+    });
+    store.assignSession("foreign-grandchild", otherTask.id);
+
+    const attached = store.setSessionParent({
+      id: child.id,
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+
+    expect(attached.taskId).toBe(task.id);
+    expect(store.getSession("child")!.taskId).toBe(task.id);
+    expect(store.getSession("grandchild")!.taskId).toBe(task.id);
+    expect(store.getSession("foreign-grandchild")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent leaves a child already on another task untouched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(parent.id, task.id);
+
+    const child = store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(child.id, otherTask.id);
+
+    const attached = store.setSessionParent({
+      id: child.id,
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+
+    expect(attached.taskId).toBe(otherTask.id);
+    expect(store.getSession("child")!.taskId).toBe(otherTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("session register round-trips explicit and absent models idempotently", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -416,6 +598,271 @@ test("session register round-trips explicit and absent models idempotently", () 
       }),
     ).toEqual(withModel);
     expect(store.listUnassignedSessions()).toEqual([withModel, withoutModel]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session register round-trips explicit and absent titles", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const withTitle = store.registerSession({
+      id: "with-title",
+      transcriptPath: "/tmp/with-title.jsonl",
+      tool: "claude",
+      title: "Refactor the checkout flow",
+    });
+    const withoutTitle = store.registerSession({
+      id: "without-title",
+      transcriptPath: "/tmp/without-title.jsonl",
+      tool: "codex",
+    });
+
+    expect(withTitle.title).toBe("Refactor the checkout flow");
+    expect(withoutTitle.title).toBe(null);
+    expect(store.getSession("with-title")!.title).toBe(
+      "Refactor the checkout flow",
+    );
+    expect(store.getSession("without-title")!.title).toBe(null);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session register round-trips parent attribution fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+    const child = store.registerSession({
+      id: "child-session",
+      transcriptPath: "/tmp/child-session.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "subagent",
+      subagentType: "general-purpose",
+      agentId: "agent-123",
+    });
+
+    expect(parent).toMatchObject({
+      parentSessionId: null,
+      origin: "root",
+      subagentType: null,
+      agentId: null,
+    });
+    expect(child).toMatchObject({
+      parentSessionId: parent.id,
+      origin: "subagent",
+      subagentType: "general-purpose",
+      agentId: "agent-123",
+    });
+    expect(store.getSession(child.id)).toEqual(child);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent promotes an existing root session without clobbering registration fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+    const registered = store.registerSession({
+      id: "child-session",
+      transcriptPath: "/tmp/child-session.jsonl",
+      tool: "claude",
+      model: "claude-opus-4-7",
+      tokenTotals: { inputTokens: 12, totalTokens: 12 },
+    });
+
+    const promoted = store.setSessionParent({
+      id: registered.id,
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    expect(promoted).toMatchObject({
+      id: registered.id,
+      transcriptPath: "/tmp/child-session.jsonl",
+      tool: "claude",
+      model: "claude-opus-4-7",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(promoted.tokenTotals.inputTokens).toBe(12);
+    expect(store.getSession(registered.id)).toEqual(promoted);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates an unknown child as a codex virtual session", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "codex-thread-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    expect(child).toMatchObject({
+      id: "codex-thread-1",
+      transcriptPath: "codex:codex-thread-1",
+      tool: "codex",
+      model: null,
+      parentSessionId: parent.id,
+      origin: "spawned",
+      subagentType: null,
+      agentId: null,
+    });
+    expect(store.getSession(child.id)).toEqual(child);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates an unknown child with the given tool and transcript", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "claude-child-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+      tool: "claude",
+      transcriptPath: "/tmp/claude-child-1.jsonl",
+    });
+
+    expect(child).toMatchObject({
+      id: "claude-child-1",
+      transcriptPath: "/tmp/claude-child-1.jsonl",
+      tool: "claude",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(store.getSession(child.id)).toEqual(child);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session set-parent creates an unknown child with an explicit codex tool and transcript", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+
+    const child = store.setSessionParent({
+      id: "codex-thread-2",
+      parentSessionId: parent.id,
+      origin: "spawned",
+      tool: "codex",
+      transcriptPath: "/tmp/codex-thread-2-rollout.jsonl",
+    });
+
+    expect(child).toMatchObject({
+      id: "codex-thread-2",
+      transcriptPath: "/tmp/codex-thread-2-rollout.jsonl",
+      tool: "codex",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("session register enriches a set-parent-created child without wiping its attribution", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const parent = store.registerSession({
+      id: "parent-session",
+      transcriptPath: "/tmp/parent-session.jsonl",
+      tool: "claude",
+    });
+    store.setSessionParent({
+      id: "codex-thread-1",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+
+    const registered = store.registerSession({
+      id: "codex-thread-1",
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+      tokenTotals: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
+    });
+
+    expect(registered).toMatchObject({
+      id: "codex-thread-1",
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+      parentSessionId: parent.id,
+      origin: "spawned",
+    });
+    expect(registered.tokenTotals).toMatchObject({
+      inputTokens: 20,
+      outputTokens: 5,
+      totalTokens: 25,
+    });
+    expect(store.getSession(registered.id)).toEqual(registered);
 
     store.close();
   } finally {
@@ -500,7 +947,12 @@ test("migration keeps existing session rows readable with a null model", () => {
         transcriptPath: "/tmp/old-session.jsonl",
         tool: "claude",
         model: null,
+        title: null,
         taskId: "task-1",
+        parentSessionId: null,
+        origin: "root",
+        subagentType: null,
+        agentId: null,
         createdAt: "2026-05-29T00:00:01.000Z",
         tokenTotals: {
           inputTokens: 1,
@@ -662,7 +1114,9 @@ test("addTaskDoc persists and reads back an optional description", () => {
     const store = openTraceStore(databasePath);
     const task = store.createTask("checkout");
 
-    const described = store.addTaskDoc(task.id, "/tmp/spec.md", "The spec");
+    const described = store.addTaskDoc(task.id, "/tmp/spec.md", {
+      description: "The spec",
+    });
     expect(described.description).toBe("The spec");
 
     const undescribed = store.addTaskDoc(task.id, "/tmp/notes.md");
@@ -671,6 +1125,137 @@ test("addTaskDoc persists and reads back an optional description", () => {
     const reread = store.listDocsForTask(task.id);
     expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(described);
     expect(reread.find((d) => d.path === "/tmp/notes.md")).toEqual(undescribed);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("addTaskDoc persists and reads back an optional title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const titled = store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Checkout Spec",
+      description: "The spec",
+    });
+    expect(titled.title).toBe("Checkout Spec");
+    expect(titled.description).toBe("The spec");
+
+    const untitled = store.addTaskDoc(task.id, "/tmp/notes.md");
+    expect("title" in untitled).toBe(false);
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(titled);
+    expect(reread.find((d) => d.path === "/tmp/notes.md")).toEqual(untitled);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc sets title and description on an existing registered doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md");
+
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Checkout Spec",
+      description: "The spec",
+    });
+    expect(updated.title).toBe("Checkout Spec");
+    expect(updated.description).toBe("The spec");
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(updated);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc leaves an omitted field untouched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Original Title",
+      description: "Original description",
+    });
+
+    // Only --title given; description must survive untouched.
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      title: "New Title",
+    });
+    expect(updated.title).toBe("New Title");
+    expect(updated.description).toBe("Original description");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc clears a field when given an empty string", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.addTaskDoc(task.id, "/tmp/spec.md", {
+      title: "Original Title",
+      description: "Original description",
+    });
+
+    const updated = store.updateTaskDoc(task.id, "/tmp/spec.md", {
+      description: "",
+    });
+    expect(updated.title).toBe("Original Title");
+    expect("description" in updated).toBe(false);
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/spec.md")).toEqual(updated);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskDoc inserts a row for a doc that was never registered", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    // No prior addTaskDoc — mirrors a filesystem-discovered native doc that
+    // has no task_docs row yet.
+    const updated = store.updateTaskDoc(task.id, "/tmp/state.md", {
+      title: "Session state",
+      description: "Where the work stands",
+    });
+    expect(updated.title).toBe("Session state");
+    expect(updated.description).toBe("Where the work stands");
+
+    const reread = store.listDocsForTask(task.id);
+    expect(reread.find((d) => d.path === "/tmp/state.md")).toEqual(updated);
 
     store.close();
   } finally {
@@ -769,6 +1354,34 @@ test("task docs are empty when the task docs directory does not exist", () => {
     const task = store.createTask("checkout");
 
     expect(store.listDocsForTask(task.id)).toEqual([]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task timeline surfaces a stored session title as the session name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "titled-timeline-session",
+      transcriptPath: "/tmp/titled-timeline.jsonl",
+      tool: "claude",
+      title: "Wire up the payment provider",
+    });
+    store.assignSession(session.id, task.id);
+
+    const timeline = store.getTaskTimeline(task.id)!;
+    const item = timeline.items.find((i) => i.type === "session");
+    expect(item).toMatchObject({
+      type: "session",
+      sessionName: "Wire up the payment provider",
+    });
 
     store.close();
   } finally {
@@ -1220,6 +1833,116 @@ test("getSession refreshes token totals from transcript and persists them", () =
     unlinkSync(transcriptPath);
     const persisted = store.getSession(session.id);
     expect(persisted!.tokenTotals.totalTokens).toBe(48);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession backfills a null model from the transcript and persists it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    const session = store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(session.model).toBe(null);
+
+    // Read back — should backfill the model from the transcript.
+    const refreshed = store.getSession(session.id);
+    expect(refreshed!.model).toBe("claude-opus-4-7");
+
+    // Delete the transcript — should return the persisted (backfilled) model.
+    unlinkSync(transcriptPath);
+    const persisted = store.getSession(session.id);
+    expect(persisted!.model).toBe("claude-opus-4-7");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession does not clobber a stored model when a fresh parse yields null", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(transcriptPath, readFileSync(CLAUDE_FIXTURE, "utf8"));
+
+  try {
+    const store = openTraceStore(databasePath);
+    store.registerSession({
+      id: "claude-session-1",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(store.getSession("claude-session-1")!.model).toBe(
+      "claude-opus-4-7",
+    );
+
+    // Transcript no longer carries a model (e.g. a truncated tail) — the
+    // previously stored model must survive.
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ type: "assistant", session_id: "claude-session-1", message: { id: "msg_1" } })}\n`,
+    );
+    expect(store.getSession("claude-session-1")!.model).toBe(
+      "claude-opus-4-7",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("getSession refreshes a stored title when the transcript's title changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const transcriptPath = join(dir, "session.jsonl");
+  writeFileSync(
+    transcriptPath,
+    `${JSON.stringify({
+      type: "ai-title",
+      sessionId: "titled-session",
+      aiTitle: "First generated name",
+    })}\n`,
+  );
+
+  try {
+    const store = openTraceStore(databasePath);
+    const session = store.registerSession({
+      id: "titled-session",
+      transcriptPath,
+      tool: "claude",
+    });
+    expect(session.title).toBe(null);
+
+    // First read refreshes the title from the transcript and persists it.
+    expect(store.getSession(session.id)!.title).toBe("First generated name");
+
+    // Claude re-emits ai-title when it renames the conversation; the refresh
+    // path should pick up the new name.
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({
+        type: "ai-title",
+        sessionId: "titled-session",
+        aiTitle: "Renamed conversation",
+      })}\n`,
+    );
+    expect(store.getSession(session.id)!.title).toBe("Renamed conversation");
+
+    // Deleting the transcript falls back to the persisted (refreshed) title.
+    unlinkSync(transcriptPath);
+    expect(store.getSession(session.id)!.title).toBe("Renamed conversation");
 
     store.close();
   } finally {

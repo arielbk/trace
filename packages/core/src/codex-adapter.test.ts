@@ -15,6 +15,18 @@ const codexFixture = fileURLToPath(
   new URL("./fixtures/codex-thread-1.jsonl", import.meta.url),
 );
 
+test("Codex transcript adapter returns a null title (titles are out of scope)", () => {
+  const transcript = readFileSync(codexFixture, "utf8");
+
+  expect(
+    parseCodexTranscript({
+      transcript,
+      transcriptPath: codexFixture,
+      expectedThreadId: "codex-thread-1",
+    }).title,
+  ).toBe(null);
+});
+
 test("Codex transcript adapter validates identity and returns token totals", () => {
   const transcriptPath = codexFixture;
   const transcript = readFileSync(transcriptPath, "utf8");
@@ -30,6 +42,7 @@ test("Codex transcript adapter validates identity and returns token totals", () 
     transcriptPath,
     tool: "codex",
     model: "gpt-5-codex",
+    title: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,
@@ -57,6 +70,7 @@ test("Codex transcript adapter skips unparseable lines and sums the rest", () =>
     transcriptPath,
     tool: "codex",
     model: "gpt-5-codex",
+    title: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,
@@ -114,6 +128,7 @@ test("Codex scan falls back to sessions when index entries have no transcript pa
         transcriptPath,
         tool: "codex",
         model: null,
+        title: null,
         tokenTotals: {
           inputTokens: 0,
           outputTokens: 0,
@@ -171,6 +186,7 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
     transcriptPath,
     tool: "codex",
     model: null,
+    title: null,
     tokenTotals: {
       inputTokens: 42028,
       outputTokens: 725,

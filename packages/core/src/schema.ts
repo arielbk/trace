@@ -4,6 +4,7 @@ import {
   text,
   integer,
   primaryKey,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 
 export const tasks = sqliteTable("tasks", {
@@ -21,7 +22,17 @@ export const sessions = sqliteTable("sessions", {
   transcriptPath: text("transcript_path").notNull(),
   tool: text("tool", { enum: ["claude", "codex", "cursor"] }).notNull(),
   model: text("model"),
+  title: text("title"),
   taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  parentSessionId: text("parent_session_id").references(
+    (): AnySQLiteColumn => sessions.id,
+    { onDelete: "set null" },
+  ),
+  origin: text("origin", { enum: ["root", "subagent", "spawned"] })
+    .notNull()
+    .default("root"),
+  subagentType: text("subagent_type"),
+  agentId: text("agent_id"),
   createdAt: text("created_at").notNull(),
   inputTokens: integer("input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),
@@ -40,6 +51,7 @@ export const taskDocs = sqliteTable(
       .references(() => tasks.id, { onDelete: "cascade" }),
     path: text("path").notNull(),
     createdAt: text("created_at").notNull(),
+    title: text("title"),
     description: text("description"),
   },
   (table) => [primaryKey({ columns: [table.taskId, table.path] })],

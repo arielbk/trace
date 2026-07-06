@@ -6,7 +6,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx @arielbk/trace@0.3.0 hook session-start"
+            "command": "npx @arielbk/trace@0.7.0 hook session-start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx @arielbk/trace@0.7.0 hook subagent-stop"
           }
         ]
       }

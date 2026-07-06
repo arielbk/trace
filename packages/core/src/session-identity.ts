@@ -4,7 +4,7 @@ import {
   sessionLocatorsByPrecedence,
   type LocateContext,
   type SessionLocation,
-} from "./session-locator.ts";
+} from "./tool-locator.ts";
 
 export type SessionIdentityOverrides = {
   tool?: SessionTool;

@@ -35,6 +35,21 @@ export const migrationJournal = {
       tag: "0006_task_doc_description",
       breakpoints: false,
     },
+    {
+      when: 1780179700000,
+      tag: "0007_session_parent_attribution",
+      breakpoints: true,
+    },
+    {
+      when: 1780199700000,
+      tag: "0008_session_title",
+      breakpoints: false,
+    },
+    {
+      when: 1780219700000,
+      tag: "0009_task_doc_title",
+      breakpoints: false,
+    },
   ],
 } as const;
 
@@ -53,4 +68,8 @@ export const migrationSqlByTag: Record<string, string> = {
   "0005_task_description": "ALTER TABLE `tasks` ADD `description` text;\n",
   "0006_task_doc_description":
     "ALTER TABLE `task_docs` ADD `description` text;\n",
+  "0007_session_parent_attribution":
+    "ALTER TABLE `sessions` ADD `parent_session_id` text REFERENCES `sessions`(`id`) ON DELETE set null;\n--> statement-breakpoint\nALTER TABLE `sessions` ADD `origin` text DEFAULT 'root' NOT NULL;\n--> statement-breakpoint\nALTER TABLE `sessions` ADD `subagent_type` text;\n--> statement-breakpoint\nALTER TABLE `sessions` ADD `agent_id` text;\n",
+  "0008_session_title": "ALTER TABLE `sessions` ADD `title` text;\n",
+  "0009_task_doc_title": "ALTER TABLE `task_docs` ADD `title` text;\n",
 };

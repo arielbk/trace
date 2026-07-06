@@ -19,6 +19,7 @@ test("Claude Code transcript adapter returns session identity and token totals",
     transcriptPath,
     tool: "claude",
     model: "claude-opus-4-7",
+    title: null,
     tokenTotals: {
       inputTokens: 13,
       outputTokens: 25,
@@ -42,6 +43,7 @@ test("Claude Code transcript adapter skips unparseable lines and sums the rest",
     transcriptPath,
     tool: "claude",
     model: "claude-opus-4-7",
+    title: null,
     tokenTotals: {
       inputTokens: 13,
       outputTokens: 25,
@@ -109,6 +111,91 @@ test("scanClaudeCodeSessions returns nothing for a missing projects root", () =>
   );
 });
 
+test("Claude Code transcript adapter resolves an ai-title into the title", () => {
+  const transcriptPath = "/tmp/claude-ai-title.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "user",
+      session_id: "claude-session-ai-title",
+      message: { role: "user", content: "Plan checkout flow" },
+    }),
+    JSON.stringify({
+      type: "ai-title",
+      aiTitle: "Plan the checkout flow",
+      sessionId: "claude-session-ai-title",
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).title).toBe(
+    "Plan the checkout flow",
+  );
+});
+
+test("Claude Code transcript adapter prefers a custom-title over an ai-title", () => {
+  const transcriptPath = "/tmp/claude-custom-title.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "ai-title",
+      aiTitle: "Generated name",
+      sessionId: "claude-session-custom",
+    }),
+    JSON.stringify({
+      type: "custom-title",
+      customTitle: "My chosen name",
+      sessionId: "claude-session-custom",
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).title).toBe(
+    "My chosen name",
+  );
+});
+
+test("Claude Code transcript adapter returns null title when no title event is present", () => {
+  const transcriptPath = "/tmp/claude-no-title.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "user",
+      session_id: "claude-session-untitled",
+      message: { role: "user", content: "Hello" },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).title).toBe(
+    null,
+  );
+});
+
+test("Claude Code transcript adapter keeps the last ai-title when it repeats", () => {
+  const transcriptPath = "/tmp/claude-repeated-ai-title.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "user",
+      session_id: "claude-session-repeat",
+      message: { role: "user", content: "Start" },
+    }),
+    JSON.stringify({
+      type: "ai-title",
+      aiTitle: "First guess",
+      sessionId: "claude-session-repeat",
+    }),
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-repeat",
+      message: { model: "claude-opus-4-7", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+    JSON.stringify({
+      type: "ai-title",
+      aiTitle: "Refined title",
+      sessionId: "claude-session-repeat",
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).title).toBe(
+    "Refined title",
+  );
+});
+
 test("Claude Code transcript adapter returns null when model is absent", () => {
   const transcriptPath = "/tmp/claude-without-model.jsonl";
   const transcript = [
@@ -116,6 +203,41 @@ test("Claude Code transcript adapter returns null when model is absent", () => {
       type: "system",
       session_id: "claude-session-without-model",
       message: { usage: { input_tokens: 1, output_tokens: 2 } },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).model).toBe(
+    null,
+  );
+});
+
+test("Claude Code transcript adapter skips <synthetic> and resolves the real model", () => {
+  const transcriptPath = "/tmp/claude-synthetic-model.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic",
+      message: { model: "<synthetic>", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic",
+      message: { model: "claude-opus-4-7", usage: { input_tokens: 1, output_tokens: 1 } },
+    }),
+  ].join("\n");
+
+  expect(parseClaudeCodeTranscript({ transcript, transcriptPath }).model).toBe(
+    "claude-opus-4-7",
+  );
+});
+
+test("Claude Code transcript adapter returns null for a synthetic-only transcript", () => {
+  const transcriptPath = "/tmp/claude-synthetic-only.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "assistant",
+      session_id: "claude-session-synthetic-only",
+      message: { model: "<synthetic>", usage: { input_tokens: 1, output_tokens: 1 } },
     }),
   ].join("\n");
 

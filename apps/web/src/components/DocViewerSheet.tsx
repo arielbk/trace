@@ -3,7 +3,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
 import type { MouseEvent, RefObject } from "react";
 import { truncatePath } from "../format.ts";
-import { HttpError, type DocContents, useDocContents } from "../lib/api.ts";
+import { HttpError, type DocContents, useDocContents, useToggleCheckbox } from "../lib/api.ts";
 import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
 import { CopyChip } from "./CopyChip.tsx";
 
@@ -30,6 +30,7 @@ export function DocViewerSheet({
   triggerRef: RefObject<HTMLElement | null>;
 }) {
   const query = useDocContents(taskRef, docPath);
+  const toggleCheckbox = useToggleCheckbox();
   const shouldReduceMotion = useReducedMotion();
   const transition = shouldReduceMotion
     ? { duration: 0 }
@@ -83,6 +84,18 @@ export function DocViewerSheet({
               <DocViewerBody
                 query={query}
                 onClick={(event) => {
+                  const checkbox = checkboxToggleFromClick(event);
+                  if (checkbox) {
+                    const { input, index, checked } = checkbox;
+                    // The native click already flipped the input optimistically;
+                    // persist that state and revert the input if the write fails.
+                    toggleCheckbox.mutate(
+                      { ref: taskRef, path: docPath, index, checked },
+                      { onError: () => (input.checked = !checked) },
+                    );
+                    return;
+                  }
+
                   if (!onNavigateDocRoute) return;
                   const route = docLinkRouteFromClick(event, {
                     taskRef,
@@ -125,7 +138,7 @@ function DocViewerBody({
   if (query.data.contentType.startsWith("text/html")) {
     return (
       <div
-        className="doc-viewer-prose text-base text-text leading-relaxed"
+        className="doc-viewer-prose text-base text-text-muted leading-relaxed"
         onClick={onClick}
         dangerouslySetInnerHTML={{ __html: query.data.body }}
       />
@@ -179,6 +192,40 @@ function docLinkRouteFromClick(
     knownDocPaths,
     taskRef,
   });
+}
+
+function checkboxToggleFromClick(
+  event: MouseEvent<HTMLDivElement>,
+): { input: HTMLInputElement; index: number; checked: boolean } | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+
+  // Direct click on the box — the browser has already flipped it.
+  if (target instanceof HTMLInputElement && target.type === "checkbox") {
+    return readCheckbox(target, target.checked);
+  }
+
+  // Click elsewhere on the task-list line toggles the line's box, like a native
+  // <label>. Anchors keep their own navigation behaviour.
+  if (target.closest("a[href]")) return null;
+  const input = target.closest("li")?.querySelector(":scope > input[type='checkbox']");
+  if (!(input instanceof HTMLInputElement)) return null;
+  // No native flip happened here, so toggle the input ourselves to keep the
+  // optimistic UI in sync before persisting.
+  const checked = !input.checked;
+  input.checked = checked;
+  return readCheckbox(input, checked);
+}
+
+function readCheckbox(
+  input: HTMLInputElement,
+  checked: boolean,
+): { input: HTMLInputElement; index: number; checked: boolean } | null {
+  const raw = input.getAttribute("data-checkbox-index");
+  if (raw === null) return null;
+  const index = Number(raw);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return { input, index, checked };
 }
 
 function docErrorMessage(error: Error): string {

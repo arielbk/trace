@@ -3,8 +3,8 @@ import {
   getSessionLocator,
   sessionLocatorsByPrecedence,
   type LocateContext,
-  type SessionLocator,
-} from "./session-locator.ts";
+  type ToolSessionLocator,
+} from "./tool-locator.ts";
 
 test("looks up registered locators by tool and preserves precedence", () => {
   expect(sessionLocatorsByPrecedence.map((locator) => locator.tool)).toEqual([
@@ -164,7 +164,7 @@ test("only the cursor locator consumes resolveCursorComposer", () => {
 });
 
 test("a typed partial registry allows tools to be unregistered", () => {
-  const partial: Partial<Record<SessionLocator["tool"], SessionLocator>> = {
+  const partial: Partial<Record<ToolSessionLocator["tool"], ToolSessionLocator>> = {
     codex: getSessionLocator("codex"),
   };
 

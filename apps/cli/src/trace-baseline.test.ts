@@ -216,7 +216,7 @@ test("task capture exits 0 and outputs a task id on stdout", () => {
   writeFileSync(docPath, "# Spec\n");
   try {
     const r = runTraceCli(
-      ["task", "capture", "Baseline capture", "--doc", docPath],
+      ["task", "capture", "Baseline capture", "--doc", docPath, "--description", "Baseline"],
       makeEnv(home),
       repo,
     );

@@ -20,16 +20,19 @@ import {
   emptyTokenTotals,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
-import { readSessionName } from "./session-name.ts";
+import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import type {
   ActiveTask,
+  AddTaskDocOptions,
   ContextTokens,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
   Session,
+  SessionOrigin,
+  SetSessionParentInput,
   SessionTool,
   Task,
   TaskDoc,
@@ -38,6 +41,7 @@ import type {
   TaskTimeline,
   TaskTimelineItem,
   TokenTotals,
+  UpdateTaskDocOptions,
 } from "./types.ts";
 
 export function openTraceStore(databasePath: string): TaskStore {
@@ -317,6 +321,11 @@ class NodeSqliteTaskStore implements TaskStore {
     const id = input.id.trim();
     const transcriptPath = input.transcriptPath.trim();
     const model = input.model?.trim() || null;
+    const title = input.title?.trim() || null;
+    const parentSessionId = input.parentSessionId?.trim() || null;
+    const origin = input.origin ?? "root";
+    const subagentType = input.subagentType?.trim() || null;
+    const agentId = input.agentId?.trim() || null;
 
     if (id.length === 0) {
       throw new Error("Session id is required");
@@ -331,17 +340,84 @@ class NodeSqliteTaskStore implements TaskStore {
     ) {
       throw new Error("Session tool must be claude, codex, or cursor");
     }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
+    }
 
     const existing = this.getSession(id);
     if (existing) {
-      // Upgrade a virtual codex: URI to a real file path when scan now has one.
-      if (existing.transcriptPath.startsWith("codex:") && !transcriptPath.startsWith("codex:")) {
-        this.#sqlite
-          .prepare("UPDATE sessions SET transcript_path = ? WHERE id = ?")
-          .run(transcriptPath, id);
-        return this.#refreshSession({ ...existing, transcriptPath });
-      }
-      return existing;
+      const totals = tokenTotalsFromUsage(input.tokenTotals);
+      const next = {
+        ...existing,
+        transcriptPath:
+          existing.transcriptPath.startsWith("codex:") &&
+          !transcriptPath.startsWith("codex:")
+            ? transcriptPath
+            : existing.transcriptPath,
+        model: existing.model ?? model,
+        title: existing.title ?? title,
+        parentSessionId: existing.parentSessionId ?? parentSessionId,
+        origin:
+          existing.origin === "root" && origin !== "root"
+            ? origin
+            : existing.origin,
+        subagentType: existing.subagentType ?? subagentType,
+        agentId: existing.agentId ?? agentId,
+        tokenTotals:
+          existing.tokenTotals.totalTokens === 0 && totals.totalTokens > 0
+            ? totals
+            : existing.tokenTotals,
+      };
+
+      const changed =
+        next.transcriptPath !== existing.transcriptPath ||
+        next.model !== existing.model ||
+        next.title !== existing.title ||
+        next.parentSessionId !== existing.parentSessionId ||
+        next.origin !== existing.origin ||
+        next.subagentType !== existing.subagentType ||
+        next.agentId !== existing.agentId ||
+        next.tokenTotals !== existing.tokenTotals;
+
+      if (!changed) return existing;
+
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE sessions
+            SET
+              transcript_path = ?,
+              model = ?,
+              title = ?,
+              parent_session_id = ?,
+              origin = ?,
+              subagent_type = ?,
+              agent_id = ?,
+              input_tokens = ?,
+              output_tokens = ?,
+              cache_creation_input_tokens = ?,
+              cache_read_input_tokens = ?,
+              total_tokens = ?
+            WHERE id = ?
+          `,
+        )
+        .run(
+          next.transcriptPath,
+          next.model,
+          next.title,
+          next.parentSessionId,
+          next.origin,
+          next.subagentType,
+          next.agentId,
+          next.tokenTotals.inputTokens,
+          next.tokenTotals.outputTokens,
+          next.tokenTotals.cacheCreationInputTokens,
+          next.tokenTotals.cacheReadInputTokens,
+          next.tokenTotals.totalTokens,
+          id,
+        );
+
+      return this.#refreshSession(next);
     }
 
     const totals = tokenTotalsFromUsage(input.tokenTotals);
@@ -350,7 +426,12 @@ class NodeSqliteTaskStore implements TaskStore {
       transcriptPath,
       tool: input.tool,
       model,
+      title,
       taskId: null,
+      parentSessionId,
+      origin,
+      subagentType,
+      agentId,
       createdAt: new Date().toISOString(),
       tokenTotals: totals,
     };
@@ -363,7 +444,12 @@ class NodeSqliteTaskStore implements TaskStore {
             transcript_path,
             tool,
             model,
+            title,
             task_id,
+            parent_session_id,
+            origin,
+            subagent_type,
+            agent_id,
             created_at,
             input_tokens,
             output_tokens,
@@ -371,7 +457,7 @@ class NodeSqliteTaskStore implements TaskStore {
             cache_read_input_tokens,
             total_tokens
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -379,7 +465,12 @@ class NodeSqliteTaskStore implements TaskStore {
         session.transcriptPath,
         session.tool,
         session.model,
+        session.title,
         session.taskId,
+        session.parentSessionId,
+        session.origin,
+        session.subagentType,
+        session.agentId,
         session.createdAt,
         totals.inputTokens,
         totals.outputTokens,
@@ -389,6 +480,48 @@ class NodeSqliteTaskStore implements TaskStore {
       );
 
     return session;
+  }
+
+  setSessionParent(input: SetSessionParentInput): Session {
+    const id = input.id.trim();
+    const parentSessionId = input.parentSessionId.trim();
+    const origin = input.origin;
+
+    if (id.length === 0) {
+      throw new Error("Session id is required");
+    }
+    if (parentSessionId.length === 0) {
+      throw new Error("Parent session id is required");
+    }
+    if (!isSessionOrigin(origin)) {
+      throw new Error("Session origin must be root, subagent, or spawned");
+    }
+
+    // If the parent is already bound to a task, the newly-attached child (and
+    // its NULL-only descendants) inherit it via the same cascade as on assign.
+    const parentTaskId = this.getSession(parentSessionId)?.taskId ?? null;
+
+    const existing = this.getSession(id);
+    if (!existing) {
+      const created = this.registerSession({
+        id,
+        transcriptPath: input.transcriptPath ?? `codex:${id}`,
+        tool: input.tool ?? "codex",
+        parentSessionId,
+        origin,
+      });
+      if (parentTaskId === null) return created;
+      this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
+      return this.getSession(id) ?? created;
+    }
+
+    this.#sqlite
+      .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
+      .run(parentSessionId, origin, id);
+
+    if (parentTaskId === null) return { ...existing, parentSessionId, origin };
+    this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
+    return this.getSession(id) ?? { ...existing, parentSessionId, origin };
   }
 
   assignSession(sessionId: string, taskId: string): Session {
@@ -402,7 +535,41 @@ class NodeSqliteTaskStore implements TaskStore {
       .prepare("UPDATE sessions SET task_id = ? WHERE id = ?")
       .run(task.id, session.id);
 
+    this.#cascadeTaskIdToDescendants(session.id, task.id);
+
     return { ...session, taskId: task.id };
+  }
+
+  // Walk the `parent_session_id` descendant tree from `parentId`, stamping
+  // `taskId` onto every descendant currently at task_id = NULL. Descendants
+  // already bound to a task are left untouched, but we still descend through
+  // them so a NULL grandchild under an already-assigned child is not orphaned.
+  // A visited set guards against cycles in a malformed parent chain.
+  #cascadeTaskIdToDescendants(parentId: string, taskId: string): void {
+    const childrenOf = this.#sqlite.prepare(
+      "SELECT id, task_id FROM sessions WHERE parent_session_id = ?",
+    );
+    const claimIfUnassigned = this.#sqlite.prepare(
+      "UPDATE sessions SET task_id = ? WHERE id = ? AND task_id IS NULL",
+    );
+
+    const visited = new Set<string>([parentId]);
+    const queue: string[] = [parentId];
+    while (queue.length > 0) {
+      const current = queue.shift() as string;
+      const children = childrenOf.all(current) as {
+        id: string;
+        task_id: string | null;
+      }[];
+      for (const child of children) {
+        if (visited.has(child.id)) continue;
+        visited.add(child.id);
+        if (child.task_id === null) {
+          claimIfUnassigned.run(taskId, child.id);
+        }
+        queue.push(child.id);
+      }
+    }
   }
 
   listUnassignedSessions(): Session[] {
@@ -446,7 +613,7 @@ class NodeSqliteTaskStore implements TaskStore {
           type: "session",
           createdAt: session.createdAt,
           session,
-          sessionName: readSessionName(session.transcriptPath, session.tool),
+          sessionName: resolveSessionName(session),
         }),
       ),
       ...docs.map(
@@ -513,7 +680,11 @@ class NodeSqliteTaskStore implements TaskStore {
     };
   }
 
-  addTaskDoc(taskId: string, path: string, description?: string): TaskDoc {
+  addTaskDoc(
+    taskId: string,
+    path: string,
+    options?: AddTaskDocOptions,
+  ): TaskDoc {
     const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
@@ -525,23 +696,82 @@ class NodeSqliteTaskStore implements TaskStore {
     const existing = this.getTaskDoc(task.id, normalizedPath);
     if (existing) return existing;
 
-    const normalizedDescription = description?.trim();
+    const normalizedTitle = options?.title?.trim();
+    const normalizedDescription = options?.description?.trim();
     const doc: TaskDoc = {
       taskId: task.id,
       path: normalizedPath,
       createdAt: new Date().toISOString(),
+      ...(normalizedTitle ? { title: normalizedTitle } : {}),
       ...(normalizedDescription ? { description: normalizedDescription } : {}),
     };
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO task_docs (task_id, path, created_at, description)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO task_docs (task_id, path, created_at, title, description)
+          VALUES (?, ?, ?, ?, ?)
         `,
       )
-      .run(doc.taskId, doc.path, doc.createdAt, doc.description ?? null);
+      .run(
+        doc.taskId,
+        doc.path,
+        doc.createdAt,
+        doc.title ?? null,
+        doc.description ?? null,
+      );
     return doc;
+  }
+
+  updateTaskDoc(
+    taskId: string,
+    path: string,
+    options: UpdateTaskDocOptions,
+  ): TaskDoc {
+    const task = this.getTaskByRef(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+
+    const normalizedPath = path.trim();
+    if (normalizedPath.length === 0) {
+      throw new Error("Task doc path is required");
+    }
+
+    const existing = this.getTaskDoc(task.id, normalizedPath);
+
+    // Each field is tri-state: an absent option leaves the stored value
+    // untouched, an empty/whitespace string (or null) clears it, and a
+    // non-empty string sets it.
+    const nextTitle = resolveDocFieldUpdate(options.title, existing?.title);
+    const nextDescription = resolveDocFieldUpdate(
+      options.description,
+      existing?.description,
+    );
+
+    if (existing) {
+      this.#sqlite
+        .prepare(
+          `
+            UPDATE task_docs
+            SET title = ?, description = ?
+            WHERE task_id = ? AND path = ?
+          `,
+        )
+        .run(nextTitle, nextDescription, task.id, normalizedPath);
+      return toTaskDoc(task.id, normalizedPath, existing.createdAt, nextTitle, nextDescription);
+    }
+
+    // Insert-on-update: no row exists yet (e.g. a filesystem-discovered native
+    // doc that was never registered), so create one carrying the metadata.
+    const createdAt = new Date().toISOString();
+    this.#sqlite
+      .prepare(
+        `
+          INSERT INTO task_docs (task_id, path, created_at, title, description)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+      )
+      .run(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
+    return toTaskDoc(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
   }
 
   listDocsForTask(taskId: string): TaskDoc[] {
@@ -551,7 +781,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const registeredDocs = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at, description
+          SELECT task_id, path, created_at, title, description
           FROM task_docs
           WHERE task_id = ?
           ORDER BY created_at ASC, path ASC
@@ -589,6 +819,7 @@ class NodeSqliteTaskStore implements TaskStore {
   #refreshSession(session: Session): Session {
     let fresh: {
       tokenTotals: TokenTotals;
+      title: string | null;
       model: string | null;
       contextTokens: ContextTokens | null;
     } | null = null;
@@ -599,6 +830,7 @@ class NodeSqliteTaskStore implements TaskStore {
       });
       fresh = {
         tokenTotals: parsed.tokenTotals,
+        title: parsed.title,
         model: parsed.model,
         contextTokens: parsed.contextTokens ?? null,
       };
@@ -609,19 +841,30 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const totals = fresh.tokenTotals;
     const stored = session.tokenTotals;
-    const changed =
+    const totalsChanged =
       totals.inputTokens !== stored.inputTokens ||
       totals.outputTokens !== stored.outputTokens ||
       totals.cacheCreationInputTokens !== stored.cacheCreationInputTokens ||
       totals.cacheReadInputTokens !== stored.cacheReadInputTokens ||
       totals.totalTokens !== stored.totalTokens;
 
-    if (changed) {
+    // Only adopt a freshly parsed title; a transcript that no longer reports a
+    // title (e.g. a truncated tail) must not clobber a previously stored one.
+    const title = fresh.title ?? session.title;
+    const titleChanged = title !== session.title;
+
+    // Same rule for model: a stored model survives a parse that yields null.
+    const model = fresh.model ?? session.model;
+    const modelChanged = model !== session.model;
+
+    if (totalsChanged || titleChanged || modelChanged) {
       this.#sqlite
         .prepare(
           `
             UPDATE sessions
             SET
+              title = ?,
+              model = ?,
               input_tokens = ?,
               output_tokens = ?,
               cache_creation_input_tokens = ?,
@@ -631,6 +874,8 @@ class NodeSqliteTaskStore implements TaskStore {
           `,
         )
         .run(
+          title,
+          model,
           totals.inputTokens,
           totals.outputTokens,
           totals.cacheCreationInputTokens,
@@ -640,7 +885,13 @@ class NodeSqliteTaskStore implements TaskStore {
         );
     }
 
-    return { ...session, tokenTotals: totals, contextTokens: fresh.contextTokens };
+    return {
+      ...session,
+      title,
+      model,
+      tokenTotals: totals,
+      contextTokens: fresh.contextTokens,
+    };
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left
@@ -702,7 +953,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const row = this.#sqlite
       .prepare(
         `
-          SELECT task_id, path, created_at, description
+          SELECT task_id, path, created_at, title, description
           FROM task_docs
           WHERE task_id = ? AND path = ?
         `,
@@ -791,7 +1042,12 @@ type SessionRow = {
   transcript_path: string;
   tool: "claude" | "codex" | "cursor";
   model: string | null;
+  title: string | null;
   task_id: string | null;
+  parent_session_id: string | null;
+  origin: SessionOrigin;
+  subagent_type: string | null;
+  agent_id: string | null;
   created_at: string;
   input_tokens: number;
   output_tokens: number;
@@ -804,6 +1060,7 @@ type TaskDocRow = {
   task_id: string;
   path: string;
   created_at: string;
+  title: string | null;
   description: string | null;
 };
 
@@ -828,7 +1085,12 @@ function sessionFromRow(row: SessionRow): Session {
     transcriptPath: row.transcript_path,
     tool: row.tool,
     model: row.model,
+    title: row.title,
     taskId: row.task_id,
+    parentSessionId: row.parent_session_id,
+    origin: row.origin,
+    subagentType: row.subagent_type,
+    agentId: row.agent_id,
     createdAt: row.created_at,
     tokenTotals: {
       inputTokens: row.input_tokens,
@@ -840,15 +1102,48 @@ function sessionFromRow(row: SessionRow): Session {
   };
 }
 
+function isSessionOrigin(value: string): value is SessionOrigin {
+  return value === "root" || value === "subagent" || value === "spawned";
+}
+
 function taskDocFromRow(row: TaskDocRow): TaskDoc {
   const doc: TaskDoc = {
     taskId: row.task_id,
     path: row.path,
     createdAt: row.created_at,
   };
-  // A null column means the doc was registered without a description; keep the
-  // field absent rather than carrying a null so round-trips stay clean.
+  // A null column means the doc was registered without that field; keep it
+  // absent rather than carrying a null so round-trips stay clean.
+  if (row.title != null) doc.title = row.title;
   if (row.description != null) doc.description = row.description;
+  return doc;
+}
+
+// Resolve a tri-state field update against the stored value: `undefined`
+// leaves the existing value intact, while an empty/whitespace string (or null)
+// clears it and a non-empty string sets the trimmed value.
+function resolveDocFieldUpdate(
+  option: string | null | undefined,
+  existing: string | undefined,
+): string | null {
+  if (option === undefined) return existing ?? null;
+  if (option === null) return null;
+  const trimmed = option.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+// Build a TaskDoc from resolved column values, keeping null fields absent so
+// round-trips match taskDocFromRow's clean-absence convention.
+function toTaskDoc(
+  taskId: string,
+  path: string,
+  createdAt: string,
+  title: string | null,
+  description: string | null,
+): TaskDoc {
+  const doc: TaskDoc = { taskId, path, createdAt };
+  if (title != null) doc.title = title;
+  if (description != null) doc.description = description;
   return doc;
 }
 
