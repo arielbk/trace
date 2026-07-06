@@ -70,31 +70,32 @@ store, same manifest; just a different capture path.
 
 ### Cursor
 
-Cursor has no plugin marketplace and no session-start hook, so there's
-nothing to install — and like Codex, capture is **pull-time**: trace resolves
-the session you're in from the directory the command runs in. No env var, no
-Cursor cooperation. Both Cursor surfaces are covered: GUI composer sessions are
-read from Cursor's local session store (`state.vscdb`), and `cursor-agent` (CLI)
-chats from their transcript files under `~/.cursor/projects`. When both exist
-for a directory, the one you touched most recently wins.
+Cursor has no plugin marketplace, but it supports Agent Skills — so instead of
+a plugin you install trace's skills directly. From your project:
 
-To let Cursor's own agent drive the same loop, point it at trace from your
-project's `AGENTS.md` (Cursor reads it):
-
-```md
-## Trace
-When I name a piece of work I'm starting or resuming, bind it with Trace before
-planning: run `npx @arielbk/trace@<version> skill work-on-task "<the task>"`.
-To resume a task I name, run `npx @arielbk/trace@<version> skill re-enter <slug>`.
+```sh
+npx skills add arielbk/trace-v2/plugin/skills
 ```
 
-The agent then binds and re-enters through the same CLI as the other hosts —
-each invocation backfills the current Cursor session from `state.vscdb`. You can
-also run those commands yourself from Cursor's integrated terminal. A live
-Cursor hook (auto-capture, no invocation) is a follow-up; for now capture
-happens when the skill runs.
+That installs the same six trace skills the Claude and Codex plugins ship, from
+the same canonical tree; Cursor's agent routes on the skill descriptions
+exactly as the other hosts do, and each skill invokes the CLI via the same
+version-pinned `npx @arielbk/trace@<version>`. (The `/plugin/skills` subpath
+matters — it scopes the install to the real skills.)
 
-> Cursor does not record per-message token *spend* in its local store, so the
+There's no session-start hook, so capture is **pull-time**: when a skill binds
+or re-enters a task, trace resolves the session you're in from the directory
+the command runs in. No env var, no Cursor cooperation. Both Cursor surfaces
+are covered: GUI composer sessions are read from Cursor's local session store
+(`state.vscdb`), and `cursor-agent` (CLI) chats from their transcript files
+under `~/.cursor/projects`. When both exist for a directory, the one you
+touched most recently wins.
+
+You can also run the CLI yourself from Cursor's integrated terminal — the same
+resolution applies. A live Cursor hook (auto-capture, no invocation) is a
+follow-up; for now capture happens when a skill runs.
+
+> Cursor does not record per-message token _spend_ in its local store, so the
 > board shows a session's context-window usage instead of an input/output total.
 
 ## How it works

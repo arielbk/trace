@@ -15,15 +15,19 @@ active task for this session.
 
 ## First, follow your host's binding flow
 
-Trace runs in both Claude Code and Codex. They differ only in how a session is
-identified and in how the "no active task" signal arrives — the verbs below are
-the same in both. Before binding, read the file for your host and follow it:
+Trace runs in Claude Code, Codex, and Cursor. The hosts differ only in how a
+session is identified and in how the "no active task" signal arrives — the
+verbs below are the same in all of them. Before binding, read the file for your
+host and follow it:
 
 - **Claude Code** — you run with `CLAUDE_CODE_SESSION_ID` in the environment and
   receive a SessionStart line about this session's task state. Read
   [resources/claude.md](resources/claude.md).
 - **Codex** — you run with `CODEX_THREAD_ID` in the environment and have no
   session-start hook. Read [resources/codex.md](resources/codex.md).
+- **Cursor** — no session env var and no session-start hook; the CLI resolves
+  your session from the directory it runs in. Read
+  [resources/cursor.md](resources/cursor.md).
 
 ## We're working on X
 
