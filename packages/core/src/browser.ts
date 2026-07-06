@@ -30,3 +30,11 @@ export type {
   TaskTimelineItem,
   TokenTotals,
 } from "./types.ts";
+export { resumeCommand } from "./resume-command.ts";
+export {
+  composerIdFromLocator,
+  cursorLocatorFlavor,
+  isSyntheticLocator,
+  syntheticLocator,
+} from "./transcript-locator.ts";
+export type { CursorLocatorFlavor } from "./transcript-locator.ts";

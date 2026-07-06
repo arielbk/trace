@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
+  resumeCommand,
   type SessionTool,
   type TaskTimeline,
   type TaskTimelineItem,
@@ -29,7 +30,6 @@ import {
   resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
-import { resumeCommand } from "../resume.ts";
 import {
   HttpError,
   useArchiveTask,

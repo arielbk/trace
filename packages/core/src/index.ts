@@ -19,6 +19,7 @@ export {
   syntheticLocator,
 } from "./transcript-locator.ts";
 export type { CursorLocatorFlavor } from "./transcript-locator.ts";
+export { resumeCommand } from "./resume-command.ts";
 export type {
   ActiveTask,
   AddTaskDocOptions,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { resumeCommand } from "./resume.ts";
+import { resumeCommand } from "./resume-command.ts";
 
 describe("resumeCommand", () => {
   test("builds a Claude resume command", () => {
