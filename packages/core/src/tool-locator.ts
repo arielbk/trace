@@ -3,7 +3,13 @@ import type { SessionTool } from "./types.ts";
 export type LocateContext = {
   env: Record<string, string | undefined>;
   cwd?: string | undefined;
-  resolveCursorComposer?: (cwd: string) => string | null;
+  // Maps a cwd → the current Cursor session: `id` is the composer/chat id and
+  // `transcriptPath` is the agent-transcript JSONL for CLI-flavor chats (null
+  // for GUI composers, which read through state.vscdb via a `cursor:<id>`
+  // locator instead).
+  resolveCursorSession?: (
+    cwd: string,
+  ) => { id: string; transcriptPath: string | null } | null;
 };
 
 export type SessionLocation = {
@@ -56,19 +62,20 @@ const cursorSessionLocator: ToolSessionLocator = {
   tool: "cursor",
   locate(ctx) {
     const cwd = present(ctx.cwd);
-    if (!cwd || !ctx.resolveCursorComposer) {
+    if (!cwd || !ctx.resolveCursorSession) {
       return null;
     }
 
-    const id = present(ctx.resolveCursorComposer(cwd) ?? undefined);
-    if (!id) {
+    const resolved = ctx.resolveCursorSession(cwd);
+    const id = present(resolved?.id);
+    if (!resolved || !id) {
       return null;
     }
 
     return {
       tool: "cursor",
       id,
-      nativeTranscriptPath: undefined,
+      nativeTranscriptPath: present(resolved.transcriptPath ?? undefined),
     };
   },
 };

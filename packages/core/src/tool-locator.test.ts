@@ -121,8 +121,10 @@ test("cursor locator resolves from cwd only when cursor context is available", (
   const ctx: LocateContext = {
     env: {},
     cwd: " /repos/trace-v2 ",
-    resolveCursorComposer: (cwd) =>
-      cwd === "/repos/trace-v2" ? " composer-abc " : null,
+    resolveCursorSession: (cwd) =>
+      cwd === "/repos/trace-v2"
+        ? { id: " composer-abc ", transcriptPath: null }
+        : null,
   };
 
   expect(locator.locate(ctx)).toEqual({
@@ -130,18 +132,41 @@ test("cursor locator resolves from cwd only when cursor context is available", (
     id: "composer-abc",
     nativeTranscriptPath: undefined,
   });
-  expect(locator.locate({ env: {}, resolveCursorComposer: () => "abc" })).toBeNull();
+  expect(
+    locator.locate({
+      env: {},
+      resolveCursorSession: () => ({ id: "abc", transcriptPath: null }),
+    }),
+  ).toBeNull();
   expect(locator.locate({ env: {}, cwd: "/repo" })).toBeNull();
   expect(
     locator.locate({
       env: {},
       cwd: "/repo",
-      resolveCursorComposer: () => "   ",
+      resolveCursorSession: () => ({ id: "   ", transcriptPath: null }),
     }),
   ).toBeNull();
 });
 
-test("only the cursor locator consumes resolveCursorComposer", () => {
+test("cursor locator carries the agent transcript path for a CLI chat", () => {
+  const locator = getSessionLocator("cursor");
+  const transcriptPath =
+    "/home/u/.cursor/projects/repo/agent-transcripts/chat-1/chat-1.jsonl";
+
+  expect(
+    locator.locate({
+      env: {},
+      cwd: "/repo",
+      resolveCursorSession: () => ({ id: "chat-1", transcriptPath }),
+    }),
+  ).toEqual({
+    tool: "cursor",
+    id: "chat-1",
+    nativeTranscriptPath: transcriptPath,
+  });
+});
+
+test("only the cursor locator consumes resolveCursorSession", () => {
   let resolverCalls = 0;
   const ctx: LocateContext = {
     env: {
@@ -149,9 +174,9 @@ test("only the cursor locator consumes resolveCursorComposer", () => {
       CLAUDE_CODE_SESSION_ID: "claude-session-1",
     },
     cwd: "/repos/trace-v2",
-    resolveCursorComposer: () => {
+    resolveCursorSession: () => {
       resolverCalls += 1;
-      return "composer-abc";
+      return { id: "composer-abc", transcriptPath: null };
     },
   };
 

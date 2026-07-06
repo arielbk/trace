@@ -1,0 +1,134 @@
+// Cursor agent (CLI) transcripts. Both the `cursor-agent` CLI and current
+// Cursor GUI builds mirror each chat as clean JSONL at
+// `~/.cursor/projects/<project-key>/agent-transcripts/<chatId>/<chatId>.jsonl`,
+// where <chatId> is the same id the GUI store calls a composerId. This module
+// is the pull-time path for chats that never touch (or can't be resolved
+// through) the GUI's state.vscdb — the cursor-agent CLI case.
+
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, sep } from "node:path";
+import type { CursorMessage } from "./types.ts";
+
+/** Default `~/.cursor/projects` root holding per-project agent transcripts. */
+export function defaultProjectsRoot(): string {
+  return join(homedir(), ".cursor", "projects");
+}
+
+export type AgentTranscriptOptions = {
+  projectsRoot?: string;
+};
+
+export type AgentChat = {
+  chatId: string;
+  transcriptPath: string;
+  /** Transcript mtime, epoch ms — the freshness signal for resolution. */
+  lastUpdatedAt: number;
+};
+
+/**
+ * Cursor's directory key for a project path: path segments joined with `-`,
+ * everything outside [A-Za-z0-9-] stripped (observed: `/Users/x/.claude/y`
+ * → `Users-x-claude-y`, `/Users/x/Projects/side/trace-v2`
+ * → `Users-x-Projects-side-trace-v2`).
+ */
+export function cursorProjectKey(repoPath: string): string {
+  return repoPath
+    .split(sep)
+    .filter(Boolean)
+    .join("-")
+    .replace(/[^A-Za-z0-9-]/g, "");
+}
+
+/**
+ * The most recently written agent chat for a repo, or null when the repo has
+ * no transcripts. "Most recent" is transcript mtime: when the resolving agent
+ * runs a shell command, its own prompt has already been appended, so the live
+ * chat is reliably the freshest file.
+ */
+export function resolveLatestAgentChat(
+  repoPath: string,
+  opts?: AgentTranscriptOptions,
+): AgentChat | null {
+  const projectsRoot = opts?.projectsRoot ?? defaultProjectsRoot();
+  const transcriptsDir = join(
+    projectsRoot,
+    cursorProjectKey(repoPath),
+    "agent-transcripts",
+  );
+  if (!existsSync(transcriptsDir)) return null;
+
+  let latest: AgentChat | null = null;
+  for (const dirent of readdirSync(transcriptsDir, { withFileTypes: true })) {
+    if (!dirent.isDirectory()) continue;
+    const chatId = dirent.name;
+    const transcriptPath = join(transcriptsDir, chatId, `${chatId}.jsonl`);
+    let mtimeMs: number;
+    try {
+      mtimeMs = statSync(transcriptPath).mtimeMs;
+    } catch {
+      continue; // chat dir without a transcript file
+    }
+    if (!latest || mtimeMs > latest.lastUpdatedAt) {
+      latest = { chatId, transcriptPath, lastUpdatedAt: mtimeMs };
+    }
+  }
+  return latest;
+}
+
+type TranscriptLine = {
+  role?: unknown;
+  message?: { content?: unknown };
+};
+
+type ContentBlock = {
+  type?: unknown;
+  text?: unknown;
+  name?: unknown;
+};
+
+/**
+ * Parse an agent transcript's JSONL into neutral `CursorMessage`s. The line
+ * shape is `{role, message: {content: [{type: "text"|"tool_use", ...}]}}` —
+ * near-identical to Claude Code's. Unreadable files and malformed lines yield
+ * nothing rather than throwing (fail missing, not wrong).
+ */
+export function readAgentTranscriptMessages(
+  transcriptPath: string,
+): CursorMessage[] {
+  let raw: string;
+  try {
+    raw = readFileSync(transcriptPath, "utf8");
+  } catch {
+    return [];
+  }
+
+  const messages: CursorMessage[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let parsed: TranscriptLine;
+    try {
+      parsed = JSON.parse(line) as TranscriptLine;
+    } catch {
+      continue;
+    }
+    const role = parsed.role;
+    if (role !== "user" && role !== "assistant") continue;
+    const content = parsed.message?.content;
+    if (!Array.isArray(content)) continue;
+
+    for (const block of content as ContentBlock[]) {
+      if (block.type === "text") {
+        const text = typeof block.text === "string" ? block.text : "";
+        if (text.trim().length === 0) continue;
+        messages.push(
+          role === "user" ? { kind: "user", text } : { kind: "assistant", text },
+        );
+      } else if (block.type === "tool_use") {
+        const name = typeof block.name === "string" ? block.name : "tool";
+        messages.push({ kind: "tool", name });
+      }
+    }
+  }
+  return messages;
+}

@@ -5,7 +5,7 @@ import {
   type SetSessionParentInput,
   type TokenTotals,
 } from "@trace/core";
-import { resolveFocusedComposer } from "@trace/cursor-reader";
+import { resolveCursorSession } from "@trace/cursor-reader";
 import { looksLikeFlag, type Env } from "./seam.ts";
 
 export function taskCreateUsage(): string {
@@ -460,12 +460,12 @@ export function parseSkillWorkOnTaskArgs(
     tool: toolOverride,
     id,
     transcriptPath,
-    // Cursor exposes no session env var; bind-time capture resolves the focused
-    // composer from the directory the skill ran in. Runs only when no
-    // claude/codex session env is present (see inferSessionIdentity).
+    // Cursor exposes no session env var; bind-time capture resolves the current
+    // session (focused GUI composer or newest cursor-agent chat) from the
+    // directory the skill ran in. Runs only when no claude/codex session env is
+    // present (see inferSessionIdentity).
     cwd,
-    resolveCursorComposer: (dir) =>
-      resolveFocusedComposer(dir)?.composerId ?? null,
+    resolveCursorSession: (dir) => resolveCursorSession(dir),
   });
 
   if (identity.id === undefined || identity.transcriptPath === undefined) {

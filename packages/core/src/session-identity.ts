@@ -12,13 +12,15 @@ export type SessionIdentityOverrides = {
   transcriptPath?: string;
   // The directory the bind ran from — used to resolve a Cursor session, which
   // (unlike claude/codex) exposes no env var trace can read. Paired with
-  // `resolveCursorComposer`; without both, cursor resolution is skipped.
+  // `resolveCursorSession`; without both, cursor resolution is skipped.
   cwd?: string;
-  // Maps a cwd → the focused Cursor composerId (or null when the cwd is not a
-  // Cursor workspace). Injected so @trace/core stays free of filesystem reads;
-  // the CLI supplies one backed by `resolveFocusedComposer` from
-  // `@trace/cursor-reader`.
-  resolveCursorComposer?: (cwd: string) => string | null;
+  // Maps a cwd → the current Cursor session: the focused GUI composer or the
+  // newest cursor-agent (CLI) chat (null when the cwd has neither). Injected so
+  // @trace/core stays free of filesystem reads; the CLI supplies one backed by
+  // `resolveCursorSession` from `@trace/cursor-reader`.
+  resolveCursorSession?: (
+    cwd: string,
+  ) => { id: string; transcriptPath: string | null } | null;
 };
 
 export type SessionIdentity = {
@@ -44,7 +46,7 @@ export function inferSessionIdentity(
   const ctx: LocateContext = {
     env,
     cwd: overrides.cwd,
-    resolveCursorComposer: overrides.resolveCursorComposer,
+    resolveCursorSession: overrides.resolveCursorSession,
   };
   const location = locateSession(ctx, overrides.tool);
   const tool = overrides.tool ?? location?.tool ?? "claude";

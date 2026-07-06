@@ -1,4 +1,10 @@
-import { readComposer, readComposerTail } from "@trace/cursor-reader";
+import {
+  chatIdFromTranscriptPath,
+  readAgentSession,
+  readAgentTranscriptMessages,
+  readComposer,
+  readComposerTail,
+} from "@trace/cursor-reader";
 import type { CursorMessage, CursorSession } from "@trace/cursor-reader";
 import { emptyTokenTotals } from "./token-totals.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
@@ -13,13 +19,22 @@ import type {
 } from "./transcript-adapter.ts";
 import type { TokenTotals } from "./types.ts";
 
-// Cursor has no on-disk transcript file — sessions live in its state.vscdb
-// SQLite store, keyed by composerId. So both the `transcript` and
-// `transcriptPath` slots carry the same opaque locator, `cursor:<composerId>`
-// (a bare composerId is also accepted), and every entry point resolves through
-// @trace/cursor-reader rather than a string/file. This module is the only place
-// the reader's neutral vocabulary (CursorSession/CursorMessage) meets trace's
-// transcript vocabulary.
+// Cursor sessions come in two flavors, told apart by the locator string:
+//
+// - GUI composers live in the state.vscdb SQLite store, keyed by composerId —
+//   no on-disk transcript file — so both the `transcript` and `transcriptPath`
+//   slots carry the same opaque locator, `cursor:<composerId>` (a bare
+//   composerId is also accepted).
+// - cursor-agent (CLI) chats have a real JSONL transcript under
+//   `~/.cursor/projects/<key>/agent-transcripts/<chatId>/`, so their locator is
+//   that absolute path. The chatId shares the composer keyspace, so metadata is
+//   still enriched from state.vscdb when a composer record exists (current GUI
+//   builds mirror every chat to JSONL too); a record-less chat parses from the
+//   JSONL alone.
+//
+// Every entry point resolves through @trace/cursor-reader rather than a
+// string/file. This module is the only place the reader's neutral vocabulary
+// (CursorSession/CursorMessage) meets trace's transcript vocabulary.
 const CURSOR_LOCATOR_PREFIX = "cursor:";
 const DEFAULT_TAIL_LIMIT = 8;
 
@@ -27,6 +42,23 @@ function composerIdFromLocator(locator: string): string {
   return locator.startsWith(CURSOR_LOCATOR_PREFIX)
     ? locator.slice(CURSOR_LOCATOR_PREFIX.length)
     : locator;
+}
+
+/** An agent-transcript locator is a real path, not an opaque composer ref. */
+function isAgentTranscriptLocator(locator: string): boolean {
+  return !locator.startsWith(CURSOR_LOCATOR_PREFIX) && locator.endsWith(".jsonl");
+}
+
+function readSessionForLocator(locator: string): CursorSession {
+  if (!isAgentTranscriptLocator(locator)) {
+    return readComposer(composerIdFromLocator(locator));
+  }
+  const chatId = chatIdFromTranscriptPath(locator);
+  try {
+    return readComposer(chatId);
+  } catch {
+    return readAgentSession(locator);
+  }
 }
 
 /** Widen the reader's `{inputTokens, outputTokens} | null` to a `TokenTotals`. */
@@ -82,6 +114,11 @@ function messageFromCursor(message: CursorMessage): TranscriptMessage {
 
 function cursorTail(locator: string, limit: number | undefined): TranscriptMessage[] {
   const bounded = typeof limit === "number" && limit > 0 ? limit : DEFAULT_TAIL_LIMIT;
+  if (isAgentTranscriptLocator(locator)) {
+    return readAgentTranscriptMessages(locator)
+      .slice(-bounded)
+      .map(messageFromCursor);
+  }
   return readComposerTail(composerIdFromLocator(locator), bounded).map(
     messageFromCursor,
   );
@@ -89,29 +126,40 @@ function cursorTail(locator: string, limit: number | undefined): TranscriptMessa
 
 // The composer's own title is the natural session name, so head/readHead read
 // it through the reader (a single keyed lookup, no bubble scan) rather than the
-// first user message. Best-effort: a missing composer yields no messages.
+// first user message. An agent-transcript chat with no composer record has no
+// title, so its first user message stands in — the same signal the claude/codex
+// adapters name sessions from. Best-effort: a missing session yields no messages.
 function cursorHead(locator: string): TranscriptMessage[] {
   let session: CursorSession;
   try {
-    session = readComposer(composerIdFromLocator(locator));
+    session = readSessionForLocator(locator);
   } catch {
     return [];
   }
   const title = session.title?.trim();
-  return title ? [{ role: "user", text: title }] : [];
+  if (title) return [{ role: "user", text: title }];
+  if (isAgentTranscriptLocator(locator)) {
+    const firstUser = readAgentTranscriptMessages(locator).find(
+      (message) => message.kind === "user",
+    );
+    if (firstUser && firstUser.kind === "user") {
+      return [{ role: "user", text: firstUser.text }];
+    }
+  }
+  return [];
 }
 
 export const cursorTranscriptAdapter: TranscriptAdapter = {
   tool: "cursor",
   parse(input: TranscriptParseInput): ParsedTranscript {
     return parsedFromSession(
-      readComposer(composerIdFromLocator(input.transcriptPath)),
+      readSessionForLocator(input.transcriptPath),
       input.transcriptPath,
     );
   },
   parseFile(transcriptPath: string): ParsedTranscript {
     return parsedFromSession(
-      readComposer(composerIdFromLocator(transcriptPath)),
+      readSessionForLocator(transcriptPath),
       transcriptPath,
     );
   },

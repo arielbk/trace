@@ -1,8 +1,17 @@
-// @trace/cursor-reader — reads Cursor (GUI) sessions from its state.vscdb SQLite
-// store. Depends only on node:sqlite + node:fs; zero trace coupling.
+// @trace/cursor-reader — reads Cursor sessions. GUI composers come from the
+// state.vscdb SQLite store; cursor-agent (CLI) chats from the JSONL mirror
+// under ~/.cursor/projects. Depends only on node:sqlite + node:fs; zero trace
+// coupling.
 //
 // See docs/cursor-reader-design.md for the verified storage schema.
 
+import { basename, dirname } from "node:path";
+import { statSync } from "node:fs";
+import {
+  readAgentTranscriptMessages,
+  resolveLatestAgentChat,
+  type AgentTranscriptOptions,
+} from "./agent-transcripts.ts";
 import {
   defaultStorageRoot,
   globalStateDbPath,
@@ -18,6 +27,13 @@ import type {
 } from "./types.ts";
 
 export type { CursorSession, CursorMessage, ReaderOptions } from "./types.ts";
+export {
+  cursorProjectKey,
+  readAgentTranscriptMessages,
+  resolveLatestAgentChat,
+  type AgentChat,
+  type AgentTranscriptOptions,
+} from "./agent-transcripts.ts";
 
 export type FocusedComposer = {
   composerId: string;
@@ -54,6 +70,81 @@ export function resolveFocusedComposer(
   } finally {
     db.close();
   }
+}
+
+export type ResolvedCursorSession = {
+  id: string;
+  // Absolute JSONL path when the chat resolved through the agent-transcript
+  // mirror (the cursor-agent CLI flavor); null when it resolved as a focused
+  // GUI composer and should be read through state.vscdb.
+  transcriptPath: string | null;
+};
+
+/**
+ * The current Cursor session for a repo, across both flavors: the focused GUI
+ * composer and the newest cursor-agent (CLI) chat. When both exist and
+ * disagree, the fresher one wins — the CLI chat's transcript mtime against the
+ * composer's `lastUpdatedAt` — because either surface can be the one the user
+ * is actually driving. Ties (and an unreadable composer record) keep the
+ * focused composer, the richer source.
+ */
+export function resolveCursorSession(
+  repoPath: string,
+  opts?: ReaderOptions & AgentTranscriptOptions,
+): ResolvedCursorSession | null {
+  const focused = resolveFocusedComposer(repoPath, opts);
+  const latestChat = resolveLatestAgentChat(repoPath, opts);
+
+  if (!focused && !latestChat) return null;
+  if (focused && (!latestChat || latestChat.chatId === focused.composerId)) {
+    return { id: focused.composerId, transcriptPath: null };
+  }
+  if (!focused && latestChat) {
+    return { id: latestChat.chatId, transcriptPath: latestChat.transcriptPath };
+  }
+
+  // Both present, different ids: freshest wins.
+  const composerUpdatedAt = (() => {
+    try {
+      return readComposer(focused!.composerId, opts).lastUpdatedAt ?? 0;
+    } catch {
+      return 0;
+    }
+  })();
+  return latestChat!.lastUpdatedAt > composerUpdatedAt
+    ? { id: latestChat!.chatId, transcriptPath: latestChat!.transcriptPath }
+    : { id: focused!.composerId, transcriptPath: null };
+}
+
+/**
+ * Reconstruct a session from an agent transcript JSONL alone — the path for
+ * cursor-agent chats whose id has no `composerData` record (no GUI on the
+ * machine, or a CLI-only chat). Minimal by nature: the JSONL carries no title,
+ * model, or token data, so recency comes from file times and everything else
+ * is null. Throws when the transcript does not exist.
+ */
+export function readAgentSession(transcriptPath: string): CursorSession {
+  const stat = statSync(transcriptPath);
+  const messages = readAgentTranscriptMessages(transcriptPath);
+  return {
+    composerId: chatIdFromTranscriptPath(transcriptPath),
+    projectRoot: null,
+    title: null,
+    model: null,
+    createdAt: stat.birthtimeMs > 0 ? stat.birthtimeMs : null,
+    lastUpdatedAt: stat.mtimeMs,
+    messageCount: messages.length,
+    tokenTotals: null,
+    contextTokens: null,
+  };
+}
+
+/** `<chatId>.jsonl` → chatId, tolerating a bare directory-style path. */
+export function chatIdFromTranscriptPath(transcriptPath: string): string {
+  const base = basename(transcriptPath);
+  return base.endsWith(".jsonl")
+    ? base.slice(0, -".jsonl".length)
+    : basename(dirname(transcriptPath));
 }
 
 type ComposerData = {

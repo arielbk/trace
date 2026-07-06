@@ -7,11 +7,19 @@ import type { CursorMessage, CursorSession } from "@trace/cursor-reader";
 const readComposer = vi.fn<(composerId: string) => CursorSession>();
 const readComposerTail =
   vi.fn<(composerId: string, limit: number) => CursorMessage[]>();
+const readAgentSession = vi.fn<(transcriptPath: string) => CursorSession>();
+const readAgentTranscriptMessages =
+  vi.fn<(transcriptPath: string) => CursorMessage[]>();
 
 vi.mock("@trace/cursor-reader", () => ({
   readComposer: (composerId: string) => readComposer(composerId),
   readComposerTail: (composerId: string, limit: number) =>
     readComposerTail(composerId, limit),
+  readAgentSession: (transcriptPath: string) => readAgentSession(transcriptPath),
+  readAgentTranscriptMessages: (transcriptPath: string) =>
+    readAgentTranscriptMessages(transcriptPath),
+  chatIdFromTranscriptPath: (transcriptPath: string) =>
+    transcriptPath.split("/").pop()!.replace(/\.jsonl$/, ""),
 }));
 
 const { getTranscriptAdapter } = await import("./transcript-adapter.ts");
@@ -31,6 +39,8 @@ const session: CursorSession = {
 beforeEach(() => {
   readComposer.mockReset();
   readComposerTail.mockReset();
+  readAgentSession.mockReset();
+  readAgentTranscriptMessages.mockReset();
 });
 
 test("cursor adapter is registered and self-identifies", () => {
@@ -151,4 +161,90 @@ test("head is best-effort: a missing composer yields no messages", () => {
   expect(
     getTranscriptAdapter("cursor").readHead({ transcriptPath: "cursor:gone" }),
   ).toEqual([]);
+});
+
+const AGENT_TRANSCRIPT_PATH =
+  "/home/u/.cursor/projects/repo/agent-transcripts/chat-1/chat-1.jsonl";
+
+test("an agent-transcript locator enriches from the composer record when present", () => {
+  readComposer.mockReturnValue({ ...session, composerId: "chat-1" });
+
+  const parsed = getTranscriptAdapter("cursor").parseFile(AGENT_TRANSCRIPT_PATH);
+
+  expect(readComposer).toHaveBeenCalledWith("chat-1");
+  expect(readAgentSession).not.toHaveBeenCalled();
+  expect(parsed.id).toBe("chat-1");
+  expect(parsed.title).toBe("Wire the cursor adapter");
+  expect(parsed.transcriptPath).toBe(AGENT_TRANSCRIPT_PATH);
+});
+
+test("an agent-transcript locator falls back to the JSONL when no composer record exists", () => {
+  readComposer.mockImplementation(() => {
+    throw new Error("Cursor composer not found");
+  });
+  readAgentSession.mockReturnValue({
+    composerId: "chat-1",
+    projectRoot: null,
+    title: null,
+    model: null,
+    createdAt: null,
+    lastUpdatedAt: 5,
+    messageCount: 2,
+    tokenTotals: null,
+    contextTokens: null,
+  });
+
+  const parsed = getTranscriptAdapter("cursor").parseFile(AGENT_TRANSCRIPT_PATH);
+
+  expect(readAgentSession).toHaveBeenCalledWith(AGENT_TRANSCRIPT_PATH);
+  expect(parsed.id).toBe("chat-1");
+  expect(parsed.title).toBeNull();
+  expect(parsed.tokenTotals.totalTokens).toBe(0);
+});
+
+test("tail reads the JSONL for an agent-transcript locator", () => {
+  readAgentTranscriptMessages.mockReturnValue([
+    { kind: "user", text: "first" },
+    { kind: "assistant", text: "second" },
+    { kind: "tool", name: "Shell" },
+  ]);
+
+  const tail = getTranscriptAdapter("cursor").readTail({
+    transcriptPath: AGENT_TRANSCRIPT_PATH,
+    limit: 2,
+  });
+
+  expect(readAgentTranscriptMessages).toHaveBeenCalledWith(AGENT_TRANSCRIPT_PATH);
+  expect(readComposerTail).not.toHaveBeenCalled();
+  expect(tail).toEqual([
+    { role: "assistant", text: "second" },
+    { role: "assistant", text: "[tool: Shell]" },
+  ]);
+});
+
+test("head falls back to the first user message for a title-less agent chat", () => {
+  readComposer.mockImplementation(() => {
+    throw new Error("Cursor composer not found");
+  });
+  readAgentSession.mockReturnValue({
+    composerId: "chat-1",
+    projectRoot: null,
+    title: null,
+    model: null,
+    createdAt: null,
+    lastUpdatedAt: 5,
+    messageCount: 1,
+    tokenTotals: null,
+    contextTokens: null,
+  });
+  readAgentTranscriptMessages.mockReturnValue([
+    { kind: "assistant", text: "preamble" },
+    { kind: "user", text: "bind this session to the checkout task" },
+  ]);
+
+  expect(
+    getTranscriptAdapter("cursor").readHead({
+      transcriptPath: AGENT_TRANSCRIPT_PATH,
+    }),
+  ).toEqual([{ role: "user", text: "bind this session to the checkout task" }]);
 });

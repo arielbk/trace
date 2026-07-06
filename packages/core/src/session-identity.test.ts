@@ -20,9 +20,9 @@ test("prefers codex over claude over cursor when detecting the live session", ()
     },
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => {
+      resolveCursorSession: () => {
         resolverCalls += 1;
-        return "composer-abc";
+        return { id: "composer-abc", transcriptPath: null };
       },
     },
   );
@@ -221,8 +221,8 @@ test("resolves a cursor composer from cwd when no other session env is set", () 
     {},
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: (cwd) =>
-        cwd === "/repos/trace-v2" ? "composer-abc" : null,
+      resolveCursorSession: (cwd) =>
+        cwd === "/repos/trace-v2" ? { id: "composer-abc", transcriptPath: null } : null,
     },
   );
 
@@ -230,6 +230,27 @@ test("resolves a cursor composer from cwd when no other session env is set", () 
     tool: "cursor",
     id: "composer-abc",
     transcriptPath: "cursor:composer-abc",
+  });
+});
+
+test("a cursor-agent CLI chat resolves with its JSONL transcript path", () => {
+  // Binding from inside a cursor-agent session: the resolver surfaces the
+  // chat's agent-transcript mirror, which becomes the real transcript path
+  // instead of the opaque cursor:<id> locator.
+  const transcriptPath =
+    "/home/u/.cursor/projects/repo/agent-transcripts/chat-1/chat-1.jsonl";
+  const identity = inferSessionIdentity(
+    {},
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorSession: () => ({ id: "chat-1", transcriptPath }),
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "chat-1",
+    transcriptPath,
   });
 });
 
@@ -241,9 +262,9 @@ test("a live Claude session takes precedence over cursor cwd resolution", () => 
     { CLAUDE_CODE_SESSION_ID: "claude-live" },
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => {
+      resolveCursorSession: () => {
         resolverCalled = true;
-        return "composer-abc";
+        return { id: "composer-abc", transcriptPath: null };
       },
     },
   );
@@ -258,7 +279,7 @@ test("a live Codex session takes precedence over cursor cwd resolution", () => {
     { CODEX_THREAD_ID: "codex-live" },
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => "composer-abc",
+      resolveCursorSession: () => ({ id: "composer-abc", transcriptPath: null }),
     },
   );
 
@@ -275,9 +296,9 @@ test("cursor resolution runs only after codex and claude env sessions are absent
     },
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => {
+      resolveCursorSession: () => {
         resolverCalls += 1;
-        return "composer-abc";
+        return { id: "composer-abc", transcriptPath: null };
       },
     },
   );
@@ -295,7 +316,7 @@ test("falls back to claude when the cwd maps to no cursor composer", () => {
     {},
     {
       cwd: "/somewhere/else",
-      resolveCursorComposer: () => null,
+      resolveCursorSession: () => null,
     },
   );
 
@@ -311,7 +332,7 @@ test("treats a blank resolved composerId as no cursor session", () => {
     {},
     {
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => "   ",
+      resolveCursorSession: () => ({ id: "   ", transcriptPath: null }),
     },
   );
 
@@ -325,7 +346,7 @@ test("a forced cursor tool resolves the composer from cwd", () => {
     {
       tool: "cursor",
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => "composer-xyz",
+      resolveCursorSession: () => ({ id: "composer-xyz", transcriptPath: null }),
     },
   );
 
@@ -343,7 +364,7 @@ test("an explicit id override wins over cursor cwd resolution", () => {
       tool: "cursor",
       id: "explicit-composer",
       cwd: "/repos/trace-v2",
-      resolveCursorComposer: () => "resolved-composer",
+      resolveCursorSession: () => ({ id: "resolved-composer", transcriptPath: null }),
     },
   );
 
@@ -359,9 +380,9 @@ test("does not attempt cursor resolution without a cwd", () => {
   const identity = inferSessionIdentity(
     {},
     {
-      resolveCursorComposer: () => {
+      resolveCursorSession: () => {
         resolverCalled = true;
-        return "composer-abc";
+        return { id: "composer-abc", transcriptPath: null };
       },
     },
   );
