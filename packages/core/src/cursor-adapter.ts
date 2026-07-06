@@ -7,6 +7,10 @@ import {
 } from "@trace/cursor-reader";
 import type { CursorMessage, CursorSession } from "@trace/cursor-reader";
 import { emptyTokenTotals } from "./token-totals.ts";
+import {
+  composerIdFromLocator,
+  cursorLocatorFlavor,
+} from "./transcript-locator.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
 import type {
   ParsedTranscript,
@@ -19,34 +23,19 @@ import type {
 } from "./transcript-adapter.ts";
 import type { TokenTotals } from "./types.ts";
 
-// Cursor sessions come in two flavors, told apart by the locator string:
-//
-// - GUI composers live in the state.vscdb SQLite store, keyed by composerId —
-//   no on-disk transcript file — so both the `transcript` and `transcriptPath`
-//   slots carry the same opaque locator, `cursor:<composerId>` (a bare
-//   composerId is also accepted).
-// - cursor-agent (CLI) chats have a real JSONL transcript under
-//   `~/.cursor/projects/<key>/agent-transcripts/<chatId>/`, so their locator is
-//   that absolute path. The chatId shares the composer keyspace, so metadata is
-//   still enriched from state.vscdb when a composer record exists (current GUI
-//   builds mirror every chat to JSONL too); a record-less chat parses from the
-//   JSONL alone.
+// The two cursor locator flavors (GUI composer vs cursor-agent CLI chat) are
+// defined in transcript-locator.ts. A chatId shares the composer keyspace, so
+// an agent-transcript chat is still enriched from state.vscdb when a composer
+// record exists (current GUI builds mirror every chat to JSONL too); a
+// record-less chat parses from the JSONL alone.
 //
 // Every entry point resolves through @trace/cursor-reader rather than a
 // string/file. This module is the only place the reader's neutral vocabulary
 // (CursorSession/CursorMessage) meets trace's transcript vocabulary.
-const CURSOR_LOCATOR_PREFIX = "cursor:";
 const DEFAULT_TAIL_LIMIT = 8;
 
-function composerIdFromLocator(locator: string): string {
-  return locator.startsWith(CURSOR_LOCATOR_PREFIX)
-    ? locator.slice(CURSOR_LOCATOR_PREFIX.length)
-    : locator;
-}
-
-/** An agent-transcript locator is a real path, not an opaque composer ref. */
 function isAgentTranscriptLocator(locator: string): boolean {
-  return !locator.startsWith(CURSOR_LOCATOR_PREFIX) && locator.endsWith(".jsonl");
+  return cursorLocatorFlavor(locator) === "agent-transcript";
 }
 
 function readSessionForLocator(locator: string): CursorSession {

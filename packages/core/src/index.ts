@@ -12,6 +12,13 @@ export type { ResolvableDoc } from "./display-title.ts";
 export { renderManifest, updateStateManifest } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export { SESSION_TOOLS, isSessionTool } from "./types.ts";
+export {
+  composerIdFromLocator,
+  cursorLocatorFlavor,
+  isSyntheticLocator,
+  syntheticLocator,
+} from "./transcript-locator.ts";
+export type { CursorLocatorFlavor } from "./transcript-locator.ts";
 export type {
   ActiveTask,
   AddTaskDocOptions,

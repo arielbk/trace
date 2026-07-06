@@ -1,4 +1,5 @@
 import type { SessionTool } from "./types.ts";
+import { syntheticLocator } from "./transcript-locator.ts";
 import {
   getSessionLocator,
   sessionLocatorsByPrecedence,
@@ -57,7 +58,7 @@ export function inferSessionIdentity(
       ? undefined
       : (location?.nativeTranscriptPath ??
         nativeTranscriptPathForExplicitId(ctx, tool, id) ??
-        `${tool}:${id}`));
+        syntheticLocator(tool, id)));
 
   return { tool, id, transcriptPath };
 }

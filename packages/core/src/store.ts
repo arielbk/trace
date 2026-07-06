@@ -24,6 +24,7 @@ import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import { isSessionTool } from "./types.ts";
+import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
@@ -347,8 +348,8 @@ class NodeSqliteTaskStore implements TaskStore {
       const next = {
         ...existing,
         transcriptPath:
-          existing.transcriptPath.startsWith("codex:") &&
-          !transcriptPath.startsWith("codex:")
+          isSyntheticLocator(existing.transcriptPath, "codex") &&
+          !isSyntheticLocator(transcriptPath, "codex")
             ? transcriptPath
             : existing.transcriptPath,
         model: existing.model ?? model,
@@ -502,7 +503,7 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!existing) {
       const created = this.registerSession({
         id,
-        transcriptPath: input.transcriptPath ?? `codex:${id}`,
+        transcriptPath: input.transcriptPath ?? syntheticLocator("codex", id),
         tool: input.tool ?? "codex",
         parentSessionId,
         origin,
