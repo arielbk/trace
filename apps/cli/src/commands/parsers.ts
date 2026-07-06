@@ -1,12 +1,11 @@
 import {
-  inferSessionIdentity,
   isSessionTool,
   type SessionOrigin,
   type SessionTool,
   type SetSessionParentInput,
   type TokenTotals,
 } from "@trace/core";
-import { resolveCursorSession } from "@trace/cursor-reader";
+import { inferCliSessionIdentity } from "./identity.ts";
 import { looksLikeFlag, type Env } from "./seam.ts";
 
 export function taskCreateUsage(): string {
@@ -457,16 +456,10 @@ export function parseSkillWorkOnTaskArgs(
     throw new Error("Session tool must be claude, codex, or cursor");
   }
 
-  const identity = inferSessionIdentity(env, {
+  const identity = inferCliSessionIdentity(env, cwd, {
     tool: toolOverride,
     id,
     transcriptPath,
-    // Cursor exposes no session env var; bind-time capture resolves the current
-    // session (focused GUI composer or newest cursor-agent chat) from the
-    // directory the skill ran in. Runs only when no claude/codex session env is
-    // present (see inferSessionIdentity).
-    cwd,
-    resolveCursorSession: (dir) => resolveCursorSession(dir),
   });
 
   if (identity.id === undefined || identity.transcriptPath === undefined) {

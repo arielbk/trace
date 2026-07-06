@@ -1,4 +1,5 @@
-import { inferSessionIdentity, resolveTaskDocsDir } from "@trace/core";
+import { resolveTaskDocsDir } from "@trace/core";
+import { inferCliSessionIdentity } from "./identity.ts";
 import {
   parseRecallCandidatesArgs,
   parseSkillDocsDirArgs,
@@ -104,7 +105,10 @@ export function skillReEnterOperation(
     const manifest = store.getReEntryManifest(resolved.id);
     if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
 
-    const identity = inferSessionIdentity(ctx.env, {});
+    // Going back to a task is itself working on it, whatever terminal it runs
+    // from — the wired inferrer means a re-enter issued from a Cursor session
+    // registers that session the same way work-on-task does.
+    const identity = inferCliSessionIdentity(ctx.env, ctx.cwd);
     if (identity.id !== undefined && identity.transcriptPath !== undefined) {
       const session = store.registerSession({
         id: identity.id,
@@ -128,7 +132,7 @@ export function skillDocsDirOperation(
   if (!parsedAttempt.ok) return parsedAttempt.result;
   const parsed = parsedAttempt.value;
 
-  const identity = inferSessionIdentity(ctx.env, { id: parsed.id });
+  const identity = inferCliSessionIdentity(ctx.env, ctx.cwd, { id: parsed.id });
   if (identity.id === undefined) {
     return failure("Skill docs-dir requires --id or a current session env var");
   }

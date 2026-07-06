@@ -2,13 +2,38 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTraceStore } from "@trace/core";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   skillDocsDirOperation,
   skillReEnterOperation,
   skillWorkOnTaskOperation,
 } from "./skill-operations.ts";
 import type { Env } from "./seam.ts";
+
+// The CLI's identity composition root (identity.ts) wires the real
+// cwd→cursor-session resolver; stub it so tests control what a "live Cursor
+// session" looks like. Defaults to null — no Cursor session — which matches
+// the temp-dir reality the other tests run in.
+const resolveCursorSessionMock = vi.hoisted(() =>
+  vi.fn<
+    (cwd: string) => { id: string; transcriptPath: string | null } | null
+  >(() => null),
+);
+vi.mock("@trace/cursor-reader", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  resolveCursorSession: resolveCursorSessionMock,
+}));
+
+// Env vars that would let the claude/codex locators win precedence over
+// cursor; stripped when a test simulates a bare Cursor terminal.
+function withoutSessionEnv(env: Env): Env {
+  const cleaned = { ...env };
+  delete cleaned.CLAUDE_CODE_SESSION_ID;
+  delete cleaned.CLAUDE_SESSION_ID;
+  delete cleaned.session_id;
+  delete cleaned.CODEX_THREAD_ID;
+  return cleaned;
+}
 
 function withTempContext(run: (ctx: { env: Env; cwd: string; stdin: string }) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "trace-skill-ops-"));
@@ -96,6 +121,68 @@ test("skill re-enter returns a manifest and binds the current session", () => {
     try {
       const task = store.getTaskByRef("manifest-task");
       expect(store.getSession("codex-thread-1")?.taskId).toBe(task?.id);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+test("skill work-on-task binds the live Cursor session resolved from the cwd", () => {
+  withTempContext((ctx) => {
+    const env = withoutSessionEnv(ctx.env);
+    resolveCursorSessionMock.mockReturnValueOnce({
+      id: "composer-abc",
+      transcriptPath: null,
+    });
+
+    const result = skillWorkOnTaskOperation(["Cursor task"], { ...ctx, env });
+
+    expect(result.exitCode).toBe(0);
+    expect(resolveCursorSessionMock).toHaveBeenCalledWith(ctx.cwd);
+
+    const store = openTraceStore(ctx.env.TRACE_DB as string);
+    try {
+      const session = store.getSession("composer-abc");
+      expect(session).toMatchObject({
+        tool: "cursor",
+        transcriptPath: "cursor:composer-abc",
+      });
+      expect(session?.taskId).toBe(store.getTaskByRef("cursor-task")?.id);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+test("skill re-enter registers and binds the live Cursor session", () => {
+  withTempContext((ctx) => {
+    skillWorkOnTaskOperation(
+      [
+        "Cursor re-entry",
+        "--id",
+        "claude-session-9",
+        "--transcript",
+        join(ctx.cwd, "claude-session-9.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      ctx,
+    );
+
+    const env = withoutSessionEnv(ctx.env);
+    const transcriptPath = join(ctx.cwd, "chat-1", "chat-1.jsonl");
+    resolveCursorSessionMock.mockReturnValueOnce({ id: "chat-1", transcriptPath });
+
+    const reentered = skillReEnterOperation(["Cursor re-entry"], { ...ctx, env });
+
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).toContain("title: Cursor re-entry");
+
+    const store = openTraceStore(ctx.env.TRACE_DB as string);
+    try {
+      const session = store.getSession("chat-1");
+      expect(session).toMatchObject({ tool: "cursor", transcriptPath });
+      expect(session?.taskId).toBe(store.getTaskByRef("cursor-re-entry")?.id);
     } finally {
       store.close();
     }
