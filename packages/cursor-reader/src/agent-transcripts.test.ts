@@ -129,6 +129,38 @@ describe("readAgentTranscriptMessages", () => {
   it("returns no messages for a missing file", () => {
     expect(readAgentTranscriptMessages("/nope/missing.jsonl")).toEqual([]);
   });
+
+  it("unwraps cursor-agent's timestamp and user_query envelope", () => {
+    const path = writeChat("/repo", "chat-1", [
+      transcriptLine("user", [
+        {
+          type: "text",
+          text: "<timestamp>Monday, Jul 6, 2026, 1:01 PM (UTC+2)</timestamp>\n<user_query>\nbind this session\n</user_query>",
+        },
+      ]),
+      transcriptLine("user", [
+        {
+          type: "text",
+          text: "<timestamp>Monday, Jul 6, 2026, 1:05 PM (UTC+2)</timestamp>\nbare follow-up",
+        },
+      ]),
+    ]);
+
+    expect(readAgentTranscriptMessages(path)).toEqual([
+      { kind: "user", text: "bind this session" },
+      { kind: "user", text: "bare follow-up" },
+    ]);
+  });
+
+  it("drops a user turn that is only an envelope", () => {
+    const path = writeChat("/repo", "chat-1", [
+      transcriptLine("user", [
+        { type: "text", text: "<timestamp>Jul 6</timestamp>" },
+      ]),
+    ]);
+
+    expect(readAgentTranscriptMessages(path)).toEqual([]);
+  });
 });
 
 describe("readAgentSession", () => {

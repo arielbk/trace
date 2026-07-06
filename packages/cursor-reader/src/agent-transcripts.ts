@@ -119,7 +119,8 @@ export function readAgentTranscriptMessages(
 
     for (const block of content as ContentBlock[]) {
       if (block.type === "text") {
-        const text = typeof block.text === "string" ? block.text : "";
+        const raw = typeof block.text === "string" ? block.text : "";
+        const text = role === "user" ? unwrapUserText(raw) : raw;
         if (text.trim().length === 0) continue;
         messages.push(
           role === "user" ? { kind: "user", text } : { kind: "assistant", text },
@@ -131,4 +132,16 @@ export function readAgentTranscriptMessages(
     }
   }
   return messages;
+}
+
+/**
+ * cursor-agent wraps the actual prompt in metadata tags —
+ * `<timestamp>…</timestamp>\n<user_query>\n…\n</user_query>` — which would
+ * otherwise leak into session names and re-entry tails. Unwrap to the query
+ * text when present; always drop timestamp tags.
+ */
+function unwrapUserText(text: string): string {
+  const query = /<user_query>([\s\S]*?)<\/user_query>/.exec(text);
+  if (query?.[1] !== undefined) return query[1].trim();
+  return text.replace(/<timestamp>[\s\S]*?<\/timestamp>/g, "").trim();
 }
