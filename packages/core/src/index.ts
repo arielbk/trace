@@ -53,9 +53,15 @@ export type {
 export {
   parseCodexTranscript,
   parseCodexTranscriptFile,
+  resolveCodexTranscriptPathById,
   scanCodexSessions,
 } from "./codex-adapter.ts";
-export type { CodexTokenTotals, ParsedCodexSession } from "./codex-adapter.ts";
+export type {
+  CodexSubagentSource,
+  CodexSubagentSpawn,
+  CodexTokenTotals,
+  ParsedCodexSession,
+} from "./codex-adapter.ts";
 export {
   readTranscriptTail,
   tailTranscriptMessages,
@@ -90,3 +96,7 @@ export {
 export type { SessionLocator } from "./session-locator.ts";
 export { discoverClaudeCodeSubagentSessions } from "./subagent-discovery.ts";
 export type { DiscoverClaudeCodeSubagentSessionsInput } from "./subagent-discovery.ts";
+export { discoverCodexSubagentSessions } from "./codex-subagent-discovery.ts";
+export type { DiscoverCodexSubagentSessionsInput } from "./codex-subagent-discovery.ts";
+export { discoverCursorSubagentSessions } from "./cursor-subagent-discovery.ts";
+export type { DiscoverCursorSubagentSessionsInput } from "./cursor-subagent-discovery.ts";

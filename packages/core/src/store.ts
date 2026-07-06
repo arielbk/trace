@@ -507,19 +507,29 @@ class NodeSqliteTaskStore implements TaskStore {
         tool: input.tool ?? "codex",
         parentSessionId,
         origin,
+        subagentType: input.subagentType ?? null,
       });
       if (parentTaskId === null) return created;
       this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
       return this.getSession(id) ?? created;
     }
 
+    // Enrich, don't clobber: a supplied subagent type wins, but omitting one
+    // leaves whatever a prior discovery already recorded.
+    const subagentType = input.subagentType ?? existing.subagentType;
     this.#sqlite
-      .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
-      .run(parentSessionId, origin, id);
+      .prepare(
+        "UPDATE sessions SET parent_session_id = ?, origin = ?, subagent_type = ? WHERE id = ?",
+      )
+      .run(parentSessionId, origin, subagentType, id);
 
-    if (parentTaskId === null) return { ...existing, parentSessionId, origin };
+    if (parentTaskId === null) {
+      return { ...existing, parentSessionId, origin, subagentType };
+    }
     this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
-    return this.getSession(id) ?? { ...existing, parentSessionId, origin };
+    return (
+      this.getSession(id) ?? { ...existing, parentSessionId, origin, subagentType }
+    );
   }
 
   assignSession(sessionId: string, taskId: string): Session {

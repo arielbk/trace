@@ -36,6 +36,7 @@ export type FixtureComposer = {
   usageData?: { inputTokens?: number; outputTokens?: number } | null;
   contextTokensUsed?: number;
   contextTokenLimit?: number;
+  subagentInfo?: { parentComposerId: string; subagentTypeName?: string };
   bubbles?: FixtureBubble[];
 };
 
@@ -146,6 +147,7 @@ export function buildCursorFixture(root: string, spec: FixtureSpec): void {
         usageData: composer.usageData ?? undefined,
         contextTokensUsed: composer.contextTokensUsed,
         contextTokenLimit: composer.contextTokenLimit,
+        subagentInfo: composer.subagentInfo,
         fullConversationHeadersOnly: bubbles.map((b) => ({
           bubbleId: b.bubbleId,
           type: b.type,

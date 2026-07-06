@@ -52,6 +52,8 @@ test("codex adapter answers identity, tokens, tail, and honors expected id", () 
     tool: "codex",
     model: "gpt-5-codex",
     title: null,
+    subagentSpawns: [],
+    subagentSource: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,

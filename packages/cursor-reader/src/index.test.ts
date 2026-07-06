@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   readComposer,
+  readComposerSubagentInfo,
   readComposerTail,
   resolveFocusedComposer,
 } from "./index.ts";
@@ -299,5 +300,44 @@ describe("readComposerTail", () => {
       { kind: "user", text: "three" },
       { kind: "assistant", text: "four" },
     ]);
+  });
+});
+
+describe("readComposerSubagentInfo", () => {
+  it("reads a subagent composer's parent linkage and type name", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [
+        { composerId: "parent-chat", name: "Parent" },
+        {
+          composerId: "subagent-chat",
+          name: "Immutability investigation",
+          subagentInfo: {
+            parentComposerId: "parent-chat",
+            subagentTypeName: "explore",
+          },
+        },
+      ],
+    });
+
+    expect(readComposerSubagentInfo("subagent-chat", { storageRoot })).toEqual({
+      parentComposerId: "parent-chat",
+      subagentType: "explore",
+    });
+  });
+
+  it("returns null for a plain composer and for a missing store", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [{ composerId: "parent-chat", name: "Parent" }],
+    });
+
+    expect(readComposerSubagentInfo("parent-chat", { storageRoot })).toBe(null);
+    expect(readComposerSubagentInfo("unknown", { storageRoot })).toBe(null);
+    expect(
+      readComposerSubagentInfo("parent-chat", { storageRoot: "/nonexistent" }),
+    ).toBe(null);
   });
 });
