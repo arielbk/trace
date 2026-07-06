@@ -79,7 +79,7 @@ function serveFile(res: ServerResponse, filePath: string): void {
     "content-type",
     CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream",
   );
-  res.end(readFileSync(filePath, "utf8"));
+  res.end(readFileSync(filePath));
 }
 
 /**
