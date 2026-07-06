@@ -204,6 +204,14 @@ describe("formatModelName", () => {
     expect(formatModelName("gpt-5-codex")).toBe("GPT-5 Codex");
   });
 
+  test("formats a composer id with its variant suffix", () => {
+    expect(formatModelName("composer-2.5-fast")).toBe("Composer 2.5 Fast");
+  });
+
+  test("formats a bare composer id", () => {
+    expect(formatModelName("composer-1")).toBe("Composer 1");
+  });
+
   test("falls back to the raw string for an unrecognised id", () => {
     expect(formatModelName("some-unknown-model-id")).toBe("some-unknown-model-id");
   });

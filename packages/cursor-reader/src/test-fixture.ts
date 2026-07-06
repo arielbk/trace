@@ -61,6 +61,49 @@ function writeVscdb(
   db.close();
 }
 
+export type AgentChatFixture = {
+  chatId: string;
+  /** Hash segment of the chat dir (md5 of cwd in the wild; opaque here). */
+  hash: string;
+  cwd?: string;
+  createdAtMs?: number;
+  /** Raw payloads for the store.db `blobs` table, in insertion order. */
+  blobs?: Array<string | Uint8Array>;
+  /** Write a store.db without a `blobs` table (observed in the wild). */
+  omitBlobsTable?: boolean;
+};
+
+/** Build one cursor-agent per-chat store (`meta.json` + `store.db`) under `chatsRoot`. */
+export function buildAgentChatFixture(
+  chatsRoot: string,
+  spec: AgentChatFixture,
+): void {
+  const chatDir = join(chatsRoot, spec.hash, spec.chatId);
+  mkdirSync(chatDir, { recursive: true });
+
+  writeFileSync(
+    join(chatDir, "meta.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      createdAtMs: spec.createdAtMs ?? 1_700_000_000_000,
+      hasConversation: true,
+      cwd: spec.cwd ?? "/repo",
+    }),
+  );
+
+  const DatabaseSync = getDatabaseSync();
+  const db = new DatabaseSync(join(chatDir, "store.db"));
+  db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)");
+  if (!spec.omitBlobsTable) {
+    db.exec("CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)");
+    const insert = db.prepare("INSERT INTO blobs (id, data) VALUES (?, ?)");
+    (spec.blobs ?? []).forEach((data, index) => {
+      insert.run(`blob-${index}`, data);
+    });
+  }
+  db.close();
+}
+
 /** Build the storage tree and return the resolved global db path for reference. */
 export function buildCursorFixture(root: string, spec: FixtureSpec): void {
   const wsDir = join(root, "workspaceStorage", spec.workspaceHash);

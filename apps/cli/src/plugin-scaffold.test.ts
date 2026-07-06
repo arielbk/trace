@@ -26,6 +26,7 @@ const skillsRoot = join(repoRoot, "plugin", "skills");
 const traceSkill = join(skillsRoot, "trace", "SKILL.md");
 const traceClaudeResource = join(skillsRoot, "trace", "resources", "claude.md");
 const traceCodexResource = join(skillsRoot, "trace", "resources", "codex.md");
+const traceCursorResource = join(skillsRoot, "trace", "resources", "cursor.md");
 const recallSkill = join(skillsRoot, "recall", "SKILL.md");
 const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
 const boardSkill = join(skillsRoot, "board", "SKILL.md");
@@ -179,10 +180,11 @@ describe("plugin scaffold", () => {
     // The description must not be hard-bound to one host — it triggers in both.
     assert.equal((meta as string).includes("Claude Code session"), false);
 
-    // The dispatcher carries the shared verb and points at both host resources.
+    // The dispatcher carries the shared verb and points at every host resource.
     assert.match(source, /skill work-on-task/);
     assert.match(source, /resources\/claude\.md/);
     assert.match(source, /resources\/codex\.md/);
+    assert.match(source, /resources\/cursor\.md/);
     // Re-entry is delegated to the trace-reenter skill, not inlined here.
     assert.match(source, /trace-reenter/);
 
@@ -199,8 +201,15 @@ describe("plugin scaffold", () => {
     assert.match(codex, /CODEX_TRANSCRIPT_PATH/);
     assert.equal(codex.includes("CLAUDE_CODE_SESSION_ID"), false);
 
+    // Cursor resource: cwd-based session inference, no env var to name.
+    const cursor = readFileSync(traceCursorResource, "utf8");
+    assert.match(cursor, /directory the command runs in/i);
+    assert.match(cursor, /pull-time/i);
+    assert.equal(cursor.includes("CLAUDE_CODE_SESSION_ID"), false);
+    assert.equal(cursor.includes("CODEX_THREAD_ID"), false);
+
     // No host-specific CLI plumbing leaks into the shared tree.
-    for (const text of [source, claude, codex]) {
+    for (const text of [source, claude, codex, cursor]) {
       assert.equal(text.includes("CLAUDE_PLUGIN_ROOT"), false);
       assert.equal(text.includes("<trace-plugin-root>"), false);
     }
@@ -268,7 +277,9 @@ describe("plugin scaffold", () => {
     assert.match(source, /transcript tail/);
     assert.match(source, /mostRecent: true/);
     assert.match(source, /never paste raw transcripts/i);
-    assert.match(source, /Codex entry point/);
+    // The protocol is host-agnostic — the skill names all three hosts rather
+    // than deferring any of them.
+    assert.match(source, /Claude Code, Codex, or Cursor/);
 
     // The re-enter command binds atomically: callers must NOT issue a separate
     // work-on-task bind. This is the contract recall delegates to.

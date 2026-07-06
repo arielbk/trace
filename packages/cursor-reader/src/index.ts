@@ -8,6 +8,10 @@
 import { basename, dirname } from "node:path";
 import { statSync } from "node:fs";
 import {
+  readAgentChatEnrichment,
+  type AgentChatStoreOptions,
+} from "./agent-chat-store.ts";
+import {
   readAgentTranscriptMessages,
   resolveLatestAgentChat,
   type AgentTranscriptOptions,
@@ -20,11 +24,7 @@ import {
   readJsonValue,
 } from "./storage.ts";
 import type { DatabaseSync } from "./node-sqlite.ts";
-import type {
-  CursorMessage,
-  CursorSession,
-  ReaderOptions,
-} from "./types.ts";
+import type { CursorMessage, CursorSession, ReaderOptions } from "./types.ts";
 
 export type { CursorSession, CursorMessage, ReaderOptions } from "./types.ts";
 export {
@@ -34,6 +34,11 @@ export {
   type AgentChat,
   type AgentTranscriptOptions,
 } from "./agent-transcripts.ts";
+export {
+  readAgentChatEnrichment,
+  type AgentChatEnrichment,
+  type AgentChatStoreOptions,
+} from "./agent-chat-store.ts";
 
 export type FocusedComposer = {
   composerId: string;
@@ -58,9 +63,9 @@ export function resolveFocusedComposer(
   const db = openReadOnly(workspace.stateDbPath);
   if (!db) return null;
   try {
-    const data = readJsonValue(db, "ItemTable", "composer.composerData") as
-      | { lastFocusedComposerIds?: unknown }
-      | null;
+    const data = readJsonValue(db, "ItemTable", "composer.composerData") as {
+      lastFocusedComposerIds?: unknown;
+    } | null;
     const focused = Array.isArray(data?.lastFocusedComposerIds)
       ? data.lastFocusedComposerIds
       : [];
@@ -117,21 +122,27 @@ export function resolveCursorSession(
 }
 
 /**
- * Reconstruct a session from an agent transcript JSONL alone — the path for
- * cursor-agent chats whose id has no `composerData` record (no GUI on the
- * machine, or a CLI-only chat). Minimal by nature: the JSONL carries no title,
- * model, or token data, so recency comes from file times and everything else
- * is null. Throws when the transcript does not exist.
+ * Reconstruct a session from an agent transcript JSONL, enriched from the
+ * chat's private store under `~/.cursor/chats` — the path for cursor-agent
+ * chats whose id has no `composerData` record (no GUI on the machine, or a
+ * CLI-only chat). The JSONL alone carries only messages and file times; the
+ * chat store adds the model and project root when present. Token data exists
+ * in neither, so it stays null. Throws when the transcript does not exist.
  */
-export function readAgentSession(transcriptPath: string): CursorSession {
+export function readAgentSession(
+  transcriptPath: string,
+  opts?: AgentChatStoreOptions,
+): CursorSession {
   const stat = statSync(transcriptPath);
   const messages = readAgentTranscriptMessages(transcriptPath);
+  const chatId = chatIdFromTranscriptPath(transcriptPath);
+  const enrichment = readAgentChatEnrichment(chatId, opts);
   return {
-    composerId: chatIdFromTranscriptPath(transcriptPath),
-    projectRoot: null,
+    composerId: chatId,
+    projectRoot: enrichment.cwd,
     title: null,
-    model: null,
-    createdAt: stat.birthtimeMs > 0 ? stat.birthtimeMs : null,
+    model: enrichment.model,
+    createdAt: stat.birthtimeMs > 0 ? stat.birthtimeMs : enrichment.createdAt,
     lastUpdatedAt: stat.mtimeMs,
     messageCount: messages.length,
     tokenTotals: null,
@@ -354,7 +365,9 @@ function computeTokenTotals(
   let outputTokens = 0;
   let found = false;
   for (const bubbleId of bubbleIds) {
-    const totals = asTokenTotals(readBubble(db, composerId, bubbleId)?.tokenCount);
+    const totals = asTokenTotals(
+      readBubble(db, composerId, bubbleId)?.tokenCount,
+    );
     if (totals) {
       inputTokens += totals.inputTokens;
       outputTokens += totals.outputTokens;
@@ -373,9 +386,10 @@ function findProjectRoot(
     const db = openReadOnly(ws.stateDbPath);
     if (!db) continue;
     try {
-      const data = readJsonValue(db, "ItemTable", "composer.composerData") as
-        | { lastFocusedComposerIds?: unknown; selectedComposerIds?: unknown }
-        | null;
+      const data = readJsonValue(db, "ItemTable", "composer.composerData") as {
+        lastFocusedComposerIds?: unknown;
+        selectedComposerIds?: unknown;
+      } | null;
       const ids = [
         ...(Array.isArray(data?.lastFocusedComposerIds)
           ? data.lastFocusedComposerIds
