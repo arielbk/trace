@@ -23,6 +23,7 @@ import {
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
+import { isSessionTool } from "./types.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
@@ -333,11 +334,7 @@ class NodeSqliteTaskStore implements TaskStore {
     if (transcriptPath.length === 0) {
       throw new Error("Session transcript path is required");
     }
-    if (
-      input.tool !== "claude" &&
-      input.tool !== "codex" &&
-      input.tool !== "cursor"
-    ) {
+    if (!isSessionTool(input.tool)) {
       throw new Error("Session tool must be claude, codex, or cursor");
     }
     if (!isSessionOrigin(origin)) {
@@ -1040,7 +1037,7 @@ type TaskRow = {
 type SessionRow = {
   id: string;
   transcript_path: string;
-  tool: "claude" | "codex" | "cursor";
+  tool: SessionTool;
   model: string | null;
   title: string | null;
   task_id: string | null;

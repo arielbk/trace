@@ -11,6 +11,7 @@ export { resolveDocTitle } from "./display-title.ts";
 export type { ResolvableDoc } from "./display-title.ts";
 export { renderManifest, updateStateManifest } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
+export { SESSION_TOOLS, isSessionTool } from "./types.ts";
 export type {
   ActiveTask,
   AddTaskDocOptions,

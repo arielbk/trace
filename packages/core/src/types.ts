@@ -24,7 +24,16 @@ export type ActiveTask =
   | { kind: "re-enter"; task: Task }
   | { kind: "none" };
 
-export type SessionTool = "claude" | "codex" | "cursor";
+// The single source of the tool axis: the schema enum, runtime validation, and
+// CLI flag parsing all derive from this list, so adding a tool is a one-line
+// change here plus a Drizzle migration.
+export const SESSION_TOOLS = ["claude", "codex", "cursor"] as const;
+export type SessionTool = (typeof SESSION_TOOLS)[number];
+
+export function isSessionTool(value: string): value is SessionTool {
+  return (SESSION_TOOLS as readonly string[]).includes(value);
+}
+
 export type SessionOrigin = "root" | "subagent" | "spawned";
 
 export type Session = {

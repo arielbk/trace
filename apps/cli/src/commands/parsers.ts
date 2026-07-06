@@ -1,5 +1,6 @@
 import {
   inferSessionIdentity,
+  isSessionTool,
   type SessionOrigin,
   type SessionTool,
   type SetSessionParentInput,
@@ -450,7 +451,7 @@ export function parseSkillWorkOnTaskArgs(
   let toolOverride: SessionTool | undefined;
   if (tool === undefined) {
     toolOverride = undefined;
-  } else if (tool === "claude" || tool === "codex" || tool === "cursor") {
+  } else if (isSessionTool(tool)) {
     toolOverride = tool;
   } else {
     throw new Error("Session tool must be claude, codex, or cursor");
