@@ -31,6 +31,9 @@ export type DiscoverCursorSubagentSessionsInput = {
   parentSessionId: string;
   subagentsDir?: string;
   projectsRoot?: string;
+  // Child chat ids already linked to this parent, skipped wholesale — a
+  // read-time caller pays the composer/prompt lookups only for new children.
+  skipChatIds?: ReadonlySet<string>;
 };
 
 export function discoverCursorSubagentSessions(
@@ -45,19 +48,18 @@ export function discoverCursorSubagentSessions(
   }
 
   const subagentsDir =
-    input.subagentsDir ?? defaultSubagentsDir(input.store, parent, input);
+    input.subagentsDir ??
+    resolveCursorSubagentsDir(input.store, parent, input.projectsRoot);
   if (!subagentsDir || !existsSync(subagentsDir)) {
     return [];
   }
 
   const spawnPrompts = lazyTaskSpawnPrompts(dirname(subagentsDir));
 
-  return readdirSync(subagentsDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((entry) => {
-      const transcriptPath = join(subagentsDir, entry.name);
-      const chatId = entry.name.slice(0, -".jsonl".length);
+  return listCursorSubagentChatIds(subagentsDir)
+    .filter((chatId) => !input.skipChatIds?.has(chatId))
+    .map((chatId) => {
+      const transcriptPath = join(subagentsDir, `${chatId}.jsonl`);
       const subagentType =
         readComposerSubagentInfo(chatId)?.subagentType ??
         promptMatchedType(spawnPrompts(), transcriptPath);
@@ -91,10 +93,10 @@ export function discoverCursorSubagentSessions(
  * synthetic locator, so the mirror is derived from the bound task's project
  * root (Cursor keys the mirror tree by project path).
  */
-function defaultSubagentsDir(
+export function resolveCursorSubagentsDir(
   store: TaskStore,
   parent: Session,
-  input: DiscoverCursorSubagentSessionsInput,
+  projectsRoot?: string,
 ): string | null {
   if (cursorLocatorFlavor(parent.transcriptPath) === "agent-transcript") {
     return join(dirname(parent.transcriptPath), "subagents");
@@ -108,12 +110,20 @@ function defaultSubagentsDir(
   }
 
   return join(
-    input.projectsRoot ?? defaultProjectsRoot(),
+    projectsRoot ?? defaultProjectsRoot(),
     cursorProjectKey(projectRoot),
     "agent-transcripts",
     composerIdFromLocator(parent.transcriptPath),
     "subagents",
   );
+}
+
+/** The child chat ids mirrored under a `subagents` dir, in stable order. */
+export function listCursorSubagentChatIds(subagentsDir: string): string[] {
+  return readdirSync(subagentsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => entry.name.slice(0, -".jsonl".length))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 type TaskSpawnPrompt = { prompt: string; subagentType: string | null };

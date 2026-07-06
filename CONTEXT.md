@@ -36,9 +36,12 @@ docs, and architecture reviews so names stay consistent.
   parent's `collab_agent_spawn_end` events (each child rollout also self-names
   its parent in `session_meta`), Cursor walks the chat's `subagents/` mirror
   dir and reads the child composer's `subagentInfo` (falling back to matching
-  Task prompts). Triggers: Claude's SubagentStop hook fires live; Codex links
-  during `session scan --codex`; Codex and Cursor are also swept on task
-  re-entry and on demand via `trace session discover-subagents <id>`. Distinct
+  Task prompts). Triggers: Claude's SubagentStop hook fires live; Codex and
+  Cursor link at **board read time** — `listSessionsForTask` piggybacks on the
+  read-time refresh (Codex spawn records ride the parse for free; Cursor costs
+  one readdir of the mirror dir) so children appear the moment anyone looks —
+  plus, as redundant belts, during `session scan --codex`, the task re-entry
+  sweep, and on demand via `trace session discover-subagents <id>`. Distinct
   from a Spawned child — a subagent is *inside* another run, not its own
   top-level session.
 - **Attribution** — establishing a child session's `parentSessionId`/`origin`.

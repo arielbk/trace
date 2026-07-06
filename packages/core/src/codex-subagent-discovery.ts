@@ -50,7 +50,7 @@ export function discoverCodexSubagentSessions(
   });
 
   return parsed.subagentSpawns.map((spawn) =>
-    registerSubagentSpawn(input.store, parent, spawn, codexHome),
+    registerCodexSubagentSpawn(input.store, parent, spawn, codexHome),
   );
 }
 
@@ -68,11 +68,17 @@ function resolveParentTranscriptPath(
   return resolveCodexTranscriptPathById(codexHome, parent.id);
 }
 
-function registerSubagentSpawn(
+/**
+ * Register (or enrich) one spawned child from a parent-side spawn record. Also
+ * the store's read-time entry point: its refresh pass already holds the
+ * parent's parsed spawn records, so it links fresh ones directly instead of
+ * re-parsing the parent through `discoverCodexSubagentSessions`.
+ */
+export function registerCodexSubagentSpawn(
   store: TaskStore,
   parent: Session,
   spawn: CodexSubagentSpawn,
-  codexHome: string,
+  codexHome: string = join(homedir(), ".codex"),
 ): Session {
   const transcriptPath =
     resolveCodexTranscriptPathById(codexHome, spawn.threadId) ??

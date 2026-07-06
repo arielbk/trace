@@ -1,4 +1,5 @@
 export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
