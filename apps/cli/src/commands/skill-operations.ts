@@ -1,4 +1,9 @@
-import { resolveTaskDocsDir } from "@trace/core";
+import {
+  discoverCodexSubagentSessions,
+  discoverCursorSubagentSessions,
+  resolveTaskDocsDir,
+  type TaskStore,
+} from "@trace/core";
 import { inferCliSessionIdentity } from "./identity.ts";
 import {
   parseRecallCandidatesArgs,
@@ -102,6 +107,11 @@ export function skillReEnterOperation(
     const resolved = resolveSkillTaskRef(tasks, ref, (id) => store.getTask(id));
     if (!resolved) return failure(taskNotFoundMessage(tasks, ref), 1);
 
+    // Codex and Cursor have no live stop hook (Claude's SubagentStop covers
+    // claude), so their in-process subagents are swept up here — re-entry is
+    // the next Trace touchpoint after the session that spawned them.
+    sweepSubagentSessions(store, resolved.id, ctx.env.CODEX_HOME);
+
     const manifest = store.getReEntryManifest(resolved.id);
     if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
 
@@ -120,6 +130,31 @@ export function skillReEnterOperation(
 
     return success(formatReEntryManifest(manifest));
   });
+}
+
+// Best-effort per parent: a missing or half-written transcript must never
+// block re-entry; that parent's subagents surface on the next sweep instead.
+function sweepSubagentSessions(
+  store: TaskStore,
+  taskId: string,
+  codexHome: string | undefined,
+): void {
+  for (const session of store.listSessionsForTask(taskId)) {
+    if (session.origin !== "root") continue;
+    try {
+      if (session.tool === "codex") {
+        discoverCodexSubagentSessions({
+          store,
+          parentSessionId: session.id,
+          codexHome,
+        });
+      } else if (session.tool === "cursor") {
+        discoverCursorSubagentSessions({ store, parentSessionId: session.id });
+      }
+    } catch {
+      continue;
+    }
+  }
 }
 
 export function skillDocsDirOperation(

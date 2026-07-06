@@ -147,5 +147,5 @@ test("parseSessionSetParentArgs rejects an invalid --tool value", () => {
       "--tool",
       "gemini",
     ]),
-  ).toThrow("Session tool must be claude or codex");
+  ).toThrow("Session tool must be claude, codex, or cursor");
 });

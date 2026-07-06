@@ -1,4 +1,7 @@
 import {
+  discoverClaudeCodeSubagentSessions,
+  discoverCodexSubagentSessions,
+  discoverCursorSubagentSessions,
   getTranscriptAdapter,
   scanClaudeCodeSessions,
   scanCodexSessions,
@@ -121,6 +124,47 @@ export function sessionTailOperation(
   });
 }
 
+export function sessionDiscoverSubagentsOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const sessionId = rawArgs[0];
+  if (!sessionId) return failure("Session id is required");
+
+  let codexHome = ctx.env.CODEX_HOME;
+  for (let index = 1; index < rawArgs.length; index += 2) {
+    const flag = rawArgs[index];
+    const value = rawArgs[index + 1];
+    if (flag !== "--codex-home" || !value) {
+      return failure(
+        "Usage: trace session discover-subagents <session-id> [--codex-home <dir>]",
+      );
+    }
+    codexHome = value;
+  }
+
+  return withStore(ctx.env, (store) => {
+    const session = store.getSession(sessionId);
+    if (!session) return failure(`Session not found: ${sessionId}`, 1);
+
+    const discovered =
+      session.tool === "codex"
+        ? discoverCodexSubagentSessions({
+            store,
+            parentSessionId: session.id,
+            codexHome,
+          })
+        : session.tool === "cursor"
+          ? discoverCursorSubagentSessions({ store, parentSessionId: session.id })
+          : discoverClaudeCodeSubagentSessions({
+              store,
+              parentSessionId: session.id,
+            });
+
+    return success(discovered.map(formatSessionSummary).join(""));
+  });
+}
+
 export function sessionScanOperation(
   rawArgs: string[],
   ctx: CommandContext,
@@ -133,7 +177,8 @@ export function sessionScanOperation(
     const codexHome = codexHomeAttempt.value;
 
     return withStore(ctx.env, (store) => {
-      const sessions = scanCodexSessions(codexHome).map((session) =>
+      const parsed = scanCodexSessions(codexHome);
+      const sessions = parsed.map((session) =>
         store.registerSession({
           id: session.id,
           transcriptPath: session.transcriptPath,
@@ -142,6 +187,21 @@ export function sessionScanOperation(
           tokenTotals: session.tokenTotals,
         }),
       );
+      // Second pass, once every rollout is registered: a subagent rollout
+      // names its own parent in session_meta, so the scan attributes it
+      // without re-reading anything — regardless of scan order.
+      for (const session of parsed) {
+        if (!session.subagentSource) continue;
+        // The parent row is the FK target, so skip a child whose parent
+        // rollout is gone from this home; it stays a root session.
+        if (!store.getSession(session.subagentSource.parentThreadId)) continue;
+        store.setSessionParent({
+          id: session.id,
+          parentSessionId: session.subagentSource.parentThreadId,
+          origin: "subagent",
+          subagentType: session.subagentSource.role,
+        });
+      }
       return success(sessions.map(formatSessionSummary).join(""));
     });
   }
