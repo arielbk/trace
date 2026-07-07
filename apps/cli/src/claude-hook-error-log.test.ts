@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { runClaudeSessionStartHook } from "./claude-session-start-hook.ts";
+import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 
 // Claude Code does not surface a SessionStart hook's stderr or exit code, so a
 // failed registration is invisible to the user. The hook appends a structured

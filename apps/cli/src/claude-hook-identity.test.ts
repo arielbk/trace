@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runTraceCli } from "./trace.ts";
-import { runClaudeSessionStartHook } from "./claude-session-start-hook.ts";
+import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 
 // The hook derives the registered session's identity through the core
 // session-identity seam (tool/id/transcript path), rather than re-deriving the

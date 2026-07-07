@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runTraceCli } from "./trace.ts";
-import { runClaudeSessionStartHook } from "./claude-session-start-hook.ts";
+import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 
 // Regression for the 2026-06-03 gap: a session started via /clear had its
 // transcript on disk but never produced a store row. The hook must register a
