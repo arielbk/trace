@@ -1,6 +1,9 @@
 import type { Plugin } from "vite";
-import { handleTraceApiRequest, writeTraceApiResponse } from "@trace/core";
-import { getDatabasePath } from "./data.ts";
+import {
+  handleTraceApiRequest,
+  resolveDatabasePath,
+  writeTraceApiResponse,
+} from "@trace/core";
 
 export function traceApiPlugin(): Plugin {
   return {
@@ -13,7 +16,7 @@ export function traceApiPlugin(): Plugin {
 
         const dispatch = (body?: string): void => {
           const response = handleTraceApiRequest(
-            getDatabasePath(),
+            resolveDatabasePath(process.env),
             method,
             req.url ?? "/",
             body,

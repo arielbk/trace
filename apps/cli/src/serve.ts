@@ -8,8 +8,11 @@ import {
 } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTraceApiRequest, writeTraceApiResponse } from "@trace/core";
-import { resolveDbPath } from "./db-path.ts";
+import {
+  handleTraceApiRequest,
+  resolveDatabasePath,
+  writeTraceApiResponse,
+} from "@trace/core";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -212,7 +215,9 @@ export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
 ): Server {
-  return createServer(createServeRequestListener(resolveDbPath(env), assetsDir));
+  return createServer(
+    createServeRequestListener(resolveDatabasePath(env), assetsDir),
+  );
 }
 
 /**
