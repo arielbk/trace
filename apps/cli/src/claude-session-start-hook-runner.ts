@@ -1,9 +1,9 @@
 import {
   inferSessionIdentity,
+  resolveDatabasePath,
 } from "@trace/core";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { resolveDbPath } from "./db-path.ts";
 import { runTraceCli } from "./trace.ts";
 
 type ClaudeSessionStartHookInput = {
@@ -151,7 +151,7 @@ function recordHookFailure(
   failure: { sessionId: string; source?: string | undefined; reason: string },
 ): void {
   try {
-    const logDir = dirname(resolveDbPath(env));
+    const logDir = dirname(resolveDatabasePath(env));
     mkdirSync(logDir, { recursive: true });
     const entry = `${new Date().toISOString()}\tSessionStart\tsession=${failure.sessionId}\tsource=${failure.source ?? "unknown"}\treason=${failure.reason.replace(/\s+/g, " ")}\n`;
     appendFileSync(`${logDir}/hook-errors.log`, entry);

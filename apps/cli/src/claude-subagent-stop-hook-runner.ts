@@ -1,9 +1,9 @@
 import {
   discoverClaudeCodeSubagentSessions,
   openTraceStore,
+  resolveDatabasePath,
 } from "@trace/core";
 import { dirname } from "node:path";
-import { resolveDbPath } from "./db-path.ts";
 
 type ClaudeSubagentStopHookInput = {
   session_id?: string;
@@ -29,7 +29,7 @@ export function runClaudeSubagentStopHook(
     return failure("SubagentStop input requires session_id");
   }
 
-  const databasePath = resolveDbPath(env);
+  const databasePath = resolveDatabasePath(env);
   const store = openTraceStore(databasePath);
   try {
     discoverClaudeCodeSubagentSessions({

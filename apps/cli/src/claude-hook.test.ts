@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-const hookBin = fileURLToPath(new URL("./claude-session-start-hook.ts", import.meta.url));
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
 test("Claude Code SessionStart hook registers an unassigned CLI session", () => {
@@ -15,7 +14,7 @@ test("Claude Code SessionStart hook registers an unassigned CLI session", () => 
   const env = { ...process.env, TRACE_DB: databasePath };
 
   try {
-    execFileSync(process.execPath, [hookBin], {
+    execFileSync(process.execPath, [traceBin, "hook", "session-start"], {
       input: JSON.stringify({
         session_id: "claude-session-1",
         transcript_path: transcriptPath,

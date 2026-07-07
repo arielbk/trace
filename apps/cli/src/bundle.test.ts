@@ -17,16 +17,10 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const packageJsonPath = join(appRoot, "package.json");
 const traceBundle = join(appRoot, "dist", "trace.js");
-const hookBundle = join(appRoot, "dist", "claude-session-start-hook.js");
-const subagentHookBundle = join(
-  appRoot,
-  "dist",
-  "claude-subagent-stop-hook.js",
-);
 const distWebAssetsDir = join(appRoot, "dist", "web");
 
 describe("CLI bundle", () => {
-  it("build emits tsup-generated self-contained CLI and hook JS bundles", () => {
+  it("build emits a tsup-generated self-contained CLI bundle", () => {
     rmSync(join(appRoot, "dist"), { recursive: true, force: true });
 
     execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
@@ -44,18 +38,13 @@ describe("CLI bundle", () => {
     assert.match(buildScript, /\btsup\b/);
     assert.doesNotMatch(buildScript, /src\/build\.ts/);
 
-    for (const artifact of [traceBundle, hookBundle, subagentHookBundle]) {
-      assert.equal(existsSync(artifact), true);
-      assert.notEqual(statSync(artifact).mode & 0o111, 0);
-      const source = readFileSync(artifact, "utf8");
-      assert.equal(source.includes("@trace/core"), false);
-      assert.equal(source.includes("better-sqlite3"), false);
-      assert.equal(source.includes("0002_session_model"), true);
-    }
-    assert.equal(
-      readFileSync(traceBundle, "utf8").startsWith("#!/usr/bin/env node"),
-      true,
-    );
+    assert.equal(existsSync(traceBundle), true);
+    assert.notEqual(statSync(traceBundle).mode & 0o111, 0);
+    const source = readFileSync(traceBundle, "utf8");
+    assert.equal(source.includes("@trace/core"), false);
+    assert.equal(source.includes("better-sqlite3"), false);
+    assert.equal(source.includes("0002_session_model"), true);
+    assert.equal(source.startsWith("#!/usr/bin/env node"), true);
   });
 
   it("build copies web assets next to the CLI bundle", () => {
@@ -120,28 +109,32 @@ describe("CLI bundle", () => {
     }
   });
 
-  it("bundled hook runs outside the source tree", () => {
+  it("bundled CLI handles the SessionStart hook outside the source tree", () => {
     const fakeHome = mkdtempSync(join(tmpdir(), "trace-bundle-init-home-"));
     const outsideDir = mkdtempSync(
       join(tmpdir(), "trace-bundle-init-outside-"),
     );
     const traceDb = join(fakeHome, "trace.sqlite");
-    const outsideHookBundle = join(outsideDir, "claude-session-start-hook.js");
+    const outsideTraceBundle = join(outsideDir, "trace.js");
     const transcriptPath = join(outsideDir, "session.jsonl");
-    copyFileSync(hookBundle, outsideHookBundle);
+    copyFileSync(traceBundle, outsideTraceBundle);
 
     try {
-      const output = execFileSync(process.execPath, [outsideHookBundle], {
-        input: JSON.stringify({
-          session_id: "hook-bundle-session",
-          transcript_path: transcriptPath,
-          hook_event_name: "SessionStart",
+      const output = execFileSync(
+        process.execPath,
+        [outsideTraceBundle, "hook", "session-start"],
+        {
+          input: JSON.stringify({
+            session_id: "hook-bundle-session",
+            transcript_path: transcriptPath,
+            hook_event_name: "SessionStart",
+            cwd: outsideDir,
+          }),
           cwd: outsideDir,
-        }),
-        cwd: outsideDir,
-        encoding: "utf8",
-        env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
-      });
+          encoding: "utf8",
+          env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
+        },
+      );
 
       assert.equal(
         output.includes("Trace: no task is bound to this session"),
@@ -153,15 +146,15 @@ describe("CLI bundle", () => {
     }
   });
 
-  it("bundled SubagentStop hook runs outside the source tree", () => {
+  it("bundled CLI handles the SubagentStop hook outside the source tree", () => {
     const fakeHome = mkdtempSync(join(tmpdir(), "trace-subagent-bundle-home-"));
     const outsideDir = mkdtempSync(
       join(tmpdir(), "trace-subagent-bundle-outside-"),
     );
     const traceDb = join(fakeHome, "trace.sqlite");
-    const outsideHookBundle = join(outsideDir, "claude-subagent-stop-hook.js");
+    const outsideTraceBundle = join(outsideDir, "trace.js");
     const parentTranscriptPath = join(outsideDir, "parent.jsonl");
-    copyFileSync(subagentHookBundle, outsideHookBundle);
+    copyFileSync(traceBundle, outsideTraceBundle);
 
     try {
       execFileSync(
@@ -184,16 +177,20 @@ describe("CLI bundle", () => {
         },
       );
 
-      const output = execFileSync(process.execPath, [outsideHookBundle], {
-        input: JSON.stringify({
-          session_id: "parent-session",
-          transcript_path: parentTranscriptPath,
-          hook_event_name: "SubagentStop",
-        }),
-        cwd: outsideDir,
-        encoding: "utf8",
-        env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
-      });
+      const output = execFileSync(
+        process.execPath,
+        [outsideTraceBundle, "hook", "subagent-stop"],
+        {
+          input: JSON.stringify({
+            session_id: "parent-session",
+            transcript_path: parentTranscriptPath,
+            hook_event_name: "SubagentStop",
+          }),
+          cwd: outsideDir,
+          encoding: "utf8",
+          env: { ...process.env, HOME: fakeHome, TRACE_DB: traceDb },
+        },
+      );
 
       assert.equal(output, "");
     } finally {
