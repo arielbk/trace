@@ -153,8 +153,8 @@ Trace installs as a Claude Code plugin. From inside Claude Code, add this repo a
 a marketplace, then install the plugin (two separate commands):
 
 ```sh
-/plugin marketplace add arielbk/trace-v2
-/plugin install trace@trace-v2
+/plugin marketplace add arielbk/trace
+/plugin install trace@trace
 ```
 
 The plugin wires up the skills and a `SessionStart` hook that captures each
@@ -177,8 +177,8 @@ Trace installs as a Codex plugin, mirroring Claude. Add this repo as a
 marketplace, then install the plugin (two separate commands):
 
 ```sh
-codex plugin marketplace add arielbk/trace-v2
-codex plugin add trace@trace-v2
+codex plugin marketplace add arielbk/trace
+codex plugin add trace@trace
 ```
 
 The marketplace source is the repo itself, and Codex installs from the same

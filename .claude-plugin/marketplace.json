@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "trace-v2",
+  "name": "trace",
   "description": "Trace plugin marketplace for installing the bundled Trace Claude Code plugin.",
   "owner": {
     "name": "arielbk"

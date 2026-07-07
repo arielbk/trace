@@ -61,11 +61,11 @@ describe("resolveConfigDir", () => {
     mkdirSync(join(tmpDir, "plugins"));
     writeFileSync(
       join(tmpDir, "plugins", "installed_plugins.json"),
-      JSON.stringify({ version: 2, plugins: { "trace@trace-v2": [{ scope: "user" }] } }),
+      JSON.stringify({ version: 2, plugins: { "trace@trace": [{ scope: "user" }] } }),
     );
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     try {
-      expect(() => resolveConfigDir()).toThrow(/trace plugin present.*installed: trace@trace-v2/s);
+      expect(() => resolveConfigDir()).toThrow(/trace plugin present.*installed: trace@trace/s);
     } finally {
       rmSync(tmpDir, { recursive: true });
     }
@@ -76,11 +76,11 @@ describe("resolveConfigDir", () => {
     writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
     writeFileSync(
       join(tmpDir, "settings.json"),
-      JSON.stringify({ enabledPlugins: { "trace@trace-v2": true } }),
+      JSON.stringify({ enabledPlugins: { "trace@trace": true } }),
     );
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     try {
-      expect(() => resolveConfigDir()).toThrow(/enabled: trace@trace-v2/);
+      expect(() => resolveConfigDir()).toThrow(/enabled: trace@trace/);
     } finally {
       rmSync(tmpDir, { recursive: true });
     }
@@ -111,7 +111,7 @@ describe("resolveConfigDir", () => {
     writeFileSync(join(tmpDir, ".claude.json"), JSON.stringify({ numStartups: 1 }));
     writeFileSync(
       join(tmpDir, "settings.json"),
-      JSON.stringify({ enabledPlugins: { "trace@trace-v2": false } }),
+      JSON.stringify({ enabledPlugins: { "trace@trace": false } }),
     );
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     try {

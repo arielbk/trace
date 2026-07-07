@@ -83,8 +83,8 @@ function assertNoTracePlugin(configDir: string): void {
       `CLAUDE_CONFIG_DIR=${configDir} has a trace plugin present (${offenders.join(", ")}).\n` +
         "The eval must route against the fixture's project skills, not an installed plugin.\n" +
         "Clean the sandbox:\n" +
-        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin uninstall trace@trace-v2\n` +
-        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin marketplace remove trace-v2`,
+        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin uninstall trace@trace\n` +
+        `  CLAUDE_CONFIG_DIR=${configDir} claude plugin marketplace remove trace`,
     );
   }
 }

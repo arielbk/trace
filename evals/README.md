@@ -35,8 +35,8 @@ CLAUDE_CONFIG_DIR=~/.claude-sandbox claude   # log in, then exit
 
 # 2. Make sure the trace plugin is NOT installed in the sandbox. If you ever
 #    installed it there, remove it:
-CLAUDE_CONFIG_DIR=~/.claude-sandbox claude plugin uninstall trace@trace-v2
-CLAUDE_CONFIG_DIR=~/.claude-sandbox claude plugin marketplace remove trace-v2
+CLAUDE_CONFIG_DIR=~/.claude-sandbox claude plugin uninstall trace@trace
+CLAUDE_CONFIG_DIR=~/.claude-sandbox claude plugin marketplace remove trace
 ```
 
 If the sandbox is polluted, the eval aborts before spending any quota with a
