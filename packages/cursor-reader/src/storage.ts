@@ -28,15 +28,25 @@ export function openReadOnly(path: string): DatabaseSync | null {
   });
 }
 
-/** Read and JSON-parse a single key from a key/value `.vscdb` table. */
+/**
+ * Read and JSON-parse a single key from a key/value `.vscdb` table. A DB
+ * missing the table reads as a missing key — Cursor leaves empty, table-less
+ * `state.vscdb` files behind (observed in the wild on workspaceStorage
+ * entries), and one broken workspace must not poison scans over all of them.
+ */
 export function readJsonValue(
   db: DatabaseSync,
   table: "ItemTable" | "cursorDiskKV",
   key: string,
 ): unknown {
-  const row = db
-    .prepare(`SELECT value FROM ${table} WHERE key = ?`)
-    .get(key) as { value?: string | Buffer | Uint8Array } | undefined;
+  let row: { value?: string | Buffer | Uint8Array } | undefined;
+  try {
+    row = db.prepare(`SELECT value FROM ${table} WHERE key = ?`).get(key) as
+      | { value?: string | Buffer | Uint8Array }
+      | undefined;
+  } catch {
+    return null;
+  }
   if (!row || row.value == null) return null;
   const raw =
     typeof row.value === "string" ? row.value : Buffer.from(row.value).toString("utf8");
