@@ -3,19 +3,23 @@ import {
   type SessionIdentity,
   type SessionIdentityOverrides,
 } from "@trace/core";
-import { resolveCursorSession } from "@trace/cursor-reader";
+import {
+  resolveCursorSession,
+  resolveCursorSessionById,
+} from "@trace/cursor-reader";
 import type { Env } from "./seam.ts";
 
 type CliIdentityOverrides = Omit<
   SessionIdentityOverrides,
-  "cwd" | "resolveCursorSession"
+  "cwd" | "resolveCursorSession" | "resolveCursorSessionById"
 >;
 
-// The CLI's composition root for session identity. Cursor (unlike claude and
-// codex) exposes no env var, so locating a live Cursor session needs the
-// cwd→session resolver from @trace/cursor-reader; wiring it here — once —
+// The CLI's composition root for session identity. Cursor session ids come
+// from CURSOR_CONVERSATION_ID, but resolving an id's flavor (GUI composer vs
+// cursor-agent chat) — and locating a session when the env var is absent —
+// needs the resolvers from @trace/cursor-reader; wiring them here — once —
 // means no command re-decides whether Cursor is reachable, and none can
-// silently forget the resolver. The claude SessionStart hook runner is the one
+// silently forget a resolver. The claude SessionStart hook runner is the one
 // deliberate exception: it forces `tool: "claude"`, so the cursor locator is
 // unreachable there by construction.
 export function inferCliSessionIdentity(
@@ -27,5 +31,6 @@ export function inferCliSessionIdentity(
     ...overrides,
     cwd,
     resolveCursorSession: (dir) => resolveCursorSession(dir),
+    resolveCursorSessionById: (id) => resolveCursorSessionById(id, { cwd }),
   });
 }

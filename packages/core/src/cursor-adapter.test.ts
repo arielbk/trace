@@ -166,7 +166,7 @@ test("head is best-effort: a missing composer yields no messages", () => {
 const AGENT_TRANSCRIPT_PATH =
   "/home/u/.cursor/projects/repo/agent-transcripts/chat-1/chat-1.jsonl";
 
-test("an agent-transcript locator enriches from the composer record when present", () => {
+test("an agent-transcript locator with a composer record canonicalizes to the composer flavor", () => {
   readComposer.mockReturnValue({ ...session, composerId: "chat-1" });
 
   const parsed = getTranscriptAdapter("cursor").parseFile(AGENT_TRANSCRIPT_PATH);
@@ -175,7 +175,9 @@ test("an agent-transcript locator enriches from the composer record when present
   expect(readAgentSession).not.toHaveBeenCalled();
   expect(parsed.id).toBe("chat-1");
   expect(parsed.title).toBe("Wire the cursor adapter");
-  expect(parsed.transcriptPath).toBe(AGENT_TRANSCRIPT_PATH);
+  // The composer record marks the chat GUI-owned: reporting the composer
+  // locator lets the store self-heal a row bound as agent-transcript flavor.
+  expect(parsed.transcriptPath).toBe("cursor:chat-1");
 });
 
 test("an agent-transcript locator falls back to the JSONL when no composer record exists", () => {
@@ -200,6 +202,7 @@ test("an agent-transcript locator falls back to the JSONL when no composer recor
   expect(parsed.id).toBe("chat-1");
   expect(parsed.title).toBeNull();
   expect(parsed.tokenTotals.totalTokens).toBe(0);
+  expect(parsed.transcriptPath).toBe(AGENT_TRANSCRIPT_PATH);
 });
 
 test("tail reads the JSONL for an agent-transcript locator", () => {

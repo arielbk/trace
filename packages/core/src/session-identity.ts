@@ -22,6 +22,12 @@ export type SessionIdentityOverrides = {
   resolveCursorSession?: (
     cwd: string,
   ) => { id: string; transcriptPath: string | null } | null;
+  // Resolves the flavor of a Cursor session already identified by id — the
+  // CURSOR_CONVERSATION_ID path, where only the GUI-composer-vs-agent-chat
+  // question remains. Injected for the same reason as resolveCursorSession.
+  resolveCursorSessionById?: (
+    id: string,
+  ) => { id: string; transcriptPath: string | null } | null;
 };
 
 export type SessionIdentity = {
@@ -48,6 +54,7 @@ export function inferSessionIdentity(
     env,
     cwd: overrides.cwd,
     resolveCursorSession: overrides.resolveCursorSession,
+    resolveCursorSessionById: overrides.resolveCursorSessionById,
   };
   const location = locateSession(ctx, overrides.tool);
   const tool = overrides.tool ?? location?.tool ?? "claude";
@@ -91,7 +98,9 @@ function nativeTranscriptPathForExplicitId(
       ? { ...ctx.env, CODEX_THREAD_ID: id }
       : tool === "claude"
         ? { ...ctx.env, CLAUDE_CODE_SESSION_ID: id }
-        : undefined;
+        : tool === "cursor"
+          ? { ...ctx.env, CURSOR_CONVERSATION_ID: id }
+          : undefined;
 
   if (!env) {
     return undefined;
