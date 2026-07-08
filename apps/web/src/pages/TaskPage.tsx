@@ -91,9 +91,9 @@ function TaskDetailSkeleton() {
       {/* "All tasks" back link */}
       <span className="t-skel-bar h-4 w-20 mt-3" />
       {/* Title + "Last active" */}
-      <div className="flex items-start justify-between gap-5 pt-3">
+      <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
         <span className="t-skel-bar h-8 w-96 max-w-full" />
-        <span className="t-skel-bar h-4 w-28 shrink-0 mt-1.5" />
+        <span className="t-skel-bar h-4 w-28 shrink-0 sm:mt-1.5" />
       </div>
       {/* Description */}
       <span className="t-skel-bar h-4 w-72 max-w-full mt-3" />
@@ -373,11 +373,11 @@ export function TaskTimelineView({
         </Link>
       </div>
       <div className="pt-3">
-        <div className="flex items-start justify-between gap-5">
-          <h1 className="m-0 min-w-0 text-page-title font-extrabold tracking-tight leading-tight">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+          <h1 className="m-0 min-w-0 text-page-title font-extrabold tracking-tight leading-tight text-balance">
             {timeline.task.title}
           </h1>
-          <div className="flex items-center gap-1.5 pt-2 shrink-0 font-mono text-crumb text-text-muted">
+          <div className="flex items-center gap-1.5 sm:pt-2 shrink-0 font-mono text-crumb text-text-muted">
             <ClockIcon />
             <span className="whitespace-nowrap">
               Last active{" "}
@@ -390,7 +390,7 @@ export function TaskTimelineView({
         {timeline.task.description ? (
           <p
             data-testid="task-description"
-            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description"
+            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description text-pretty"
           >
             {timeline.task.description}
           </p>
@@ -834,13 +834,13 @@ export function LeftOffPanel({
         <div>
           {state.summary ? (
             <p
-              className="m-0 text-md font-semibold leading-normal text-text"
+              className="m-0 text-md font-semibold leading-normal text-text text-pretty"
               dangerouslySetInnerHTML={{ __html: state.summary }}
             />
           ) : null}
           {state.currentState.length > 0 ? (
             <div
-              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
+              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
               dangerouslySetInnerHTML={{
                 __html: state.currentState.join("\n"),
               }}
