@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runTraceCli } from "./trace.ts";
-import { runClaudeSessionStartHook } from "./claude-session-start-hook.ts";
+import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 
 // A SessionStart hook's stdout is surfaced to Claude as additional context. The
 // hook does double duty: register the session, then emit exactly one nudge line

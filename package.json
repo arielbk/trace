@@ -1,6 +1,7 @@
 {
-  "name": "trace-v2",
+  "name": "trace",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "bin": {
     "trace": "apps/cli/src/trace.ts"

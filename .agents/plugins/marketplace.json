@@ -1,5 +1,5 @@
 {
-  "name": "trace-v2",
+  "name": "trace",
   "plugins": [
     {
       "name": "trace",

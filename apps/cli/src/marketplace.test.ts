@@ -33,7 +33,7 @@ describe("plugin marketplace", () => {
       description?: string;
     };
 
-    assert.equal(marketplace.name, "trace-v2");
+    assert.equal(marketplace.name, "trace");
     assert.equal(marketplace.owner?.name, "arielbk");
     assert.equal(typeof marketplace.description, "string");
     assert.equal(marketplace.plugins?.length, 1);

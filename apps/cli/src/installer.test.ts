@@ -34,10 +34,10 @@ describe("trace init", () => {
         true,
       );
       assert.equal(
-        output.includes("/plugin marketplace add arielbk/trace-v2"),
+        output.includes("/plugin marketplace add arielbk/trace"),
         true,
       );
-      assert.equal(output.includes("/plugin install trace@trace-v2"), true);
+      assert.equal(output.includes("/plugin install trace@trace"), true);
       assert.equal(output.includes("trace skill: found"), true);
       assert.equal(output.includes("pnpm link --global"), false);
       assert.equal(output.includes("SessionStart hook"), false);

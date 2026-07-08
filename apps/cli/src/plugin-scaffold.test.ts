@@ -143,7 +143,7 @@ describe("plugin scaffold", () => {
         source?: { source?: string; path?: string };
       }>;
     };
-    assert.equal(marketplace.name, "trace-v2");
+    assert.equal(marketplace.name, "trace");
     assert.equal(marketplace.plugins?.length, 1);
     assert.equal(marketplace.plugins?.[0]?.name, "trace");
     assert.equal(marketplace.plugins?.[0]?.source?.source, "local");

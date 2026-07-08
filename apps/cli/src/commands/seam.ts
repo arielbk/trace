@@ -1,5 +1,8 @@
-import { openTraceStore, resolveProjectRootArg } from "@trace/core";
-import { resolveDbPath } from "../db-path.ts";
+import {
+  openTraceStore,
+  resolveDatabasePath,
+  resolveProjectRootArg,
+} from "@trace/core";
 
 export type CommandResult = { exitCode: number; stdout: string; stderr: string };
 export type Env = Record<string, string | undefined>;
@@ -52,7 +55,7 @@ export function withStore(
   env: Env,
   callback: (store: Store, databasePath: string) => CommandResult,
 ): CommandResult {
-  const databasePathAttempt = attempt(() => resolveDbPath(env));
+  const databasePathAttempt = attempt(() => resolveDatabasePath(env));
   if (!databasePathAttempt.ok) return databasePathAttempt.result;
 
   const store = openTraceStore(databasePathAttempt.value);
