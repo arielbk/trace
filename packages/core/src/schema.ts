@@ -42,6 +42,11 @@ export const sessions = sqliteTable("sessions", {
     .default(0),
   cacheReadInputTokens: integer("cache_read_input_tokens").notNull().default(0),
   totalTokens: integer("total_tokens").notNull().default(0),
+  // Context-window occupancy snapshot. Cursor reports it only for the live
+  // composer, so it is persisted at refresh rather than re-derived on read;
+  // null means it was never observed (distinct from 0 used).
+  contextTokensUsed: integer("context_tokens_used"),
+  contextTokensLimit: integer("context_tokens_limit"),
 });
 
 export const taskDocs = sqliteTable(

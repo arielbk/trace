@@ -163,6 +163,41 @@ test("a session bound as agent-transcript flavor self-heals to the composer loca
   }
 });
 
+test("context tokens are snapshotted and survive a parse that stops reporting them", () => {
+  readComposer.mockReturnValue({
+    ...composer,
+    contextTokens: { used: 107_594, limit: 300_000 },
+  });
+  let store = openStore();
+  try {
+    store.registerSession({
+      id: COMPOSER_ID,
+      transcriptPath: `cursor:${COMPOSER_ID}`,
+      tool: "cursor",
+    });
+    expect(store.getSession(COMPOSER_ID)?.contextTokens).toEqual({
+      used: 107_594,
+      limit: 300_000,
+    });
+  } finally {
+    store.close();
+  }
+
+  // Cursor reports occupancy only for the live composer; once the user moves
+  // off the chat the field is gone. The snapshot survives a reopen (fresh
+  // migrations) and a live parse with no context data — preserve-on-null.
+  readComposer.mockReturnValue({ ...composer, contextTokens: null });
+  store = openStore();
+  try {
+    expect(store.getSession(COMPOSER_ID)?.contextTokens).toEqual({
+      used: 107_594,
+      limit: 300_000,
+    });
+  } finally {
+    store.close();
+  }
+});
+
 test("re-entry recovers the composer id and model from the locator", () => {
   const store = openStore();
   try {
