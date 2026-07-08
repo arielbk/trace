@@ -76,6 +76,38 @@ export function resolveLatestAgentChat(
   return latest;
 }
 
+/**
+ * Locate a chat's transcript JSONL by id: the cwd's project dir first (the
+ * overwhelmingly common case), then every other project dir — a chat can be
+ * looked up from a different directory than the one it started in. Null when
+ * no project holds a transcript for the id.
+ */
+export function findAgentTranscript(
+  chatId: string,
+  opts?: AgentTranscriptOptions & { cwd?: string },
+): string | null {
+  const projectsRoot = opts?.projectsRoot ?? defaultProjectsRoot();
+  if (!existsSync(projectsRoot)) return null;
+
+  const keys = opts?.cwd ? [cursorProjectKey(opts.cwd)] : [];
+  for (const dirent of readdirSync(projectsRoot, { withFileTypes: true })) {
+    if (dirent.isDirectory() && !keys.includes(dirent.name)) {
+      keys.push(dirent.name);
+    }
+  }
+  for (const key of keys) {
+    const transcriptPath = join(
+      projectsRoot,
+      key,
+      "agent-transcripts",
+      chatId,
+      `${chatId}.jsonl`,
+    );
+    if (existsSync(transcriptPath)) return transcriptPath;
+  }
+  return null;
+}
+
 type TranscriptLine = {
   role?: unknown;
   message?: { content?: unknown };

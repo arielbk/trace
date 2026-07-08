@@ -12,8 +12,10 @@ import {
   type AgentChatStoreOptions,
 } from "./agent-chat-store.ts";
 import {
+  findAgentTranscript,
   readAgentTranscriptMessages,
   resolveLatestAgentChat,
+  type AgentChat,
   type AgentTranscriptOptions,
 } from "./agent-transcripts.ts";
 import {
@@ -29,6 +31,7 @@ import type { CursorMessage, CursorSession, ReaderOptions } from "./types.ts";
 export type { CursorSession, CursorMessage, ReaderOptions } from "./types.ts";
 export {
   cursorProjectKey,
+  findAgentTranscript,
   readAgentTranscriptMessages,
   resolveLatestAgentChat,
   type AgentChat,
@@ -104,9 +107,7 @@ export function resolveCursorSession(
   if (focused && (!latestChat || latestChat.chatId === focused.composerId)) {
     return { id: focused.composerId, transcriptPath: null };
   }
-  if (!focused && latestChat) {
-    return { id: latestChat.chatId, transcriptPath: latestChat.transcriptPath };
-  }
+  if (!focused && latestChat) return agentChatSession(latestChat, opts);
 
   // Both present, different ids: freshest wins.
   const composerUpdatedAt = (() => {
@@ -117,8 +118,55 @@ export function resolveCursorSession(
     }
   })();
   return latestChat!.lastUpdatedAt > composerUpdatedAt
-    ? { id: latestChat!.chatId, transcriptPath: latestChat!.transcriptPath }
+    ? agentChatSession(latestChat!, opts)
     : { id: focused!.composerId, transcriptPath: null };
+}
+
+/**
+ * Resolve a session already identified by id (e.g. from
+ * `CURSOR_CONVERSATION_ID`) to its flavor. A composer record wins over a JSONL
+ * mirror — current GUI builds mirror every chat to JSONL too, so the mirror
+ * proves nothing, while a composer record carries the real model and marks the
+ * chat as GUI-owned (no CLI resume). A record-less id is a cursor-agent chat,
+ * located by its transcript; when even that is absent (a brand-new chat racing
+ * its first write) the composer flavor is the safe default — reads through it
+ * fail missing, not wrong.
+ */
+export function resolveCursorSessionById(
+  sessionId: string,
+  opts?: ReaderOptions & AgentTranscriptOptions & { cwd?: string },
+): ResolvedCursorSession {
+  if (hasComposerRecord(sessionId, opts)) {
+    return { id: sessionId, transcriptPath: null };
+  }
+  return { id: sessionId, transcriptPath: findAgentTranscript(sessionId, opts) };
+}
+
+/** A GUI-mirrored chat resolves as its composer; see resolveCursorSessionById. */
+function agentChatSession(
+  chat: AgentChat,
+  opts?: ReaderOptions,
+): ResolvedCursorSession {
+  return hasComposerRecord(chat.chatId, opts)
+    ? { id: chat.chatId, transcriptPath: null }
+    : { id: chat.chatId, transcriptPath: chat.transcriptPath };
+}
+
+/** Whether the global store holds a `composerData:<id>` record. */
+function hasComposerRecord(
+  composerId: string,
+  opts?: ReaderOptions,
+): boolean {
+  const storageRoot = opts?.storageRoot ?? defaultStorageRoot();
+  const db = openReadOnly(globalStateDbPath(storageRoot));
+  if (!db) return false;
+  try {
+    return (
+      readJsonValue(db, "cursorDiskKV", `composerData:${composerId}`) !== null
+    );
+  } finally {
+    db.close();
+  }
 }
 
 /**
