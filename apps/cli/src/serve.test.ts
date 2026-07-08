@@ -37,6 +37,7 @@ type CapturedResponse = {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+  rawBody: Buffer | string | undefined;
 };
 
 // `trace serve` listens on a real socket, which the unit environment forbids
@@ -58,7 +59,12 @@ function dispatch(
   url: string,
   assetsDir?: string,
 ): CapturedResponse {
-  const captured: CapturedResponse = { statusCode: 200, headers: {}, body: "" };
+  const captured: CapturedResponse = {
+    statusCode: 200,
+    headers: {},
+    body: "",
+    rawBody: undefined,
+  };
   const res = {
     set statusCode(value: number) {
       captured.statusCode = value;
@@ -69,8 +75,9 @@ function dispatch(
     setHeader(name: string, value: string) {
       captured.headers[name.toLowerCase()] = value;
     },
-    end(chunk?: string) {
-      captured.body = chunk ?? "";
+    end(chunk?: Buffer | string) {
+      captured.rawBody = chunk;
+      captured.body = chunk === undefined ? "" : chunk.toString("utf8");
     },
   } as unknown as ServerResponse;
 
@@ -104,6 +111,21 @@ test("trace serve serves a known asset from the web assets directory", () => {
   expect(response.statusCode).toBe(200);
   expect(response.headers["content-type"]).toBe("text/javascript");
   expect(response.body).toBe("console.log('trace');");
+});
+
+test("trace serve serves binary assets byte-for-byte", () => {
+  const assetsDir = makeAssetsDir();
+  // A minimal PNG header: bytes outside valid UTF-8, which a text read mangles
+  // into replacement characters.
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  writeFileSync(join(assetsDir, "assets", "icon.png"), pngBytes);
+
+  const response = dispatch("GET", "/assets/icon.png", assetsDir);
+
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["content-type"]).toBe("image/png");
+  expect(Buffer.isBuffer(response.rawBody)).toBe(true);
+  expect(response.rawBody).toEqual(pngBytes);
 });
 
 test("trace serve falls back to index.html for unknown non-API paths", () => {

@@ -189,12 +189,44 @@ Codex has no live session-start slot, so the skill captures sessions by backfill
 it runs `trace session scan --codex` before it binds or re-enters a task. Same
 store, same manifest; just a different capture path.
 
+### Cursor
+
+Cursor has no plugin marketplace, but it supports Agent Skills — so instead of
+a plugin you install trace's skills directly. From your project:
+
+```sh
+npx skills add arielbk/trace-v2/plugin/skills
+```
+
+That installs the same six trace skills the Claude and Codex plugins ship, from
+the same canonical tree; Cursor's agent routes on the skill descriptions
+exactly as the other hosts do, and each skill invokes the CLI via the same
+version-pinned `npx @arielbk/trace@<version>`. (The `/plugin/skills` subpath
+matters — it scopes the install to the real skills.)
+
+There's no session-start hook, so capture is **pull-time**: when a skill binds
+or re-enters a task, trace resolves the session you're in from the directory
+the command runs in. No env var, no Cursor cooperation. Both Cursor surfaces
+are covered: GUI composer sessions are read from Cursor's local session store
+(`state.vscdb`), and `cursor-agent` (CLI) chats from their transcript files
+under `~/.cursor/projects`. When both exist for a directory, the one you
+touched most recently wins.
+
+You can also run the CLI yourself from Cursor's integrated terminal — the same
+resolution applies. A live Cursor hook (auto-capture, no invocation) is a
+follow-up; for now capture happens when a skill runs.
+
+> Cursor does not record per-message token _spend_ in its local store, so the
+> board shows a session's context-window usage instead of an input/output total.
+
 ## Status
 
 Same-tool re-entry (work in an agent, clear, re-enter, keep going) is the core
 loop and works today. Cross-tool re-entry rides the shared manifest: a task
 worked in one agent can be re-entered from another. The agents supported right
-now are **Claude Code** and **Codex**; more are a matter of adding adapters.
+now are **Claude Code**, **Codex**, and **Cursor** — both the GUI and the
+`cursor-agent` CLI (macOS; pull-time capture, no live hook yet); more are a
+matter of adding adapters.
 
 ---
 

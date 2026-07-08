@@ -1,10 +1,11 @@
 import {
-  inferSessionIdentity,
+  isSessionTool,
   type SessionOrigin,
   type SessionTool,
   type SetSessionParentInput,
   type TokenTotals,
 } from "@trace/core";
+import { inferCliSessionIdentity } from "./identity.ts";
 import { looksLikeFlag, type Env } from "./seam.ts";
 
 export function taskCreateUsage(): string {
@@ -392,7 +393,7 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
 }
 
 export function skillWorkOnTaskUsage(): string {
-  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex>] [--model <name>] [--description <text>] [--project <dir>]";
+  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex|cursor>] [--model <name>] [--description <text>] [--project <dir>]";
 }
 
 export function skillReEnterUsage(): string {
@@ -410,6 +411,7 @@ export function recallCandidatesUsage(): string {
 export function parseSkillWorkOnTaskArgs(
   args: string[],
   env: Env,
+  cwd: string,
 ): {
   id: string;
   transcriptPath: string;
@@ -448,13 +450,13 @@ export function parseSkillWorkOnTaskArgs(
   let toolOverride: SessionTool | undefined;
   if (tool === undefined) {
     toolOverride = undefined;
-  } else if (tool === "claude" || tool === "codex") {
+  } else if (isSessionTool(tool)) {
     toolOverride = tool;
   } else {
-    throw new Error("Session tool must be claude or codex");
+    throw new Error("Session tool must be claude, codex, or cursor");
   }
 
-  const identity = inferSessionIdentity(env, {
+  const identity = inferCliSessionIdentity(env, cwd, {
     tool: toolOverride,
     id,
     transcriptPath,

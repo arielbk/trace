@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildReEnterPrompt,
   collapseHomePath,
+  formatContextUsage,
   formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
@@ -10,6 +11,18 @@ import {
   truncateId,
   truncatePath,
 } from "./format.ts";
+
+describe("formatContextUsage", () => {
+  test("renders used / limit with a rounded percent", () => {
+    expect(formatContextUsage({ used: 154_826, limit: 300_000 })).toBe(
+      "154.8K / 300.0K ctx · 52%",
+    );
+  });
+
+  test("drops the ratio and percent when the limit is missing", () => {
+    expect(formatContextUsage({ used: 154_826, limit: 0 })).toBe("154.8K ctx");
+  });
+});
 
 describe("formatTokensCompact", () => {
   test("abbreviates millions to one decimal with an M suffix", () => {
@@ -189,6 +202,14 @@ describe("formatModelName", () => {
 
   test("formats a codex id readably", () => {
     expect(formatModelName("gpt-5-codex")).toBe("GPT-5 Codex");
+  });
+
+  test("formats a composer id with its variant suffix", () => {
+    expect(formatModelName("composer-2.5-fast")).toBe("Composer 2.5 Fast");
+  });
+
+  test("formats a bare composer id", () => {
+    expect(formatModelName("composer-1")).toBe("Composer 1");
   });
 
   test("falls back to the raw string for an unrecognised id", () => {

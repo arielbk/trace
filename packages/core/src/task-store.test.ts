@@ -969,6 +969,45 @@ test("migration keeps existing session rows readable with a null model", () => {
   }
 });
 
+test("cursor sessions register alongside claude and codex without disturbing them", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const claude = store.registerSession({
+      id: "claude-1",
+      transcriptPath: "/tmp/claude-1.jsonl",
+      tool: "claude",
+    });
+    const codex = store.registerSession({
+      id: "codex-1",
+      transcriptPath: "/tmp/codex-1.jsonl",
+      tool: "codex",
+    });
+    const cursor = store.registerSession({
+      id: "cursor-1",
+      transcriptPath: "cursor:composer-abc",
+      tool: "cursor",
+      model: "claude-opus-4-7",
+    });
+
+    expect(cursor.tool).toBe("cursor");
+    expect(cursor.model).toBe("claude-opus-4-7");
+    store.close();
+
+    // Reopening runs migrations again; the cursor row must survive intact and the
+    // pre-existing claude/codex rows must be unaffected.
+    const reopened = openTraceStore(databasePath);
+    expect(reopened.getSession("cursor-1")).toEqual(cursor);
+    expect(reopened.getSession("claude-1")).toEqual(claude);
+    expect(reopened.getSession("codex-1")).toEqual(codex);
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("store reads and writes a database created with the old schema through node sqlite", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
+  resumeCommand,
   type SessionTool,
   type TaskTimeline,
   type TaskTimelineItem,
@@ -16,6 +17,8 @@ import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
+import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import {
   SkeletonReveal,
   useSkeletonReveal,
@@ -23,6 +26,7 @@ import {
 import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
+  formatContextUsage,
   formatModelName,
   formatRelativeTime,
   formatTokenBreakdown,
@@ -30,7 +34,6 @@ import {
   resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
-import { resumeCommand } from "../resume.ts";
 import {
   HttpError,
   useArchiveTask,
@@ -638,6 +641,8 @@ function SessionRootRow({
                   {formatTokensCompact(item.session.tokenTotals.outputTokens)}{" "}
                   out
                 </>
+              ) : item.session.contextTokens ? (
+                formatContextUsage(item.session.contextTokens)
               ) : (
                 "tokens unavailable"
               )}
@@ -762,7 +767,9 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     truncatePath(session.transcriptPath);
   const tokenLine = hasCapturedTokens(session.tokenTotals)
     ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
-    : "tokens unavailable";
+    : session.contextTokens
+      ? formatContextUsage(session.contextTokens)
+      : "tokens unavailable";
   const meta = [session.model ? formatModelName(session.model) : null, tokenLine]
     .filter(Boolean)
     .join(" · ");
@@ -949,6 +956,7 @@ function docRouteFromStateClick(
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   claude: "Claude session",
   codex: "Codex session",
+  cursor: "Cursor session",
   doc: "Document",
 };
 
@@ -965,6 +973,11 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
     background: "var(--color-tag-codex-bg)",
     borderColor:
       "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+  },
+  cursor: {
+    color: "var(--color-text)",
+    background: "transparent",
+    borderColor: "var(--color-border)",
   },
   doc: {
     color: "var(--color-tag-doc)",
@@ -988,7 +1001,7 @@ function TypeIcon({
   const docGlyph = size === "sm" ? 13 : 20;
   return (
     <span
-      className={`type-icon type-icon-${type} inline-flex items-center justify-center ${box} border rounded-md`}
+      className={`type-icon type-icon-${type} inline-flex items-center justify-center ${box} rounded-md ${type === "cursor" ? "relative overflow-hidden" : "border"}`}
       style={TYPE_ICON_STYLES[type]}
       role="img"
       aria-label={TYPE_LABELS[type]}
@@ -1026,6 +1039,26 @@ function TypeIcon({
             </linearGradient>
           </defs>
         </svg>
+      ) : type === "cursor" ? (
+        <>
+          <img
+            src={cursorIconLightUrl}
+            alt=""
+            className="absolute inset-0 block h-full w-full object-cover dark:hidden"
+            aria-hidden="true"
+          />
+          <img
+            src={cursorIconDarkUrl}
+            alt=""
+            className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+            aria-hidden="true"
+          />
+          <span
+            className="pointer-events-none absolute inset-0 rounded-md"
+            style={{ boxShadow: "inset 0 0 0 1px var(--color-border-strong)" }}
+            aria-hidden="true"
+          />
+        </>
       ) : (
         <svg
           viewBox="0 0 24 24"

@@ -24,7 +24,16 @@ export type ActiveTask =
   | { kind: "re-enter"; task: Task }
   | { kind: "none" };
 
-export type SessionTool = "claude" | "codex";
+// The single source of the tool axis: the schema enum, runtime validation, and
+// CLI flag parsing all derive from this list, so adding a tool is a one-line
+// change here plus a Drizzle migration.
+export const SESSION_TOOLS = ["claude", "codex", "cursor"] as const;
+export type SessionTool = (typeof SESSION_TOOLS)[number];
+
+export function isSessionTool(value: string): value is SessionTool {
+  return (SESSION_TOOLS as readonly string[]).includes(value);
+}
+
 export type SessionOrigin = "root" | "subagent" | "spawned";
 
 export type Session = {
@@ -40,6 +49,9 @@ export type Session = {
   agentId: string | null;
   createdAt: string;
   tokenTotals: TokenTotals;
+  // Live context-window occupancy when the tool exposes it (Cursor). Not
+  // persisted — recomputed from the transcript on read. Absent for claude/codex.
+  contextTokens?: ContextTokens | null;
 };
 
 export type TaskDoc = {
@@ -77,6 +89,14 @@ export type TokenTotals = {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalTokens: number;
+};
+
+// Current context-window occupancy for a session — a live snapshot, not
+// cumulative spend. Only Cursor exposes this today (claude/codex track spend
+// instead), so it's optional everywhere and absent for those tools.
+export type ContextTokens = {
+  used: number;
+  limit: number;
 };
 
 export type TaskTimelineItem =

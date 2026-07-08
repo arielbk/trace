@@ -1,11 +1,10 @@
 {
-  "name": "@trace/core",
+  "name": "@trace/cursor-reader",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./browser": "./src/browser.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -16,14 +15,8 @@
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.1",
     "typescript": "5.9.2",
     "vitest": "^4.1.7"
-  },
-  "dependencies": {
-    "@trace/cursor-reader": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "marked": "^18.0.5"
   }
 }

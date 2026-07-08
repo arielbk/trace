@@ -80,6 +80,6 @@ npx @arielbk/trace@0.8.0 task update "X" --description "new one-line summary"
 Most re-entries need no such update — only offer when the drift is obvious, not
 on every re-entry.
 
-Codex entry point support is deferred. This Claude skill keeps the protocol
-tool-agnostic so a Codex wrapper can follow the same manifest-consumption rules
-later.
+The protocol is tool-agnostic: the same command and manifest-consumption rules
+apply whether the session runs in Claude Code, Codex, or Cursor, and the
+re-entered session is bound in all three.

@@ -1,9 +1,27 @@
 import type { SessionTool } from "./types.ts";
+import { syntheticLocator } from "./transcript-locator.ts";
+import {
+  getSessionLocator,
+  sessionLocatorsByPrecedence,
+  type LocateContext,
+  type SessionLocation,
+} from "./tool-locator.ts";
 
 export type SessionIdentityOverrides = {
   tool?: SessionTool;
   id?: string;
   transcriptPath?: string;
+  // The directory the bind ran from — used to resolve a Cursor session, which
+  // (unlike claude/codex) exposes no env var trace can read. Paired with
+  // `resolveCursorSession`; without both, cursor resolution is skipped.
+  cwd?: string;
+  // Maps a cwd → the current Cursor session: the focused GUI composer or the
+  // newest cursor-agent (CLI) chat (null when the cwd has neither). Injected so
+  // @trace/core stays free of filesystem reads; the CLI supplies one backed by
+  // `resolveCursorSession` from `@trace/cursor-reader`.
+  resolveCursorSession?: (
+    cwd: string,
+  ) => { id: string; transcriptPath: string | null } | null;
 };
 
 export type SessionIdentity = {
@@ -26,13 +44,60 @@ export function inferSessionIdentity(
   env: Record<string, string | undefined>,
   overrides: SessionIdentityOverrides = {},
 ): SessionIdentity {
-  const tool = overrides.tool ?? inferTool(env);
-  const id = present(overrides.id) ?? inferId(tool, env);
+  const ctx: LocateContext = {
+    env,
+    cwd: overrides.cwd,
+    resolveCursorSession: overrides.resolveCursorSession,
+  };
+  const location = locateSession(ctx, overrides.tool);
+  const tool = overrides.tool ?? location?.tool ?? "claude";
+  const id = present(overrides.id) ?? location?.id;
   const transcriptPath =
     present(overrides.transcriptPath) ??
-    (id === undefined ? undefined : inferTranscriptPath(id, tool, env));
+    (id === undefined
+      ? undefined
+      : (location?.nativeTranscriptPath ??
+        nativeTranscriptPathForExplicitId(ctx, tool, id) ??
+        syntheticLocator(tool, id)));
 
   return { tool, id, transcriptPath };
+}
+
+function locateSession(
+  ctx: LocateContext,
+  forcedTool: SessionTool | undefined,
+): SessionLocation | null {
+  if (forcedTool) {
+    return getSessionLocator(forcedTool).locate(ctx);
+  }
+
+  for (const locator of sessionLocatorsByPrecedence) {
+    const location = locator.locate(ctx);
+    if (location) {
+      return location;
+    }
+  }
+
+  return null;
+}
+
+function nativeTranscriptPathForExplicitId(
+  ctx: LocateContext,
+  tool: SessionTool,
+  id: string,
+): string | undefined {
+  const env =
+    tool === "codex"
+      ? { ...ctx.env, CODEX_THREAD_ID: id }
+      : tool === "claude"
+        ? { ...ctx.env, CLAUDE_CODE_SESSION_ID: id }
+        : undefined;
+
+  if (!env) {
+    return undefined;
+  }
+
+  return getSessionLocator(tool).locate({ ...ctx, env })?.nativeTranscriptPath;
 }
 
 // Trims a candidate value and collapses blank to undefined, so `??` chains
@@ -40,48 +105,4 @@ export function inferSessionIdentity(
 function present(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function inferTool(env: Record<string, string | undefined>): SessionTool {
-  if (present(env.CODEX_THREAD_ID)) {
-    return "codex";
-  }
-
-  return "claude";
-}
-
-function inferId(
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-): string | undefined {
-  if (tool === "codex") {
-    return present(env.CODEX_THREAD_ID);
-  }
-
-  // Claude Code exports the live session id as CLAUDE_CODE_SESSION_ID; the
-  // legacy CLAUDE_SESSION_ID / session_id are accepted for hook-stdin callers
-  // and older integrations.
-  return (
-    present(env.CLAUDE_CODE_SESSION_ID) ??
-    present(env.CLAUDE_SESSION_ID) ??
-    present(env.session_id)
-  );
-}
-
-function inferTranscriptPath(
-  id: string,
-  tool: SessionTool,
-  env: Record<string, string | undefined>,
-): string {
-  const claudePath = present(env.CLAUDE_TRANSCRIPT_PATH);
-  if (tool === "claude" && claudePath) {
-    return claudePath;
-  }
-
-  const codexPath = present(env.CODEX_TRANSCRIPT_PATH);
-  if (tool === "codex" && codexPath) {
-    return codexPath;
-  }
-
-  return `${tool}:${id}`;
 }

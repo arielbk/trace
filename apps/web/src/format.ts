@@ -11,6 +11,21 @@ export function formatTokensCompact(n: number): string {
 }
 
 /**
+ * Render a session's context-window occupancy (Cursor's snapshot of the live
+ * window, not cumulative spend): `{used: 154826, limit: 300000}` →
+ * `"154.8K / 300.0K ctx · 52%"`. A missing/zero limit drops the ratio and
+ * percent: `"154.8K ctx"`.
+ */
+export function formatContextUsage(ctx: {
+  used: number;
+  limit: number;
+}): string {
+  if (ctx.limit <= 0) return `${formatTokensCompact(ctx.used)} ctx`;
+  const percent = Math.round((ctx.used / ctx.limit) * 100);
+  return `${formatTokensCompact(ctx.used)} / ${formatTokensCompact(ctx.limit)} ctx · ${percent}%`;
+}
+
+/**
  * Render a byte count as a compact file size: `812` → `"812 B"`,
  * `12544` → `"12.3 KB"`, `2_300_000` → `"2.2 MB"`. Sub-kilobyte sizes keep
  * their exact byte count; larger sizes round to one decimal place.
@@ -25,7 +40,10 @@ export function formatBytes(bytes: number): string {
  * Render an ISO timestamp relative to `now`: `"just now"`, `"3m ago"`, `"5h ago"`,
  * `"2d ago"`, falling back to a readable absolute date beyond ~a week.
  */
-export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+export function formatRelativeTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
   const then = new Date(iso).getTime();
   const diffMs = now.getTime() - then;
   const minutes = Math.floor(diffMs / 60_000);
@@ -146,14 +164,17 @@ export function collapseHomePath(path: string, home: string = ""): string {
   return path;
 }
 
-const CLAUDE_MODEL_RE = /^claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*?)(?:-\d{8})?$/;
+const CLAUDE_MODEL_RE =
+  /^claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*?)(?:-\d{8})?$/;
 const CODEX_MODEL_RE = /^gpt-(\d+(?:-\d+)*)-codex$/;
+// Cursor's in-house models dot the version in the id itself: "composer-2.5-fast".
+const COMPOSER_MODEL_RE = /^composer-(\d+(?:\.\d+)*)((?:-[a-z]+)*)$/;
 
 /**
  * Render a raw model ID readably: `"claude-opus-4-8"` → `"Opus 4.8"`,
  * `"claude-haiku-4-5-20251001"` → `"Haiku 4.5"` (trailing release date
- * dropped), `"gpt-5-codex"` → `"GPT-5 Codex"`. An unrecognised ID is
- * returned unchanged.
+ * dropped), `"gpt-5-codex"` → `"GPT-5 Codex"`, `"composer-2.5-fast"` →
+ * `"Composer 2.5 Fast"`. An unrecognised ID is returned unchanged.
  */
 export function formatModelName(id: string): string {
   const claudeMatch = CLAUDE_MODEL_RE.exec(id);
@@ -165,6 +186,15 @@ export function formatModelName(id: string): string {
   const codexMatch = CODEX_MODEL_RE.exec(id);
   if (codexMatch?.[1]) {
     return `GPT-${codexMatch[1].replace(/-/g, ".")} Codex`;
+  }
+  const composerMatch = COMPOSER_MODEL_RE.exec(id);
+  if (composerMatch?.[1]) {
+    const variant = (composerMatch[2] ?? "")
+      .split("-")
+      .filter(Boolean)
+      .map((word) => `${word[0]?.toUpperCase()}${word.slice(1)}`)
+      .join(" ");
+    return `Composer ${composerMatch[1]}${variant ? ` ${variant}` : ""}`;
   }
   return id;
 }

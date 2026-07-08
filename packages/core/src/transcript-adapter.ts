@@ -11,8 +11,9 @@ import {
   parseCodexTranscriptFile,
   tailCodexTranscript,
 } from "./codex-adapter.ts";
+import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
-import type { SessionTool, TokenTotals } from "./types.ts";
+import type { ContextTokens, SessionTool, TokenTotals } from "./types.ts";
 
 export type ParsedTranscript = {
   id: string;
@@ -21,6 +22,9 @@ export type ParsedTranscript = {
   model: string | null;
   title: string | null;
   tokenTotals: TokenTotals;
+  // Live context-window occupancy when the tool exposes it (Cursor); absent
+  // otherwise. Not persisted — surfaced through to the refreshed session.
+  contextTokens?: ContextTokens | null;
 };
 
 export type TranscriptParseInput = {
@@ -116,13 +120,22 @@ const codexTranscriptAdapter: TranscriptAdapter = {
   },
 };
 
-const adaptersByTool: Record<SessionTool, TranscriptAdapter> = {
+// Partial because the tool axis (`SessionTool`) can carry tools whose adapter
+// has not landed yet. `getTranscriptAdapter` throws for an unregistered tool
+// rather than returning undefined, preserving the non-null contract callers
+// rely on.
+const adaptersByTool: Partial<Record<SessionTool, TranscriptAdapter>> = {
   claude: claudeTranscriptAdapter,
   codex: codexTranscriptAdapter,
+  cursor: cursorTranscriptAdapter,
 };
 
 export function getTranscriptAdapter(tool: SessionTool): TranscriptAdapter {
-  return adaptersByTool[tool];
+  const adapter = adaptersByTool[tool];
+  if (!adapter) {
+    throw new Error(`No transcript adapter registered for tool "${tool}"`);
+  }
+  return adapter;
 }
 
 function readFromFile(

@@ -48,12 +48,26 @@ docs, and architecture reviews so names stay consistent.
   per-tool free functions and re-branching on the tool string.
   (`packages/core/src/transcript-adapter.ts`)
 
-- **Session Locator** — sibling to the Transcript Adapter: the per-`SessionTool`
-  seam that answers "does this tool own the *live* session, and if so what is its
-  id and transcript path?" from a process env (and, for Cursor, an injected
-  cwd→composerId resolver). Consulted via `getSessionLocator(tool)` /
-  `sessionLocatorsByPrecedence`. `inferSessionIdentity` is the orchestrator that
-  asks locators in precedence order (codex → claude → cursor, claude as terminal
-  default) and applies caller overrides. Keeps `@trace/core` filesystem-free —
-  the Cursor store read is an injected callback consumed only by the cursor
-  locator. *(In design — see `docs/deepen-session-identity-behind-a-sessionlocator-family/`.)*
+- **Tool Session Locator** — sibling to the Transcript Adapter: the
+  per-`SessionTool` seam that answers "does this tool own the *live* session,
+  and if so what is its id and transcript path?" from a process env (and, for
+  Cursor, an injected cwd→session resolver). Consulted via
+  `getSessionLocator(tool)` / `sessionLocatorsByPrecedence`.
+  `inferSessionIdentity` is the orchestrator that asks locators in precedence
+  order (codex → claude → cursor, claude as terminal default) and applies
+  caller overrides. Keeps `@trace/core` filesystem-free — the Cursor store read
+  is an injected callback consumed only by the cursor locator; the CLI wires
+  the real resolver exactly once, in its identity composition root
+  (`apps/cli/src/commands/identity.ts`). Not to be confused with
+  `SessionLocator` (`session-locator.ts`), which finds a *persisted* Session in
+  the store. (`packages/core/src/tool-locator.ts`)
+
+- **Transcript Locator** — the string a Session's `transcriptPath` slot
+  carries: either the absolute path of a real on-disk transcript, or — for
+  sessions with no transcript file (Cursor GUI composers, Codex subagents) — a
+  synthetic `<tool>:<id>` reference. Cursor locators split into two flavors,
+  `composer` (state.vscdb) and `agent-transcript` (cursor-agent CLI JSONL).
+  The convention — minting, recognition, flavor — has one owner; nothing else
+  re-derives the string shape. The per-tool resume command
+  (`resume-command.ts`) keys off it so the web board stays tool-blind.
+  (`packages/core/src/transcript-locator.ts`)

@@ -288,6 +288,7 @@ test("repo skill prose is pruned to the bind verb and dispatches the host nudge"
   expect(prose.toLowerCase()).toContain("sentence case");
   expect(prose).toContain("resources/claude.md");
   expect(prose).toContain("resources/codex.md");
+  expect(prose).toContain("resources/cursor.md");
 
   // The Claude SessionStart no-task nudge now lives in its host resource, not
   // in the shared SKILL.md.

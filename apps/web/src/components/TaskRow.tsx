@@ -4,6 +4,8 @@ import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
 import { ReEnterButton } from "./ReEnterButton.tsx";
 import { ArchiveIcon, SuccessCheckIcon, UnarchiveIcon } from "./icons.tsx";
+import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
+import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import { cn } from "../lib/utils.ts";
 import {
   formatRelativeTime,
@@ -215,7 +217,8 @@ function AgentAvatars({
 }) {
   const hasClaude = agentTools.includes("claude");
   const hasCodex = agentTools.includes("codex");
-  if (!hasClaude && !hasCodex && !hasDocs) return null;
+  const hasCursor = agentTools.includes("cursor");
+  if (!hasClaude && !hasCodex && !hasCursor && !hasDocs) return null;
 
   const baseAvatar =
     "inline-flex items-center justify-center w-5 h-5 rounded-full -ml-1.5 relative";
@@ -253,6 +256,20 @@ function AgentAvatars({
           title="Codex"
         >
           <CodexLogo />
+        </span>
+      )}
+      {hasCursor && (
+        <span
+          className={cn("agent-avatar agent-avatar-cursor z-[15] overflow-hidden", baseAvatar)}
+          style={{
+            background: "transparent",
+            border: "0",
+            boxShadow: "0 0 0 2px var(--color-bg)",
+          }}
+          aria-label="Cursor"
+          title="Cursor"
+        >
+          <CursorLogo />
         </span>
       )}
       {hasDocs && (
@@ -318,6 +335,33 @@ function CodexLogo() {
         </linearGradient>
       </defs>
     </svg>
+  );
+}
+
+function CursorLogo() {
+  return (
+    <>
+      <img
+        src={cursorIconLightUrl}
+        alt=""
+        className="absolute inset-0 block h-full w-full object-cover dark:hidden"
+        aria-hidden="true"
+      />
+      <img
+        src={cursorIconDarkUrl}
+        alt=""
+        className="absolute inset-0 hidden h-full w-full object-cover dark:block"
+        aria-hidden="true"
+      />
+      <span
+        className="pointer-events-none absolute inset-0"
+        style={{
+          borderRadius: "inherit",
+          boxShadow: "inset 0 0 0 1px var(--color-border-strong)",
+        }}
+        aria-hidden="true"
+      />
+    </>
   );
 }
 

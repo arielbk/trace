@@ -23,9 +23,12 @@ import {
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
 import { getTranscriptAdapter } from "./transcript-adapter.ts";
+import { isSessionTool } from "./types.ts";
+import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
+  ContextTokens,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -332,8 +335,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (transcriptPath.length === 0) {
       throw new Error("Session transcript path is required");
     }
-    if (input.tool !== "claude" && input.tool !== "codex") {
-      throw new Error("Session tool must be claude or codex");
+    if (!isSessionTool(input.tool)) {
+      throw new Error("Session tool must be claude, codex, or cursor");
     }
     if (!isSessionOrigin(origin)) {
       throw new Error("Session origin must be root, subagent, or spawned");
@@ -345,8 +348,8 @@ class NodeSqliteTaskStore implements TaskStore {
       const next = {
         ...existing,
         transcriptPath:
-          existing.transcriptPath.startsWith("codex:") &&
-          !transcriptPath.startsWith("codex:")
+          isSyntheticLocator(existing.transcriptPath, "codex") &&
+          !isSyntheticLocator(transcriptPath, "codex")
             ? transcriptPath
             : existing.transcriptPath,
         model: existing.model ?? model,
@@ -500,7 +503,7 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!existing) {
       const created = this.registerSession({
         id,
-        transcriptPath: input.transcriptPath ?? `codex:${id}`,
+        transcriptPath: input.transcriptPath ?? syntheticLocator("codex", id),
         tool: input.tool ?? "codex",
         parentSessionId,
         origin,
@@ -816,6 +819,7 @@ class NodeSqliteTaskStore implements TaskStore {
       tokenTotals: TokenTotals;
       title: string | null;
       model: string | null;
+      contextTokens: ContextTokens | null;
     } | null = null;
     try {
       const adapter = getTranscriptAdapter(session.tool);
@@ -826,6 +830,7 @@ class NodeSqliteTaskStore implements TaskStore {
         tokenTotals: parsed.tokenTotals,
         title: parsed.title,
         model: parsed.model,
+        contextTokens: parsed.contextTokens ?? null,
       };
     } catch {
       // Missing file or unparseable transcript — return stored values untouched.
@@ -878,7 +883,13 @@ class NodeSqliteTaskStore implements TaskStore {
         );
     }
 
-    return { ...session, title, model, tokenTotals: totals };
+    return {
+      ...session,
+      title,
+      model,
+      tokenTotals: totals,
+      contextTokens: fresh.contextTokens,
+    };
   }
 
   // Reserve a unique slug. An empty base (untitled task or a title that left
@@ -1027,7 +1038,7 @@ type TaskRow = {
 type SessionRow = {
   id: string;
   transcript_path: string;
-  tool: "claude" | "codex";
+  tool: SessionTool;
   model: string | null;
   title: string | null;
   task_id: string | null;
