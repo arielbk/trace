@@ -213,10 +213,103 @@ test("an explicit transcriptPath override wins over synthesis", () => {
   });
 });
 
+test("CURSOR_CONVERSATION_ID identifies the cursor session deterministically", () => {
+  // Both the GUI's integrated terminal and cursor-agent CLI shells export
+  // CURSOR_CONVERSATION_ID; the id-flavor resolver decides GUI composer vs
+  // agent chat. A composer flavor (transcriptPath null) yields the synthetic
+  // cursor:<id> locator.
+  const identity = inferSessionIdentity(
+    { CURSOR_CONVERSATION_ID: "conv-1" },
+    {
+      resolveCursorSessionById: (id) =>
+        id === "conv-1" ? { id, transcriptPath: null } : null,
+    },
+  );
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "conv-1",
+    transcriptPath: "cursor:conv-1",
+  });
+});
+
+test("CURSOR_CONVERSATION_ID resolving as an agent chat keeps its JSONL path", () => {
+  const transcriptPath =
+    "/home/u/.cursor/projects/repo/agent-transcripts/conv-1/conv-1.jsonl";
+  const identity = inferSessionIdentity(
+    { CURSOR_CONVERSATION_ID: "conv-1" },
+    { resolveCursorSessionById: () => ({ id: "conv-1", transcriptPath }) },
+  );
+
+  expect(identity).toEqual({ tool: "cursor", id: "conv-1", transcriptPath });
+});
+
+test("CURSOR_CONVERSATION_ID beats cwd guessing — the cwd resolver is never consulted", () => {
+  // A repo can have several live Cursor sessions; the env var names the exact
+  // one issuing the command, while cwd resolution would pick whichever surface
+  // looks freshest.
+  let cwdResolverCalled = false;
+  const identity = inferSessionIdentity(
+    { CURSOR_CONVERSATION_ID: "conv-live" },
+    {
+      cwd: "/repos/trace-v2",
+      resolveCursorSession: () => {
+        cwdResolverCalled = true;
+        return { id: "composer-other", transcriptPath: null };
+      },
+      resolveCursorSessionById: (id) => ({ id, transcriptPath: null }),
+    },
+  );
+
+  expect(identity.id).toBe("conv-live");
+  expect(cwdResolverCalled).toBe(false);
+});
+
+test("CURSOR_CONVERSATION_ID without an id-flavor resolver defaults to the composer locator", () => {
+  const identity = inferSessionIdentity({ CURSOR_CONVERSATION_ID: "conv-1" }, {});
+
+  expect(identity).toEqual({
+    tool: "cursor",
+    id: "conv-1",
+    transcriptPath: "cursor:conv-1",
+  });
+});
+
+test("a live Claude session beats CURSOR_CONVERSATION_ID", () => {
+  // Claude Code running inside a Cursor terminal sees both env vars; the
+  // innermost tool is the session.
+  const identity = inferSessionIdentity(
+    {
+      CLAUDE_CODE_SESSION_ID: "claude-live",
+      CURSOR_CONVERSATION_ID: "conv-1",
+    },
+    {},
+  );
+
+  expect(identity.tool).toBe("claude");
+  expect(identity.id).toBe("claude-live");
+});
+
+test("an explicit cursor id resolves its flavor through the id resolver", () => {
+  const transcriptPath =
+    "/home/u/.cursor/projects/repo/agent-transcripts/chat-9/chat-9.jsonl";
+  const identity = inferSessionIdentity(
+    {},
+    {
+      tool: "cursor",
+      id: "chat-9",
+      resolveCursorSessionById: (id) =>
+        id === "chat-9" ? { id, transcriptPath } : null,
+    },
+  );
+
+  expect(identity).toEqual({ tool: "cursor", id: "chat-9", transcriptPath });
+});
+
 test("resolves a cursor composer from cwd when no other session env is set", () => {
-  // Binding from a Cursor terminal: no claude/codex env var, but the cwd maps to
-  // a Cursor workspace whose focused composer is resolved. The GUI sets no env
-  // var trace can read, so the composerId is the only driver.
+  // Binding from a Cursor terminal without CURSOR_CONVERSATION_ID (older
+  // builds, bare terminals): the cwd maps to a Cursor workspace whose focused
+  // composer is resolved — the guessing fallback.
   const identity = inferSessionIdentity(
     {},
     {
