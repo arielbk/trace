@@ -816,6 +816,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
   #refreshSession(session: Session): Session {
     let fresh: {
+      transcriptPath: string;
       tokenTotals: TokenTotals;
       title: string | null;
       model: string | null;
@@ -827,6 +828,7 @@ class NodeSqliteTaskStore implements TaskStore {
         expectedId: session.id,
       });
       fresh = {
+        transcriptPath: parsed.transcriptPath,
         tokenTotals: parsed.tokenTotals,
         title: parsed.title,
         model: parsed.model,
@@ -855,12 +857,20 @@ class NodeSqliteTaskStore implements TaskStore {
     const model = fresh.model ?? session.model;
     const modelChanged = model !== session.model;
 
-    if (totalsChanged || titleChanged || modelChanged) {
+    // Adapters report the locator the session should canonically be stored
+    // under — for cursor, the composer flavor when a composer record exists —
+    // so a session bound under the wrong flavor self-heals here. The other
+    // adapters echo the stored path back.
+    const transcriptPath = fresh.transcriptPath || session.transcriptPath;
+    const transcriptPathChanged = transcriptPath !== session.transcriptPath;
+
+    if (totalsChanged || titleChanged || modelChanged || transcriptPathChanged) {
       this.#sqlite
         .prepare(
           `
             UPDATE sessions
             SET
+              transcript_path = ?,
               title = ?,
               model = ?,
               input_tokens = ?,
@@ -872,6 +882,7 @@ class NodeSqliteTaskStore implements TaskStore {
           `,
         )
         .run(
+          transcriptPath,
           title,
           model,
           totals.inputTokens,
@@ -885,6 +896,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     return {
       ...session,
+      transcriptPath,
       title,
       model,
       tokenTotals: totals,

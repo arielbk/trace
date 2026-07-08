@@ -19,6 +19,12 @@ vi.mock("@trace/cursor-reader", () => ({
   readComposer: (composerId: string) => readComposer(composerId),
   readComposerTail: (composerId: string, limit: number) =>
     readComposerTail(composerId, limit),
+  chatIdFromTranscriptPath: (transcriptPath: string) =>
+    transcriptPath.split("/").pop()!.replace(/\.jsonl$/, ""),
+  readAgentSession: () => {
+    throw new Error("no agent transcript in this test");
+  },
+  readAgentTranscriptMessages: () => [],
 }));
 
 const { openTraceStore } = await import("./store.ts");
@@ -121,6 +127,37 @@ test("re-entry reconstructs the cursor session tail the way `session tail` print
         "assistant: Done — re-entry now lists Cursor\n",
       ].join(""),
     );
+  } finally {
+    store.close();
+  }
+});
+
+test("a session bound as agent-transcript flavor self-heals to the composer locator", () => {
+  // A GUI chat misregistered under its JSONL mirror (the pre-fix flavor bug):
+  // the first read finds the composer record, adopts the canonical
+  // cursor:<id> locator plus the real model, and persists both.
+  const jsonlPath = `/home/u/.cursor/projects/repo/agent-transcripts/${COMPOSER_ID}/${COMPOSER_ID}.jsonl`;
+  const store = openStore();
+  try {
+    store.registerSession({
+      id: COMPOSER_ID,
+      transcriptPath: jsonlPath,
+      tool: "cursor",
+      model: "composer-2.5-fast",
+    });
+
+    const healed = store.getSession(COMPOSER_ID);
+    expect(healed?.transcriptPath).toBe(`cursor:${COMPOSER_ID}`);
+    expect(healed?.model).toBe("claude-opus-4-7");
+
+    // Persisted, not just returned: with the reader unavailable, the next
+    // read serves the stored row untouched.
+    readComposer.mockImplementation(() => {
+      throw new Error("store unreadable");
+    });
+    const stored = store.getSession(COMPOSER_ID);
+    expect(stored?.transcriptPath).toBe(`cursor:${COMPOSER_ID}`);
+    expect(stored?.model).toBe("claude-opus-4-7");
   } finally {
     store.close();
   }
