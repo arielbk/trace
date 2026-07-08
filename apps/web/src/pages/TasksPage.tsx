@@ -233,10 +233,8 @@ export function FilterBar({
   triggerCount?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [dropdownVisible, setDropdownVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const openFrame = useRef<number | null>(null);
   const selectedLabel = selectedProject
     ? (projects.find((p) => p.projectRoot === selectedProject)?.displayName ??
       selectedProject)
@@ -246,9 +244,6 @@ export function FilterBar({
     return () => {
       if (closeTimer.current !== null) {
         window.clearTimeout(closeTimer.current);
-      }
-      if (openFrame.current !== null) {
-        window.cancelAnimationFrame(openFrame.current);
       }
     };
   }, []);
@@ -260,29 +255,19 @@ export function FilterBar({
     }
   }
 
-  function clearOpenFrame() {
-    if (openFrame.current !== null) {
-      window.cancelAnimationFrame(openFrame.current);
-      openFrame.current = null;
-    }
-  }
-
+  // Opening needs no orchestration: the content mounts straight into the
+  // t-dropdown open state and the CSS @starting-style block animates it in.
+  // Closing swaps to .is-closing and keeps the content mounted until the
+  // close transition has run.
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
       clearCloseTimer();
-      clearOpenFrame();
       setIsClosing(false);
       setOpen(true);
-      setDropdownVisible(false);
-      openFrame.current = window.requestAnimationFrame(() => {
-        openFrame.current = null;
-        setDropdownVisible(true);
-      });
       return;
     }
 
     if (!open) return;
-    clearOpenFrame();
 
     const closeMs =
       parseFloat(
@@ -291,12 +276,10 @@ export function FilterBar({
         ),
       ) || 150;
 
-    setDropdownVisible(false);
     setIsClosing(true);
     closeTimer.current = window.setTimeout(() => {
       closeTimer.current = null;
       setIsClosing(false);
-      setDropdownVisible(false);
       setOpen(false);
     }, closeMs);
   }
@@ -323,7 +306,6 @@ export function FilterBar({
               forceMount
               className={cn(
                 "filter-bar-project-popover t-dropdown z-50 w-56 rounded-md border border-border-subtle bg-surface shadow-md p-1",
-                dropdownVisible && !isClosing && "is-open",
                 isClosing && "is-closing",
               )}
               data-origin="top-left"

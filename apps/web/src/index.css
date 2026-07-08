@@ -257,15 +257,27 @@
 .task-row-meta.t-text-swap { display: flex; }
 .task-row-actions.t-text-swap { display: inline-flex; }
 
+/*
+ * transitions-dev: menu dropdown (05-menu-dropdown), entry via @starting-style.
+ * The content mounts directly in its open state and transitions from the
+ * @starting-style values below — no pre-open class or JS next-frame flip.
+ * Exit is still the `.is-closing` class, held mounted by a timer that reads
+ * --dropdown-close-dur so the unmount stays in sync with the transition.
+ */
 .t-dropdown {
   transform-origin: top left;
-  transform: scale(var(--dropdown-pre-scale));
-  opacity: 0;
-  pointer-events: none;
+  transform: scale(1);
+  opacity: 1;
   transition:
     transform var(--dropdown-open-dur) var(--dropdown-ease),
     opacity   var(--dropdown-open-dur) var(--dropdown-ease);
   will-change: transform, opacity;
+}
+@starting-style {
+  .t-dropdown {
+    transform: scale(var(--dropdown-pre-scale));
+    opacity: 0;
+  }
 }
 .t-dropdown[data-origin="top-right"]     { transform-origin: top right; }
 .t-dropdown[data-origin="top-center"]    { transform-origin: top center; }
@@ -273,11 +285,6 @@
 .t-dropdown[data-origin="bottom-center"] { transform-origin: bottom center; }
 .t-dropdown[data-origin="bottom-right"]  { transform-origin: bottom right; }
 
-.t-dropdown.is-open {
-  transform: scale(1);
-  opacity: 1;
-  pointer-events: auto;
-}
 .t-dropdown.is-closing {
   transform: scale(var(--dropdown-closing-scale));
   opacity: 0;
@@ -526,10 +533,14 @@
   outline-offset: 2px;
 }
 
-/* ClampedSection: collapse long content behind a Show more toggle. */
+/* ClampedSection: collapse long content behind a Show more toggle.
+   interpolate-size lets engines that support it (Chrome/Edge 129+) animate
+   max-height to the `max-content` target ClampedSection sets when expanded;
+   others get its measured-pixel fallback and animate identically. */
 .left-off-clamp {
   position: relative;
   overflow: hidden;
+  interpolate-size: allow-keywords;
   transition: max-height 300ms var(--dropdown-ease);
 }
 .left-off-clamp-fade::after {
