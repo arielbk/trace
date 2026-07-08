@@ -38,15 +38,30 @@ function isAgentTranscriptLocator(locator: string): boolean {
   return cursorLocatorFlavor(locator) === "agent-transcript";
 }
 
-function readSessionForLocator(locator: string): CursorSession {
+// Alongside the session, report the locator the session *should* be stored
+// under: an id with a composer record is canonically the `cursor:<id>` composer
+// (real model, no CLI resume), whatever locator the caller held. The store
+// adopts a changed canonical locator on refresh, so a session bound under the
+// wrong flavor self-heals on the next read.
+function readSessionForLocator(locator: string): {
+  session: CursorSession;
+  canonicalLocator: string;
+} {
   if (!isAgentTranscriptLocator(locator)) {
-    return readComposer(composerIdFromLocator(locator));
+    const composerId = composerIdFromLocator(locator);
+    return {
+      session: readComposer(composerId),
+      canonicalLocator: `cursor:${composerId}`,
+    };
   }
   const chatId = chatIdFromTranscriptPath(locator);
   try {
-    return readComposer(chatId);
+    return {
+      session: readComposer(chatId),
+      canonicalLocator: `cursor:${chatId}`,
+    };
   } catch {
-    return readAgentSession(locator);
+    return { session: readAgentSession(locator), canonicalLocator: locator };
   }
 }
 
@@ -121,7 +136,7 @@ function cursorTail(locator: string, limit: number | undefined): TranscriptMessa
 function cursorHead(locator: string): TranscriptMessage[] {
   let session: CursorSession;
   try {
-    session = readSessionForLocator(locator);
+    session = readSessionForLocator(locator).session;
   } catch {
     return [];
   }
@@ -141,16 +156,14 @@ function cursorHead(locator: string): TranscriptMessage[] {
 export const cursorTranscriptAdapter: TranscriptAdapter = {
   tool: "cursor",
   parse(input: TranscriptParseInput): ParsedTranscript {
-    return parsedFromSession(
-      readSessionForLocator(input.transcriptPath),
+    const { session, canonicalLocator } = readSessionForLocator(
       input.transcriptPath,
     );
+    return parsedFromSession(session, canonicalLocator);
   },
   parseFile(transcriptPath: string): ParsedTranscript {
-    return parsedFromSession(
-      readSessionForLocator(transcriptPath),
-      transcriptPath,
-    );
+    const { session, canonicalLocator } = readSessionForLocator(transcriptPath);
+    return parsedFromSession(session, canonicalLocator);
   },
   head(input: TranscriptHeadInput): TranscriptMessage[] {
     return cursorHead(input.transcript);

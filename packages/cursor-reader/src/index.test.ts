@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   readComposerTail,
   resolveFocusedComposer,
 } from "./index.ts";
+import { getDatabaseSync } from "./node-sqlite.ts";
 import { buildCursorFixture } from "./test-fixture.ts";
 
 let storageRoot: string;
@@ -81,6 +82,23 @@ describe("readComposer", () => {
       tokenTotals: null,
       contextTokens: null,
     });
+  });
+
+  it("skips a broken table-less workspace DB when resolving the project root", () => {
+    buildCursorFixture(storageRoot, {
+      workspaceHash: "ws-hash-1",
+      folder: "/Users/dev/repo",
+      composers: [{ composerId: "composer-1", name: "Task" }],
+    });
+    // Cursor leaves empty state.vscdb files (no tables, no workspace.json)
+    // behind; "00-broken" sorts first so the scan hits it before the real one.
+    const brokenDir = join(storageRoot, "workspaceStorage", "00-broken");
+    mkdirSync(brokenDir, { recursive: true });
+    new (getDatabaseSync())(join(brokenDir, "state.vscdb")).close();
+
+    expect(readComposer("composer-1", { storageRoot }).projectRoot).toBe(
+      "/Users/dev/repo",
+    );
   });
 
   it("returns nullable fields and null projectRoot when nothing references the composer", () => {

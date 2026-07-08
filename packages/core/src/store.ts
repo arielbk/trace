@@ -455,6 +455,7 @@ class NodeSqliteTaskStore implements TaskStore {
       agentId,
       createdAt: new Date().toISOString(),
       tokenTotals: totals,
+      contextTokens: null,
     };
 
     this.#sqlite
@@ -941,6 +942,7 @@ class NodeSqliteTaskStore implements TaskStore {
       return { session, parsed: null };
     }
     const fresh = {
+      transcriptPath: parsed.transcriptPath,
       tokenTotals: parsed.tokenTotals,
       title: parsed.title,
       model: parsed.model,
@@ -965,23 +967,49 @@ class NodeSqliteTaskStore implements TaskStore {
     const model = fresh.model ?? session.model;
     const modelChanged = model !== session.model;
 
-    if (totalsChanged || titleChanged || modelChanged) {
+    // Adapters report the locator the session should canonically be stored
+    // under — for cursor, the composer flavor when a composer record exists —
+    // so a session bound under the wrong flavor self-heals here. The other
+    // adapters echo the stored path back.
+    const transcriptPath = fresh.transcriptPath || session.transcriptPath;
+    const transcriptPathChanged = transcriptPath !== session.transcriptPath;
+
+    // Context tokens are ephemeral at the source (Cursor reports occupancy
+    // only for the live composer), so the last observed value is snapshotted
+    // and a parse that can't see one must not wipe it — the same
+    // preserve-on-null rule as title and model.
+    const contextTokens = fresh.contextTokens ?? session.contextTokens ?? null;
+    const contextTokensChanged =
+      contextTokens?.used !== session.contextTokens?.used ||
+      contextTokens?.limit !== session.contextTokens?.limit;
+
+    if (
+      totalsChanged ||
+      titleChanged ||
+      modelChanged ||
+      transcriptPathChanged ||
+      contextTokensChanged
+    ) {
       this.#sqlite
         .prepare(
           `
             UPDATE sessions
             SET
+              transcript_path = ?,
               title = ?,
               model = ?,
               input_tokens = ?,
               output_tokens = ?,
               cache_creation_input_tokens = ?,
               cache_read_input_tokens = ?,
-              total_tokens = ?
+              total_tokens = ?,
+              context_tokens_used = ?,
+              context_tokens_limit = ?
             WHERE id = ?
           `,
         )
         .run(
+          transcriptPath,
           title,
           model,
           totals.inputTokens,
@@ -989,6 +1017,8 @@ class NodeSqliteTaskStore implements TaskStore {
           totals.cacheCreationInputTokens,
           totals.cacheReadInputTokens,
           totals.totalTokens,
+          contextTokens?.used ?? null,
+          contextTokens?.limit ?? null,
           session.id,
         );
     }
@@ -996,10 +1026,11 @@ class NodeSqliteTaskStore implements TaskStore {
     return {
       session: {
         ...session,
+        transcriptPath,
         title,
         model,
         tokenTotals: totals,
-        contextTokens: fresh.contextTokens,
+        contextTokens,
       },
       parsed,
     };
@@ -1165,6 +1196,8 @@ type SessionRow = {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
   total_tokens: number;
+  context_tokens_used: number | null;
+  context_tokens_limit: number | null;
 };
 
 type TaskDocRow = {
@@ -1210,6 +1243,10 @@ function sessionFromRow(row: SessionRow): Session {
       cacheReadInputTokens: row.cache_read_input_tokens,
       totalTokens: row.total_tokens,
     },
+    contextTokens:
+      row.context_tokens_used != null
+        ? { used: row.context_tokens_used, limit: row.context_tokens_limit ?? 0 }
+        : null,
   };
 }
 

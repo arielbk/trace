@@ -10,6 +10,11 @@ export type LocateContext = {
   resolveCursorSession?: (
     cwd: string,
   ) => { id: string; transcriptPath: string | null } | null;
+  // Resolves the flavor of a Cursor session already identified by id (from
+  // CURSOR_CONVERSATION_ID) — same return contract as resolveCursorSession.
+  resolveCursorSessionById?: (
+    id: string,
+  ) => { id: string; transcriptPath: string | null } | null;
 };
 
 export type SessionLocation = {
@@ -61,6 +66,21 @@ const claudeSessionLocator: ToolSessionLocator = {
 const cursorSessionLocator: ToolSessionLocator = {
   tool: "cursor",
   locate(ctx) {
+    // Both the Cursor GUI's integrated terminal and cursor-agent CLI shells
+    // carry CURSOR_CONVERSATION_ID — the deterministic per-session identity,
+    // the analogue of CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID. It names the
+    // exact session issuing the command, so it always beats cwd guessing,
+    // which can pick a fresher sibling session in the same repo.
+    const envId = present(ctx.env.CURSOR_CONVERSATION_ID);
+    if (envId) {
+      const resolved = ctx.resolveCursorSessionById?.(envId) ?? null;
+      return {
+        tool: "cursor",
+        id: envId,
+        nativeTranscriptPath: present(resolved?.transcriptPath ?? undefined),
+      };
+    }
+
     const cwd = present(ctx.cwd);
     if (!cwd || !ctx.resolveCursorSession) {
       return null;

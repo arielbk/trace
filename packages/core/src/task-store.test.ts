@@ -118,6 +118,8 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "subagent_type",
         "agent_id",
         "title",
+        "context_tokens_used",
+        "context_tokens_limit",
       ]);
     } finally {
       database.close();
@@ -961,6 +963,7 @@ test("migration keeps existing session rows readable with a null model", () => {
           cacheReadInputTokens: 4,
           totalTokens: 10,
         },
+        contextTokens: null,
       },
     ]);
     store.close();

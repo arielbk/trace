@@ -11,6 +11,7 @@ import {
   chatIdFromTranscriptPath,
   readAgentSession,
   resolveCursorSession,
+  resolveCursorSessionById,
 } from "./index.ts";
 import { buildCursorFixture } from "./test-fixture.ts";
 
@@ -270,12 +271,97 @@ describe("resolveCursorSession", () => {
     }
   });
 
+  it("resolves a fresher GUI-mirrored chat as its composer, not the JSONL", () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
+    try {
+      buildCursorFixture(storageRoot, {
+        workspaceHash: "ws-1",
+        folder: "/repo",
+        lastFocusedComposerIds: ["composer-1"],
+        composers: [
+          { composerId: "composer-1", name: "Stale", lastUpdatedAt: 1_000_000 },
+          { composerId: "chat-2", name: "Mirrored GUI chat" },
+        ],
+      });
+      writeChat("/repo", "chat-2", [transcriptLine("user", [])], 2_000);
+
+      expect(resolveCursorSession("/repo", { storageRoot, projectsRoot })).toEqual(
+        { id: "chat-2", transcriptPath: null },
+      );
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
   it("returns null when neither flavor resolves", () => {
     const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
     try {
       expect(
         resolveCursorSession("/repo", { storageRoot, projectsRoot }),
       ).toBeNull();
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveCursorSessionById", () => {
+  it("resolves an id with a composer record as a GUI composer, even when a JSONL mirror exists", () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
+    try {
+      buildCursorFixture(storageRoot, {
+        workspaceHash: "ws-1",
+        folder: "/repo",
+        composers: [{ composerId: "chat-1", name: "GUI chat" }],
+      });
+      writeChat("/repo", "chat-1", [transcriptLine("user", [])]);
+
+      expect(
+        resolveCursorSessionById("chat-1", { storageRoot, projectsRoot }),
+      ).toEqual({ id: "chat-1", transcriptPath: null });
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a record-less id to its agent transcript", () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
+    try {
+      const path = writeChat("/repo", "chat-1", [transcriptLine("user", [])]);
+
+      expect(
+        resolveCursorSessionById("chat-1", { storageRoot, projectsRoot }),
+      ).toEqual({ id: "chat-1", transcriptPath: path });
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("finds a transcript in another project than the cwd's", () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
+    try {
+      const path = writeChat("/elsewhere", "chat-1", [
+        transcriptLine("user", []),
+      ]);
+
+      expect(
+        resolveCursorSessionById("chat-1", {
+          storageRoot,
+          projectsRoot,
+          cwd: "/repo",
+        }),
+      ).toEqual({ id: "chat-1", transcriptPath: path });
+    } finally {
+      rmSync(storageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults to composer flavor when neither source knows the id", () => {
+    const storageRoot = mkdtempSync(join(tmpdir(), "cursor-storage-"));
+    try {
+      expect(
+        resolveCursorSessionById("chat-new", { storageRoot, projectsRoot }),
+      ).toEqual({ id: "chat-new", transcriptPath: null });
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
     }
