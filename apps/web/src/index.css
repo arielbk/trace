@@ -207,7 +207,6 @@
   --skel-pulse-count: 1;
   --skel-pulse-min: 0.5;
   --skel-reveal-dur: 250ms;
-  --skel-reveal-blur: 2px;
   --skel-reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -352,37 +351,32 @@
 @keyframes t-check-draw { to { stroke-dashoffset: 0; } }
 
 /*
- * transitions-dev: skeleton reveal (14-skeleton-reveal). The skeleton starts
- * in normal flow so it establishes the slot's height (list/timeline height
- * varies with row count, unlike a fixed-size card); once revealed, it
- * detaches into an absolute overlay so the now-mounted real content drives
- * layout while the two layers cross-fade over the same duration/ease.
+ * transitions-dev: skeleton reveal (14-skeleton-reveal), adapted for React
+ * mounting and page-scale layers. The skeleton starts in normal flow so it
+ * establishes the slot's height (list/timeline height varies with row count,
+ * unlike a fixed-size card); on reveal it detaches into an absolute overlay
+ * and fades out while the real content — mounted in the same commit — drives
+ * layout and fades in. Only opacity animates: these layers are page-sized,
+ * and the recipe's cross-blur (meant for row/card slots) would re-rasterize
+ * the whole page each frame.
  */
 .t-skel { position: relative; }
 .t-skel-skeleton,
 .t-skel-content {
-  transition:
-    opacity var(--skel-reveal-dur) var(--skel-reveal-ease),
-    filter  var(--skel-reveal-dur) var(--skel-reveal-ease);
-}
-.t-skel-skeleton {
-  opacity: 1;
-  filter: blur(0);
-}
-.t-skel-content {
-  opacity: 0;
-  filter: blur(var(--skel-reveal-blur));
+  transition: opacity var(--skel-reveal-dur) var(--skel-reveal-ease);
 }
 .t-skel.is-revealed .t-skel-skeleton {
   position: absolute;
   inset: 0;
   opacity: 0;
-  filter: blur(var(--skel-reveal-blur));
   pointer-events: none;
 }
-.t-skel.is-revealed .t-skel-content {
-  opacity: 1;
-  filter: blur(0);
+/* The content layer mounts already in its final state; @starting-style gives
+   the browser a first-frame value to fade in from, replacing a JS double-rAF
+   class flip. Scoped to .is-revealed so already-cached loads (which mount
+   without the class) appear instantly instead of fading on every navigation. */
+@starting-style {
+  .t-skel.is-revealed .t-skel-content { opacity: 0; }
 }
 
 .t-skel-bar {
@@ -390,9 +384,9 @@
   border-radius: var(--radius-sm);
   background: var(--color-chip-bg);
 }
-/* Place the animation on the skeleton's direct children (rows), not on
-   .t-skel-skeleton itself, so its opacity/filter stay free for the reveal
-   cross-fade above. */
+/* Pulse the skeleton's direct child (the whole placeholder — one animated
+   element, not one per bar), not .t-skel-skeleton itself, so the layer's own
+   opacity stays free for the reveal cross-fade above. */
 .t-skel-skeleton.is-pulsing > * {
   animation: t-skel-pulse var(--skel-pulse-dur) ease-in-out var(--skel-pulse-count);
 }

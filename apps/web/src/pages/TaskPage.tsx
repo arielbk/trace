@@ -16,7 +16,10 @@ import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
-import { useSkeletonReveal } from "../components/useSkeletonReveal.ts";
+import {
+  SkeletonReveal,
+  useSkeletonReveal,
+} from "../components/SkeletonReveal.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
@@ -43,9 +46,7 @@ export function TaskPage() {
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
 
-  const { showSkeleton, showContent, revealed } = useSkeletonReveal(
-    !query.isLoading,
-  );
+  const reveal = useSkeletonReveal(!query.isLoading);
 
   if (query.error instanceof HttpError && query.error.status === 404)
     return (
@@ -55,44 +56,33 @@ export function TaskPage() {
     );
 
   const data = query.data;
-  if (!showSkeleton && !(showContent && data)) return null;
-
   return (
-    <div className={cn("t-skel", revealed && "is-revealed")}>
-      {showSkeleton ? <TaskDetailSkeleton pulsing={!revealed} /> : null}
-      {showContent && data ? (
-        <div className="t-skel-content">
-          <TaskTimelineView
-            timeline={data}
-            routedDocPath={routeDocPath ?? null}
-            onOpenDoc={(path) => navigate(docRoute(data.task.slug, path))}
-            onNavigateDocRoute={(route) => navigate(route)}
-            onCloseDoc={() =>
-              navigate(`/task/${encodeURIComponent(data.task.slug)}`)
-            }
-            onArchive={() => archiveMutation.mutate(id)}
-            onUnarchive={() => unarchiveMutation.mutate(id)}
-          />
-        </div>
+    <SkeletonReveal state={reveal} skeleton={<TaskDetailSkeleton />}>
+      {data ? (
+        <TaskTimelineView
+          timeline={data}
+          routedDocPath={routeDocPath ?? null}
+          onOpenDoc={(path) => navigate(docRoute(data.task.slug, path))}
+          onNavigateDocRoute={(route) => navigate(route)}
+          onCloseDoc={() =>
+            navigate(`/task/${encodeURIComponent(data.task.slug)}`)
+          }
+          onArchive={() => archiveMutation.mutate(id)}
+          onUnarchive={() => unarchiveMutation.mutate(id)}
+        />
       ) : null}
-    </div>
+    </SkeletonReveal>
   );
 }
 
 // Self-contained placeholder page (own header/back-link/heading/timeline bars,
-// not the real AppHeader/Link) so the whole thing can be one `.t-skel-skeleton`
-// element that detaches to an absolute overlay and fades out on reveal, while
-// the real `TaskTimelineView` (mounted alongside once ready) drives the
-// container's height — same variant used by list-skeleton, since a task's
-// timeline height varies with item count.
-function TaskDetailSkeleton({ pulsing }: { pulsing: boolean }) {
+// not the real AppHeader/Link) rendered inside SkeletonReveal's skeleton layer,
+// which detaches to an absolute overlay and fades out on reveal while the real
+// `TaskTimelineView` (mounted alongside once ready) drives the container's
+// height — a task's timeline height varies with item count.
+function TaskDetailSkeleton() {
   return (
-    <main
-      className={cn(
-        "task-detail-skeleton t-skel-skeleton max-w-app mx-auto px-5 pb-16",
-        pulsing && "is-pulsing",
-      )}
-    >
+    <main className="task-detail-skeleton max-w-app mx-auto px-5 pb-16">
       {/* AppHeader crumb row */}
       <div className="flex items-center justify-between gap-4 py-header-y">
         <span className="t-skel-bar h-4 w-40" />

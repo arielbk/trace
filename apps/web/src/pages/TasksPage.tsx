@@ -14,7 +14,10 @@ import {
 import { AppHeader } from "../components/AppHeader.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
-import { useSkeletonReveal } from "../components/useSkeletonReveal.ts";
+import {
+  SkeletonReveal,
+  useSkeletonReveal,
+} from "../components/SkeletonReveal.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   byActivityDesc,
@@ -49,9 +52,7 @@ export function TasksPage() {
     );
   }
 
-  const { showSkeleton, showContent, revealed } = useSkeletonReveal(
-    !tasksQuery.isPending,
-  );
+  const reveal = useSkeletonReveal(!tasksQuery.isPending);
   const tasks = tasksQuery.data ?? [];
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
@@ -78,7 +79,7 @@ export function TasksPage() {
         <h1 className="m-0 text-page-title font-extrabold">
           Tasks
         </h1>
-        {showContent ? (
+        {reveal.showContent ? (
           <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
             {subtitle}
           </p>
@@ -89,7 +90,7 @@ export function TasksPage() {
           />
         )}
       </div>
-      {showContent ? (
+      {reveal.showContent ? (
         <FilterBar
           projects={getProjectCounts(tasks)}
           selectedProject={selectedProject}
@@ -107,30 +108,21 @@ export function TasksPage() {
           <span className="t-skel-bar h-5 w-28 rounded-full ml-auto" />
         </div>
       )}
-      <div className={cn("t-skel", revealed && "is-revealed")}>
-        {showSkeleton ? (
-          <TaskListSkeleton pulsing={!revealed} />
-        ) : null}
-        {showContent ? (
-          <div className="t-skel-content">
-            <TaskList
-              tasks={displayedTasks}
-              onArchive={handleArchive}
-              onUnarchive={handleUnarchive}
-              hiddenArchivedCount={archivedHidden}
-            />
-          </div>
-        ) : null}
-      </div>
+      <SkeletonReveal state={reveal} skeleton={<TaskListSkeleton />}>
+        <TaskList
+          tasks={displayedTasks}
+          onArchive={handleArchive}
+          onUnarchive={handleUnarchive}
+          hiddenArchivedCount={archivedHidden}
+        />
+      </SkeletonReveal>
     </main>
   );
 }
 
-function TaskListSkeleton({ pulsing }: { pulsing: boolean }) {
+function TaskListSkeleton() {
   return (
-    <ul
-      className={cn("t-skel-skeleton flex flex-col pt-1 m-0 p-0 list-none", pulsing && "is-pulsing")}
-    >
+    <ul className="flex flex-col pt-1 m-0 p-0 list-none">
       {Array.from({ length: 6 }, (_, i) => (
         <li
           key={i}
