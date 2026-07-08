@@ -14,6 +14,10 @@ import {
 import { AppHeader } from "../components/AppHeader.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
+import {
+  SkeletonReveal,
+  useSkeletonReveal,
+} from "../components/SkeletonReveal.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   byActivityDesc,
@@ -48,13 +52,7 @@ export function TasksPage() {
     );
   }
 
-  if (tasksQuery.isPending)
-    return (
-      <main>
-        <p>Loading...</p>
-      </main>
-    );
-
+  const reveal = useSkeletonReveal(!tasksQuery.isPending);
   const tasks = tasksQuery.data ?? [];
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
@@ -81,25 +79,66 @@ export function TasksPage() {
         <h1 className="m-0 text-page-title font-extrabold">
           Tasks
         </h1>
-        <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
-          {subtitle}
-        </p>
+        {reveal.showContent ? (
+          <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
+            {subtitle}
+          </p>
+        ) : (
+          <span
+            className="t-skel-bar mt-subtitle-top block h-3.5 w-44"
+            aria-hidden="true"
+          />
+        )}
       </div>
-      <FilterBar
-        projects={getProjectCounts(tasks)}
-        selectedProject={selectedProject}
-        onProjectChange={setSelectedProject}
-        showArchived={showArchived}
-        onShowArchivedChange={setShowArchived}
-        triggerCount={displayedTasks.length}
-      />
-      <TaskList
-        tasks={displayedTasks}
-        onArchive={handleArchive}
-        onUnarchive={handleUnarchive}
-        hiddenArchivedCount={archivedHidden}
-      />
+      {reveal.showContent ? (
+        <FilterBar
+          projects={getProjectCounts(tasks)}
+          selectedProject={selectedProject}
+          onProjectChange={setSelectedProject}
+          showArchived={showArchived}
+          onShowArchivedChange={setShowArchived}
+          triggerCount={displayedTasks.length}
+        />
+      ) : (
+        <div
+          className="flex items-center gap-3 flex-wrap pb-3"
+          aria-hidden="true"
+        >
+          <span className="t-skel-bar h-8 w-32 rounded-control" />
+          <span className="t-skel-bar h-5 w-28 rounded-full ml-auto" />
+        </div>
+      )}
+      <SkeletonReveal state={reveal} skeleton={<TaskListSkeleton />}>
+        <TaskList
+          tasks={displayedTasks}
+          onArchive={handleArchive}
+          onUnarchive={handleUnarchive}
+          hiddenArchivedCount={archivedHidden}
+        />
+      </SkeletonReveal>
     </main>
+  );
+}
+
+function TaskListSkeleton() {
+  return (
+    <ul className="flex flex-col pt-1 m-0 p-0 list-none">
+      {Array.from({ length: 6 }, (_, i) => (
+        <li
+          key={i}
+          className="task-row-skeleton flex items-center gap-row-gap px-3 -mx-3 py-row-y"
+        >
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <span className="t-skel-bar h-4 w-56 max-w-full" />
+            <span className="t-skel-bar h-3 w-32" />
+          </div>
+          <div className="flex w-row-meta flex-shrink-0 flex-col items-end gap-1.5">
+            <span className="t-skel-bar h-3 w-16" />
+            <span className="t-skel-bar h-3 w-12" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -194,10 +233,8 @@ export function FilterBar({
   triggerCount?: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [dropdownVisible, setDropdownVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const openFrame = useRef<number | null>(null);
   const selectedLabel = selectedProject
     ? (projects.find((p) => p.projectRoot === selectedProject)?.displayName ??
       selectedProject)
@@ -207,9 +244,6 @@ export function FilterBar({
     return () => {
       if (closeTimer.current !== null) {
         window.clearTimeout(closeTimer.current);
-      }
-      if (openFrame.current !== null) {
-        window.cancelAnimationFrame(openFrame.current);
       }
     };
   }, []);
@@ -221,29 +255,19 @@ export function FilterBar({
     }
   }
 
-  function clearOpenFrame() {
-    if (openFrame.current !== null) {
-      window.cancelAnimationFrame(openFrame.current);
-      openFrame.current = null;
-    }
-  }
-
+  // Opening needs no orchestration: the content mounts straight into the
+  // t-dropdown open state and the CSS @starting-style block animates it in.
+  // Closing swaps to .is-closing and keeps the content mounted until the
+  // close transition has run.
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
       clearCloseTimer();
-      clearOpenFrame();
       setIsClosing(false);
       setOpen(true);
-      setDropdownVisible(false);
-      openFrame.current = window.requestAnimationFrame(() => {
-        openFrame.current = null;
-        setDropdownVisible(true);
-      });
       return;
     }
 
     if (!open) return;
-    clearOpenFrame();
 
     const closeMs =
       parseFloat(
@@ -252,12 +276,10 @@ export function FilterBar({
         ),
       ) || 150;
 
-    setDropdownVisible(false);
     setIsClosing(true);
     closeTimer.current = window.setTimeout(() => {
       closeTimer.current = null;
       setIsClosing(false);
-      setDropdownVisible(false);
       setOpen(false);
     }, closeMs);
   }
@@ -284,7 +306,6 @@ export function FilterBar({
               forceMount
               className={cn(
                 "filter-bar-project-popover t-dropdown z-50 w-56 rounded-md border border-border-subtle bg-surface shadow-md p-1",
-                dropdownVisible && !isClosing && "is-open",
                 isClosing && "is-closing",
               )}
               data-origin="top-left"

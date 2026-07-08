@@ -1,6 +1,16 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.ts";
 
+// Where the engine can interpolate max-height to an intrinsic keyword
+// (Chrome/Edge 129+), expand to `max-content` so the open state tracks the
+// content's real height even if it changes after the scrollHeight snapshot
+// below (fonts, wrapping). Elsewhere, fall back to the measured pixel value —
+// same animation, just pinned to the snapshot.
+const EXPAND_TO_MAX_CONTENT =
+  typeof CSS !== "undefined" &&
+  typeof CSS.supports === "function" &&
+  CSS.supports("interpolate-size", "allow-keywords");
+
 /**
  * Clamps long content to a max height with a bottom fade and a Show more / less
  * toggle. When the content fits, it renders the children untouched (no toggle).
@@ -30,7 +40,17 @@ export function ClampedSection({
     <div>
       <div
         className={cn("left-off-clamp", clamped && "left-off-clamp-fade")}
-        style={overflows ? { maxHeight: expanded ? contentHeight : maxHeight } : undefined}
+        style={
+          overflows
+            ? {
+                maxHeight: expanded
+                  ? EXPAND_TO_MAX_CONTENT
+                    ? "max-content"
+                    : contentHeight
+                  : maxHeight,
+              }
+            : undefined
+        }
       >
         <div ref={contentRef}>{children}</div>
       </div>

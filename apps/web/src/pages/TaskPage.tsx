@@ -16,6 +16,10 @@ import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import {
+  SkeletonReveal,
+  useSkeletonReveal,
+} from "../components/SkeletonReveal.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   formatBytes,
@@ -42,12 +46,7 @@ export function TaskPage() {
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
 
-  if (query.isLoading)
-    return (
-      <main>
-        <p>Loading...</p>
-      </main>
-    );
+  const reveal = useSkeletonReveal(!query.isLoading);
 
   if (query.error instanceof HttpError && query.error.status === 404)
     return (
@@ -56,20 +55,82 @@ export function TaskPage() {
       </main>
     );
 
-  if (!query.data) return null;
-
+  const data = query.data;
   return (
-    <TaskTimelineView
-      timeline={query.data}
-      routedDocPath={routeDocPath ?? null}
-      onOpenDoc={(path) => navigate(docRoute(query.data.task.slug, path))}
-      onNavigateDocRoute={(route) => navigate(route)}
-      onCloseDoc={() =>
-        navigate(`/task/${encodeURIComponent(query.data.task.slug)}`)
-      }
-      onArchive={() => archiveMutation.mutate(id)}
-      onUnarchive={() => unarchiveMutation.mutate(id)}
-    />
+    <SkeletonReveal state={reveal} skeleton={<TaskDetailSkeleton />}>
+      {data ? (
+        <TaskTimelineView
+          timeline={data}
+          routedDocPath={routeDocPath ?? null}
+          onOpenDoc={(path) => navigate(docRoute(data.task.slug, path))}
+          onNavigateDocRoute={(route) => navigate(route)}
+          onCloseDoc={() =>
+            navigate(`/task/${encodeURIComponent(data.task.slug)}`)
+          }
+          onArchive={() => archiveMutation.mutate(id)}
+          onUnarchive={() => unarchiveMutation.mutate(id)}
+        />
+      ) : null}
+    </SkeletonReveal>
+  );
+}
+
+// Self-contained placeholder page (own header/back-link/heading/timeline bars,
+// not the real AppHeader/Link) rendered inside SkeletonReveal's skeleton layer,
+// which detaches to an absolute overlay and fades out on reveal while the real
+// `TaskTimelineView` (mounted alongside once ready) drives the container's
+// height — a task's timeline height varies with item count.
+function TaskDetailSkeleton() {
+  return (
+    <main className="task-detail-skeleton max-w-app mx-auto px-5 pb-16">
+      {/* AppHeader crumb row */}
+      <div className="flex items-center justify-between gap-4 py-header-y">
+        <span className="t-skel-bar h-4 w-40" />
+        <span className="t-skel-bar h-4 w-4 rounded-full" />
+      </div>
+      {/* "All tasks" back link */}
+      <span className="t-skel-bar h-4 w-20 mt-3" />
+      {/* Title + "Last active" */}
+      <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+        <span className="t-skel-bar h-8 w-96 max-w-full" />
+        <span className="t-skel-bar h-4 w-28 shrink-0 sm:mt-1.5" />
+      </div>
+      {/* Description */}
+      <span className="t-skel-bar h-4 w-72 max-w-full mt-3" />
+      {/* Re-enter / archive button row */}
+      <div className="flex items-center gap-2 mt-5">
+        <span className="t-skel-bar h-8 w-28 rounded-control" />
+        <span className="t-skel-bar h-8 w-24 rounded-control ml-auto" />
+      </div>
+      {/* "Where you left off" panel */}
+      <div className="mt-8 pt-6 border-t border-border flex flex-col gap-2">
+        <span className="t-skel-bar h-3 w-32" />
+        <span className="t-skel-bar h-4 w-80 max-w-full mt-1" />
+        <span className="t-skel-bar h-4 w-64 max-w-full" />
+      </div>
+      {/* Token summary */}
+      <div className="mt-8 pt-6 border-t border-border flex gap-11">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <span className="t-skel-bar h-3 w-12" />
+            <span className="t-skel-bar h-7 w-16" />
+          </div>
+        ))}
+      </div>
+      {/* Activity timeline */}
+      <span className="t-skel-bar h-5 w-24 mt-8" />
+      <ul className="mt-4 m-0 p-0 list-none flex flex-col gap-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <li key={i} className="grid timeline-grid gap-3.5 items-start">
+            <span className="t-skel-bar size-10 rounded-md" />
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <span className="t-skel-bar h-4 w-64 max-w-full" />
+              <span className="t-skel-bar h-3 w-40" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </main>
   );
 }
 
@@ -312,11 +373,11 @@ export function TaskTimelineView({
         </Link>
       </div>
       <div className="pt-3">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <h1 className="m-0 text-page-title font-extrabold tracking-tight leading-tight">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-5">
+          <h1 className="m-0 min-w-0 text-page-title font-extrabold tracking-tight leading-tight text-balance">
             {timeline.task.title}
           </h1>
-          <div className="flex items-center gap-1.5 pt-2 shrink-0 font-mono text-crumb text-text-muted">
+          <div className="flex items-center gap-1.5 sm:pt-2 shrink-0 font-mono text-crumb text-text-muted">
             <ClockIcon />
             <span className="whitespace-nowrap">
               Last active{" "}
@@ -329,7 +390,7 @@ export function TaskTimelineView({
         {timeline.task.description ? (
           <p
             data-testid="task-description"
-            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description"
+            className="mt-3 mb-0 text-sm text-text-muted leading-relaxed max-w-row-description text-pretty"
           >
             {timeline.task.description}
           </p>
@@ -773,13 +834,13 @@ export function LeftOffPanel({
         <div>
           {state.summary ? (
             <p
-              className="m-0 text-md font-semibold leading-normal text-text"
+              className="m-0 text-md font-semibold leading-normal text-text text-pretty"
               dangerouslySetInnerHTML={{ __html: state.summary }}
             />
           ) : null}
           {state.currentState.length > 0 ? (
             <div
-              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed"
+              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
               dangerouslySetInnerHTML={{
                 __html: state.currentState.join("\n"),
               }}

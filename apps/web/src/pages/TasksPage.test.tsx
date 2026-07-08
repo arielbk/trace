@@ -80,6 +80,63 @@ function makeQueryWrapper() {
 }
 
 describe("TasksPage", () => {
+  test("renders a pulsing row skeleton once a slow tasks query outlasts the delay, not a bare Loading string", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+
+    // The skeleton is deferred past the delay so a fast load never flashes it.
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(".task-row-skeleton").length,
+      ).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+  });
+
+  test("a fast tasks load reveals rows without flashing a skeleton", async () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(tasks), { status: 200 }),
+      ),
+    );
+
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    await screen.findByText("CLI work");
+    // Data beat the delay threshold, so no skeleton row was ever painted.
+    expect(container.querySelectorAll(".task-row-skeleton").length).toBe(0);
+  });
+
+  test("a slow tasks load shows the skeleton, then reveals the real rows", async () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    let resolveFetch: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending));
+
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+
+    // Skeleton appears once the load outlasts the delay.
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(".task-row-skeleton").length,
+      ).toBeGreaterThan(0);
+    });
+
+    // Data lands → rows reveal and the skeleton layer eventually unmounts.
+    resolveFetch(new Response(JSON.stringify(tasks), { status: 200 }));
+    await screen.findByText("CLI work");
+    await waitFor(() => {
+      expect(container.querySelectorAll(".task-row-skeleton").length).toBe(0);
+    });
+  });
+
   test("renders task titles from the query payload", async () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),

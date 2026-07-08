@@ -201,6 +201,13 @@
   --check-ease-rotate: cubic-bezier(0.22, 1, 0.36, 1);
   --check-ease-bob: cubic-bezier(0.34, 1.35, 0.64, 1);
   --check-ease-path: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* transitions-dev: skeleton reveal */
+  --skel-pulse-dur: 1000ms;
+  --skel-pulse-count: 1;
+  --skel-pulse-min: 0.5;
+  --skel-reveal-dur: 250ms;
+  --skel-reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-theme="dark"] {
@@ -250,15 +257,27 @@
 .task-row-meta.t-text-swap { display: flex; }
 .task-row-actions.t-text-swap { display: inline-flex; }
 
+/*
+ * transitions-dev: menu dropdown (05-menu-dropdown), entry via @starting-style.
+ * The content mounts directly in its open state and transitions from the
+ * @starting-style values below — no pre-open class or JS next-frame flip.
+ * Exit is still the `.is-closing` class, held mounted by a timer that reads
+ * --dropdown-close-dur so the unmount stays in sync with the transition.
+ */
 .t-dropdown {
   transform-origin: top left;
-  transform: scale(var(--dropdown-pre-scale));
-  opacity: 0;
-  pointer-events: none;
+  transform: scale(1);
+  opacity: 1;
   transition:
     transform var(--dropdown-open-dur) var(--dropdown-ease),
     opacity   var(--dropdown-open-dur) var(--dropdown-ease);
   will-change: transform, opacity;
+}
+@starting-style {
+  .t-dropdown {
+    transform: scale(var(--dropdown-pre-scale));
+    opacity: 0;
+  }
 }
 .t-dropdown[data-origin="top-right"]     { transform-origin: top right; }
 .t-dropdown[data-origin="top-center"]    { transform-origin: top center; }
@@ -266,11 +285,6 @@
 .t-dropdown[data-origin="bottom-center"] { transform-origin: bottom center; }
 .t-dropdown[data-origin="bottom-right"]  { transform-origin: bottom right; }
 
-.t-dropdown.is-open {
-  transform: scale(1);
-  opacity: 1;
-  pointer-events: auto;
-}
 .t-dropdown.is-closing {
   transform: scale(var(--dropdown-closing-scale));
   opacity: 0;
@@ -343,12 +357,59 @@
 }
 @keyframes t-check-draw { to { stroke-dashoffset: 0; } }
 
+/*
+ * transitions-dev: skeleton reveal (14-skeleton-reveal), adapted for React
+ * mounting and page-scale layers. The skeleton starts in normal flow so it
+ * establishes the slot's height (list/timeline height varies with row count,
+ * unlike a fixed-size card); on reveal it detaches into an absolute overlay
+ * and fades out while the real content — mounted in the same commit — drives
+ * layout and fades in. Only opacity animates: these layers are page-sized,
+ * and the recipe's cross-blur (meant for row/card slots) would re-rasterize
+ * the whole page each frame.
+ */
+.t-skel { position: relative; }
+.t-skel-skeleton,
+.t-skel-content {
+  transition: opacity var(--skel-reveal-dur) var(--skel-reveal-ease);
+}
+.t-skel.is-revealed .t-skel-skeleton {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+/* The content layer mounts already in its final state; @starting-style gives
+   the browser a first-frame value to fade in from, replacing a JS double-rAF
+   class flip. Scoped to .is-revealed so already-cached loads (which mount
+   without the class) appear instantly instead of fading on every navigation. */
+@starting-style {
+  .t-skel.is-revealed .t-skel-content { opacity: 0; }
+}
+
+.t-skel-bar {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--color-chip-bg);
+}
+/* Pulse the skeleton's direct child (the whole placeholder — one animated
+   element, not one per bar), not .t-skel-skeleton itself, so the layer's own
+   opacity stays free for the reveal cross-fade above. */
+.t-skel-skeleton.is-pulsing > * {
+  animation: t-skel-pulse var(--skel-pulse-dur) ease-in-out var(--skel-pulse-count);
+}
+@keyframes t-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--skel-pulse-min); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .t-text-swap { transition: none !important; }
   .t-dropdown { transition: none !important; }
   .t-icon-swap .t-icon { transition: none !important; }
   .t-success-check { animation: none !important; opacity: 1; }
   .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }
+  .t-skel-skeleton, .t-skel-content { transition: none !important; }
+  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
 }
 
 /*
@@ -472,10 +533,14 @@
   outline-offset: 2px;
 }
 
-/* ClampedSection: collapse long content behind a Show more toggle. */
+/* ClampedSection: collapse long content behind a Show more toggle.
+   interpolate-size lets engines that support it (Chrome/Edge 129+) animate
+   max-height to the `max-content` target ClampedSection sets when expanded;
+   others get its measured-pixel fallback and animate identically. */
 .left-off-clamp {
   position: relative;
   overflow: hidden;
+  interpolate-size: allow-keywords;
   transition: max-height 300ms var(--dropdown-ease);
 }
 .left-off-clamp-fade::after {
