@@ -31,7 +31,7 @@ const recallSkill = join(skillsRoot, "recall", "SKILL.md");
 const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
 const boardSkill = join(skillsRoot, "board", "SKILL.md");
 const docPlacementSkill = join(skillsRoot, "doc-placement", "SKILL.md");
-const handoffSkill = join(skillsRoot, "handoff", "SKILL.md");
+const stateSkill = join(skillsRoot, "state", "SKILL.md");
 const pluginBinDir = join(repoRoot, "bin");
 
 function pinnedTraceCommand(): string {
@@ -105,7 +105,7 @@ describe("plugin scaffold", () => {
       reenterSkill,
       boardSkill,
       docPlacementSkill,
-      handoffSkill,
+      stateSkill,
     ]) {
       const skillSource = readFileSync(skill, "utf8");
       assert.equal(skillSource.includes(pinnedTraceCommand()), true);
