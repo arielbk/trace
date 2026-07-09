@@ -17,8 +17,12 @@ import type { TokenTotals } from "./types.ts";
 
 export type CodexTokenTotals = TokenTotals;
 
-// Parent-side spawn record: one `collab_agent_spawn_end` event per in-process
-// subagent the session fanned out to (the `spawn_agent` collaboration tool).
+// Parent-side spawn record: one per in-process subagent the session fanned
+// out to (the `spawn_agent` collaboration tool). Recovered from either of the
+// two shapes Codex writes — a `collab_agent_spawn_end` event_msg, or (Codex
+// Desktop 0.142+) a `spawn_agent` function_call/function_call_output pair in
+// response_item records, where the call carries the role and the output
+// carries the child thread id and nickname.
 export type CodexSubagentSpawn = {
   threadId: string;
   role: string | null;
@@ -106,6 +110,13 @@ type CodexJsonlEvent = {
     new_thread_id?: string;
     new_agent_role?: string;
     new_agent_nickname?: string;
+    // response_item function calls: Codex Desktop records spawns as a
+    // spawn_agent call/output pair correlated by call_id; arguments and
+    // output are JSON-encoded strings
+    name?: string;
+    call_id?: string;
+    arguments?: string;
+    output?: string;
   };
 };
 
@@ -131,6 +142,14 @@ export function parseCodexTranscript(
   // we keep the last one so a live transcript gives the freshest count.
   let lastDesktopTotals: TokenTotals | null = null;
   const subagentSpawns: CodexSubagentSpawn[] = [];
+  // Both spawn shapes can name the same child; first record wins.
+  const addSpawn = (spawn: CodexSubagentSpawn) => {
+    if (!subagentSpawns.some((known) => known.threadId === spawn.threadId)) {
+      subagentSpawns.push(spawn);
+    }
+  };
+  // spawn_agent calls whose output hasn't streamed yet, call_id → role
+  const pendingSpawnRoles = new Map<string, string | null>();
   let subagentSource: CodexSubagentSource | null = null;
 
   for (const line of input.transcript.split(/\r?\n/)) {
@@ -174,11 +193,40 @@ export function parseCodexTranscript(
       event.payload?.type === "collab_agent_spawn_end" &&
       event.payload.new_thread_id
     ) {
-      subagentSpawns.push({
+      addSpawn({
         threadId: event.payload.new_thread_id,
         role: event.payload.new_agent_role ?? null,
         nickname: event.payload.new_agent_nickname ?? null,
       });
+    }
+
+    // Codex Desktop 0.142+ emits no collab_agent_spawn_end; the spawn lives in
+    // the response_item stream as a spawn_agent function_call (role in its
+    // arguments) answered by a function_call_output (child id and nickname in
+    // its output), matched by call_id.
+    if (event.type === "response_item") {
+      if (
+        event.payload?.type === "function_call" &&
+        event.payload.name === "spawn_agent" &&
+        event.payload.call_id
+      ) {
+        pendingSpawnRoles.set(
+          event.payload.call_id,
+          spawnAgentRole(event.payload.arguments),
+        );
+      }
+      if (
+        event.payload?.type === "function_call_output" &&
+        event.payload.call_id &&
+        pendingSpawnRoles.has(event.payload.call_id)
+      ) {
+        const role = pendingSpawnRoles.get(event.payload.call_id) ?? null;
+        pendingSpawnRoles.delete(event.payload.call_id);
+        const spawned = spawnedAgentFromOutput(event.payload.output);
+        if (spawned) {
+          addSpawn({ ...spawned, role });
+        }
+      }
     }
 
     // Codex CLI format: per-turn usage in turn.completed
@@ -238,6 +286,34 @@ function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
     cacheReadInputTokens,
     totalTokens: usage.total_tokens ?? inputTokens + outputTokens,
   };
+}
+
+function spawnAgentRole(rawArguments: string | undefined): string | null {
+  if (!rawArguments) return null;
+  try {
+    const parsed = JSON.parse(rawArguments) as { agent_type?: string };
+    return parsed.agent_type ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function spawnedAgentFromOutput(
+  rawOutput: string | undefined,
+): { threadId: string; nickname: string | null } | null {
+  if (!rawOutput) return null;
+  try {
+    const parsed = JSON.parse(rawOutput) as {
+      agent_id?: string;
+      nickname?: string;
+    };
+    return parsed.agent_id
+      ? { threadId: parsed.agent_id, nickname: parsed.nickname ?? null }
+      : null;
+  } catch {
+    // A failed spawn's output is an error string, not an agent handle.
+    return null;
+  }
 }
 
 export function parseCodexTranscriptFile(

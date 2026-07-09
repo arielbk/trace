@@ -294,6 +294,118 @@ test("Codex transcript adapter collects parent-side subagent spawn records", () 
   ]);
 });
 
+// Codex Desktop 0.142+ writes no collab_agent_spawn_end at all; the spawn is a
+// spawn_agent function_call (role in its JSON-string arguments) answered by a
+// function_call_output (child id and nickname in its JSON-string output),
+// correlated by call_id.
+test("Codex transcript adapter recovers spawns from Desktop spawn_agent call/output pairs", () => {
+  const transcript = [
+    JSON.stringify({ type: "session_meta", payload: { id: "codex-thread-1" } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        namespace: "multi_agent_v1",
+        arguments: JSON.stringify({ agent_type: "explorer", message: "audit" }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    // An unrelated tool call sharing the stream must not be mistaken for a spawn.
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "ls" }),
+        call_id: "call_other",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_other",
+        output: "file listing",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({
+          agent_id: "codex-child-1",
+          nickname: "Hooke",
+        }),
+      },
+    }),
+    // A failed spawn returns an error string instead of an agent handle.
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({ agent_type: "reviewer" }),
+        call_id: "call_spawn_2",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_2",
+        output: "error: agent limit reached",
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-thread-1.jsonl" })
+      .subagentSpawns,
+  ).toEqual([{ threadId: "codex-child-1", role: "explorer", nickname: "Hooke" }]);
+});
+
+test("Codex transcript adapter dedupes a child named by both spawn record shapes", () => {
+  const transcript = [
+    JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "collab_agent_spawn_end",
+        new_thread_id: "codex-child-1",
+        new_agent_nickname: "Hooke",
+        new_agent_role: "explorer",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({ agent_type: "explorer" }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({
+          agent_id: "codex-child-1",
+          nickname: "Hooke",
+        }),
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-thread-1.jsonl" })
+      .subagentSpawns,
+  ).toEqual([{ threadId: "codex-child-1", role: "explorer", nickname: "Hooke" }]);
+});
+
 test("Codex transcript adapter reads a subagent child's own parent linkage", () => {
   const transcript = JSON.stringify({
     type: "session_meta",

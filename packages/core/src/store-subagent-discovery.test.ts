@@ -197,6 +197,81 @@ test("codex subagents appear on the first task read after the fan-out", () => {
   }
 });
 
+// Regression for the live 2026-07-09 repro: Codex Desktop 0.142.5 parents
+// write no collab_agent_spawn_end at all — spawns exist only as spawn_agent
+// function_call/output response_item pairs. Read-time discovery must link the
+// children from those, without waiting for a `session scan --codex`.
+test("codex desktop spawns without collab events still appear on the first task read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-read-discovery-codex-desktop-"));
+  const codexHome = join(dir, "codex-home");
+
+  try {
+    const parentDir = join(codexHome, "sessions", "2026", "04", "30");
+    mkdirSync(parentDir, { recursive: true });
+    const parentTranscriptPath = join(
+      parentDir,
+      `rollout-2026-04-30T18-22-15-${PARENT_ID}.jsonl`,
+    );
+    writeFileSync(
+      parentTranscriptPath,
+      [
+        JSON.stringify({ type: "session_meta", payload: { id: PARENT_ID } }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            name: "spawn_agent",
+            namespace: "multi_agent_v1",
+            arguments: JSON.stringify({ agent_type: "explorer" }),
+            call_id: "call_spawn_1",
+          },
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "function_call_output",
+            call_id: "call_spawn_1",
+            output: JSON.stringify({
+              agent_id: CHILD_ON_DISK,
+              nickname: "Hooke",
+            }),
+          },
+        }),
+      ].join("\n"),
+    );
+    const childTranscriptPath = writeChildRollout(
+      codexHome,
+      CHILD_ON_DISK,
+      "2026-05-01",
+    );
+
+    const store = openTraceStore(join(dir, "trace.sqlite"), { codexHome });
+    const task = store.createTask("Parent task");
+    const parent = store.registerSession({
+      id: PARENT_ID,
+      transcriptPath: parentTranscriptPath,
+      tool: "codex",
+    });
+    store.assignSession(parent.id, task.id);
+
+    expect(store.listSessionsForTask(task.id)).toEqual([
+      expect.objectContaining({ id: parent.id, origin: "root" }),
+      expect.objectContaining({
+        id: CHILD_ON_DISK,
+        transcriptPath: childTranscriptPath,
+        parentSessionId: parent.id,
+        origin: "subagent",
+        subagentType: "explorer",
+        taskId: task.id,
+      }),
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a read with no new codex spawns links nothing", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-read-discovery-codex-noop-"));
   const codexHome = join(dir, "codex-home");
