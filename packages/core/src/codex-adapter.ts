@@ -17,6 +17,22 @@ import type { TokenTotals } from "./types.ts";
 
 export type CodexTokenTotals = TokenTotals;
 
+// Parent-side spawn record: one `collab_agent_spawn_end` event per in-process
+// subagent the session fanned out to (the `spawn_agent` collaboration tool).
+export type CodexSubagentSpawn = {
+  threadId: string;
+  role: string | null;
+  nickname: string | null;
+};
+
+// Child-side self-description: a subagent rollout's own `session_meta` names
+// the thread that spawned it via `source.subagent.thread_spawn`.
+export type CodexSubagentSource = {
+  parentThreadId: string;
+  role: string | null;
+  nickname: string | null;
+};
+
 export type ParsedCodexSession = {
   id: string;
   transcriptPath: string;
@@ -24,6 +40,8 @@ export type ParsedCodexSession = {
   model: string | null;
   title: string | null;
   tokenTotals: CodexTokenTotals;
+  subagentSpawns: CodexSubagentSpawn[];
+  subagentSource: CodexSubagentSource | null;
 };
 
 export type CodexTranscriptInput = {
@@ -70,6 +88,24 @@ type CodexJsonlEvent = {
     info?: {
       total_token_usage?: CodexDesktopUsage;
     };
+    // session_meta: how this thread came to exist — a plain string for user
+    // threads ("cli", "vscode", "exec"), an object for subagent children,
+    // which carry their parent linkage here
+    source?:
+      | string
+      | {
+          subagent?: {
+            thread_spawn?: {
+              parent_thread_id?: string;
+              agent_role?: string;
+              agent_nickname?: string;
+            };
+          };
+        };
+    // collab_agent_spawn_end: the parent-side record of a spawned subagent
+    new_thread_id?: string;
+    new_agent_role?: string;
+    new_agent_nickname?: string;
   };
 };
 
@@ -94,6 +130,8 @@ export function parseCodexTranscript(
   // Desktop format: each token_count event carries cumulative session totals;
   // we keep the last one so a live transcript gives the freshest count.
   let lastDesktopTotals: TokenTotals | null = null;
+  const subagentSpawns: CodexSubagentSpawn[] = [];
+  let subagentSource: CodexSubagentSource | null = null;
 
   for (const line of input.transcript.split(/\r?\n/)) {
     if (line.trim().length === 0) {
@@ -117,6 +155,30 @@ export function parseCodexTranscript(
     // Codex Desktop format: session identity in session_meta payload
     if (event.type === "session_meta") {
       id ??= event.payload?.id;
+      const spawn =
+        typeof event.payload?.source === "object"
+          ? event.payload.source.subagent?.thread_spawn
+          : undefined;
+      if (spawn?.parent_thread_id) {
+        subagentSource ??= {
+          parentThreadId: spawn.parent_thread_id,
+          role: spawn.agent_role ?? null,
+          nickname: spawn.agent_nickname ?? null,
+        };
+      }
+    }
+
+    // Parent-side subagent spawn record (the spawn_agent collaboration tool)
+    if (
+      event.type === "event_msg" &&
+      event.payload?.type === "collab_agent_spawn_end" &&
+      event.payload.new_thread_id
+    ) {
+      subagentSpawns.push({
+        threadId: event.payload.new_thread_id,
+        role: event.payload.new_agent_role ?? null,
+        nickname: event.payload.new_agent_nickname ?? null,
+      });
     }
 
     // Codex CLI format: per-turn usage in turn.completed
@@ -160,6 +222,8 @@ export function parseCodexTranscript(
     // Codex transcripts carry no conversation name; titles are out of scope.
     title: null,
     tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
+    subagentSpawns,
+    subagentSource,
   };
 }
 
@@ -309,6 +373,35 @@ function findJsonlFiles(
     .sort((left, right) =>
       left.transcriptPath.localeCompare(right.transcriptPath),
     );
+}
+
+/**
+ * Locate the rollout file for a thread id anywhere under a Codex home — the
+ * session index first, then the date-partitioned tree (a subagent child is
+ * filed by its *own* start time, so it can live in a different day-dir than
+ * its parent). Null when no rollout exists yet.
+ */
+export function resolveCodexTranscriptPathById(
+  codexHome: string,
+  threadId: string,
+): string | null {
+  const root = resolve(codexHome);
+
+  for (const entry of readCodexSessionIndex(root)) {
+    const entryId =
+      entry.expectedThreadId ?? codexThreadIdFromPath(entry.transcriptPath);
+    if (entryId === threadId && existsSync(entry.transcriptPath)) {
+      return entry.transcriptPath;
+    }
+  }
+
+  for (const entry of findJsonlFiles(join(root, "sessions"))) {
+    if (codexThreadIdFromPath(entry.transcriptPath) === threadId) {
+      return entry.transcriptPath;
+    }
+  }
+
+  return null;
 }
 
 function codexThreadIdFromPath(transcriptPath: string): string | undefined {

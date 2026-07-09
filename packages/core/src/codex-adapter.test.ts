@@ -9,7 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { parseCodexTranscript, scanCodexSessions } from "./codex-adapter.ts";
+import {
+  parseCodexTranscript,
+  resolveCodexTranscriptPathById,
+  scanCodexSessions,
+} from "./codex-adapter.ts";
 
 const codexFixture = fileURLToPath(
   new URL("./fixtures/codex-thread-1.jsonl", import.meta.url),
@@ -43,6 +47,8 @@ test("Codex transcript adapter validates identity and returns token totals", () 
     tool: "codex",
     model: "gpt-5-codex",
     title: null,
+    subagentSpawns: [],
+    subagentSource: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,
@@ -71,6 +77,8 @@ test("Codex transcript adapter skips unparseable lines and sums the rest", () =>
     tool: "codex",
     model: "gpt-5-codex",
     title: null,
+    subagentSpawns: [],
+    subagentSource: null,
     tokenTotals: {
       inputTokens: 17,
       outputTokens: 29,
@@ -129,6 +137,8 @@ test("Codex scan falls back to sessions when index entries have no transcript pa
         tool: "codex",
         model: null,
         title: null,
+        subagentSpawns: [],
+        subagentSource: null,
         tokenTotals: {
           inputTokens: 0,
           outputTokens: 0,
@@ -187,6 +197,8 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
     tool: "codex",
     model: null,
     title: null,
+    subagentSpawns: [],
+    subagentSource: null,
     tokenTotals: {
       inputTokens: 42028,
       outputTokens: 725,
@@ -247,6 +259,90 @@ test("Codex scan skips unparseable transcript files", () => {
     expect(scanCodexSessions(dir).map((session) => session.id)).toEqual([
       "codex-thread-1",
     ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex transcript adapter collects parent-side subagent spawn records", () => {
+  const transcript = [
+    JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "collab_agent_spawn_end",
+        call_id: "call_1",
+        sender_thread_id: "codex-thread-1",
+        new_thread_id: "codex-child-1",
+        new_agent_nickname: "Huygens",
+        new_agent_role: "explorer",
+        status: "pending_init",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "collab_agent_spawn_end", new_thread_id: "codex-child-2" },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-thread-1.jsonl" })
+      .subagentSpawns,
+  ).toEqual([
+    { threadId: "codex-child-1", role: "explorer", nickname: "Huygens" },
+    { threadId: "codex-child-2", role: null, nickname: null },
+  ]);
+});
+
+test("Codex transcript adapter reads a subagent child's own parent linkage", () => {
+  const transcript = JSON.stringify({
+    type: "session_meta",
+    payload: {
+      id: "codex-child-1",
+      source: {
+        subagent: {
+          thread_spawn: {
+            parent_thread_id: "codex-thread-1",
+            depth: 1,
+            agent_nickname: "Huygens",
+            agent_role: "explorer",
+          },
+        },
+      },
+    },
+  });
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-child-1.jsonl" })
+      .subagentSource,
+  ).toEqual({
+    parentThreadId: "codex-thread-1",
+    role: "explorer",
+    nickname: "Huygens",
+  });
+});
+
+test("resolveCodexTranscriptPathById finds a rollout across date directories", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-codex-resolve-"));
+  const childId = "019de084-4f0d-72b2-986d-b53366f73408";
+  const childPath = join(
+    dir,
+    "sessions",
+    "2026",
+    "05",
+    "01",
+    `rollout-2026-05-01T00-31-00-${childId}.jsonl`,
+  );
+
+  try {
+    mkdirSync(join(dir, "sessions", "2026", "05", "01"), { recursive: true });
+    writeFileSync(
+      childPath,
+      JSON.stringify({ type: "thread.started", thread_id: childId }),
+    );
+
+    expect(resolveCodexTranscriptPathById(dir, childId)).toBe(childPath);
+    expect(resolveCodexTranscriptPathById(dir, "missing-thread")).toBe(null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

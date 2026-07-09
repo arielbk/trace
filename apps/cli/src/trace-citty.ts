@@ -23,6 +23,7 @@ import {
 import {
   sessionActiveTaskOperation,
   sessionAssignOperation,
+  sessionDiscoverSubagentsOperation,
   sessionListOperation,
   sessionRegisterOperation,
   sessionScanOperation,
@@ -202,6 +203,15 @@ export function buildTraceCittyRoot(
             meta: { description: "Scan for sessions" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return sessionScanOperation(args, { env, cwd, stdin });
+            },
+          }),
+
+          "discover-subagents": defineCommand({
+            meta: {
+              description: "Discover a session's in-process subagent sessions",
+            },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return sessionDiscoverSubagentsOperation(args, { env, cwd, stdin });
             },
           }),
         },

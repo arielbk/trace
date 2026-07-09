@@ -251,7 +251,9 @@ export function parseSessionRegisterArgs(args: string[]): {
   }
 
   if (!id || !transcriptPath || !tool) throw new Error(sessionRegisterUsage());
-  if (tool !== "claude" && tool !== "codex") throw new Error("Session tool must be claude or codex");
+  if (!isSessionTool(tool)) {
+    throw new Error("Session tool must be claude, codex, or cursor");
+  }
   if (origin !== undefined && !isSessionOrigin(origin)) {
     throw new Error("Session origin must be root, subagent, or spawned");
   }
@@ -299,8 +301,8 @@ export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput
   if (!isSessionOrigin(origin)) {
     throw new Error("Session origin must be root, subagent, or spawned");
   }
-  if (tool !== undefined && tool !== "claude" && tool !== "codex") {
-    throw new Error("Session tool must be claude or codex");
+  if (tool !== undefined && !isSessionTool(tool)) {
+    throw new Error("Session tool must be claude, codex, or cursor");
   }
 
   return {

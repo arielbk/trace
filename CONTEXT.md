@@ -28,12 +28,22 @@ docs, and architecture reviews so names stay consistent.
 - **Spawned child** — a *separate, top-level* CLI session launched by a host-side
   process (e.g. a Ralph loop running `claude -p` or `codex exec` per iteration).
   A full independent session with its own transcript; `origin='spawned'`.
-- **In-process subagent** — within a *single* session, the Task tool (Claude) or
-  `spawn_agent` (Codex) fans out to agents that write their own transcripts;
-  `origin='subagent'`. Recovered post-hoc by a **discovery scanner** that reads
-  the parent transcript's spawn records (Claude: the `Task` tool_use chain;
-  Codex: `collab_agent_spawn_end`). Distinct from a Spawned child — a subagent is
-  *inside* another run, not its own top-level session.
+- **In-process subagent** — within a *single* session, the Task tool
+  (Claude, Cursor) or `spawn_agent` (Codex) fans out to agents that write their
+  own transcripts; `origin='subagent'`. Recovered post-hoc by a per-tool
+  **discovery scanner** (`discover<Tool>SubagentSessions`) reading that tool's
+  spawn records: Claude correlates the `Task` tool_use chain, Codex reads the
+  parent's `collab_agent_spawn_end` events (each child rollout also self-names
+  its parent in `session_meta`), Cursor walks the chat's `subagents/` mirror
+  dir and reads the child composer's `subagentInfo` (falling back to matching
+  Task prompts). Triggers: Claude's SubagentStop hook fires live; Codex and
+  Cursor link at **board read time** — `listSessionsForTask` piggybacks on the
+  read-time refresh (Codex spawn records ride the parse for free; Cursor costs
+  one readdir of the mirror dir) so children appear the moment anyone looks —
+  plus, as redundant belts, during `session scan --codex`, the task re-entry
+  sweep, and on demand via `trace session discover-subagents <id>`. Distinct
+  from a Spawned child — a subagent is *inside* another run, not its own
+  top-level session.
 - **Attribution** — establishing a child session's `parentSessionId`/`origin`.
   The mechanism for **Spawned children** is in design (converging on
   "spawner captures the child id and a caller sets the link," tool-agnostic across

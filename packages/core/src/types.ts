@@ -167,6 +167,7 @@ export type SetSessionParentInput = {
   origin: SessionOrigin;
   tool?: SessionTool;
   transcriptPath?: string;
+  subagentType?: string | null;
 };
 
 export type TaskStore = {

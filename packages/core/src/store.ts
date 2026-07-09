@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
+import {
+  discoverCursorSubagentSessions,
+  listCursorSubagentChatIds,
+  resolveCursorSubagentsDir,
+} from "./cursor-subagent-discovery.ts";
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
 import { getDatabaseSync, type DatabaseSync } from "./node-sqlite.ts";
 import {
@@ -22,13 +28,15 @@ import {
 } from "./token-totals.ts";
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
-import { getTranscriptAdapter } from "./transcript-adapter.ts";
+import {
+  getTranscriptAdapter,
+  type ParsedTranscript,
+} from "./transcript-adapter.ts";
 import { isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
-  ContextTokens,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -46,8 +54,19 @@ import type {
   UpdateTaskDocOptions,
 } from "./types.ts";
 
-export function openTraceStore(databasePath: string): TaskStore {
-  return new NodeSqliteTaskStore(databasePath);
+// Filesystem roots read-time subagent discovery resolves against; both default
+// to the tools' real homes and exist as options so tests can point the store at
+// fixtures.
+export type TraceStoreOptions = {
+  codexHome?: string;
+  cursorProjectsRoot?: string;
+};
+
+export function openTraceStore(
+  databasePath: string,
+  options?: TraceStoreOptions,
+): TaskStore {
+  return new NodeSqliteTaskStore(databasePath, options);
 }
 
 export { resolveTaskDocsDir };
@@ -55,10 +74,14 @@ export { resolveTaskDocsDir };
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
   readonly #databasePath: string;
+  readonly #codexHome: string | undefined;
+  readonly #cursorProjectsRoot: string | undefined;
 
-  constructor(databasePath: string) {
+  constructor(databasePath: string, options?: TraceStoreOptions) {
     const resolvedPath = resolve(databasePath);
     this.#databasePath = resolvedPath;
+    this.#codexHome = options?.codexHome;
+    this.#cursorProjectsRoot = options?.cursorProjectsRoot;
     mkdirSync(dirname(resolvedPath), { recursive: true });
     this.#sqlite = new (getDatabaseSync())(resolvedPath);
     this.#sqlite.exec("PRAGMA journal_mode = WAL");
@@ -508,19 +531,29 @@ class NodeSqliteTaskStore implements TaskStore {
         tool: input.tool ?? "codex",
         parentSessionId,
         origin,
+        subagentType: input.subagentType ?? null,
       });
       if (parentTaskId === null) return created;
       this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
       return this.getSession(id) ?? created;
     }
 
+    // Enrich, don't clobber: a supplied subagent type wins, but omitting one
+    // leaves whatever a prior discovery already recorded.
+    const subagentType = input.subagentType ?? existing.subagentType;
     this.#sqlite
-      .prepare("UPDATE sessions SET parent_session_id = ?, origin = ? WHERE id = ?")
-      .run(parentSessionId, origin, id);
+      .prepare(
+        "UPDATE sessions SET parent_session_id = ?, origin = ?, subagent_type = ? WHERE id = ?",
+      )
+      .run(parentSessionId, origin, subagentType, id);
 
-    if (parentTaskId === null) return { ...existing, parentSessionId, origin };
+    if (parentTaskId === null) {
+      return { ...existing, parentSessionId, origin, subagentType };
+    }
     this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
-    return this.getSession(id) ?? { ...existing, parentSessionId, origin };
+    return (
+      this.getSession(id) ?? { ...existing, parentSessionId, origin, subagentType }
+    );
   }
 
   assignSession(sessionId: string, taskId: string): Session {
@@ -586,6 +619,23 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   listSessionsForTask(taskId: string): Session[] {
+    const entries = this.#taskSessionRows(taskId).map((session) =>
+      this.#refreshSessionWithParse(session),
+    );
+
+    // Read-time subagent discovery: children a Codex or Cursor parent fanned
+    // out to appear on the very read that looks at the task, with no hook,
+    // scan, or handoff in between. When it links anything new, re-query so the
+    // fresh children land in the same canonical order.
+    if (!this.#discoverSubagentsAtRead(entries)) {
+      return entries.map((entry) => entry.session);
+    }
+    return this.#taskSessionRows(taskId).map((session) =>
+      this.#refreshSession(session),
+    );
+  }
+
+  #taskSessionRows(taskId: string): Session[] {
     return this.#sqlite
       .prepare(
         `
@@ -596,7 +646,62 @@ class NodeSqliteTaskStore implements TaskStore {
         `,
       )
       .all(taskId)
-      .map((row) => this.#refreshSession(sessionFromRow(row as SessionRow)));
+      .map((row) => sessionFromRow(row as SessionRow));
+  }
+
+  // Link in-process subagents the transcript layer knows about but the store
+  // doesn't. Codex parents cost nothing extra: the spawn records ride along on
+  // the refresh's parse, and only spawn ids with no registered session trigger
+  // child-rollout resolution. Cursor parents cost one readdir of the mirror
+  // dir, and only unregistered chat ids pay the composer/prompt lookups.
+  // Claude stays out — its SubagentStop hook links children live, and its
+  // tool_use correlation is the expensive one. Best-effort per parent: a
+  // broken transcript or unreadable mirror dir must not break a board read.
+  #discoverSubagentsAtRead(
+    entries: { session: Session; parsed: ParsedTranscript | null }[],
+  ): boolean {
+    let discovered = false;
+    for (const { session, parsed } of entries) {
+      try {
+        if (session.tool === "codex") {
+          const spawns = parsed?.subagentSpawns ?? [];
+          if (spawns.length === 0) continue;
+          const known = this.#childSessionIds(session.id);
+          for (const spawn of spawns) {
+            if (known.has(spawn.threadId)) continue;
+            registerCodexSubagentSpawn(this, session, spawn, this.#codexHome);
+            discovered = true;
+          }
+        } else if (session.tool === "cursor") {
+          const subagentsDir = resolveCursorSubagentsDir(
+            this,
+            session,
+            this.#cursorProjectsRoot,
+          );
+          if (!subagentsDir || !existsSync(subagentsDir)) continue;
+          const known = this.#childSessionIds(session.id);
+          const mirrored = listCursorSubagentChatIds(subagentsDir);
+          if (!mirrored.some((chatId) => !known.has(chatId))) continue;
+          discoverCursorSubagentSessions({
+            store: this,
+            parentSessionId: session.id,
+            subagentsDir,
+            skipChatIds: known,
+          });
+          discovered = true;
+        }
+      } catch {
+        // Skip this parent; the rest of the read proceeds untouched.
+      }
+    }
+    return discovered;
+  }
+
+  #childSessionIds(parentSessionId: string): Set<string> {
+    const rows = this.#sqlite
+      .prepare("SELECT id FROM sessions WHERE parent_session_id = ?")
+      .all(parentSessionId) as { id: string }[];
+    return new Set(rows.map((row) => row.id));
   }
 
   getTaskTimeline(taskId: string): TaskTimeline | null {
@@ -816,29 +921,33 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   #refreshSession(session: Session): Session {
-    let fresh: {
-      transcriptPath: string;
-      tokenTotals: TokenTotals;
-      title: string | null;
-      model: string | null;
-      contextTokens: ContextTokens | null;
-    } | null = null;
+    return this.#refreshSessionWithParse(session).session;
+  }
+
+  // Refresh plus the raw parse it was derived from, so read-time subagent
+  // discovery can consume tool-specific fields (Codex spawn records) without
+  // parsing the transcript a second time. `parsed` is null when the transcript
+  // is missing or unparseable — the stored session values survive untouched.
+  #refreshSessionWithParse(session: Session): {
+    session: Session;
+    parsed: ParsedTranscript | null;
+  } {
+    let parsed: ParsedTranscript;
     try {
       const adapter = getTranscriptAdapter(session.tool);
-      const parsed = adapter.parseFile(session.transcriptPath, {
+      parsed = adapter.parseFile(session.transcriptPath, {
         expectedId: session.id,
       });
-      fresh = {
-        transcriptPath: parsed.transcriptPath,
-        tokenTotals: parsed.tokenTotals,
-        title: parsed.title,
-        model: parsed.model,
-        contextTokens: parsed.contextTokens ?? null,
-      };
     } catch {
-      // Missing file or unparseable transcript — return stored values untouched.
-      return session;
+      return { session, parsed: null };
     }
+    const fresh = {
+      transcriptPath: parsed.transcriptPath,
+      tokenTotals: parsed.tokenTotals,
+      title: parsed.title,
+      model: parsed.model,
+      contextTokens: parsed.contextTokens ?? null,
+    };
 
     const totals = fresh.tokenTotals;
     const stored = session.tokenTotals;
@@ -915,12 +1024,15 @@ class NodeSqliteTaskStore implements TaskStore {
     }
 
     return {
-      ...session,
-      transcriptPath,
-      title,
-      model,
-      tokenTotals: totals,
-      contextTokens,
+      session: {
+        ...session,
+        transcriptPath,
+        title,
+        model,
+        tokenTotals: totals,
+        contextTokens,
+      },
+      parsed,
     };
   }
 

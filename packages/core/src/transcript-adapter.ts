@@ -10,6 +10,7 @@ import {
   parseCodexTranscript,
   parseCodexTranscriptFile,
   tailCodexTranscript,
+  type CodexSubagentSpawn,
 } from "./codex-adapter.ts";
 import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
@@ -25,6 +26,11 @@ export type ParsedTranscript = {
   // Live context-window occupancy when the tool exposes it (Cursor); absent
   // otherwise. Not persisted — surfaced through to the refreshed session.
   contextTokens?: ContextTokens | null;
+  // Parent-side in-process subagent spawn records when the tool logs them in
+  // the transcript itself (Codex `collab_agent_spawn_end`); absent for tools
+  // whose linkage needs out-of-band correlation. Rides along on the parse so
+  // the store's read-time discovery costs no extra I/O.
+  subagentSpawns?: CodexSubagentSpawn[];
 };
 
 export type TranscriptParseInput = {

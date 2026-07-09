@@ -31,6 +31,7 @@ import type { CursorMessage, CursorSession, ReaderOptions } from "./types.ts";
 export type { CursorSession, CursorMessage, ReaderOptions } from "./types.ts";
 export {
   cursorProjectKey,
+  defaultProjectsRoot,
   findAgentTranscript,
   readAgentTranscriptMessages,
   resolveLatestAgentChat,
@@ -215,6 +216,10 @@ type ComposerData = {
   contextTokensUsed?: unknown;
   contextTokenLimit?: unknown;
   fullConversationHeadersOnly?: unknown;
+  subagentInfo?: {
+    parentComposerId?: unknown;
+    subagentTypeName?: unknown;
+  };
 };
 
 type TokenTotals = { inputTokens: number; outputTokens: number };
@@ -277,6 +282,46 @@ export function readComposer(
       messageCount: headers.length,
       tokenTotals: computeTokenTotals(db, composerId, headers, data.usageData),
       contextTokens: asContextTokens(data),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export type CursorSubagentInfo = {
+  parentComposerId: string;
+  subagentType: string | null;
+};
+
+/**
+ * A subagent chat's linkage back to the composer that spawned it, from
+ * `composerData.subagentInfo` (present on GUI-spawned subagents; the parent's
+ * `Task` tool call is mirrored there as `parentComposerId` +
+ * `subagentTypeName`). Null for anything that isn't a subagent chat, and on
+ * machines with no GUI store (fail missing, not wrong).
+ */
+export function readComposerSubagentInfo(
+  composerId: string,
+  opts?: ReaderOptions,
+): CursorSubagentInfo | null {
+  const storageRoot = opts?.storageRoot ?? defaultStorageRoot();
+  const db = openReadOnly(globalStateDbPath(storageRoot));
+  if (!db) return null;
+  try {
+    const data = readJsonValue(
+      db,
+      "cursorDiskKV",
+      `composerData:${composerId}`,
+    ) as ComposerData | null;
+
+    const parentComposerId = asStringOrNull(
+      data?.subagentInfo?.parentComposerId ?? null,
+    );
+    if (!parentComposerId) return null;
+
+    return {
+      parentComposerId,
+      subagentType: asStringOrNull(data?.subagentInfo?.subagentTypeName ?? null),
     };
   } finally {
     db.close();
