@@ -89,6 +89,12 @@ type CodexJsonlEvent = {
   payload?: {
     id?: string;
     type?: string;
+    // turn_context: the model serving the turn (session_meta carries none)
+    model?: string;
+    // event_msg thread_settings_applied: the thread's configured model
+    thread_settings?: {
+      model?: string;
+    };
     info?: {
       total_token_usage?: CodexDesktopUsage;
     };
@@ -169,6 +175,18 @@ export function parseCodexTranscript(
     if (event.type === "thread.started") {
       id ??= event.thread_id ?? event.threadId ?? event.id;
       model ??= event.model;
+    }
+
+    // Codex Desktop format: session_meta names no model; the first
+    // turn_context (or applied thread settings) does.
+    if (event.type === "turn_context") {
+      model ??= event.payload?.model;
+    }
+    if (
+      event.type === "event_msg" &&
+      event.payload?.type === "thread_settings_applied"
+    ) {
+      model ??= event.payload.thread_settings?.model;
     }
 
     // Codex Desktop format: session identity in session_meta payload
@@ -276,15 +294,19 @@ export function parseCodexTranscript(
 }
 
 function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
-  const inputTokens = usage.input_tokens ?? 0;
+  const rawInputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const cacheReadInputTokens = usage.cached_input_tokens ?? 0;
+  // OpenAI's input_tokens INCLUDES cached input; Trace's inputTokens is fresh
+  // input only (the Anthropic convention the rest of the app assumes), so
+  // cached reads move to cacheReadInputTokens instead of inflating "in".
+  const inputTokens = Math.max(0, rawInputTokens - cacheReadInputTokens);
   return {
     inputTokens,
     outputTokens,
     cacheCreationInputTokens: 0,
     cacheReadInputTokens,
-    totalTokens: usage.total_tokens ?? inputTokens + outputTokens,
+    totalTokens: usage.total_tokens ?? rawInputTokens + outputTokens,
   };
 }
 
