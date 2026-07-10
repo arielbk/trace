@@ -1,5 +1,6 @@
 import type { ParsedStateMd } from "./state-parser.ts";
 import type { ProjectFingerprints } from "./project-fingerprint.ts";
+import type { SyncPayload } from "./sync.ts";
 
 export type Project = {
   id: string;
@@ -250,5 +251,7 @@ export type TaskStore = {
   ): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
+  syncSnapshot(): SyncPayload;
+  mergeSyncPayload(payload: SyncPayload): { pulled: number };
   close(): void;
 };

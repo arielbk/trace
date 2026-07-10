@@ -1,4 +1,12 @@
 export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+export { compareSyncRows, synchronize } from "./sync.ts";
+export type {
+  SyncPayload,
+  SyncSessionRow,
+  SyncStore,
+  SyncTaskRow,
+  SyncTransport,
+} from "./sync.ts";
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
