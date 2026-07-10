@@ -82,8 +82,11 @@ test("a status carrying a last error reports failed and keeps any prior sync tim
   });
 });
 
-test("a logged-in status without an identity is treated as logged-out", () => {
-  expect(deriveSyncStatus({ loggedIn: true })).toEqual({ state: "logged-out" });
+test("a logged-in status stays logged-in even when identity was never recorded", () => {
+  expect(deriveSyncStatus({ loggedIn: true })).toEqual({ state: "never-synced" });
+  expect(
+    deriveSyncStatus({ loggedIn: true, lastSyncedAt: "2026-07-10T16:00:00.000Z" }),
+  ).toEqual({ state: "synced", lastSyncedAt: "2026-07-10T16:00:00.000Z" });
   expect(deriveSyncStatus({ loggedIn: false })).toEqual({ state: "logged-out" });
 });
 

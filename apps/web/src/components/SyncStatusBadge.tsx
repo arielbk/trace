@@ -37,18 +37,21 @@ export function describeSyncStatus(
   now?: Date,
 ): { text: string; title?: string } | null {
   if (!status) return null;
+  // Identity is best-effort (only recorded at `trace login`), so it prefixes
+  // the state text rather than gating it.
+  const prefix = "identity" in status && status.identity ? `${status.identity} · ` : "";
   switch (status.state) {
     case "logged-out":
       return { text: "not logged in — run `trace login`" };
     case "never-synced":
-      return { text: `${status.identity} · not synced yet` };
+      return { text: `${prefix}not synced yet` };
     case "synced":
       return {
-        text: `${status.identity} · synced ${formatRelativeTime(status.lastSyncedAt, now)}`,
+        text: `${prefix}synced ${formatRelativeTime(status.lastSyncedAt, now)}`,
       };
     case "failed":
       return {
-        text: `${status.identity} · sync failed`,
+        text: `${prefix}sync failed`,
         title: status.lastError,
       };
     default:

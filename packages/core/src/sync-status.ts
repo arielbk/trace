@@ -21,14 +21,20 @@ export interface SyncStatusFile {
   lastError?: string;
 }
 
-/** The derived shape returned by `GET /api/sync/status` and consumed by the board header. */
+/**
+ * The derived shape returned by `GET /api/sync/status` and consumed by the
+ * board header. `identity` is presentational and best-effort — it is only
+ * learned at `trace login`, so a token that predates identity recording (or a
+ * background sync on a machine that never ran login) still derives as a
+ * logged-in state, just without a name to show.
+ */
 export type SyncStatus =
   | { state: "logged-out" }
-  | { state: "never-synced"; identity: string }
-  | { state: "synced"; identity: string; lastSyncedAt: string }
+  | { state: "never-synced"; identity?: string }
+  | { state: "synced"; identity?: string; lastSyncedAt: string }
   | {
       state: "failed";
-      identity: string;
+      identity?: string;
       lastError: string;
       lastSyncedAt?: string;
     };
@@ -85,13 +91,14 @@ export function updateSyncStatusFile(
 
 /** Collapse a raw status file into the discriminated status the board renders. */
 export function deriveSyncStatus(file: SyncStatusFile | null): SyncStatus {
-  if (!file || !file.loggedIn || !file.identity) {
+  if (!file || !file.loggedIn) {
     return { state: "logged-out" };
   }
+  const identity = file.identity ? { identity: file.identity } : {};
   if (file.lastError) {
     return {
       state: "failed",
-      identity: file.identity,
+      ...identity,
       lastError: file.lastError,
       ...(file.lastSyncedAt ? { lastSyncedAt: file.lastSyncedAt } : {}),
     };
@@ -99,11 +106,11 @@ export function deriveSyncStatus(file: SyncStatusFile | null): SyncStatus {
   if (file.lastSyncedAt) {
     return {
       state: "synced",
-      identity: file.identity,
+      ...identity,
       lastSyncedAt: file.lastSyncedAt,
     };
   }
-  return { state: "never-synced", identity: file.identity };
+  return { state: "never-synced", ...identity };
 }
 
 /** Read and derive the board-facing sync status for a database. */
