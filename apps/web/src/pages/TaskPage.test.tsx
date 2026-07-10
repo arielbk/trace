@@ -1500,13 +1500,44 @@ test("LeftOffPanel omits headers for missing sections (partial state)", () => {
   expect(html).not.toContain("Open questions");
 });
 
-test("LeftOffPanel renders handoff prompt when state is absent", () => {
+test("LeftOffPanel renders save-state prompt when state is absent", () => {
   const html = renderToStaticMarkup(<LeftOffPanel state={undefined} />);
 
-  expect(html).toContain("/handoff");
+  expect(html).toContain("No context saved yet");
+  expect(html).toContain("save state");
   // No section headers when there's no state
   expect(html).not.toContain("Where you left off");
   expect(html).not.toContain("Decisions");
+});
+
+test("LeftOffPanel shows the stale badge when docs changed since the state was saved", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on the checkout redesign",
+    decisions: [],
+    currentState: [],
+    nextStep: undefined,
+    openQuestions: [],
+  };
+
+  const html = renderToStaticMarkup(<LeftOffPanel state={state} stale />);
+
+  expect(html).toContain("docs changed since this was saved");
+});
+
+test("LeftOffPanel hides the stale badge when the state is fresh", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on the checkout redesign",
+    decisions: [],
+    currentState: [],
+    nextStep: undefined,
+    openQuestions: [],
+  };
+
+  const html = renderToStaticMarkup(
+    <LeftOffPanel state={state} stale={false} />,
+  );
+
+  expect(html).not.toContain("docs changed since this was saved");
 });
 
 test("LeftOffPanel renders HTML fragments without escaping inline markup", () => {
@@ -1547,7 +1578,7 @@ test("TaskTimelineView renders LeftOffPanel with state when timeline has state",
   expect(html).toContain("Working on billing integration");
 });
 
-test("TaskTimelineView renders handoff prompt when timeline has no state", () => {
+test("TaskTimelineView renders save-state prompt when timeline has no state", () => {
   const timeline = baseTimeline();
 
   const html = renderToStaticMarkup(
@@ -1556,7 +1587,29 @@ test("TaskTimelineView renders handoff prompt when timeline has no state", () =>
     </MemoryRouter>,
   );
 
-  expect(html).toContain("/handoff");
+  expect(html).toContain("No context saved yet");
+});
+
+test("TaskTimelineView surfaces stateStale as the panel's stale badge", () => {
+  const state: ParsedStateMd = {
+    summary: "Working on billing integration",
+    decisions: [],
+    currentState: [],
+    openQuestions: [],
+  };
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    state,
+    stateStale: true,
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("docs changed since this was saved");
 });
 
 // activity-timeline-restyle: continuous spine tests

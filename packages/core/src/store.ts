@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { resolveCodexTranscriptPathById } from "./codex-adapter.ts";
 import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
 import {
@@ -34,6 +34,11 @@ import {
 } from "./token-totals.ts";
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
+import {
+  computeDocsFingerprint,
+  hasProseBody,
+  readProseFingerprint,
+} from "./prose-fingerprint.ts";
 import {
   getTranscriptAdapter,
   type ParsedTranscript,
@@ -923,6 +928,11 @@ class NodeSqliteTaskStore implements TaskStore {
       ...docs.map((doc) => doc.createdAt),
     ].reduce((latest, current) => (current > latest ? current : latest));
     const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
+    const stateStale = computeStateStale(
+      resolveTaskDocsDir(this.#databasePath, task.slug),
+      docs,
+      stateDoc?.path,
+    );
 
     return {
       task: {
@@ -936,6 +946,7 @@ class NodeSqliteTaskStore implements TaskStore {
         emptyTokenTotals(),
       ),
       ...(state ? { state } : {}),
+      ...(stateStale === undefined ? {} : { stateStale }),
     };
   }
 
@@ -1783,6 +1794,47 @@ function readParsedState(path: string): ReturnType<typeof parseStateMd> | null {
     return parseStateMd(readFileSync(path, "utf8"));
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether state.md's prose has drifted from the task's docs — the same
+ * fingerprint comparison `trace state check` makes, recomputed at board read
+ * time. Undefined when the task has no non-state doc (nothing to reflect on);
+ * true when the prose was never written, is empty, or was stamped against a
+ * different doc set.
+ */
+function computeStateStale(
+  docsDir: string,
+  docs: TaskDoc[],
+  statePath: string | undefined,
+): boolean | undefined {
+  const nonStateDocs = docs.filter((doc) => basename(doc.path) !== "state.md");
+  if (nonStateDocs.length === 0) return undefined;
+
+  if (!statePath) return true;
+  let content: string;
+  try {
+    content = readFileSync(statePath, "utf8");
+  } catch {
+    return true;
+  }
+  if (!hasProseBody(content)) return true;
+
+  const fingerprint = computeDocsFingerprint(
+    nonStateDocs.map((doc) => ({
+      path: relative(docsDir, doc.path),
+      content: readDocContentOrEmpty(doc.path),
+    })),
+  );
+  return readProseFingerprint(content) !== fingerprint;
+}
+
+function readDocContentOrEmpty(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return "";
   }
 }
 
