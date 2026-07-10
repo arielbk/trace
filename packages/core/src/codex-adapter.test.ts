@@ -465,6 +465,66 @@ test("Codex transcript adapter recovers spawns from Desktop spawn_agent call/out
   ).toEqual([{ threadId: "codex-child-1", role: "explorer", nickname: "Hooke" }]);
 });
 
+// Codex Desktop 0.144+ (multi-agent v2): the spawn_agent output carries only
+// {task_name}; the child thread id arrives in a sub_agent_activity "started"
+// event_msg, correlated to the call by event_id. Later activity kinds
+// (interacted, completed) for the same thread must not duplicate the spawn.
+test("Codex transcript adapter recovers spawns from Desktop sub_agent_activity events", () => {
+  const transcript = [
+    JSON.stringify({ type: "session_meta", payload: { id: "codex-thread-1" } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({
+          task_name: "test_codex_update",
+          fork_turns: "all",
+          message: "gAAAAABqUKt_encrypted",
+        }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({ task_name: "/root/test_codex_update" }),
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "sub_agent_activity",
+        event_id: "call_spawn_1",
+        agent_thread_id: "codex-child-1",
+        agent_path: "/root/test_codex_update",
+        kind: "started",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "sub_agent_activity",
+        event_id: "call_send_1",
+        agent_thread_id: "codex-child-1",
+        agent_path: "/root/test_codex_update",
+        kind: "interacted",
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({
+      transcript,
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+    }).subagentSpawns,
+  ).toEqual([
+    { threadId: "codex-child-1", role: null, nickname: "test_codex_update" },
+  ]);
+});
+
 test("Codex transcript adapter dedupes a child named by both spawn record shapes", () => {
   const transcript = [
     JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),

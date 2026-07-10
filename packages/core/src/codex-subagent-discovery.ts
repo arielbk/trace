@@ -101,6 +101,11 @@ export function registerCodexSubagentSpawn(
         parentSessionId: parent.id,
         origin: "subagent",
         subagentType: spawn.role,
+        // The spawn nickname (on multi-agent v2, the parent-assigned task
+        // name) is the only honest name the child has — its own rollout
+        // forks the parent's turns, so a head-derived name would just
+        // repeat the parent's first message.
+        title: spawn.nickname,
         agentId: spawn.threadId,
         ...parseChildTranscript(transcriptPath),
       });

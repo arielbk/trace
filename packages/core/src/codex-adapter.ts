@@ -123,6 +123,13 @@ type CodexJsonlEvent = {
     call_id?: string;
     arguments?: string;
     output?: string;
+    // event_msg sub_agent_activity (Codex Desktop 0.144+, multi-agent v2):
+    // the spawn's thread id lives here, keyed back to the spawn_agent call
+    // by event_id; agent_path is "/root/<task_name>"
+    kind?: string;
+    event_id?: string;
+    agent_thread_id?: string;
+    agent_path?: string;
   };
 };
 
@@ -247,6 +254,25 @@ export function parseCodexTranscript(
       }
     }
 
+    // Codex Desktop 0.144+ (multi-agent v2): the spawn_agent output carries
+    // only the task name — the child thread id is announced in a
+    // sub_agent_activity "started" event, correlated by event_id = call_id.
+    if (
+      event.type === "event_msg" &&
+      event.payload?.type === "sub_agent_activity" &&
+      event.payload.kind === "started" &&
+      event.payload.agent_thread_id
+    ) {
+      const eventId = event.payload.event_id;
+      const role = eventId ? (pendingSpawnRoles.get(eventId) ?? null) : null;
+      if (eventId) pendingSpawnRoles.delete(eventId);
+      addSpawn({
+        threadId: event.payload.agent_thread_id,
+        role,
+        nickname: nicknameFromAgentPath(event.payload.agent_path),
+      });
+    }
+
     // Codex CLI format: per-turn usage in turn.completed
     if (event.type === "turn.completed") {
       turnCompletedTotals = addTokenTotals(
@@ -357,6 +383,13 @@ function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
     cacheReadInputTokens,
     totalTokens: usage.total_tokens ?? rawInputTokens + outputTokens,
   };
+}
+
+/** "/root/test_codex_update" → "test_codex_update"; null for a blank path. */
+function nicknameFromAgentPath(agentPath: string | undefined): string | null {
+  if (!agentPath) return null;
+  const segments = agentPath.split("/").filter(Boolean);
+  return segments.at(-1) ?? null;
 }
 
 function spawnAgentRole(rawArguments: string | undefined): string | null {
