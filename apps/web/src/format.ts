@@ -166,15 +166,27 @@ export function collapseHomePath(path: string, home: string = ""): string {
 
 const CLAUDE_MODEL_RE =
   /^claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*?)(?:-\d{8})?$/;
-const CODEX_MODEL_RE = /^gpt-(\d+(?:-\d+)*)-codex$/;
+// OpenAI ids dot the version inline and may trail variant words:
+// "gpt-5-codex", "gpt-5.5", "gpt-5.6-sol".
+const GPT_MODEL_RE = /^gpt-(\d+(?:[.-]\d+)*)((?:-[a-z]+)*)$/;
 // Cursor's in-house models dot the version in the id itself: "composer-2.5-fast".
 const COMPOSER_MODEL_RE = /^composer-(\d+(?:\.\d+)*)((?:-[a-z]+)*)$/;
+
+/** `"-codex-mini"` → `"Codex Mini"`; empty for no variant words. */
+function titleCaseVariant(variant: string | undefined): string {
+  return (variant ?? "")
+    .split("-")
+    .filter(Boolean)
+    .map((word) => `${word[0]?.toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
 
 /**
  * Render a raw model ID readably: `"claude-opus-4-8"` → `"Opus 4.8"`,
  * `"claude-haiku-4-5-20251001"` → `"Haiku 4.5"` (trailing release date
- * dropped), `"gpt-5-codex"` → `"GPT-5 Codex"`, `"composer-2.5-fast"` →
- * `"Composer 2.5 Fast"`. An unrecognised ID is returned unchanged.
+ * dropped), `"gpt-5-codex"` → `"GPT-5 Codex"`, `"gpt-5.6-sol"` →
+ * `"GPT-5.6 Sol"`, `"composer-2.5-fast"` → `"Composer 2.5 Fast"`. An
+ * unrecognised ID is returned unchanged.
  */
 export function formatModelName(id: string): string {
   const claudeMatch = CLAUDE_MODEL_RE.exec(id);
@@ -183,17 +195,14 @@ export function formatModelName(id: string): string {
     const version = claudeMatch[2];
     return `${family[0]?.toUpperCase()}${family.slice(1)} ${version.replace(/-/g, ".")}`;
   }
-  const codexMatch = CODEX_MODEL_RE.exec(id);
-  if (codexMatch?.[1]) {
-    return `GPT-${codexMatch[1].replace(/-/g, ".")} Codex`;
+  const gptMatch = GPT_MODEL_RE.exec(id);
+  if (gptMatch?.[1]) {
+    const variant = titleCaseVariant(gptMatch[2]);
+    return `GPT-${gptMatch[1].replace(/-/g, ".")}${variant ? ` ${variant}` : ""}`;
   }
   const composerMatch = COMPOSER_MODEL_RE.exec(id);
   if (composerMatch?.[1]) {
-    const variant = (composerMatch[2] ?? "")
-      .split("-")
-      .filter(Boolean)
-      .map((word) => `${word[0]?.toUpperCase()}${word.slice(1)}`)
-      .join(" ");
+    const variant = titleCaseVariant(composerMatch[2]);
     return `Composer ${composerMatch[1]}${variant ? ` ${variant}` : ""}`;
   }
   return id;

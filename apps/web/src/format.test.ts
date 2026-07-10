@@ -204,6 +204,14 @@ describe("formatModelName", () => {
     expect(formatModelName("gpt-5-codex")).toBe("GPT-5 Codex");
   });
 
+  test("formats a bare gpt id with a dotted version", () => {
+    expect(formatModelName("gpt-5.5")).toBe("GPT-5.5");
+  });
+
+  test("formats a gpt id with a variant suffix", () => {
+    expect(formatModelName("gpt-5.6-sol")).toBe("GPT-5.6 Sol");
+  });
+
   test("formats a composer id with its variant suffix", () => {
     expect(formatModelName("composer-2.5-fast")).toBe("Composer 2.5 Fast");
   });
