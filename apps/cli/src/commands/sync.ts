@@ -3,9 +3,12 @@ import {
   resolveDatabasePath,
   synchronize,
   type SyncPayload,
+  type SyncBlob,
+  type SyncDocManifest,
   type SyncTransport,
 } from "@trace/core";
 import { readAuthToken, resolveServerUrl } from "./auth.ts";
+import { FileSystemDocumentStore } from "./doc-sync.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
 export async function runSyncCommand(
@@ -25,10 +28,21 @@ export async function runSyncCommand(
         token.accessToken,
         dependencies.fetch ?? globalThis.fetch,
       ),
+      new FileSystemDocumentStore(resolveDatabasePath(env), () => store.syncSnapshot().tasks),
     );
+    const documentChanges =
+      (result.pushedManifests ?? 0) +
+      (result.pulledManifests ?? 0) +
+      (result.uploadedBlobs ?? 0) +
+      (result.downloadedBlobs ?? 0);
     return {
       exitCode: 0,
-      stdout: `Sync complete: ${result.pushed} pushed, ${result.pulled} pulled.\n`,
+      stdout:
+        `Sync complete: ${result.pushed} pushed, ${result.pulled} pulled.` +
+        (documentChanges > 0
+          ? ` Docs: ${result.pushedManifests} manifests pushed, ${result.pulledManifests} pulled, ${result.uploadedBlobs} blobs uploaded, ${result.downloadedBlobs} downloaded.`
+          : "") +
+        "\n",
       stderr: "",
     };
   } catch (error) {
@@ -59,6 +73,44 @@ class HttpSyncTransport implements SyncTransport {
 
   async pull(): Promise<SyncPayload> {
     return this.request<SyncPayload>("/api/sync/pull");
+  }
+
+  async pushDocuments(
+    manifests: SyncDocManifest[],
+    blobs: SyncBlob[],
+  ): Promise<{ accepted: number; uploaded: number }> {
+    return this.request("/api/sync/docs/push", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        manifests,
+        blobs: blobs.map((blob) => ({
+          hash: blob.hash,
+          content: Buffer.from(blob.content).toString("base64"),
+        })),
+      }),
+    });
+  }
+
+  async pullDocumentManifests(): Promise<SyncDocManifest[]> {
+    return this.request("/api/sync/docs/manifests");
+  }
+
+  async missingBlobs(hashes: string[]): Promise<string[]> {
+    return this.request<string[]>("/api/sync/blobs/missing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hashes }),
+    });
+  }
+
+  async downloadBlob(hash: string): Promise<Uint8Array | null> {
+    const response = await this.fetch(`${this.serverUrl}/api/sync/blobs/${encodeURIComponent(hash)}`, {
+      headers: { authorization: `Bearer ${this.token}` },
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`server returned ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {

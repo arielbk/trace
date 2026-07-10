@@ -33,6 +33,23 @@ export type SyncSessionRow = {
 
 export type SyncPayload = { tasks: SyncTaskRow[]; sessions: SyncSessionRow[] };
 
+export type SyncDocManifest = {
+  taskId: string;
+  files: { path: string; blobHash: string }[];
+  updatedAt: string;
+  machineId: string;
+};
+
+export type SyncBlob = { hash: string; content: Uint8Array };
+
+export interface SyncDocumentStore {
+  snapshot(): Promise<{ manifests: SyncDocManifest[]; blobs: SyncBlob[] }>;
+  apply(
+    manifests: SyncDocManifest[],
+    download: (hash: string) => Promise<Uint8Array | null>,
+  ): Promise<{ pulled: number; downloaded: number }>;
+}
+
 export interface SyncStore {
   syncSnapshot(): SyncPayload;
   mergeSyncPayload(payload: SyncPayload): { pulled: number };
@@ -41,6 +58,13 @@ export interface SyncStore {
 export interface SyncTransport {
   push(payload: SyncPayload): Promise<{ accepted: number }>;
   pull(): Promise<SyncPayload>;
+  pushDocuments?(
+    manifests: SyncDocManifest[],
+    blobs: SyncBlob[],
+  ): Promise<{ accepted: number; uploaded: number }>;
+  pullDocumentManifests?(): Promise<SyncDocManifest[]>;
+  missingBlobs?(hashes: string[]): Promise<string[]>;
+  downloadBlob?(hash: string): Promise<Uint8Array | null>;
 }
 
 export function compareSyncRows(
@@ -54,9 +78,46 @@ export function compareSyncRows(
 export async function synchronize(
   store: SyncStore,
   transport: SyncTransport,
-): Promise<{ pushed: number; pulled: number }> {
+  documents?: SyncDocumentStore,
+): Promise<{
+  pushed: number;
+  pulled: number;
+  pushedManifests?: number;
+  pulledManifests?: number;
+  uploadedBlobs?: number;
+  downloadedBlobs?: number;
+}> {
   const before = store.syncSnapshot();
   const pushed = await transport.push(before);
   const pulled = store.mergeSyncPayload(await transport.pull());
-  return { pushed: pushed.accepted, pulled: pulled.pulled };
+  if (!documents) return { pushed: pushed.accepted, pulled: pulled.pulled };
+  if (
+    !transport.pushDocuments ||
+    !transport.pullDocumentManifests ||
+    !transport.missingBlobs ||
+    !transport.downloadBlob
+  ) {
+    throw new Error("sync transport does not support document synchronization");
+  }
+
+  const snapshot = await documents.snapshot();
+  const missing = new Set(
+    await transport.missingBlobs(snapshot.blobs.map((blob) => blob.hash)),
+  );
+  const pushedDocuments = await transport.pushDocuments(
+    snapshot.manifests,
+    snapshot.blobs.filter((blob) => missing.has(blob.hash)),
+  );
+  const pulledDocuments = await documents.apply(
+    await transport.pullDocumentManifests(),
+    (hash) => transport.downloadBlob!(hash),
+  );
+  return {
+    pushed: pushed.accepted,
+    pulled: pulled.pulled,
+    pushedManifests: pushedDocuments.accepted,
+    pulledManifests: pulledDocuments.pulled,
+    uploadedBlobs: pushedDocuments.uploaded,
+    downloadedBlobs: pulledDocuments.downloaded,
+  };
 }

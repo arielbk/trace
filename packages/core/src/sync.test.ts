@@ -6,12 +6,18 @@ import { openTraceStore } from "./store.ts";
 import {
   compareSyncRows,
   synchronize,
+  type SyncBlob,
+  type SyncDocManifest,
+  type SyncDocumentStore,
   type SyncPayload,
   type SyncTransport,
 } from "./sync.ts";
 
 class MemoryTransport implements SyncTransport {
   payload: SyncPayload = { tasks: [], sessions: [] };
+  manifests: SyncDocManifest[] = [];
+  blobs = new Map<string, Uint8Array>();
+  blobUploadSizes: number[] = [];
 
   async push(payload: SyncPayload) {
     let accepted = 0;
@@ -32,6 +38,69 @@ class MemoryTransport implements SyncTransport {
 
   async pull() {
     return structuredClone(this.payload);
+  }
+
+  async pushDocuments(manifests: SyncDocManifest[], blobs: SyncBlob[]) {
+    this.blobUploadSizes.push(blobs.length);
+    let accepted = 0;
+    for (const manifest of manifests) {
+      const index = this.manifests.findIndex((item) => item.taskId === manifest.taskId);
+      if (index < 0) {
+        this.manifests.push(structuredClone(manifest));
+        accepted += 1;
+      } else if (compareSyncRows(manifest, this.manifests[index]!) > 0) {
+        this.manifests[index] = structuredClone(manifest);
+        accepted += 1;
+      }
+    }
+    let uploaded = 0;
+    for (const blob of blobs) {
+      if (!this.blobs.has(blob.hash)) uploaded += 1;
+      this.blobs.set(blob.hash, blob.content.slice());
+    }
+    return { accepted, uploaded };
+  }
+
+  async pullDocumentManifests() {
+    return structuredClone(this.manifests);
+  }
+
+  async missingBlobs(hashes: string[]) {
+    return hashes.filter((hash) => !this.blobs.has(hash));
+  }
+
+  async downloadBlob(hash: string) {
+    return this.blobs.get(hash)?.slice() ?? null;
+  }
+}
+
+class MemoryDocumentStore implements SyncDocumentStore {
+  constructor(
+    private manifest: SyncDocManifest,
+    private readonly blobs: Map<string, Uint8Array>,
+  ) {}
+
+  async snapshot() {
+    return { manifests: [structuredClone(this.manifest)], blobs: [...this.blobs].map(([hash, content]) => ({ hash, content })) };
+  }
+
+  async apply(manifests: SyncDocManifest[], download: (hash: string) => Promise<Uint8Array | null>) {
+    const remote = manifests.find((item) => item.taskId === this.manifest.taskId);
+    if (!remote || compareSyncRows(remote, this.manifest) <= 0) return { pulled: 0, downloaded: 0 };
+    let downloaded = 0;
+    this.blobs.clear();
+    for (const file of remote.files) {
+      const content = await download(file.blobHash);
+      if (!content) throw new Error(`missing blob ${file.blobHash}`);
+      this.blobs.set(file.blobHash, content);
+      downloaded += 1;
+    }
+    this.manifest = structuredClone(remote);
+    return { pulled: 1, downloaded };
+  }
+
+  paths() {
+    return this.manifest.files.map((file) => file.path);
   }
 }
 
@@ -82,5 +151,57 @@ describe("row synchronization", () => {
     });
     first.close();
     second.close();
+  });
+});
+
+describe("document synchronization", () => {
+  test("content-addressed documents converge, removals replace the task manifest, and re-sync is a no-op", async () => {
+    const server = new MemoryTransport();
+    const first = new MemoryDocumentStore(
+      {
+        taskId: "task-a",
+        files: [
+          { path: "state.md", blobHash: "state-v1" },
+          { path: "notes.md", blobHash: "notes-v1" },
+        ],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        machineId: "machine-a",
+      },
+      new Map([
+        ["state-v1", new TextEncoder().encode("state")],
+        ["notes-v1", new TextEncoder().encode("notes")],
+      ]),
+    );
+    const second = new MemoryDocumentStore(
+      {
+        taskId: "task-a",
+        files: [],
+        updatedAt: "2025-01-01T00:00:00.000Z",
+        machineId: "machine-b",
+      },
+      new Map(),
+    );
+
+    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first))
+      .toMatchObject({ uploadedBlobs: 2, pushedManifests: 1 });
+    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, second))
+      .toMatchObject({ downloadedBlobs: 2, pulledManifests: 1 });
+    expect(second.paths()).toEqual(["state.md", "notes.md"]);
+
+    const removal = new MemoryDocumentStore(
+      {
+        taskId: "task-a",
+        files: [{ path: "state.md", blobHash: "state-v1" }],
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        machineId: "machine-b",
+      },
+      new Map([["state-v1", new TextEncoder().encode("state")]]),
+    );
+    await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, removal);
+    await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first);
+    expect(first.paths()).toEqual(["state.md"]);
+    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first))
+      .toMatchObject({ uploadedBlobs: 0, pushedManifests: 0, downloadedBlobs: 0, pulledManifests: 0 });
+    expect(server.blobUploadSizes.at(-1)).toBe(0);
   });
 });

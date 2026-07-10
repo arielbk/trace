@@ -2,6 +2,9 @@ export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 export { compareSyncRows, synchronize } from "./sync.ts";
 export type {
   SyncPayload,
+  SyncBlob,
+  SyncDocManifest,
+  SyncDocumentStore,
   SyncSessionRow,
   SyncStore,
   SyncTaskRow,
