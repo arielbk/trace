@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   parseCodexTranscript,
+  parseCodexTranscriptFile,
   resolveCodexTranscriptPathById,
   scanCodexSessions,
 } from "./codex-adapter.ts";
@@ -200,7 +201,9 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 42028,
+      // OpenAI's input_tokens includes cached input (42028 with 24320
+      // cached); Trace's inputTokens is the fresh remainder.
+      inputTokens: 17708,
       outputTokens: 725,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 24320,
@@ -240,6 +243,102 @@ test("Codex Desktop transcript: uses last token_count as cumulative total", () =
   expect(result.tokenTotals.inputTokens).toBe(200);
   expect(result.tokenTotals.outputTokens).toBe(80);
   expect(result.tokenTotals.totalTokens).toBe(280);
+});
+
+test("Codex Desktop transcript: model comes from turn_context", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: { turn_id: "turn-1", model: "gpt-5.6-sol", effort: "high" },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: { turn_id: "turn-2", model: "gpt-5.5", effort: "high" },
+    }),
+  ].join("\n");
+
+  const result = parseCodexTranscript({ transcript, transcriptPath });
+  // First model wins, matching the claude adapter's convention.
+  expect(result.model).toBe("gpt-5.6-sol");
+});
+
+test("Codex Desktop transcript: model falls back to thread_settings_applied", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "thread_settings_applied",
+        thread_settings: { model: "gpt-5.6-sol", reasoning_effort: "high" },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseCodexTranscript({ transcript, transcriptPath }).model).toBe(
+    "gpt-5.6-sol",
+  );
+});
+
+test("Codex Desktop transcript: title comes from the codex home session index", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-codex-title-"));
+  try {
+    const dayDir = join(dir, "sessions", "2026", "07", "10");
+    mkdirSync(dayDir, { recursive: true });
+    const threadId = "019f4b1c-b288-70b1-b8be-b6d822ca1eb3";
+    const transcriptPath = join(
+      dayDir,
+      `rollout-2026-07-10T10-19-59-${threadId}.jsonl`,
+    );
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: "session_meta", payload: { id: threadId } }),
+    );
+    // Renames append; the last row for the thread wins.
+    writeFileSync(
+      join(dir, "session_index.jsonl"),
+      [
+        JSON.stringify({
+          id: threadId,
+          thread_name: "First name",
+          updated_at: "2026-07-10T08:20:20Z",
+        }),
+        JSON.stringify({
+          id: "some-other-thread",
+          thread_name: "Unrelated",
+          updated_at: "2026-07-10T08:21:00Z",
+        }),
+        JSON.stringify({
+          id: threadId,
+          thread_name: "Resume Codex plugin audit",
+          updated_at: "2026-07-10T09:00:00Z",
+        }),
+      ].join("\n"),
+    );
+
+    expect(parseCodexTranscriptFile(transcriptPath).title).toBe(
+      "Resume Codex plugin audit",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex transcript outside a sessions tree has a null title", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = JSON.stringify({
+    type: "session_meta",
+    payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+  });
+  expect(parseCodexTranscript({ transcript, transcriptPath }).title).toBe(null);
 });
 
 test("Codex scan skips unparseable transcript files", () => {
@@ -292,6 +391,178 @@ test("Codex transcript adapter collects parent-side subagent spawn records", () 
     { threadId: "codex-child-1", role: "explorer", nickname: "Huygens" },
     { threadId: "codex-child-2", role: null, nickname: null },
   ]);
+});
+
+// Codex Desktop 0.142+ writes no collab_agent_spawn_end at all; the spawn is a
+// spawn_agent function_call (role in its JSON-string arguments) answered by a
+// function_call_output (child id and nickname in its JSON-string output),
+// correlated by call_id.
+test("Codex transcript adapter recovers spawns from Desktop spawn_agent call/output pairs", () => {
+  const transcript = [
+    JSON.stringify({ type: "session_meta", payload: { id: "codex-thread-1" } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        namespace: "multi_agent_v1",
+        arguments: JSON.stringify({ agent_type: "explorer", message: "audit" }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    // An unrelated tool call sharing the stream must not be mistaken for a spawn.
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "exec_command",
+        arguments: JSON.stringify({ cmd: "ls" }),
+        call_id: "call_other",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_other",
+        output: "file listing",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({
+          agent_id: "codex-child-1",
+          nickname: "Hooke",
+        }),
+      },
+    }),
+    // A failed spawn returns an error string instead of an agent handle.
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({ agent_type: "reviewer" }),
+        call_id: "call_spawn_2",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_2",
+        output: "error: agent limit reached",
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-thread-1.jsonl" })
+      .subagentSpawns,
+  ).toEqual([{ threadId: "codex-child-1", role: "explorer", nickname: "Hooke" }]);
+});
+
+// Codex Desktop 0.144+ (multi-agent v2): the spawn_agent output carries only
+// {task_name}; the child thread id arrives in a sub_agent_activity "started"
+// event_msg, correlated to the call by event_id. Later activity kinds
+// (interacted, completed) for the same thread must not duplicate the spawn.
+test("Codex transcript adapter recovers spawns from Desktop sub_agent_activity events", () => {
+  const transcript = [
+    JSON.stringify({ type: "session_meta", payload: { id: "codex-thread-1" } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({
+          task_name: "test_codex_update",
+          fork_turns: "all",
+          message: "gAAAAABqUKt_encrypted",
+        }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({ task_name: "/root/test_codex_update" }),
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "sub_agent_activity",
+        event_id: "call_spawn_1",
+        agent_thread_id: "codex-child-1",
+        agent_path: "/root/test_codex_update",
+        kind: "started",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "sub_agent_activity",
+        event_id: "call_send_1",
+        agent_thread_id: "codex-child-1",
+        agent_path: "/root/test_codex_update",
+        kind: "interacted",
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({
+      transcript,
+      transcriptPath: "/tmp/codex-thread-1.jsonl",
+    }).subagentSpawns,
+  ).toEqual([
+    { threadId: "codex-child-1", role: null, nickname: "test_codex_update" },
+  ]);
+});
+
+test("Codex transcript adapter dedupes a child named by both spawn record shapes", () => {
+  const transcript = [
+    JSON.stringify({ type: "thread.started", thread_id: "codex-thread-1" }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "collab_agent_spawn_end",
+        new_thread_id: "codex-child-1",
+        new_agent_nickname: "Hooke",
+        new_agent_role: "explorer",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({ agent_type: "explorer" }),
+        call_id: "call_spawn_1",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_spawn_1",
+        output: JSON.stringify({
+          agent_id: "codex-child-1",
+          nickname: "Hooke",
+        }),
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath: "/tmp/codex-thread-1.jsonl" })
+      .subagentSpawns,
+  ).toEqual([{ threadId: "codex-child-1", role: "explorer", nickname: "Hooke" }]);
 });
 
 test("Codex transcript adapter reads a subagent child's own parent linkage", () => {

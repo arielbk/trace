@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   collectTranscriptHead,
   collectTranscriptTail,
@@ -17,8 +17,12 @@ import type { TokenTotals } from "./types.ts";
 
 export type CodexTokenTotals = TokenTotals;
 
-// Parent-side spawn record: one `collab_agent_spawn_end` event per in-process
-// subagent the session fanned out to (the `spawn_agent` collaboration tool).
+// Parent-side spawn record: one per in-process subagent the session fanned
+// out to (the `spawn_agent` collaboration tool). Recovered from either of the
+// two shapes Codex writes — a `collab_agent_spawn_end` event_msg, or (Codex
+// Desktop 0.142+) a `spawn_agent` function_call/function_call_output pair in
+// response_item records, where the call carries the role and the output
+// carries the child thread id and nickname.
 export type CodexSubagentSpawn = {
   threadId: string;
   role: string | null;
@@ -85,6 +89,12 @@ type CodexJsonlEvent = {
   payload?: {
     id?: string;
     type?: string;
+    // turn_context: the model serving the turn (session_meta carries none)
+    model?: string;
+    // event_msg thread_settings_applied: the thread's configured model
+    thread_settings?: {
+      model?: string;
+    };
     info?: {
       total_token_usage?: CodexDesktopUsage;
     };
@@ -106,6 +116,20 @@ type CodexJsonlEvent = {
     new_thread_id?: string;
     new_agent_role?: string;
     new_agent_nickname?: string;
+    // response_item function calls: Codex Desktop records spawns as a
+    // spawn_agent call/output pair correlated by call_id; arguments and
+    // output are JSON-encoded strings
+    name?: string;
+    call_id?: string;
+    arguments?: string;
+    output?: string;
+    // event_msg sub_agent_activity (Codex Desktop 0.144+, multi-agent v2):
+    // the spawn's thread id lives here, keyed back to the spawn_agent call
+    // by event_id; agent_path is "/root/<task_name>"
+    kind?: string;
+    event_id?: string;
+    agent_thread_id?: string;
+    agent_path?: string;
   };
 };
 
@@ -131,6 +155,14 @@ export function parseCodexTranscript(
   // we keep the last one so a live transcript gives the freshest count.
   let lastDesktopTotals: TokenTotals | null = null;
   const subagentSpawns: CodexSubagentSpawn[] = [];
+  // Both spawn shapes can name the same child; first record wins.
+  const addSpawn = (spawn: CodexSubagentSpawn) => {
+    if (!subagentSpawns.some((known) => known.threadId === spawn.threadId)) {
+      subagentSpawns.push(spawn);
+    }
+  };
+  // spawn_agent calls whose output hasn't streamed yet, call_id → role
+  const pendingSpawnRoles = new Map<string, string | null>();
   let subagentSource: CodexSubagentSource | null = null;
 
   for (const line of input.transcript.split(/\r?\n/)) {
@@ -150,6 +182,18 @@ export function parseCodexTranscript(
     if (event.type === "thread.started") {
       id ??= event.thread_id ?? event.threadId ?? event.id;
       model ??= event.model;
+    }
+
+    // Codex Desktop format: session_meta names no model; the first
+    // turn_context (or applied thread settings) does.
+    if (event.type === "turn_context") {
+      model ??= event.payload?.model;
+    }
+    if (
+      event.type === "event_msg" &&
+      event.payload?.type === "thread_settings_applied"
+    ) {
+      model ??= event.payload.thread_settings?.model;
     }
 
     // Codex Desktop format: session identity in session_meta payload
@@ -174,10 +218,58 @@ export function parseCodexTranscript(
       event.payload?.type === "collab_agent_spawn_end" &&
       event.payload.new_thread_id
     ) {
-      subagentSpawns.push({
+      addSpawn({
         threadId: event.payload.new_thread_id,
         role: event.payload.new_agent_role ?? null,
         nickname: event.payload.new_agent_nickname ?? null,
+      });
+    }
+
+    // Codex Desktop 0.142+ emits no collab_agent_spawn_end; the spawn lives in
+    // the response_item stream as a spawn_agent function_call (role in its
+    // arguments) answered by a function_call_output (child id and nickname in
+    // its output), matched by call_id.
+    if (event.type === "response_item") {
+      if (
+        event.payload?.type === "function_call" &&
+        event.payload.name === "spawn_agent" &&
+        event.payload.call_id
+      ) {
+        pendingSpawnRoles.set(
+          event.payload.call_id,
+          spawnAgentRole(event.payload.arguments),
+        );
+      }
+      if (
+        event.payload?.type === "function_call_output" &&
+        event.payload.call_id &&
+        pendingSpawnRoles.has(event.payload.call_id)
+      ) {
+        const role = pendingSpawnRoles.get(event.payload.call_id) ?? null;
+        pendingSpawnRoles.delete(event.payload.call_id);
+        const spawned = spawnedAgentFromOutput(event.payload.output);
+        if (spawned) {
+          addSpawn({ ...spawned, role });
+        }
+      }
+    }
+
+    // Codex Desktop 0.144+ (multi-agent v2): the spawn_agent output carries
+    // only the task name — the child thread id is announced in a
+    // sub_agent_activity "started" event, correlated by event_id = call_id.
+    if (
+      event.type === "event_msg" &&
+      event.payload?.type === "sub_agent_activity" &&
+      event.payload.kind === "started" &&
+      event.payload.agent_thread_id
+    ) {
+      const eventId = event.payload.event_id;
+      const role = eventId ? (pendingSpawnRoles.get(eventId) ?? null) : null;
+      if (eventId) pendingSpawnRoles.delete(eventId);
+      addSpawn({
+        threadId: event.payload.agent_thread_id,
+        role,
+        nickname: nicknameFromAgentPath(event.payload.agent_path),
       });
     }
 
@@ -219,25 +311,113 @@ export function parseCodexTranscript(
     transcriptPath: input.transcriptPath,
     tool: "codex",
     model: model ?? null,
-    // Codex transcripts carry no conversation name; titles are out of scope.
-    title: null,
+    // The rollout itself carries no conversation name; Codex keeps thread
+    // names next door in <codexHome>/session_index.jsonl.
+    title: codexThreadTitleFromIndex(input.transcriptPath, id),
     tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
     subagentSpawns,
     subagentSource,
   };
 }
 
+/**
+ * The Codex home holding a rollout file: rollouts are filed under
+ * `<codexHome>/sessions/YYYY/MM/DD/`, so walk up to the `sessions` segment.
+ * Null for paths outside any sessions tree (fixtures, synthetic locators).
+ */
+function codexHomeFromTranscriptPath(transcriptPath: string): string | null {
+  let dir = dirname(resolve(transcriptPath));
+  while (true) {
+    if (basename(dir) === "sessions") return dirname(dir);
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * Thread name for a rollout, from the sibling `session_index.jsonl` — rows of
+ * `{id, thread_name, updated_at}`, appended on rename, so the last matching
+ * row wins. Best-effort: no index, no matching row, or a blank name is null.
+ */
+function codexThreadTitleFromIndex(
+  transcriptPath: string,
+  threadId: string,
+): string | null {
+  const codexHome = codexHomeFromTranscriptPath(transcriptPath);
+  if (!codexHome) return null;
+  const indexPath = join(codexHome, "session_index.jsonl");
+  let content: string;
+  try {
+    content = readFileSync(indexPath, "utf8");
+  } catch {
+    return null;
+  }
+  let title: string | null = null;
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.includes(threadId)) continue;
+    try {
+      const entry = JSON.parse(line) as { id?: string; thread_name?: string };
+      if (entry.id === threadId && entry.thread_name?.trim()) {
+        title = entry.thread_name.trim();
+      }
+    } catch {
+      // Live index files can end in a half-written line; skip it.
+    }
+  }
+  return title;
+}
+
 function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
-  const inputTokens = usage.input_tokens ?? 0;
+  const rawInputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const cacheReadInputTokens = usage.cached_input_tokens ?? 0;
+  // OpenAI's input_tokens INCLUDES cached input; Trace's inputTokens is fresh
+  // input only (the Anthropic convention the rest of the app assumes), so
+  // cached reads move to cacheReadInputTokens instead of inflating "in".
+  const inputTokens = Math.max(0, rawInputTokens - cacheReadInputTokens);
   return {
     inputTokens,
     outputTokens,
     cacheCreationInputTokens: 0,
     cacheReadInputTokens,
-    totalTokens: usage.total_tokens ?? inputTokens + outputTokens,
+    totalTokens: usage.total_tokens ?? rawInputTokens + outputTokens,
   };
+}
+
+/** "/root/test_codex_update" → "test_codex_update"; null for a blank path. */
+function nicknameFromAgentPath(agentPath: string | undefined): string | null {
+  if (!agentPath) return null;
+  const segments = agentPath.split("/").filter(Boolean);
+  return segments.at(-1) ?? null;
+}
+
+function spawnAgentRole(rawArguments: string | undefined): string | null {
+  if (!rawArguments) return null;
+  try {
+    const parsed = JSON.parse(rawArguments) as { agent_type?: string };
+    return parsed.agent_type ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function spawnedAgentFromOutput(
+  rawOutput: string | undefined,
+): { threadId: string; nickname: string | null } | null {
+  if (!rawOutput) return null;
+  try {
+    const parsed = JSON.parse(rawOutput) as {
+      agent_id?: string;
+      nickname?: string;
+    };
+    return parsed.agent_id
+      ? { threadId: parsed.agent_id, nickname: parsed.nickname ?? null }
+      : null;
+  } catch {
+    // A failed spawn's output is an error string, not an agent handle.
+    return null;
+  }
 }
 
 export function parseCodexTranscriptFile(

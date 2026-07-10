@@ -447,6 +447,121 @@ test("assignSession cascades the task_id to NULL-only descendants", () => {
   }
 });
 
+test("assignSession re-bind carries descendants on the previous task to the new one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const otherTask = store.createTask("review");
+    const thirdTask = store.createTask("billing");
+
+    const parent = store.registerSession({
+      id: "parent",
+      transcriptPath: "/tmp/parent.jsonl",
+      tool: "codex",
+    });
+    store.registerSession({
+      id: "child",
+      transcriptPath: "/tmp/child.jsonl",
+      tool: "codex",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    store.registerSession({
+      id: "grandchild",
+      transcriptPath: "/tmp/grandchild.jsonl",
+      tool: "codex",
+      parentSessionId: "child",
+      origin: "spawned",
+    });
+    // A descendant deliberately bound to a third task — stays put on re-bind.
+    store.registerSession({
+      id: "third-task-child",
+      transcriptPath: "/tmp/third-task-child.jsonl",
+      tool: "codex",
+      parentSessionId: parent.id,
+      origin: "subagent",
+    });
+    store.assignSession("third-task-child", thirdTask.id);
+
+    // First bind pulls the NULL descendants onto the task.
+    store.assignSession(parent.id, task.id);
+    expect(store.getSession("child")!.taskId).toBe(task.id);
+
+    // Re-bind: the fan follows the parent instead of stranding on `task`.
+    store.assignSession(parent.id, otherTask.id);
+
+    expect(store.getSession(parent.id)!.taskId).toBe(otherTask.id);
+    expect(store.getSession("child")!.taskId).toBe(otherTask.id);
+    expect(store.getSession("grandchild")!.taskId).toBe(otherTask.id);
+    expect(store.getSession("third-task-child")!.taskId).toBe(thirdTask.id);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("read refresh heals a codex session bound under a synthetic locator", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const codexHome = join(dir, "codex-home");
+
+  try {
+    const threadId = "019f4b1c-0000-7000-8000-000000000001";
+    const dayDir = join(codexHome, "sessions", "2026", "07", "10");
+    mkdirSync(dayDir, { recursive: true });
+    const rolloutPath = join(
+      dayDir,
+      `rollout-2026-07-10T10-19-59-${threadId}.jsonl`,
+    );
+    writeFileSync(
+      rolloutPath,
+      [
+        JSON.stringify({ type: "session_meta", payload: { id: threadId } }),
+        JSON.stringify({
+          type: "turn_context",
+          payload: { turn_id: "turn-1", model: "gpt-5.6-sol" },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 600,
+                output_tokens: 50,
+                total_tokens: 1050,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const store = openTraceStore(databasePath, { codexHome });
+    // Bound before the rollout path was known — e.g. by the session-start hook.
+    store.registerSession({
+      id: threadId,
+      transcriptPath: `codex:${threadId}`,
+      tool: "codex",
+    });
+
+    const session = store.getSession(threadId)!;
+    expect(session.transcriptPath).toBe(rolloutPath);
+    expect(session.model).toBe("gpt-5.6-sol");
+    expect(session.tokenTotals.inputTokens).toBe(400);
+    expect(session.tokenTotals.cacheReadInputTokens).toBe(600);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("assignSession with no descendants is a no-op for the rest of the tree", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

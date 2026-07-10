@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { resolveCodexTranscriptPathById } from "./codex-adapter.ts";
 import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
 import {
   discoverCursorSubagentSessions,
@@ -567,22 +569,30 @@ class NodeSqliteTaskStore implements TaskStore {
       .prepare("UPDATE sessions SET task_id = ? WHERE id = ?")
       .run(task.id, session.id);
 
-    this.#cascadeTaskIdToDescendants(session.id, task.id);
+    // A re-bind moves the parent's whole fan: descendants still on the
+    // parent's previous task follow it rather than stranding there.
+    this.#cascadeTaskIdToDescendants(session.id, task.id, session.taskId);
 
     return { ...session, taskId: task.id };
   }
 
   // Walk the `parent_session_id` descendant tree from `parentId`, stamping
-  // `taskId` onto every descendant currently at task_id = NULL. Descendants
-  // already bound to a task are left untouched, but we still descend through
-  // them so a NULL grandchild under an already-assigned child is not orphaned.
-  // A visited set guards against cycles in a malformed parent chain.
-  #cascadeTaskIdToDescendants(parentId: string, taskId: string): void {
+  // `taskId` onto every descendant currently at task_id = NULL — or, when
+  // `followedTaskId` is given, also those still on that task (the parent's
+  // previous binding). Descendants bound to any other task are left untouched,
+  // but we still descend through them so a NULL grandchild under an
+  // already-assigned child is not orphaned. A visited set guards against
+  // cycles in a malformed parent chain.
+  #cascadeTaskIdToDescendants(
+    parentId: string,
+    taskId: string,
+    followedTaskId: string | null = null,
+  ): void {
     const childrenOf = this.#sqlite.prepare(
       "SELECT id, task_id FROM sessions WHERE parent_session_id = ?",
     );
-    const claimIfUnassigned = this.#sqlite.prepare(
-      "UPDATE sessions SET task_id = ? WHERE id = ? AND task_id IS NULL",
+    const claim = this.#sqlite.prepare(
+      "UPDATE sessions SET task_id = ? WHERE id = ?",
     );
 
     const visited = new Set<string>([parentId]);
@@ -596,8 +606,11 @@ class NodeSqliteTaskStore implements TaskStore {
       for (const child of children) {
         if (visited.has(child.id)) continue;
         visited.add(child.id);
-        if (child.task_id === null) {
-          claimIfUnassigned.run(taskId, child.id);
+        if (
+          child.task_id === null ||
+          (followedTaskId !== null && child.task_id === followedTaskId)
+        ) {
+          claim.run(taskId, child.id);
         }
         queue.push(child.id);
       }
@@ -924,6 +937,24 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#refreshSessionWithParse(session).session;
   }
 
+  // The path a refresh should parse. A codex session bound before its rollout
+  // was known sits under a synthetic `codex:<id>` locator; resolve it by
+  // thread id so the first read heals it (the refresh adopts the adapter's
+  // reported path), instead of staying blank until a manual scan.
+  #parseableLocator(session: Session): string {
+    if (
+      session.tool !== "codex" ||
+      !isSyntheticLocator(session.transcriptPath, "codex")
+    ) {
+      return session.transcriptPath;
+    }
+    const codexHome = this.#codexHome ?? join(homedir(), ".codex");
+    return (
+      resolveCodexTranscriptPathById(codexHome, session.id) ??
+      session.transcriptPath
+    );
+  }
+
   // Refresh plus the raw parse it was derived from, so read-time subagent
   // discovery can consume tool-specific fields (Codex spawn records) without
   // parsing the transcript a second time. `parsed` is null when the transcript
@@ -935,7 +966,7 @@ class NodeSqliteTaskStore implements TaskStore {
     let parsed: ParsedTranscript;
     try {
       const adapter = getTranscriptAdapter(session.tool);
-      parsed = adapter.parseFile(session.transcriptPath, {
+      parsed = adapter.parseFile(this.#parseableLocator(session), {
         expectedId: session.id,
       });
     } catch {

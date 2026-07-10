@@ -113,6 +113,8 @@ test("discovers Codex subagent rollouts from the parent's spawn records", () => 
         parentSessionId: parent.id,
         origin: "subagent",
         subagentType: "explorer",
+        // The spawn nickname stands in as the child's name.
+        title: "Huygens",
         agentId: CHILD_ON_DISK,
         model: "gpt-5.5",
         taskId: task.id,

@@ -9,10 +9,11 @@ import {
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type { Session, TaskStore, TokenTotals } from "./types.ts";
 
-// Codex in-process subagents (the spawn_agent collaboration tool) are simpler
-// to recover than Claude's: the parent rollout emits one self-contained
-// `collab_agent_spawn_end` record per child — parent id, child thread id, role,
-// nickname in a single event, no tool_use/tool_result cross-referencing. The
+// Codex in-process subagents (the spawn_agent collaboration tool) are
+// recovered from the parent rollout's spawn records — either a
+// `collab_agent_spawn_end` event or, on Codex Desktop 0.142+, a `spawn_agent`
+// function_call/output pair (the adapter normalizes both into
+// `subagentSpawns`: parent id, child thread id, role, nickname). The
 // child is its own rollout file under the Codex home, date-partitioned by its
 // *own* start time, so it is resolved by thread id rather than by directory
 // adjacency. A child whose rollout hasn't been found yet is registered under a
@@ -100,6 +101,11 @@ export function registerCodexSubagentSpawn(
         parentSessionId: parent.id,
         origin: "subagent",
         subagentType: spawn.role,
+        // The spawn nickname (on multi-agent v2, the parent-assigned task
+        // name) is the only honest name the child has — its own rollout
+        // forks the parent's turns, so a head-derived name would just
+        // repeat the parent's first message.
+        title: spawn.nickname,
         agentId: spawn.threadId,
         ...parseChildTranscript(transcriptPath),
       });
