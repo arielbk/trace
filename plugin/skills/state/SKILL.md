@@ -10,11 +10,15 @@ two triggers, the same operation either way:
 
 - **The user is wrapping up** — "let's hand this off", "hand off", "new chat",
   "wrap this up", "save state", or any equivalent. The classic handoff.
-- **The prose has drifted** — a Trace trigger (the main-agent `Stop` hook, or
-  `trace state check`) reports the task's docs have moved ahead of `state.md`'s
-  prose, or that `state.md` has no prose yet. The agent is still warm from the
-  doc work, so it writes the prose now rather than leaving it for a future
-  re-entry to guess at.
+- **The prose has drifted** — a Trace trigger (the main-agent `Stop` hook,
+  `trace state check`, or a `stateFreshness:` block in a re-entry manifest)
+  reports the task's docs have moved ahead of `state.md`'s prose, or that
+  `state.md` has no prose yet. When the trigger is the `Stop` hook, the agent
+  is still warm from the doc work and writes the prose from this session's
+  context. When it is a re-entry manifest — drift that survived a session
+  boundary, typically from a platform with no live hook — derive the prose
+  from the docs and the prior session's trail instead: you have just read
+  them to orient, so fold what they establish into the sections below.
 
 The skill captures where things stand into a single living `state.md` in the
 bound task's docs dir, using the exact section structure below. Running it a
@@ -132,7 +136,7 @@ After writing the prose, stamp `state.md` so Trace records that the prose now
 reflects the current docs:
 
 ```sh
-npx @arielbk/trace@0.7.0 state reflect <slug>
+npx @arielbk/trace@0.10.1 state reflect <slug>
 ```
 
 This advances the prose-fingerprint marker. Skipping it leaves the marker stale,

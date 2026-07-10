@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
@@ -117,6 +117,31 @@ describe("plugin scaffold", () => {
     }
 
     assert.equal(existsSync(pluginBinDir), false);
+  });
+
+  it("pins every trace command in the skills tree to the current CLI version", () => {
+    // Guard against a stale pin surviving a release bump in ONE spot (the
+    // `includes(pinnedTraceCommand())` checks above can't see an extra,
+    // older pin sitting elsewhere in the same file).
+    const markdownFiles = readdirSync(skillsRoot, {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+      .map((entry) => join(entry.parentPath, entry.name));
+    assert.equal(markdownFiles.length > 0, true);
+
+    for (const file of markdownFiles) {
+      const source = readFileSync(file, "utf8");
+      for (const pin of source.match(/@arielbk\/trace@[0-9][0-9a-z.-]*/g) ??
+        []) {
+        assert.equal(
+          `npx ${pin}`,
+          pinnedTraceCommand(),
+          `stale trace pin in ${file}: ${pin}`,
+        );
+      }
+    }
   });
 
   it("shares one skills tree between the Claude and Codex plugins via a nested path", () => {
@@ -285,6 +310,14 @@ describe("plugin scaffold", () => {
     // work-on-task bind. This is the contract recall delegates to.
     assert.match(source, /atomic/i);
     assert.match(source, /(do not|don't|no)[\s\S]{0,80}work-on-task/i);
+
+    // It consumes the manifest's stateFreshness block — the portable prose
+    // trigger for hosts without a live Stop hook: orient first, then invoke
+    // the trace-state skill (which stamps via `trace state reflect`).
+    assert.match(source, /stateFreshness/);
+    assert.match(source, /orient first/i);
+    assert.match(source, /trace-state/);
+    assert.match(source, /trace state reflect/);
   });
 
   it("ships a board skill that fires only on open-the-board intent and opens the board itself", () => {
