@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { openTraceStore } from "@trace/core";
 import {
   createServeRequestListener,
@@ -182,10 +182,20 @@ function fakeServerWithTakenPorts(takenPorts: Set<number>): Server {
 test("trace serve falls back to the next port when the default is taken", async () => {
   const server = fakeServerWithTakenPorts(new Set([DEFAULT_SERVE_PORT]));
 
-  const running = await startTraceServe({}, { server });
+  const running = await startTraceServe({}, { server, triggerSync: () => {} });
 
   expect(running.port).toBe(DEFAULT_SERVE_PORT + 1);
   expect(running.url).toBe(`http://127.0.0.1:${DEFAULT_SERVE_PORT + 1}/`);
+  await running.close();
+});
+
+test("trace serve fires a background sync on start", async () => {
+  const server = fakeServerWithTakenPorts(new Set());
+  const triggerSync = vi.fn();
+
+  const running = await startTraceServe({}, { server, triggerSync });
+
+  expect(triggerSync).toHaveBeenCalledOnce();
   await running.close();
 });
 

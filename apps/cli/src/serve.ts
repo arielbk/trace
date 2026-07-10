@@ -13,6 +13,7 @@ import {
   resolveDatabasePath,
   writeTraceApiResponse,
 } from "@trace/core";
+import { triggerBackgroundSync } from "./commands/sync.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -28,6 +29,9 @@ export type StartTraceServeOptions = {
   host?: string;
   /** Injectable server, used by tests (the unit env cannot bind sockets). */
   server?: Server;
+  /** Injectable background-sync trigger; defaults to the real fire-and-forget
+   * spawn. Overridden by tests. */
+  triggerSync?: (env: Record<string, string | undefined>) => void;
 };
 
 /** How many consecutive ports to try when the preferred one is taken. */
@@ -232,6 +236,10 @@ export function startTraceServe(
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const server = options.server ?? createTraceServeServer(env);
+
+  // Fire-and-forget a sync as the board starts, so a freshly opened board
+  // reflects other machines. No-ops instantly when logged out or offline.
+  (options.triggerSync ?? triggerBackgroundSync)(env);
 
   return new Promise((resolve, reject) => {
     const listenOn = (port: number, attemptsLeft: number): void => {

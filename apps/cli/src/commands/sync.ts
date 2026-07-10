@@ -7,9 +7,46 @@ import {
   type SyncDocManifest,
   type SyncTransport,
 } from "@trace/core";
+import { spawn as nodeSpawn } from "node:child_process";
 import { readAuthToken, resolveServerUrl } from "./auth.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 import type { CommandResult, Env } from "./seam.ts";
+
+type BackgroundChild = {
+  on(event: "error", listener: () => void): unknown;
+  unref(): void;
+};
+
+type BackgroundSpawn = (
+  command: string,
+  args: string[],
+  options: { detached: true; stdio: "ignore"; env: NodeJS.ProcessEnv },
+) => BackgroundChild;
+
+/** Start an isolated sync process without adding latency to the calling command. */
+export function triggerBackgroundSync(
+  env: Env,
+  dependencies: {
+    spawn?: BackgroundSpawn;
+    executable?: string;
+  } = {},
+): void {
+  if (!readAuthToken(env)) return;
+  const executable = dependencies.executable ?? process.argv[1];
+  if (!executable) return;
+
+  try {
+    const child = (dependencies.spawn ?? nodeSpawn)(
+      process.execPath,
+      [executable, "sync"],
+      { detached: true, stdio: "ignore", env: { ...process.env, ...env } },
+    );
+    child.on("error", () => {});
+    child.unref();
+  } catch {
+    // Background sync is best-effort and must never affect the foreground path.
+  }
+}
 
 export async function runSyncCommand(
   env: Env,

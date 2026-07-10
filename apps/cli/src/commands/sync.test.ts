@@ -3,7 +3,27 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test, vi } from "vitest";
 import { openTraceStore } from "@trace/core";
-import { runSyncCommand } from "./sync.ts";
+import { runSyncCommand, triggerBackgroundSync } from "./sync.ts";
+
+test("background sync detaches immediately and logged-out triggers spawn nothing", () => {
+  const home = mkdtempSync(join(tmpdir(), "trace-sync-trigger-"));
+  const child = { on: vi.fn(), unref: vi.fn() };
+  const spawn = vi.fn(() => child);
+
+  triggerBackgroundSync({ HOME: home }, { spawn });
+  expect(spawn).not.toHaveBeenCalled();
+
+  mkdirSync(join(home, ".trace"));
+  writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: "secret" }));
+  triggerBackgroundSync({ HOME: home }, { spawn, executable: "/trace/cli.js" });
+
+  expect(spawn).toHaveBeenCalledWith(
+    process.execPath,
+    ["/trace/cli.js", "sync"],
+    expect.objectContaining({ detached: true, stdio: "ignore" }),
+  );
+  expect(child.unref).toHaveBeenCalled();
+});
 
 test("sync exits with a login hint without making a network call", async () => {
   const home = mkdtempSync(join(tmpdir(), "trace-sync-cli-"));
