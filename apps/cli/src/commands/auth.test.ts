@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { readSyncStatus } from "@trace/core";
 import { runAuthCommand } from "./auth.ts";
 
 function tmp(prefix: string): string {
@@ -29,6 +30,11 @@ test("login polls the device flow and persists its bearer token privately", asyn
               user_code: "ABCD-EFGH",
               verification_uri: "https://github.com/login/device",
               interval: 0,
+            });
+          }
+          if (String(url).endsWith("/get-session")) {
+            return Response.json({
+              user: { name: "The Octocat", email: "octocat@github.com" },
             });
           }
           polls += 1;
@@ -69,6 +75,10 @@ test("login polls the device flow and persists its bearer token privately", asyn
           device_code: "device-code",
           grant_type: "urn:ietf:params:oauth:grant-type:device_code",
         },
+      },
+      {
+        url: "http://auth.test/api/auth/get-session",
+        body: undefined,
       },
     ]);
     expect(JSON.parse(readFileSync(join(home, ".trace", "auth.json"), "utf8"))).toEqual({
@@ -132,6 +142,48 @@ test("whoami reads the stored bearer token and logout clears it", async () => {
       stderr: "",
     });
     expect(() => readFileSync(join(authDir, "auth.json"))).toThrow();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("login records the signed-in identity and logout clears it for the board", async () => {
+  const home = tmp("trace-auth-home-");
+  const databasePath = join(home, ".trace", "trace.sqlite");
+
+  try {
+    await runAuthCommand(
+      "login",
+      { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
+      {
+        fetch: async (url) => {
+          if (String(url).endsWith("/device/code")) {
+            return Response.json({
+              device_code: "device-code",
+              user_code: "ABCD-EFGH",
+              verification_uri: "https://github.com/login/device",
+              interval: 0,
+            });
+          }
+          if (String(url).endsWith("/get-session")) {
+            return Response.json({
+              user: { name: "The Octocat", email: "octocat@github.com" },
+            });
+          }
+          return Response.json({ access_token: "bearer-token" });
+        },
+        sleep: async () => undefined,
+      },
+    );
+
+    // Logged in but not yet synced: identity is known, no sync time yet.
+    expect(readSyncStatus(databasePath)).toEqual({
+      state: "never-synced",
+      identity: "The Octocat <octocat@github.com>",
+    });
+
+    await runAuthCommand("logout", { HOME: home });
+    expect(readSyncStatus(databasePath)).toEqual({ state: "logged-out" });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

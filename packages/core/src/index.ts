@@ -13,6 +13,15 @@ export type {
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
+export {
+  deriveSyncStatus,
+  readSyncStatus,
+  readSyncStatusFile,
+  resolveSyncStatusPath,
+  updateSyncStatusFile,
+  writeSyncStatusFile,
+} from "./sync-status.ts";
+export type { SyncStatus, SyncStatusFile } from "./sync-status.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { readProjectFingerprints } from "./project-fingerprint.ts";
 export type { ProjectFingerprints } from "./project-fingerprint.ts";

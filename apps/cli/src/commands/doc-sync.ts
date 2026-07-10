@@ -25,12 +25,18 @@ type DocumentMetadata = {
 
 export class FileSystemDocumentStore implements SyncDocumentStore {
   readonly #metadataPath: string;
+  private readonly databasePath: string;
+  private readonly tasks: () => SyncTaskRow[];
+  private readonly options: { now?: () => string };
 
   constructor(
-    private readonly databasePath: string,
-    private readonly tasks: () => SyncTaskRow[],
-    private readonly options: { now?: () => string } = {},
+    databasePath: string,
+    tasks: () => SyncTaskRow[],
+    options: { now?: () => string } = {},
   ) {
+    this.databasePath = databasePath;
+    this.tasks = tasks;
+    this.options = options;
     this.#metadataPath = join(dirname(resolve(databasePath)), "doc-sync.json");
   }
 

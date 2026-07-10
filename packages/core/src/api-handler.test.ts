@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { handleTraceApiRequest } from "./api-handler.ts";
+import { writeSyncStatusFile } from "./sync-status.ts";
 
 function withSeededDatabase(
   seed: (store: ReturnType<typeof openTraceStore>) => void,
@@ -641,6 +642,72 @@ test("POST /api/tasks/:ref/docs/checkbox rejects non-POST methods, unknown tasks
       JSON.stringify({ path: docPath }),
     );
     expect(missingFields!.status).toBe(400);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports logged-out when no status file exists", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/json");
+    expect(JSON.parse(response!.body)).toEqual({ state: "logged-out" });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the identity and last-sync time when logged in", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat <octocat@github.com>",
+    lastSyncedAt: "2026-07-10T16:00:00.000Z",
+  });
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "synced",
+      identity: "octocat <octocat@github.com>",
+      lastSyncedAt: "2026-07-10T16:00:00.000Z",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the last-sync failure when one is recorded", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat",
+    lastError: "server returned 500",
+  });
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toMatchObject({
+      state: "failed",
+      identity: "octocat",
+      lastError: "server returned 500",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("non-GET /api/sync/status is rejected with 405", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync/status");
+    expect(response!.status).toBe(405);
   } finally {
     cleanup();
   }

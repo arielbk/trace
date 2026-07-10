@@ -8,6 +8,11 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  resolveDatabasePath,
+  updateSyncStatusFile,
+  writeSyncStatusFile,
+} from "@trace/core";
 import type { CommandResult, Env } from "./seam.ts";
 
 const CLIENT_ID = "trace-cli";
@@ -85,6 +90,7 @@ async function login(
 
     if (tokenResponse.ok && token.access_token) {
       writeToken(env, { accessToken: token.access_token });
+      await recordSignedIn(env, fetch, token.access_token);
       return success(`${onOutput ? "" : prompt}Signed in.\n`);
     }
 
@@ -99,6 +105,12 @@ async function login(
 
 function logout(env: Env): CommandResult {
   rmSync(tokenPath(env), { force: true });
+  // Clear the board's sync header so it falls back to "not logged in".
+  try {
+    writeSyncStatusFile(resolveDatabasePath(env), { loggedIn: false });
+  } catch {
+    // Best-effort: a missing database path must not fail logout.
+  }
   return success("Signed out.\n");
 }
 
@@ -117,10 +129,52 @@ async function whoami(
     return failure("Not logged in. Run trace login.");
   }
 
-  const identity = session.user.name ?? session.user.email ?? session.user.id;
+  const identity = identityFromSession(session);
   if (!identity) return failure("Auth server returned no user identity.");
-  const email = session.user.email ? ` <${session.user.email}>` : "";
-  return success(`${identity}${email}\n`);
+  return success(`${identity}\n`);
+}
+
+/** Resolve a display identity (`name <email>` / name / email / id) from a session. */
+function identityFromSession(session: SessionResponse): string | null {
+  const user = session.user;
+  if (!user) return null;
+  const label = user.name ?? user.email ?? user.id;
+  if (!label) return null;
+  const email = user.email ? ` <${user.email}>` : "";
+  return `${label}${email}`;
+}
+
+/**
+ * Record the signed-in state (and, best-effort, the GitHub identity) for the
+ * board's sync header. Login has already succeeded by this point, so any
+ * failure here — an unreachable session endpoint, an unresolvable database
+ * path — must be swallowed rather than surfaced to the user.
+ */
+async function recordSignedIn(
+  env: Env,
+  fetch: AuthDependencies["fetch"],
+  accessToken: string,
+): Promise<void> {
+  let identity: string | null = null;
+  try {
+    const response = await fetch(`${resolveServerUrl(env)}/api/auth/get-session`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (response.ok) {
+      identity = identityFromSession(await readJson<SessionResponse>(response));
+    }
+  } catch {
+    // Identity is a nice-to-have; fall through to recording just the login.
+  }
+  try {
+    updateSyncStatusFile(resolveDatabasePath(env), {
+      loggedIn: true,
+      ...(identity ? { identity } : {}),
+      lastError: undefined,
+    });
+  } catch {
+    // No usable database path — the board simply won't show a header yet.
+  }
 }
 
 export function resolveServerUrl(env: Env): string {

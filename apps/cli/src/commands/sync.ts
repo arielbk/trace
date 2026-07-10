@@ -2,6 +2,7 @@ import {
   openTraceStore,
   resolveDatabasePath,
   synchronize,
+  updateSyncStatusFile,
   type SyncPayload,
   type SyncBlob,
   type SyncDocManifest,
@@ -56,7 +57,8 @@ export async function runSyncCommand(
   if (!token) {
     return { exitCode: 0, stdout: "Not logged in. Run trace login.\n", stderr: "" };
   }
-  const store = openTraceStore(resolveDatabasePath(env));
+  const databasePath = resolveDatabasePath(env);
+  const store = openTraceStore(databasePath);
   try {
     const result = await synchronize(
       store,
@@ -65,8 +67,9 @@ export async function runSyncCommand(
         token.accessToken,
         dependencies.fetch ?? globalThis.fetch,
       ),
-      new FileSystemDocumentStore(resolveDatabasePath(env), () => store.syncSnapshot().tasks),
+      new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks),
     );
+    recordSyncStatus(databasePath, { loggedIn: true, lastSyncedAt: new Date().toISOString(), lastError: undefined });
     const documentChanges =
       (result.pushedManifests ?? 0) +
       (result.pulledManifests ?? 0) +
@@ -83,22 +86,47 @@ export async function runSyncCommand(
       stderr: "",
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordSyncStatus(databasePath, { loggedIn: true, lastError: message });
     return {
       exitCode: 1,
       stdout: "",
-      stderr: `Sync failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      stderr: `Sync failed: ${message}\n`,
     };
   } finally {
     store.close();
   }
 }
 
+/**
+ * Persist the outcome of a sync for the board's status header. Best-effort: a
+ * write failure here must never change the command's own exit code or output.
+ */
+function recordSyncStatus(
+  databasePath: string,
+  patch: Parameters<typeof updateSyncStatusFile>[1],
+): void {
+  try {
+    updateSyncStatusFile(databasePath, patch);
+  } catch {
+    // The header just won't reflect this sync; the sync itself still stands.
+  }
+}
+
 class HttpSyncTransport implements SyncTransport {
+  private readonly serverUrl: string;
+  private readonly token: string;
+  private readonly fetch: typeof globalThis.fetch;
+
   constructor(
-    private readonly serverUrl: string,
-    private readonly token: string,
-    private readonly fetch: typeof globalThis.fetch,
-  ) {}
+    serverUrl: string,
+    token: string,
+    fetch: typeof globalThis.fetch,
+  ) {
+    this.serverUrl = serverUrl;
+    this.token = token;
+    this.fetch = fetch;
+  }
 
   async push(payload: SyncPayload): Promise<{ accepted: number }> {
     return this.request<{ accepted: number }>("/api/sync/push", {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { TaskSummary, TaskTimeline } from "@trace/core/browser";
+import type { SyncStatus, TaskSummary, TaskTimeline } from "@trace/core/browser";
 
 export class HttpError extends Error {
   constructor(
@@ -38,6 +38,12 @@ export async function fetchDocContents(ref: string, docPath: string): Promise<Do
     throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
   }
   return { contentType, body };
+}
+
+export async function fetchSyncStatus(): Promise<SyncStatus> {
+  const res = await fetch("/api/sync/status");
+  if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
+  return res.json() as Promise<SyncStatus>;
 }
 
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
@@ -91,6 +97,14 @@ const LIVE_REFRESH = {
 
 export function useTasks() {
   return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...LIVE_REFRESH });
+}
+
+export function useSyncStatus() {
+  return useQuery({
+    queryKey: ["sync-status"],
+    queryFn: fetchSyncStatus,
+    ...LIVE_REFRESH,
+  });
 }
 
 export function useTaskTimeline(id: string) {

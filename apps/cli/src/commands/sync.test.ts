@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test, vi } from "vitest";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, readSyncStatus } from "@trace/core";
 import { runSyncCommand, triggerBackgroundSync } from "./sync.ts";
 
 test("background sync detaches immediately and logged-out triggers spawn nothing", () => {
@@ -65,4 +65,36 @@ test("sync sends local rows with the bearer token and prints a summary", async (
     stderr: "",
   });
   expect(fetch).toHaveBeenCalledTimes(5);
+
+  // The board can read the last-sync outcome from beside the database.
+  const status = readSyncStatus(databasePath);
+  expect(status.state).toBe("synced");
+  if (status.state === "synced") {
+    expect(Number.isNaN(Date.parse(status.lastSyncedAt))).toBe(false);
+  }
+});
+
+test("a failed sync records the error for the board without throwing", async () => {
+  const home = mkdtempSync(join(tmpdir(), "trace-sync-cli-"));
+  const databasePath = join(home, "trace.db");
+  mkdirSync(join(home, ".trace"));
+  writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: "secret" }));
+  openTraceStore(databasePath).close();
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({}, { status: 500 }),
+  );
+
+  const result = await runSyncCommand(
+    { HOME: home, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://sync.test" },
+    { fetch },
+  );
+
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("Sync failed");
+
+  const status = readSyncStatus(databasePath);
+  expect(status.state).toBe("failed");
+  if (status.state === "failed") {
+    expect(status.lastError).toContain("server returned 500");
+  }
 });

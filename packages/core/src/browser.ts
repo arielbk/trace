@@ -30,6 +30,7 @@ export type {
   TaskTimelineItem,
   TokenTotals,
 } from "./types.ts";
+export type { SyncStatus } from "./sync-status.ts";
 export { resumeCommand } from "./resume-command.ts";
 export {
   composerIdFromLocator,

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { extname, resolve, sep } from "node:path";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+import { readSyncStatus } from "./sync-status.ts";
 
 export type TraceApiResponse = {
   status: number;
@@ -41,6 +42,11 @@ export function handleTraceApiRequest(
   if (path === "/api/config") {
     if (method !== "GET") return methodNotAllowed();
     return json({ home: homedir() });
+  }
+
+  if (path === "/api/sync/status") {
+    if (method !== "GET") return methodNotAllowed();
+    return json(readSyncStatus(databasePath));
   }
 
   if (path !== "/api/tasks" && !path.startsWith("/api/tasks/")) {

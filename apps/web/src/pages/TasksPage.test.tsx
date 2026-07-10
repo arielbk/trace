@@ -120,13 +120,17 @@ describe("TasksPage", () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
     ];
+    // A fresh Response per call — the sync-status query and the tasks query each
+    // consume their own body (a shared Response can only be read once).
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify(tasks), { status: 200 }),
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve(
+          url === "/api/tasks"
+            ? new Response(JSON.stringify(tasks), { status: 200 })
+            : new Response(JSON.stringify({ state: "logged-out" }), { status: 200 }),
         ),
+      ),
     );
 
     const { container } = render(<TasksPage />, {
@@ -141,11 +145,21 @@ describe("TasksPage", () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
     ];
-    let resolveFetch: (value: Response) => void = () => {};
-    const pending = new Promise<Response>((resolve) => {
-      resolveFetch = resolve;
+    let resolveTasks: (value: Response) => void = () => {};
+    const tasksPending = new Promise<Response>((resolve) => {
+      resolveTasks = resolve;
     });
-    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending));
+    // Keep the tasks query slow so the skeleton shows; let sync-status resolve.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) =>
+        url === "/api/tasks"
+          ? tasksPending
+          : Promise.resolve(
+              new Response(JSON.stringify({ state: "logged-out" }), { status: 200 }),
+            ),
+      ),
+    );
 
     const { container } = render(<TasksPage />, {
       wrapper: makeQueryWrapper(),
@@ -159,7 +173,7 @@ describe("TasksPage", () => {
     });
 
     // Data lands → rows reveal and the skeleton layer eventually unmounts.
-    resolveFetch(new Response(JSON.stringify(tasks), { status: 200 }));
+    resolveTasks(new Response(JSON.stringify(tasks), { status: 200 }));
     await screen.findByText("CLI work");
     await waitFor(() => {
       expect(container.querySelectorAll(".task-row-skeleton").length).toBe(0);
@@ -173,11 +187,13 @@ describe("TasksPage", () => {
     ];
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify(tasks), { status: 200 }),
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve(
+          url === "/api/tasks"
+            ? new Response(JSON.stringify(tasks), { status: 200 })
+            : new Response(JSON.stringify({ state: "logged-out" }), { status: 200 }),
         ),
+      ),
     );
     render(<TasksPage />, { wrapper: makeQueryWrapper() });
     await screen.findByText("CLI work");
