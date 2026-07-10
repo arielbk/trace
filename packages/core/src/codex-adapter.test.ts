@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   parseCodexTranscript,
+  parseCodexTranscriptFile,
   resolveCodexTranscriptPathById,
   scanCodexSessions,
 } from "./codex-adapter.ts";
@@ -285,6 +286,59 @@ test("Codex Desktop transcript: model falls back to thread_settings_applied", ()
   expect(parseCodexTranscript({ transcript, transcriptPath }).model).toBe(
     "gpt-5.6-sol",
   );
+});
+
+test("Codex Desktop transcript: title comes from the codex home session index", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-codex-title-"));
+  try {
+    const dayDir = join(dir, "sessions", "2026", "07", "10");
+    mkdirSync(dayDir, { recursive: true });
+    const threadId = "019f4b1c-b288-70b1-b8be-b6d822ca1eb3";
+    const transcriptPath = join(
+      dayDir,
+      `rollout-2026-07-10T10-19-59-${threadId}.jsonl`,
+    );
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: "session_meta", payload: { id: threadId } }),
+    );
+    // Renames append; the last row for the thread wins.
+    writeFileSync(
+      join(dir, "session_index.jsonl"),
+      [
+        JSON.stringify({
+          id: threadId,
+          thread_name: "First name",
+          updated_at: "2026-07-10T08:20:20Z",
+        }),
+        JSON.stringify({
+          id: "some-other-thread",
+          thread_name: "Unrelated",
+          updated_at: "2026-07-10T08:21:00Z",
+        }),
+        JSON.stringify({
+          id: threadId,
+          thread_name: "Resume Codex plugin audit",
+          updated_at: "2026-07-10T09:00:00Z",
+        }),
+      ].join("\n"),
+    );
+
+    expect(parseCodexTranscriptFile(transcriptPath).title).toBe(
+      "Resume Codex plugin audit",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex transcript outside a sessions tree has a null title", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = JSON.stringify({
+    type: "session_meta",
+    payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+  });
+  expect(parseCodexTranscript({ transcript, transcriptPath }).title).toBe(null);
 });
 
 test("Codex scan skips unparseable transcript files", () => {

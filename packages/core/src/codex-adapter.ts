@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   collectTranscriptHead,
   collectTranscriptTail,
@@ -285,12 +285,61 @@ export function parseCodexTranscript(
     transcriptPath: input.transcriptPath,
     tool: "codex",
     model: model ?? null,
-    // Codex transcripts carry no conversation name; titles are out of scope.
-    title: null,
+    // The rollout itself carries no conversation name; Codex keeps thread
+    // names next door in <codexHome>/session_index.jsonl.
+    title: codexThreadTitleFromIndex(input.transcriptPath, id),
     tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
     subagentSpawns,
     subagentSource,
   };
+}
+
+/**
+ * The Codex home holding a rollout file: rollouts are filed under
+ * `<codexHome>/sessions/YYYY/MM/DD/`, so walk up to the `sessions` segment.
+ * Null for paths outside any sessions tree (fixtures, synthetic locators).
+ */
+function codexHomeFromTranscriptPath(transcriptPath: string): string | null {
+  let dir = dirname(resolve(transcriptPath));
+  while (true) {
+    if (basename(dir) === "sessions") return dirname(dir);
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * Thread name for a rollout, from the sibling `session_index.jsonl` — rows of
+ * `{id, thread_name, updated_at}`, appended on rename, so the last matching
+ * row wins. Best-effort: no index, no matching row, or a blank name is null.
+ */
+function codexThreadTitleFromIndex(
+  transcriptPath: string,
+  threadId: string,
+): string | null {
+  const codexHome = codexHomeFromTranscriptPath(transcriptPath);
+  if (!codexHome) return null;
+  const indexPath = join(codexHome, "session_index.jsonl");
+  let content: string;
+  try {
+    content = readFileSync(indexPath, "utf8");
+  } catch {
+    return null;
+  }
+  let title: string | null = null;
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.includes(threadId)) continue;
+    try {
+      const entry = JSON.parse(line) as { id?: string; thread_name?: string };
+      if (entry.id === threadId && entry.thread_name?.trim()) {
+        title = entry.thread_name.trim();
+      }
+    } catch {
+      // Live index files can end in a half-written line; skip it.
+    }
+  }
+  return title;
 }
 
 function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
