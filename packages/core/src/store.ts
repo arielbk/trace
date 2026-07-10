@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { resolveCodexTranscriptPathById } from "./codex-adapter.ts";
 import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
 import {
   discoverCursorSubagentSessions,
@@ -935,6 +937,24 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#refreshSessionWithParse(session).session;
   }
 
+  // The path a refresh should parse. A codex session bound before its rollout
+  // was known sits under a synthetic `codex:<id>` locator; resolve it by
+  // thread id so the first read heals it (the refresh adopts the adapter's
+  // reported path), instead of staying blank until a manual scan.
+  #parseableLocator(session: Session): string {
+    if (
+      session.tool !== "codex" ||
+      !isSyntheticLocator(session.transcriptPath, "codex")
+    ) {
+      return session.transcriptPath;
+    }
+    const codexHome = this.#codexHome ?? join(homedir(), ".codex");
+    return (
+      resolveCodexTranscriptPathById(codexHome, session.id) ??
+      session.transcriptPath
+    );
+  }
+
   // Refresh plus the raw parse it was derived from, so read-time subagent
   // discovery can consume tool-specific fields (Codex spawn records) without
   // parsing the transcript a second time. `parsed` is null when the transcript
@@ -946,7 +966,7 @@ class NodeSqliteTaskStore implements TaskStore {
     let parsed: ParsedTranscript;
     try {
       const adapter = getTranscriptAdapter(session.tool);
-      parsed = adapter.parseFile(session.transcriptPath, {
+      parsed = adapter.parseFile(this.#parseableLocator(session), {
         expectedId: session.id,
       });
     } catch {

@@ -504,6 +504,64 @@ test("assignSession re-bind carries descendants on the previous task to the new 
   }
 });
 
+test("read refresh heals a codex session bound under a synthetic locator", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const codexHome = join(dir, "codex-home");
+
+  try {
+    const threadId = "019f4b1c-0000-7000-8000-000000000001";
+    const dayDir = join(codexHome, "sessions", "2026", "07", "10");
+    mkdirSync(dayDir, { recursive: true });
+    const rolloutPath = join(
+      dayDir,
+      `rollout-2026-07-10T10-19-59-${threadId}.jsonl`,
+    );
+    writeFileSync(
+      rolloutPath,
+      [
+        JSON.stringify({ type: "session_meta", payload: { id: threadId } }),
+        JSON.stringify({
+          type: "turn_context",
+          payload: { turn_id: "turn-1", model: "gpt-5.6-sol" },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 600,
+                output_tokens: 50,
+                total_tokens: 1050,
+              },
+            },
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const store = openTraceStore(databasePath, { codexHome });
+    // Bound before the rollout path was known — e.g. by the session-start hook.
+    store.registerSession({
+      id: threadId,
+      transcriptPath: `codex:${threadId}`,
+      tool: "codex",
+    });
+
+    const session = store.getSession(threadId)!;
+    expect(session.transcriptPath).toBe(rolloutPath);
+    expect(session.model).toBe("gpt-5.6-sol");
+    expect(session.tokenTotals.inputTokens).toBe(400);
+    expect(session.tokenTotals.cacheReadInputTokens).toBe(600);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("assignSession with no descendants is a no-op for the rest of the tree", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
