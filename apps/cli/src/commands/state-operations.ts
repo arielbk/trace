@@ -27,6 +27,64 @@ import {
 
 export type CommandContext = { env: Env; cwd: string; stdin: string };
 
+// The neutral freshness verdict shared by `trace state check` and the re-entry
+// manifest: whether state.md exists, the current docs fingerprint, and — when
+// the task has prose-checkable state — whether a prose pass is due and why.
+// Callers own the gating (check gates on an explicit session binding; re-enter
+// computes it for the session it just bound).
+export type StateFreshness = {
+  stateExists: boolean;
+  statePath: string;
+  fingerprint: string;
+  needsProsePass?: boolean;
+  mode?: "seed" | "refresh";
+  changedDocs?: string[];
+};
+
+// Compute the freshness verdict for a task without touching the filesystem
+// beyond reads. Prose-pass fields are populated only when state.md exists and
+// the task has at least one non-state doc — mirroring `check`'s guards.
+export function computeStateFreshness(
+  store: Store,
+  databasePath: string,
+  task: { id: string; slug: string },
+): StateFreshness {
+  const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+  const statePath = join(docsDir, "state.md");
+
+  const nonStateDocs = store
+    .listDocsForTask(task.id)
+    .filter((doc) => basename(doc.path) !== "state.md");
+
+  const fingerprintInputs: DocFingerprintInput[] = nonStateDocs.map((doc) => ({
+    path: relative(docsDir, doc.path),
+    content: existsSync(doc.path) ? readFileSync(doc.path, "utf8") : "",
+  }));
+  const fingerprint = computeDocsFingerprint(fingerprintInputs);
+
+  const verdict: StateFreshness = {
+    stateExists: existsSync(statePath),
+    statePath,
+    fingerprint,
+  };
+
+  if (verdict.stateExists && nonStateDocs.length > 0) {
+    const content = readFileSync(statePath, "utf8");
+    const seeding = !hasProseBody(content);
+    const marker = readProseFingerprint(content);
+    // Drift: a missing/garbled marker, or one that no longer matches the
+    // current docs. A freshly-seeded scaffold (no prose yet) always drifts.
+    const drifted = seeding || marker !== fingerprint;
+    verdict.needsProsePass = drifted;
+    if (drifted) {
+      verdict.mode = seeding ? "seed" : "refresh";
+      verdict.changedDocs = fingerprintInputs.map((doc) => doc.path).sort();
+    }
+  }
+
+  return verdict;
+}
+
 // `trace state check <task>` — reconcile the docs-manifest footer of the task's
 // state.md and report a neutral JSON verdict. The footer is rendered (creating
 // state.md from a scaffold) only when the task has at least one non-state doc;
@@ -49,61 +107,56 @@ export function stateCheckOperation(
     const task = store.getTaskByRef(ref);
     if (!task) return failure(`Task not found: ${ref}`, 1);
 
-    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
-    const statePath = join(docsDir, "state.md");
-
-    const nonStateDocs = store
+    const hasNonStateDoc = store
       .listDocsForTask(task.id)
-      .filter((doc) => basename(doc.path) !== "state.md");
+      .some((doc) => basename(doc.path) !== "state.md");
 
     // Only materialize state.md once a non-state doc exists — an empty task
     // should not sprout a bare manifest.
-    if (nonStateDocs.length > 0) {
+    if (hasNonStateDoc) {
       renderTaskDocManifest(store, databasePath, task);
     }
 
-    const fingerprintInputs: DocFingerprintInput[] = nonStateDocs.map((doc) => ({
-      path: relative(docsDir, doc.path),
-      content: existsSync(doc.path) ? readFileSync(doc.path, "utf8") : "",
-    }));
-    const fingerprint = computeDocsFingerprint(fingerprintInputs);
+    const freshness = computeStateFreshness(store, databasePath, task);
 
-    const verdict: {
-      stateExists: boolean;
-      statePath: string;
-      fingerprint: string;
-      needsProsePass?: boolean;
-      mode?: "seed" | "refresh";
-      reason?: string;
-      changedDocs?: string[];
-    } = { stateExists: existsSync(statePath), statePath, fingerprint };
+    const verdict: StateFreshness & { reason?: string } = {
+      stateExists: freshness.stateExists,
+      statePath: freshness.statePath,
+      fingerprint: freshness.fingerprint,
+    };
 
     // Prose-pass directive is gated on an explicit binding of the current
-    // session to this task — never the most-recent-task fallback.
+    // session to this task — never the most-recent-task fallback. An unbound
+    // session abstains: the prose fields are omitted entirely.
     if (
-      verdict.stateExists &&
-      nonStateDocs.length > 0 &&
+      freshness.needsProsePass !== undefined &&
       isSessionBoundTo(store, ctx.env, task.id)
     ) {
-      const content = readFileSync(statePath, "utf8");
-      const seeding = !hasProseBody(content);
-      const marker = readProseFingerprint(content);
-      // Drift: a missing/garbled marker, or one that no longer matches the
-      // current docs. A freshly-seeded scaffold (no prose yet) always drifts.
-      const drifted = seeding || marker !== fingerprint;
-      verdict.needsProsePass = drifted;
-      if (drifted) {
-        verdict.mode = seeding ? "seed" : "refresh";
-        verdict.changedDocs = fingerprintInputs.map((doc) => doc.path).sort();
-        verdict.reason =
-          verdict.mode === "seed"
-            ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`trace state reflect ${task.slug}\` when done).`
-            : `state.md prose has drifted from the current docs — invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${task.slug}\` when done).`;
+      verdict.needsProsePass = freshness.needsProsePass;
+      if (freshness.needsProsePass) {
+        verdict.mode = freshness.mode;
+        verdict.changedDocs = freshness.changedDocs;
+        verdict.reason = proseDriftReason(
+          freshness.mode as "seed" | "refresh",
+          task.slug,
+        );
       }
     }
 
     return success(`${JSON.stringify(verdict)}\n`);
   });
+}
+
+// The prose-pass directive shared by the Stop hook (via `check`) and the
+// re-entry manifest: name the skill that owns the template, and the reflect
+// command that advances the marker.
+export function proseDriftReason(
+  mode: "seed" | "refresh",
+  slug: string,
+): string {
+  return mode === "seed"
+    ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`trace state reflect ${slug}\` when done).`
+    : `state.md prose has drifted from the current docs — invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${slug}\` when done).`;
 }
 
 // Global form of the prose marker, used to strip any prior marker before

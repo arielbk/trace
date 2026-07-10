@@ -15,6 +15,7 @@ import {
   skillReEnterOperation,
   skillWorkOnTaskOperation,
 } from "./skill-operations.ts";
+import { stateReflectOperation } from "./state-operations.ts";
 import type { Env } from "./seam.ts";
 
 // The CLI's identity composition root (identity.ts) wires the real
@@ -205,6 +206,104 @@ test("skill re-enter returns a manifest and binds the current session", () => {
     } finally {
       store.close();
     }
+  });
+});
+
+test("skill re-enter materializes the state.md footer and reports seed drift for a docs-only task", () => {
+  withTempContext((ctx) => {
+    const { slug, statePath } = seedTaskWithDoc(
+      ctx,
+      "Docs only",
+      "spec.md",
+      "Spec body.\n",
+    );
+    expect(existsSync(statePath)).toBe(false);
+
+    const reentered = skillReEnterOperation([slug], {
+      ...ctx,
+      env: { ...ctx.env, CODEX_THREAD_ID: "codex-thread-2" },
+    });
+
+    expect(reentered.exitCode).toBe(0);
+    // The footer materialized at the re-enter seam, so the manifest already
+    // lists the state file the entering agent should read first.
+    expect(existsSync(statePath)).toBe(true);
+    expect(reentered.stdout).toContain(`state:\n  path: ${statePath}`);
+    // No prose yet → the manifest carries the portable prose-pass directive.
+    expect(reentered.stdout).toContain("stateFreshness:");
+    expect(reentered.stdout).toContain("needsProsePass: true");
+    expect(reentered.stdout).toContain("mode: seed");
+    expect(reentered.stdout).toContain("`trace-state` skill");
+    expect(reentered.stdout).toContain(`trace state reflect ${slug}`);
+  });
+});
+
+test("skill re-enter reports refresh drift when prose no longer reflects the docs", () => {
+  withTempContext((ctx) => {
+    const { slug, statePath } = seedTaskWithDoc(
+      ctx,
+      "Drifted prose",
+      "spec.md",
+      "Spec body.\n",
+    );
+    // Prose exists but carries no fingerprint marker — drift by definition.
+    writeFileSync(statePath, "# Drifted prose\n\nWhere things stand.\n");
+
+    const reentered = skillReEnterOperation([slug], {
+      ...ctx,
+      env: { ...ctx.env, CODEX_THREAD_ID: "codex-thread-3" },
+    });
+
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).toContain("stateFreshness:");
+    expect(reentered.stdout).toContain("mode: refresh");
+  });
+});
+
+test("skill re-enter stays silent when the prose already reflects the docs", () => {
+  withTempContext((ctx) => {
+    const { slug, statePath } = seedTaskWithDoc(
+      ctx,
+      "Fresh prose",
+      "spec.md",
+      "Spec body.\n",
+    );
+    writeFileSync(statePath, "# Fresh prose\n\nWhere things stand.\n");
+    // Stamp the marker the way the trace-state skill does after a prose write.
+    const reflected = stateReflectOperation([slug], ctx);
+    expect(reflected.exitCode).toBe(0);
+
+    const reentered = skillReEnterOperation([slug], {
+      ...ctx,
+      env: { ...ctx.env, CODEX_THREAD_ID: "codex-thread-4" },
+    });
+
+    expect(reentered.exitCode).toBe(0);
+    expect(reentered.stdout).not.toContain("stateFreshness:");
+  });
+});
+
+test("skill re-enter omits the freshness directive when no session binds", () => {
+  withTempContext((ctx) => {
+    const { slug, statePath } = seedTaskWithDoc(
+      ctx,
+      "Bare terminal",
+      "spec.md",
+      "Spec body.\n",
+    );
+
+    // A bare terminal: no session env vars, no live Cursor session — nothing
+    // binds, so nobody is directed to invoke a skill.
+    const reentered = skillReEnterOperation([slug], {
+      ...ctx,
+      env: withoutSessionEnv(ctx.env),
+    });
+
+    expect(reentered.exitCode).toBe(0);
+    // The footer still materializes (the manifest read is a Trace touchpoint)…
+    expect(existsSync(statePath)).toBe(true);
+    // …but the prose-pass directive is withheld without a bound session.
+    expect(reentered.stdout).not.toContain("stateFreshness:");
   });
 });
 

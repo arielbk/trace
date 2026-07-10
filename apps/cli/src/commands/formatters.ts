@@ -170,3 +170,19 @@ export function formatReEntryManifest(manifest: ReEntryManifest): string {
 
   return [...lines, ""].join("\n");
 }
+
+// Appended to the re-entry manifest when the task's state.md prose has drifted
+// from its docs. Only the drifted case is printed — a fresh state stays silent
+// so ordinary re-entries carry no extra directive.
+export function formatStateFreshness(freshness: {
+  mode: "seed" | "refresh";
+  reason: string;
+}): string {
+  return [
+    "stateFreshness:",
+    "  needsProsePass: true",
+    `  mode: ${freshness.mode}`,
+    `  reason: ${freshness.reason}`,
+    "",
+  ].join("\n");
+}
