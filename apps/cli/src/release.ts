@@ -11,7 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageName = "@arielbk/trace";
-const pinnedCommandPattern =
+export const pinnedCommandPattern =
   /npx @arielbk\/trace@([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)/g;
 
 const sourcePath = fileURLToPath(import.meta.url);
@@ -58,12 +58,26 @@ function walkFiles(dir: string, visit: (absolutePath: string) => void): void {
  * "every template has a pin" invariant holds by construction.
  */
 export function defaultTemplatePaths(repoRoot: string): string[] {
+  return discoverTemplatePaths(repoRoot, pinnedCommandPattern);
+}
+
+/**
+ * Discover template files matching an arbitrary command pattern across the
+ * same trees the release stamp covers (`plugin/skills/**` + `hooks/`). The
+ * dev-stamp flow uses this with its stamped-command pattern, which the npx
+ * scan above can no longer see.
+ */
+export function discoverTemplatePaths(
+  repoRoot: string,
+  pattern: RegExp,
+): string[] {
   const found: string[] = [];
   const collect = (abs: string) => {
-    if (pinnedCommandPattern.test(readFileSync(abs, "utf8"))) {
+    pattern.lastIndex = 0;
+    if (pattern.test(readFileSync(abs, "utf8"))) {
       found.push(abs);
     }
-    pinnedCommandPattern.lastIndex = 0;
+    pattern.lastIndex = 0;
   };
 
   walkFiles(resolve(repoRoot, "plugin/skills"), collect);
@@ -274,7 +288,7 @@ export function runRelease(options: {
   });
 }
 
-function readCurrentVersion(repoRoot: string): string {
+export function readCurrentVersion(repoRoot: string): string {
   const packageJson = JSON.parse(
     readFileSync(resolve(repoRoot, "apps/cli/package.json"), "utf8"),
   ) as { version?: string };

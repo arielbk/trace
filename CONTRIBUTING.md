@@ -77,6 +77,60 @@ drives real `claude -p` calls against a sandbox config dir. See
   (`plugin/skills/trace/SKILL.md`) that points at `resources/claude.md` or
   `resources/codex.md` for the host-specific binding flow.
 
+## Testing skills and the CLI locally
+
+Trace ships through two coupled channels — skills by git (the marketplace
+install tracks the repo's default branch) and the CLI by npm (skills pin
+`npx @arielbk/trace@<version>`) — so out of the box, a skill change is only
+live once it lands on main and a CLI change once it's published. The local dev
+flow below removes both requirements: no merge, no publish.
+
+### One-time setup: serve the plugin from your working tree
+
+Install the plugin from a local-path marketplace instead of GitHub. Inside a
+Claude Code session:
+
+```
+/plugin marketplace remove trace        (if currently installed from GitHub)
+/plugin marketplace add /path/to/your/trace-v2/checkout
+/plugin install trace@trace
+/reload-plugins
+```
+
+Skill markdown and `hooks/hooks.json` are now served live from your checkout —
+a skill-only change is testable with just `/reload-plugins`. Marketplaces and
+plugin installs are **per Claude instance** (each `CLAUDE_CONFIG_DIR`, e.g.
+`~/.claude` vs `~/.claude-infinum`, has its own), so repeat this in each
+instance that should track your tree. Optionally keep one instance on the
+GitHub marketplace to dogfood the exact install real users get.
+
+Unstamped (the default state), the tree's pins still say
+`npx @arielbk/trace@<version>`, so daily use keeps running the **published**
+CLI even though skills are served locally.
+
+### Per-iteration loop: point the pins at your local build
+
+```sh
+corepack pnpm --filter @arielbk/trace build   # if CLI code changed
+corepack pnpm dev:stamp                       # pins -> node <checkout>/apps/cli/dist/trace.js
+# /reload-plugins in the session, or start a fresh session when
+# testing the SessionStart hook (it only fires at startup)
+# ...exercise the real flow...
+corepack pnpm dev:unstamp                     # restore published pins
+```
+
+Notes:
+
+- Both commands are idempotent and print the files they touched.
+- `dev:unstamp` restores the version from `apps/cli/package.json`, so a
+  round-trip leaves the tree byte-identical.
+- Point `TRACE_DB` at a throwaway path when a test shouldn't touch your real
+  store (`~/.trace/trace.sqlite`).
+- Testing the board (`trace serve`) also needs the web assets:
+  `corepack pnpm --filter @trace/web build` before the CLI build.
+- Don't commit stamped hunks. If one slips through, the release script's pin
+  verification fails the release before anything ships.
+
 ## Releasing
 
 A release publishes one package, `@arielbk/trace`, to npm, and that's the only

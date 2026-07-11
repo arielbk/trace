@@ -13,6 +13,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "release:trace": "node apps/cli/src/release.ts",
+    "dev:stamp": "node apps/cli/src/dev-stamp.ts stamp",
+    "dev:unstamp": "node apps/cli/src/dev-stamp.ts unstamp",
     "eval": "node evals/run.ts",
     "test:evals": "vitest run evals/src"
   },
