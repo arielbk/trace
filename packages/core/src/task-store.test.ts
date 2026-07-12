@@ -1224,6 +1224,33 @@ test("task doc associations can be added, read, and removed through the store in
   }
 });
 
+test("listDocsForTask folds a relative registered path into its native doc", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+
+    const docsDir = join(dir, "tasks", task.slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(join(docsDir, "spec.md"), "# Spec\n");
+
+    // Legacy rows registered the bare filename; the filesystem scan reports
+    // the absolute path. Both spellings must collapse to one entry.
+    store.addTaskDoc(task.id, "spec.md", { description: "The spec" });
+
+    const docs = store.listDocsForTask(task.id);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.path).toBe(join(docsDir, "spec.md"));
+    expect(docs[0]?.description).toBe("The spec");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("addTaskDoc persists and reads back an optional description", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
