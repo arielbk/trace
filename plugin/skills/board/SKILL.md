@@ -26,7 +26,7 @@ Otherwise start the server yourself as a **background** process, so it keeps
 listening across turns:
 
 ```sh
-npx @arielbk/trace@0.10.1 serve
+npx @arielbk/trace@0.11.0 serve
 ```
 
 It reads the live store from `~/.trace/trace.sqlite`, prints
