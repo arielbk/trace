@@ -94,6 +94,10 @@ const LAST_ACTIVITY_EXPR = `MAX(
   COALESCE(d.last_doc_at, t.created_at)
 )`;
 
+// Pinned tasks lead (pinned_at IS NULL sorts pinned rows' 0 before 1), then
+// each partition orders by recency. rowid breaks same-millisecond ties.
+const AGENT_ORDER_BY = `ORDER BY t.pinned_at IS NULL, ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC`;
+
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
   readonly #databasePath: string;
@@ -188,7 +192,7 @@ class NodeSqliteTaskStore implements TaskStore {
           SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.archived_at, t.description, t.pinned_at
           FROM tasks t
           ${LAST_ACTIVITY_JOINS}
-          ORDER BY ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC
+          ${AGENT_ORDER_BY}
         `,
       )
       .all()
@@ -280,7 +284,7 @@ class NodeSqliteTaskStore implements TaskStore {
           FROM tasks t
           ${LAST_ACTIVITY_JOINS}
           WHERE t.project_root = ? AND t.archived_at IS NULL
-          ORDER BY ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC
+          ${AGENT_ORDER_BY}
         `,
       )
       .all(projectRoot.trim()) as Array<{

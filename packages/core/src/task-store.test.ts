@@ -309,6 +309,50 @@ test("listTasks orders by last activity, most recent first", () => {
   }
 });
 
+test("listTasks puts pinned tasks first, ahead of newer unpinned activity", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const older = store.createTask("Older pinned", "/repo");
+    waitForNextMillisecond();
+    const newer = store.createTask("Newer unpinned", "/repo");
+
+    store.pinTask(older.id);
+
+    // The pin outranks the unpinned task's newer activity.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      older.id,
+      newer.id,
+    ]);
+
+    waitForNextMillisecond();
+    const alsoPinned = store.createTask("Newest pinned", "/repo");
+    store.pinTask(alsoPinned.id);
+
+    // Within the pinned partition, recency still orders.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      alsoPinned.id,
+      older.id,
+      newer.id,
+    ]);
+
+    store.unpinTask(older.id);
+
+    // Unpinning drops the task back into the recency order.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      alsoPinned.id,
+      newer.id,
+      older.id,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("recallCandidates orders by last activity, most recent first", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -332,6 +376,35 @@ test("recallCandidates orders by last activity, most recent first", () => {
     expect(store.recallCandidates("/repo").map((c) => c.slug)).toEqual([
       first.slug,
       second.slug,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recallCandidates puts pinned tasks first without exposing a pin field", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const older = store.createTask("Older pinned", "/repo");
+    waitForNextMillisecond();
+    const newer = store.createTask("Newer unpinned", "/repo");
+
+    store.pinTask(older.id);
+
+    const candidates = store.recallCandidates("/repo");
+
+    // The pin outranks the unpinned task's newer activity.
+    expect(candidates.map((c) => c.slug)).toEqual([older.slug, newer.slug]);
+
+    // Sort position only — no pin annotation leaks into the agent-facing shape.
+    expect(candidates).toEqual([
+      { title: "Older pinned", slug: older.slug },
+      { title: "Newer unpinned", slug: newer.slug },
     ]);
 
     store.close();
