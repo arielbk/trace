@@ -179,6 +179,7 @@ export type TaskStore = {
   listTaskSummaries(): TaskSummary[];
   recallCandidates(projectRoot: string): RecallCandidate[];
   resolveActiveTask(sessionId: string, projectRoot: string): ActiveTask;
+  updateTaskTitle(ref: string, title: string): Task;
   updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;

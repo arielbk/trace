@@ -321,6 +321,28 @@ class NodeSqliteTaskStore implements TaskStore {
     return updated;
   }
 
+  updateTaskTitle(ref: string, title: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    const trimmedTitle = title.trim();
+    if (trimmedTitle.length === 0) {
+      throw new Error("Task title cannot be empty");
+    }
+    // Same normalization as createTask: a slug-shaped title reads back as a
+    // human title. The slug is the task's stable address and never changes
+    // on rename.
+    const normalizedTitle = looksLikeSlug(trimmedTitle)
+      ? humanizeSlug(trimmedTitle)
+      : trimmedTitle;
+
+    this.#sqlite
+      .prepare("UPDATE tasks SET title = ? WHERE id = ?")
+      .run(normalizedTitle, task.id);
+
+    return { ...task, title: normalizedTitle };
+  }
+
   archiveTask(ref: string): Task {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);

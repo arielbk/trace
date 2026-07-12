@@ -3,10 +3,12 @@ import {
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseTaskCreateArgs,
+  parseTaskUpdateArgs,
   parseUpdateDocOptions,
   sessionRegisterUsage,
   sessionSetParentUsage,
   taskCreateUsage,
+  taskUpdateUsage,
   updateDocUsage,
 } from "./parsers.ts";
 
@@ -25,6 +27,33 @@ test("parseUpdateDocOptions maps an empty flag value to null and omits absent fl
 
 test("parseUpdateDocOptions throws usage when neither field is given", () => {
   expect(() => parseUpdateDocOptions([])).toThrow(updateDocUsage());
+});
+
+test("parseTaskUpdateArgs accepts --title, --description, or both", () => {
+  expect(parseTaskUpdateArgs(["checkout-flow", "--title", "Cart wizard"])).toEqual({
+    ref: "checkout-flow",
+    title: "Cart wizard",
+    description: undefined,
+  });
+  expect(
+    parseTaskUpdateArgs([
+      "checkout-flow",
+      "--title",
+      "Cart wizard",
+      "--description",
+      "Second pass",
+    ]),
+  ).toEqual({
+    ref: "checkout-flow",
+    title: "Cart wizard",
+    description: "Second pass",
+  });
+});
+
+test("parseTaskUpdateArgs throws the usage string when no field is given", () => {
+  expect(() => parseTaskUpdateArgs(["checkout-flow"])).toThrow(
+    taskUpdateUsage(),
+  );
 });
 
 test("parseTaskCreateArgs parses a title with optional description and project", () => {

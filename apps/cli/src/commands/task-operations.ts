@@ -146,10 +146,20 @@ export function taskUpdateOperation(
   const parsed = parsedAttempt.value;
 
   return withStore(ctx.env, (store) => {
-    const taskAttempt = attempt(
-      () => store.updateTaskDescription(parsed.ref, parsed.description),
-      1,
-    );
+    const taskAttempt = attempt(() => {
+      // The parser guarantees at least one flag. Title first, so a combined
+      // call returns the retitled task from the description update's fresh
+      // read.
+      let task: Task | null =
+        parsed.title !== undefined
+          ? store.updateTaskTitle(parsed.ref, parsed.title)
+          : null;
+      if (parsed.description !== undefined) {
+        task = store.updateTaskDescription(parsed.ref, parsed.description);
+      }
+      if (!task) throw new Error(taskUpdateUsage());
+      return task;
+    }, 1);
     if (!taskAttempt.ok) return taskAttempt.result;
     const task = taskAttempt.value;
     return success(

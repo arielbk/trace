@@ -2450,6 +2450,70 @@ test("updateTaskDescription sets and replaces a task's description", () => {
   }
 });
 
+test("updateTaskTitle renames a task and leaves its slug unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("Checkout flow");
+    expect(created.slug).toBe("checkout-flow");
+
+    const renamed = store.updateTaskTitle(created.id, "  Cart wizard  ");
+    expect(renamed.title).toBe("Cart wizard");
+    expect(renamed.slug).toBe("checkout-flow");
+    expect(store.getTask(created.id)).toEqual(renamed);
+
+    // The old slug still resolves the task after the rename.
+    expect(store.getTaskByRef("checkout-flow")?.title).toBe("Cart wizard");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskTitle humanizes a slug-shaped title like createTask", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("Checkout flow");
+
+    const renamed = store.updateTaskTitle(created.slug, "cart-wizard-flow");
+    expect(renamed.title).toBe("Cart wizard flow");
+    expect(renamed.slug).toBe("checkout-flow");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateTaskTitle rejects an empty title and an unknown ref", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const created = store.createTask("Checkout flow");
+
+    expect(() => store.updateTaskTitle(created.id, "   ")).toThrow(
+      "Task title cannot be empty",
+    );
+    expect(store.getTask(created.id)?.title).toBe("Checkout flow");
+
+    expect(() => store.updateTaskTitle("missing", "New title")).toThrow(
+      "Task not found: missing",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("updateTaskDescription rejects an unknown ref", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
