@@ -15,6 +15,7 @@ const task: Task = {
   createdAt: "2026-06-18T17:00:00.000Z",
   projectRoot: "/repo",
   archivedAt: null,
+  pinnedAt: null,
 };
 
 const session: Session = {

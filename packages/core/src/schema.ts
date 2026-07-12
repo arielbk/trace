@@ -16,6 +16,7 @@ export const tasks = sqliteTable("tasks", {
   projectRoot: text("project_root").notNull().default(""),
   archivedAt: text("archived_at"),
   description: text("description"),
+  pinnedAt: text("pinned_at"),
 });
 
 export const sessions = sqliteTable("sessions", {

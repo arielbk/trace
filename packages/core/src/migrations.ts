@@ -55,6 +55,11 @@ export const migrationJournal = {
       tag: "0010_session_context_tokens",
       breakpoints: true,
     },
+    {
+      when: 1780259700000,
+      tag: "0011_task_pin",
+      breakpoints: false,
+    },
   ],
 } as const;
 
@@ -79,4 +84,5 @@ export const migrationSqlByTag: Record<string, string> = {
   "0009_task_doc_title": "ALTER TABLE `task_docs` ADD `title` text;\n",
   "0010_session_context_tokens":
     "ALTER TABLE `sessions` ADD `context_tokens_used` integer;\n--> statement-breakpoint\nALTER TABLE `sessions` ADD `context_tokens_limit` integer;\n",
+  "0011_task_pin": "ALTER TABLE `tasks` ADD `pinned_at` text;\n",
 };

@@ -50,6 +50,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -162,6 +163,7 @@ test("TaskTimelineView renders the Cursor brand mark for a cursor session", () =
       projectRoot: "/work/trace-v2",
       createdAt: "2026-06-11T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -225,6 +227,7 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
       projectRoot: "/work/trace-v2",
       createdAt: "2026-06-11T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -284,6 +287,7 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -329,6 +333,7 @@ test("TaskTimelineView shows root resume commands and doc paths as copy chips", 
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -409,6 +414,7 @@ test("TaskTimelineView doc row leads with resolved title + description, path dem
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -463,6 +469,7 @@ test("TaskTimelineView doc row falls back to filename and omits an empty descrip
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -507,6 +514,7 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -557,6 +565,7 @@ test("TaskTimelineView header includes the theme toggle", () => {
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -588,6 +597,7 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -628,6 +638,7 @@ test("TaskTimelineView renders the task description under the title when present
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
       description,
     },
     items: [],
@@ -660,6 +671,7 @@ test("TaskTimelineView omits the description block when absent", () => {
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -690,6 +702,7 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -725,6 +738,7 @@ test("TaskTimelineView shows the project display name in the header breadcrumb w
       projectRoot: "/Users/me/Projects/my-cool-app",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -757,6 +771,7 @@ test("TaskTimelineView omits the breadcrumb project segment when projectRoot is 
       projectRoot: "",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-05-29T00:00:00.000Z",
@@ -791,6 +806,7 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
       projectRoot: "/work/trace-v2",
       createdAt: "2026-06-03T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [
       {
@@ -840,6 +856,7 @@ function baseTimeline(
       projectRoot: "/work/trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
+      pinnedAt: null,
       ...overrides,
     },
     items: [],
@@ -1866,6 +1883,7 @@ function makeTimeline(
       projectRoot: "/work/proj",
       createdAt: "2026-06-01T00:00:00.000Z",
       archivedAt,
+      pinnedAt: null,
     },
     items: [],
     lastActivityAt: "2026-06-01T00:00:00.000Z",

@@ -55,6 +55,7 @@ function summary(
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
     archivedAt: null,
+    pinnedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
     tokenTotals: tokens(0),
     agentTools: [],

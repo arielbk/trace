@@ -132,14 +132,15 @@ class NodeSqliteTaskStore implements TaskStore {
       createdAt: new Date().toISOString(),
       projectRoot: normalizedProjectRoot,
       archivedAt: null,
+      pinnedAt: null,
     };
     if (normalizedDescription) task.description = normalizedDescription;
 
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at, description)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at, description, pinned_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -150,6 +151,7 @@ class NodeSqliteTaskStore implements TaskStore {
         task.projectRoot,
         task.archivedAt,
         task.description ?? null,
+        task.pinnedAt,
       );
 
     return task;
@@ -158,7 +160,7 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at FROM tasks WHERE id = ?",
       )
       .get(id);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -173,7 +175,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at, description FROM tasks WHERE slug = ?",
+        "SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at FROM tasks WHERE slug = ?",
       )
       .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -183,7 +185,7 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.archived_at, t.description
+          SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.archived_at, t.description, t.pinned_at
           FROM tasks t
           ${LAST_ACTIVITY_JOINS}
           ORDER BY ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC
@@ -196,7 +198,7 @@ class NodeSqliteTaskStore implements TaskStore {
   listTaskSummaries(): TaskSummary[] {
     const tasks = this.#sqlite
       .prepare(
-        `SELECT id, title, slug, created_at, project_root, archived_at, description
+        `SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at
          FROM tasks ORDER BY created_at ASC, id ASC`,
       )
       .all() as TaskRow[];
@@ -318,7 +320,7 @@ class NodeSqliteTaskStore implements TaskStore {
     const row = this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root, archived_at, description
+          SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at
           FROM tasks
           WHERE project_root = ? AND archived_at IS NULL
           ORDER BY created_at DESC, rowid DESC
@@ -370,12 +372,14 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);
 
+    // Archiving retires a task from active work, so a pin — a marker of
+    // current focus — no longer applies and is cleared rather than kept stale.
     const archivedAt = new Date().toISOString();
     this.#sqlite
-      .prepare("UPDATE tasks SET archived_at = ? WHERE id = ?")
+      .prepare("UPDATE tasks SET archived_at = ?, pinned_at = NULL WHERE id = ?")
       .run(archivedAt, task.id);
 
-    return { ...task, archivedAt };
+    return { ...task, archivedAt, pinnedAt: null };
   }
 
   unarchiveTask(ref: string): Task {
@@ -387,6 +391,29 @@ class NodeSqliteTaskStore implements TaskStore {
       .run(task.id);
 
     return { ...task, archivedAt: null };
+  }
+
+  pinTask(ref: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    const pinnedAt = new Date().toISOString();
+    this.#sqlite
+      .prepare("UPDATE tasks SET pinned_at = ? WHERE id = ?")
+      .run(pinnedAt, task.id);
+
+    return { ...task, pinnedAt };
+  }
+
+  unpinTask(ref: string): Task {
+    const task = this.getTaskByRef(ref);
+    if (!task) throw new Error(`Task not found: ${ref}`);
+
+    this.#sqlite
+      .prepare("UPDATE tasks SET pinned_at = NULL WHERE id = ?")
+      .run(task.id);
+
+    return { ...task, pinnedAt: null };
   }
 
   registerSession(input: RegisterSessionInput): Session {
@@ -1256,6 +1283,7 @@ type TaskRow = {
   project_root: string;
   archived_at: string | null;
   description: string | null;
+  pinned_at: string | null;
 };
 
 type SessionRow = {
@@ -1295,6 +1323,7 @@ function taskFromRow(row: TaskRow): Task {
     createdAt: row.created_at,
     projectRoot: row.project_root,
     archivedAt: row.archived_at,
+    pinnedAt: row.pinned_at,
   };
   // A null column means the task was created without a description; keep the
   // field absent rather than carrying a null so round-trips stay clean.
