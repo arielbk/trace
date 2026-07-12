@@ -46,6 +46,39 @@ test("mergeTaskDocs dedups by path, keeping the registered doc", () => {
   ]);
 });
 
+test("mergeTaskDocs folds a relative registered path into its native doc", () => {
+  const registered = [
+    {
+      ...doc("spec.md", "2026-01-01T00:00:00.000Z"),
+      description: "The spec",
+    },
+  ];
+  const native = [doc("/db/tasks/my-task/docs/spec.md", "2026-06-06T00:00:00.000Z")];
+
+  expect(mergeTaskDocs(registered, native, "/db/tasks/my-task/docs")).toEqual([
+    {
+      ...doc("/db/tasks/my-task/docs/spec.md", "2026-01-01T00:00:00.000Z"),
+      description: "The spec",
+    },
+  ]);
+});
+
+test("mergeTaskDocs leaves a relative registered path that has no native counterpart", () => {
+  const registered = [doc("notes/plan.md", "2026-01-01T00:00:00.000Z")];
+  const native = [doc("/db/tasks/my-task/docs/spec.md", "2026-06-06T00:00:00.000Z")];
+
+  expect(
+    mergeTaskDocs(registered, native, "/db/tasks/my-task/docs").map((d) => d.path),
+  ).toEqual(["notes/plan.md", "/db/tasks/my-task/docs/spec.md"]);
+});
+
+test("mergeTaskDocs without a docs dir keeps relative registered paths as-is", () => {
+  const registered = [doc("spec.md", "2026-01-01T00:00:00.000Z")];
+  const native = [doc("/db/tasks/my-task/docs/spec.md", "2026-06-06T00:00:00.000Z")];
+
+  expect(mergeTaskDocs(registered, native)).toHaveLength(2);
+});
+
 // Helper: create a temp db dir and place a file in tasks/<ref>/docs/
 function makeDocsFixture(ref: string, filename: string): string {
   const dir = mkdtempSync(join(tmpdir(), "trace-test-"));

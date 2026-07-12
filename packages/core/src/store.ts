@@ -934,6 +934,9 @@ class NodeSqliteTaskStore implements TaskStore {
       task?.slug
         ? listNativeTaskDocs(this.#databasePath, id, task.slug)
         : [],
+      task?.slug
+        ? resolveTaskDocsDir(this.#databasePath, task.slug)
+        : undefined,
     );
   }
 

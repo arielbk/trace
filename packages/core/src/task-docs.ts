@@ -1,5 +1,5 @@
 import { readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { TaskDoc } from "./types.ts";
 
 // `ref` is the on-disk directory key for a task — the slug for tasks created
@@ -54,10 +54,24 @@ function readNativeTaskDocs(
 export function mergeTaskDocs(
   registered: TaskDoc[],
   native: TaskDoc[],
+  docsDir?: string,
 ): TaskDoc[] {
+  const nativePaths = new Set(native.map((doc) => doc.path));
   const docsByPath = new Map<string, TaskDoc>();
 
   for (const doc of registered) {
+    // Rows registered before the CLI canonicalized paths may carry a bare
+    // relative path. When that path resolves onto a file the scan found in
+    // the docs dir, it is the same doc under a second spelling — fold it in
+    // rather than listing it twice. A relative path that resolves elsewhere
+    // is left untouched: its original base is unknowable.
+    if (docsDir && !isAbsolute(doc.path)) {
+      const resolved = resolve(docsDir, doc.path);
+      if (nativePaths.has(resolved)) {
+        docsByPath.set(resolved, { ...doc, path: resolved });
+        continue;
+      }
+    }
     docsByPath.set(doc.path, doc);
   }
 

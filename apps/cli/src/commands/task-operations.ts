@@ -14,7 +14,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import {
   parseAddDocOptions,
   parseTaskCaptureArgs,
@@ -191,7 +191,7 @@ export function taskCaptureOperation(
     const docFileName = parsed.docPath ? basename(parsed.docPath) : "capture.md";
 
     const task = store.createTask(parsed.title, projectRoot);
-    const docsDir = resolveTaskDocsDir(databasePath, task.id);
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
     mkdirSync(docsDir, { recursive: true });
     const docPath = join(docsDir, docFileName);
     if (parsed.docPath) {
@@ -281,7 +281,9 @@ export function taskAddDocOperation(
   return withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
-    const doc = store.addTaskDoc(task.id, path, options);
+    // Canonicalize before storing: the filesystem scan reports absolute
+    // paths, so a relative registration of the same file would list twice.
+    const doc = store.addTaskDoc(task.id, resolve(ctx.cwd, path), options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });
@@ -304,7 +306,7 @@ export function taskUpdateDocOperation(
   return withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
-    const doc = store.updateTaskDoc(task.id, path, options);
+    const doc = store.updateTaskDoc(task.id, resolve(ctx.cwd, path), options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });

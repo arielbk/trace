@@ -539,6 +539,77 @@ test("add-doc then show lists the associated task doc", () => {
   }
 });
 
+test("add-doc with a relative path lists the doc once alongside the filesystem scan", () => {
+  // realpath so the cwd handed to the CLI matches the spelling the
+  // filesystem scan derives from TRACE_DB (macOS tmpdir is a symlink).
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "trace-cli-")));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(join(docsDir, "spec.md"), "# Spec\n");
+
+    // Registering by relative filename from inside the docs dir must not
+    // produce a second entry next to the one the filesystem scan finds.
+    const added = execFileSync(
+      process.execPath,
+      [traceBin, "task", "add-doc", slug, "spec.md"],
+      { encoding: "utf8", env, cwd: docsDir },
+    );
+    expect(added).toBe(`${slug}\t${join(docsDir, "spec.md")}\n`);
+
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", slug],
+      { encoding: "utf8", env },
+    );
+    expect(shown.match(/spec\.md/g)).toHaveLength(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("show dedupes a legacy relative doc row against the filesystem scan", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "checkout"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const docsDir = join(dir, "tasks", slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(join(docsDir, "spec.md"), "# Spec\n");
+
+    // Rows written before the CLI canonicalized paths carry the bare
+    // filename; go through the store directly to simulate one.
+    const store = openTraceStore(databasePath);
+    store.addTaskDoc(slug, "spec.md");
+    store.close();
+
+    const shown = execFileSync(
+      process.execPath,
+      [traceBin, "task", "show", slug],
+      { encoding: "utf8", env },
+    );
+    expect(shown.match(/spec\.md/g)).toHaveLength(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("add-doc --description renders a fenced manifest footer into a created state.md", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -1389,11 +1460,13 @@ test("task capture --doc creates a task with one doc and zero token totals", () 
     ).trim();
     expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
 
+    // Captured docs live in the slug directory — the same place the
+    // filesystem scan reads — not the legacy UUID directory.
     const copiedPath = join(
       dir,
       ".trace",
       "tasks",
-      taskId,
+      "fix-flaky-checkout-test",
       "docs",
       "findings.md",
     );
@@ -1470,7 +1543,14 @@ test("task capture reads doc content from stdin when no --doc is given", () => {
     ).trim();
     expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
 
-    const docPath = join(dir, ".trace", "tasks", taskId, "docs", "capture.md");
+    const docPath = join(
+      dir,
+      ".trace",
+      "tasks",
+      "park-follow-up-idea",
+      "docs",
+      "capture.md",
+    );
     expect(existsSync(docPath)).toBe(true);
     expect(readFileSync(docPath, "utf8")).toContain("Extract the parser.");
   } finally {
@@ -1504,17 +1584,18 @@ test("task capture --link creates an idempotent repo docs symlink", () => {
         { encoding: "utf8", env, cwd: repoRoot },
       ).trim();
 
-    const taskId = run();
+    run();
     const linkPath = join(repoRoot, "docs", "refactor-parser");
-    const target = join(dir, ".trace", "tasks", taskId, "docs");
+    const target = join(dir, ".trace", "tasks", "refactor-parser", "docs");
 
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
     expect(realpathSync(linkPath)).toBe(realpathSync(target));
 
     // Re-running must not throw and must leave a single symlink (re-pointed at
-    // the latest capture's docs dir, not a nested or duplicated link).
-    const secondId = run();
-    const secondTarget = join(dir, ".trace", "tasks", secondId, "docs");
+    // the latest capture's docs dir, not a nested or duplicated link). The
+    // second capture of the same title allocates a suffixed slug.
+    run();
+    const secondTarget = join(dir, ".trace", "tasks", "refactor-parser-2", "docs");
     expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
     expect(realpathSync(linkPath)).toBe(realpathSync(secondTarget));
   } finally {
