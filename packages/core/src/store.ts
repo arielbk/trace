@@ -73,6 +73,27 @@ export function openTraceStore(
 
 export { resolveTaskDocsDir };
 
+// Agent-facing listings sort by "last activity" — the latest of the task's
+// creation, its newest bound session, and its newest doc — so the agent
+// reaches for current-focus work first. Timestamps are ISO strings, so
+// lexicographic MAX is chronological.
+const LAST_ACTIVITY_JOINS = `
+  LEFT JOIN (
+    SELECT task_id, MAX(created_at) AS last_session_at
+    FROM sessions WHERE task_id IS NOT NULL GROUP BY task_id
+  ) s ON s.task_id = t.id
+  LEFT JOIN (
+    SELECT task_id, MAX(created_at) AS last_doc_at
+    FROM task_docs GROUP BY task_id
+  ) d ON d.task_id = t.id
+`;
+
+const LAST_ACTIVITY_EXPR = `MAX(
+  t.created_at,
+  COALESCE(s.last_session_at, t.created_at),
+  COALESCE(d.last_doc_at, t.created_at)
+)`;
+
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
   readonly #databasePath: string;
@@ -162,9 +183,10 @@ class NodeSqliteTaskStore implements TaskStore {
     return this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root, archived_at, description
-          FROM tasks
-          ORDER BY created_at ASC, id ASC
+          SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.archived_at, t.description
+          FROM tasks t
+          ${LAST_ACTIVITY_JOINS}
+          ORDER BY ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC
         `,
       )
       .all()
@@ -252,10 +274,11 @@ class NodeSqliteTaskStore implements TaskStore {
     const rows = this.#sqlite
       .prepare(
         `
-          SELECT title, slug, description
-          FROM tasks
-          WHERE project_root = ? AND archived_at IS NULL
-          ORDER BY created_at ASC, id ASC
+          SELECT t.title, t.slug, t.description
+          FROM tasks t
+          ${LAST_ACTIVITY_JOINS}
+          WHERE t.project_root = ? AND t.archived_at IS NULL
+          ORDER BY ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC
         `,
       )
       .all(projectRoot.trim()) as Array<{

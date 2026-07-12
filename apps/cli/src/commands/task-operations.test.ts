@@ -81,14 +81,14 @@ test("task update changes the title and keeps the slug", () => {
   });
 });
 
-test("task list prints task summaries", () => {
+test("task list prints task summaries, most recently active first", () => {
   withTempContext((ctx) => {
     taskCreateOperation(["Checkout"], ctx);
     taskCreateOperation(["Review"], ctx);
 
     expect(taskListOperation([], ctx)).toEqual({
       exitCode: 0,
-      stdout: "checkout\tCheckout\nreview\tReview\n",
+      stdout: "review\tReview\ncheckout\tCheckout\n",
       stderr: "",
     });
   });

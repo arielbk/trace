@@ -215,6 +215,88 @@ test("a UUID title gets a placeholder slug so it cannot shadow another task's id
   }
 });
 
+test("listTasks orders by last activity, most recent first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const first = store.createTask("First created", "/repo");
+    waitForNextMillisecond();
+    const second = store.createTask("Second created", "/repo");
+    waitForNextMillisecond();
+    const third = store.createTask("Third created", "/repo");
+
+    // With no sessions or docs, creation time is the only activity.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      third.id,
+      second.id,
+      first.id,
+    ]);
+
+    waitForNextMillisecond();
+    const session = store.registerSession({
+      id: "recency-session",
+      transcriptPath: "/tmp/recency-session.jsonl",
+      tool: "codex",
+      tokenTotals: { inputTokens: 1, outputTokens: 2 },
+    });
+    store.assignSession(session.id, first.id);
+
+    // A later session pulls the oldest-created task to the front.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      first.id,
+      third.id,
+      second.id,
+    ]);
+
+    waitForNextMillisecond();
+    store.addTaskDoc(second.id, "/tmp/spec.md");
+
+    // A later doc outranks the session.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      second.id,
+      first.id,
+      third.id,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recallCandidates orders by last activity, most recent first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const first = store.createTask("First created", "/repo");
+    waitForNextMillisecond();
+    const second = store.createTask("Second created", "/repo");
+
+    // Newer creation leads while neither task has other activity.
+    expect(store.recallCandidates("/repo").map((c) => c.slug)).toEqual([
+      second.slug,
+      first.slug,
+    ]);
+
+    waitForNextMillisecond();
+    store.addTaskDoc(first.id, "/tmp/spec.md");
+
+    // A later doc pulls the older task to the front.
+    expect(store.recallCandidates("/repo").map((c) => c.slug)).toEqual([
+      first.slug,
+      second.slug,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("recallCandidates scopes to project, excludes archived, keeps description-less tasks", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -1190,9 +1272,10 @@ test("store reads and writes a database created with the old schema through node
       tool: "codex",
       tokenTotals: { inputTokens: 1, outputTokens: 2 },
     });
+    // Recency order: the freshly created task outranks the backdated task-1.
     expect(store.listTasks().map((task) => task.id)).toEqual([
-      "task-1",
       created.id,
+      "task-1",
     ]);
     expect(store.listUnassignedSessions()).toEqual([session]);
     store.close();
