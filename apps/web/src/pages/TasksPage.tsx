@@ -200,21 +200,34 @@ export function TaskList({
     ));
   }
 
-  return (
-    <>
-      {pinned.length > 0 && (
-        <section className="task-list-pinned">
-          <h2 className="task-list-pinned-heading mt-4 mb-0 font-mono text-badge font-bold uppercase tracking-wider text-text-muted">
-            Pinned
-          </h2>
-          <ul className="flex flex-col pt-1 m-0 p-0 list-none border-b border-border-subtle pb-2 mb-2">
-            {renderRows(pinned)}
-          </ul>
-        </section>
-      )}
+  if (pinned.length === 0) {
+    return (
       <ul className="flex flex-col pt-1 m-0 p-0 list-none">
         {renderRows(rest)}
       </ul>
+    );
+  }
+
+  return (
+    <>
+      <section className="task-list-pinned">
+        <h2 className="task-list-pinned-heading mt-4 mb-0 text-xs font-bold uppercase tracking-widest text-accent">
+          Pinned
+        </h2>
+        <ul className="flex flex-col mt-2 mx-0 mb-0 p-0 list-none">
+          {renderRows(pinned)}
+        </ul>
+      </section>
+      {rest.length > 0 && (
+        <section className="task-list-rest">
+          <h2 className="task-list-rest-heading mt-5 mb-0 text-xs font-bold uppercase tracking-widest text-accent">
+            Recent
+          </h2>
+          <ul className="flex flex-col mt-2 mx-0 mb-0 p-0 list-none">
+            {renderRows(rest)}
+          </ul>
+        </section>
+      )}
     </>
   );
 }

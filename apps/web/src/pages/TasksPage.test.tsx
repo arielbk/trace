@@ -755,6 +755,35 @@ describe("TaskList pinned section", () => {
     );
   });
 
+  test("both sections get accent headings and no divider rule between them", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "unpinned", title: "Unpinned work" }),
+      summary({
+        id: "pinned",
+        title: "Pinned work",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain(">Pinned<");
+    expect(html).toContain(">Recent<");
+    const pinnedHeading =
+      html.match(/<h2 class="(task-list-pinned-heading[^"]*)"/)?.[1] ?? "";
+    const restHeading =
+      html.match(/<h2 class="(task-list-rest-heading[^"]*)"/)?.[1] ?? "";
+    expect(pinnedHeading).toContain("text-accent");
+    expect(restHeading).toContain("text-accent");
+    // Section separation comes from the headings, not a horizontal rule.
+    // (Match "border-b" as a whole class; "border-border" on rows is fine.)
+    expect(html).not.toMatch(/border-b[ "]/);
+  });
+
   test("no Pinned section renders when nothing is pinned", () => {
     const tasks: TaskSummary[] = [
       summary({ id: "task-1", title: "CLI work" }),
@@ -768,6 +797,9 @@ describe("TaskList pinned section", () => {
 
     expect(html).not.toContain("task-list-pinned-heading");
     expect(html).not.toContain(">Pinned<");
+    // Without a Pinned section there is nothing to distinguish from, so the
+    // rest of the list gets no heading either.
+    expect(html).not.toContain("task-list-rest-heading");
   });
 
   test("an archived pinned task stays out of the Pinned section", () => {
