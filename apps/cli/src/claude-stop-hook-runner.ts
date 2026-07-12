@@ -1,5 +1,8 @@
-import { inferSessionIdentity, openTraceStore } from "@trace/core";
-import { resolveDbPath } from "./db-path.ts";
+import {
+  inferSessionIdentity,
+  openTraceStore,
+  resolveDatabasePath,
+} from "@trace/core";
 import { runTraceCli } from "./trace.ts";
 
 type ClaudeStopHookInput = {
@@ -53,7 +56,7 @@ export function runClaudeStopHook(
   const sessionId = identity.id;
   if (!sessionId) return ok();
 
-  const databasePath = resolveDbPath(env);
+  const databasePath = resolveDatabasePath(env);
   const store = openTraceStore(databasePath);
   let task: { slug: string } | null = null;
   try {

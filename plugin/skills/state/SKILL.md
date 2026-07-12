@@ -136,7 +136,7 @@ After writing the prose, stamp `state.md` so Trace records that the prose now
 reflects the current docs:
 
 ```sh
-npx @arielbk/trace@0.10.1 state reflect <slug>
+npx @arielbk/trace@0.11.0 state reflect <slug>
 ```
 
 This advances the prose-fingerprint marker. Skipping it leaves the marker stale,
