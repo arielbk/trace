@@ -62,6 +62,25 @@ test("task update changes the persisted description", () => {
   });
 });
 
+test("task update changes the title and keeps the slug", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+
+    const updated = taskUpdateOperation([slug, "--title", "Cart wizard"], ctx);
+
+    expect(updated.exitCode).toBe(0);
+    expect(updated.stdout).toContain("title: Cart wizard\n");
+    expect(updated.stdout).toContain("slug: checkout-flow\n");
+
+    const store = openTraceStore(ctx.env.TRACE_DB as string);
+    try {
+      expect(store.getTaskByRef(slug)?.title).toBe("Cart wizard");
+    } finally {
+      store.close();
+    }
+  });
+});
+
 test("task list prints task summaries", () => {
   withTempContext((ctx) => {
     taskCreateOperation(["Checkout"], ctx);

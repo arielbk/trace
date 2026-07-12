@@ -49,11 +49,16 @@ export function parseTaskCreateArgs(args: string[]): {
 }
 
 export function taskUpdateUsage(): string {
-  return "Usage: trace task update <ref> --description <text>";
+  return "Usage: trace task update <ref> [--title <text>] [--description <text>]";
 }
 
-export function parseTaskUpdateArgs(args: string[]): { ref: string; description: string } {
+export function parseTaskUpdateArgs(args: string[]): {
+  ref: string;
+  title?: string;
+  description?: string;
+} {
   const refWords: string[] = [];
+  let title: string | undefined;
   let description: string | undefined;
 
   let index = 0;
@@ -63,7 +68,12 @@ export function parseTaskUpdateArgs(args: string[]): { ref: string; description:
   }
   while (index < args.length) {
     const flag = args[index];
-    if (flag === "--description") {
+    if (flag === "--title") {
+      const value = args[index + 1];
+      if (value === undefined) throw new Error(taskUpdateUsage());
+      title = value;
+      index += 2;
+    } else if (flag === "--description") {
       const value = args[index + 1];
       if (value === undefined) throw new Error(taskUpdateUsage());
       description = value;
@@ -74,8 +84,11 @@ export function parseTaskUpdateArgs(args: string[]): { ref: string; description:
   }
 
   const ref = refWords.join(" ");
-  if (ref.length === 0 || description === undefined) throw new Error(taskUpdateUsage());
-  return { ref, description };
+  // Nothing to change is a usage error, not a silent no-op.
+  if (ref.length === 0 || (title === undefined && description === undefined)) {
+    throw new Error(taskUpdateUsage());
+  }
+  return { ref, title, description };
 }
 
 export function taskCaptureUsage(): string {

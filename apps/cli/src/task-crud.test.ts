@@ -212,6 +212,64 @@ test("task update --description sets the description by id and by slug", () => {
   }
 });
 
+test("task update --title renames a task, keeps the slug, and combines with --description", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-cli-rename-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const env = { ...process.env, TRACE_DB: databasePath };
+
+  try {
+    const slug = execFileSync(
+      process.execPath,
+      [traceBin, "task", "create", "Checkout flow"],
+      { encoding: "utf8", env },
+    ).trim();
+
+    const renamed = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", slug, "--title", "Cart wizard"],
+      { encoding: "utf8", env },
+    );
+    expect(renamed).toMatch(/title: Cart wizard/);
+    expect(renamed).toMatch(/slug: checkout-flow/);
+
+    // A slug-shaped title humanizes, exactly as it would at create time.
+    const humanized = execFileSync(
+      process.execPath,
+      [traceBin, "task", "update", slug, "--title", "cart-wizard-flow"],
+      { encoding: "utf8", env },
+    );
+    expect(humanized).toMatch(/title: Cart wizard flow/);
+    expect(humanized).toMatch(/slug: checkout-flow/);
+
+    const combined = execFileSync(
+      process.execPath,
+      [
+        traceBin,
+        "task",
+        "update",
+        slug,
+        "--title",
+        "Cart wizard",
+        "--description",
+        "Second pass",
+      ],
+      { encoding: "utf8", env },
+    );
+    expect(combined).toMatch(/title: Cart wizard/);
+    expect(combined).toMatch(/description: Second pass/);
+
+    const store = openTraceStore(databasePath);
+    const task = store.getTaskByRef(slug);
+    store.close();
+
+    expect(task?.title).toBe("Cart wizard");
+    expect(task?.slug).toBe("checkout-flow");
+    expect(task?.description).toBe("Second pass");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task update on an unknown ref exits non-zero", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-update-missing-"));
   const databasePath = join(dir, "trace.sqlite");
