@@ -77,6 +77,24 @@ export function activityEpoch(task: TaskSummary): number {
   return new Date(task.lastActivityAt).getTime();
 }
 
+export function partitionPinned(tasks: TaskSummary[]): {
+  pinned: TaskSummary[];
+  rest: TaskSummary[];
+} {
+  const pinned: TaskSummary[] = [];
+  const rest: TaskSummary[] = [];
+  for (const task of tasks) {
+    if (task.pinnedAt !== null && task.archivedAt === null) {
+      pinned.push(task);
+    } else {
+      rest.push(task);
+    }
+  }
+  pinned.sort(byActivityDesc);
+  rest.sort(byActivityDesc);
+  return { pinned, rest };
+}
+
 export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
   const groups = new Map<string, ProjectTaskGroup>();
 

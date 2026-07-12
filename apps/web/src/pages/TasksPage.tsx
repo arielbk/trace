@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useArchiveTask, useTasks, useUnarchiveTask } from "../lib/api.ts";
+import {
+  useArchiveTask,
+  usePinTask,
+  useTasks,
+  useUnarchiveTask,
+  useUnpinTask,
+} from "../lib/api.ts";
 import { useSearchParams } from "react-router-dom";
 import type { TaskSummary } from "@trace/core/browser";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
@@ -20,10 +26,10 @@ import {
 } from "../components/SkeletonReveal.tsx";
 import { cn } from "../lib/utils.ts";
 import {
-  byActivityDesc,
   buildSubtitle,
   filterByProject,
   getProjectCounts,
+  partitionPinned,
   projectDisplayName,
   type ProjectCount,
   visibleTasks,
@@ -33,6 +39,8 @@ export function TasksPage() {
   const tasksQuery = useTasks();
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
+  const pinMutation = usePinTask();
+  const unpinMutation = useUnpinTask();
   const [showArchived, setShowArchived] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedProject = searchParams.get("project");
@@ -70,6 +78,12 @@ export function TasksPage() {
   }
   async function handleUnarchive(task: TaskSummary): Promise<void> {
     await unarchiveMutation.mutateAsync(task.slug);
+  }
+  async function handlePin(task: TaskSummary): Promise<void> {
+    await pinMutation.mutateAsync(task.slug);
+  }
+  async function handleUnpin(task: TaskSummary): Promise<void> {
+    await unpinMutation.mutateAsync(task.slug);
   }
 
   return (
@@ -113,6 +127,8 @@ export function TasksPage() {
           tasks={displayedTasks}
           onArchive={handleArchive}
           onUnarchive={handleUnarchive}
+          onPin={handlePin}
+          onUnpin={handleUnpin}
           hiddenArchivedCount={archivedHidden}
         />
       </SkeletonReveal>
@@ -146,20 +162,24 @@ export function TaskList({
   tasks,
   onArchive,
   onUnarchive,
+  onPin,
+  onUnpin,
   hiddenArchivedCount = 0,
 }: {
   tasks: TaskSummary[];
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
+  onPin?: (task: TaskSummary) => void | Promise<void>;
+  onUnpin?: (task: TaskSummary) => void | Promise<void>;
   hiddenArchivedCount?: number;
 }) {
-  const sorted = [...tasks].sort(byActivityDesc);
+  const { pinned, rest } = partitionPinned(tasks);
 
   // Subtitle moved to the page title section; retain the prop so callers and
   // tests that pass hiddenArchivedCount keep working.
   void hiddenArchivedCount;
 
-  if (sorted.length === 0) {
+  if (tasks.length === 0) {
     return (
       <p className="my-10 text-center text-text-muted text-sm">
         No tasks in this view.
@@ -167,17 +187,48 @@ export function TaskList({
     );
   }
 
+  function renderRows(rows: TaskSummary[]) {
+    return rows.map((task) => (
+      <TaskRow
+        key={task.id}
+        task={task}
+        onArchive={onArchive}
+        onUnarchive={onUnarchive}
+        onPin={onPin}
+        onUnpin={onUnpin}
+      />
+    ));
+  }
+
+  if (pinned.length === 0) {
+    return (
+      <ul className="flex flex-col pt-1 m-0 p-0 list-none">
+        {renderRows(rest)}
+      </ul>
+    );
+  }
+
   return (
-    <ul className="flex flex-col pt-1 m-0 p-0 list-none">
-      {sorted.map((task) => (
-        <TaskRow
-          key={task.id}
-          task={task}
-          onArchive={onArchive}
-          onUnarchive={onUnarchive}
-        />
-      ))}
-    </ul>
+    <>
+      <section className="task-list-pinned">
+        <h2 className="task-list-pinned-heading mt-4 mb-0 text-xs font-bold uppercase tracking-widest text-accent">
+          Pinned
+        </h2>
+        <ul className="flex flex-col mt-2 mx-0 mb-0 p-0 list-none">
+          {renderRows(pinned)}
+        </ul>
+      </section>
+      {rest.length > 0 && (
+        <section className="task-list-rest">
+          <h2 className="task-list-rest-heading mt-5 mb-0 text-xs font-bold uppercase tracking-widest text-accent">
+            Recent
+          </h2>
+          <ul className="flex flex-col mt-2 mx-0 mb-0 p-0 list-none">
+            {renderRows(rest)}
+          </ul>
+        </section>
+      )}
+    </>
   );
 }
 

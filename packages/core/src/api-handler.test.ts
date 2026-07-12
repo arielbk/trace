@@ -246,6 +246,82 @@ test("POST /api/tasks/:ref/archive returns 404 for an unknown task", () => {
   }
 });
 
+test("POST /api/tasks/:ref/pin pins the task and returns it", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskId}/pin`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/json");
+    const task = JSON.parse(response!.body);
+    expect(task.id).toBe(taskId);
+    expect(task.pinnedAt).not.toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/unpin clears pinnedAt", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+    store.pinTask(taskId);
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskId}/unpin`,
+    );
+    expect(response!.status).toBe(200);
+    const task = JSON.parse(response!.body);
+    expect(task.pinnedAt).toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
+test("pin routes reject non-POST methods", () => {
+  let taskId = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskId = store.createTask("checkout").id;
+  });
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskId}/pin`,
+    );
+    expect(response!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/tasks/:ref/pin returns 404 for an unknown task", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/tasks/does-not-exist/pin",
+    );
+    expect(response!.status).toBe(404);
+  } finally {
+    cleanup();
+  }
+});
+
 test("GET /api/config returns { home } as JSON with status 200", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 

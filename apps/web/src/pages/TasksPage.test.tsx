@@ -55,6 +55,7 @@ function summary(
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
     archivedAt: null,
+    pinnedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
     tokenTotals: tokens(0),
     agentTools: [],
@@ -191,6 +192,98 @@ describe("TasksPage", () => {
       "/api/tasks/cli-work/archive",
       { method: "POST" },
     );
+  });
+
+  test("clicking pin POSTs to the pin endpoint and the row moves into the Pinned section", async () => {
+    const unpinned = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const pinned = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        pinnedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    let pinCalled = false;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(pinCalled ? pinned : unpinned), {
+            status: 200,
+          }),
+        );
+      }
+      pinCalled = true;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "task-1", pinnedAt: "2026-01-01T00:00:00.000Z" }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    await screen.findByText("CLI work");
+    expect(container.querySelector(".task-list-pinned")).not.toBeInTheDocument();
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+    fireEvent.click(screen.getByRole("button", { name: "Pin CLI work" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/tasks/cli-work/pin",
+        { method: "POST" },
+      );
+    });
+    // Invalidation refetches the pinned payload; the row moves into the section.
+    await waitFor(() => {
+      expect(container.querySelector(".task-list-pinned")).toBeInTheDocument();
+    });
+    expect(
+      container.querySelector(".task-list-pinned .task-row"),
+    ).toBeInTheDocument();
+  });
+
+  test("clicking unpin on a pinned row POSTs to the unpin endpoint", async () => {
+    const tasks = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        pinnedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: "task-1", pinnedAt: null }), {
+          status: 200,
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    await screen.findByText("CLI work");
+
+    const row = container.querySelector(".task-list-pinned .task-row")!;
+    fireEvent.mouseEnter(row);
+    fireEvent.click(screen.getByRole("button", { name: "Unpin CLI work" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/tasks/cli-work/unpin",
+        { method: "POST" },
+      );
+    });
   });
 });
 
@@ -603,6 +696,133 @@ describe("TaskList rendering — flat recency-first", () => {
   });
 });
 
+describe("TaskList pinned section", () => {
+  test("pinned tasks render in a Pinned section above the rest, moved not duplicated", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "recent-unpinned",
+        title: "Recent unpinned",
+        lastActivityAt: "2020-06-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "old-pinned",
+        title: "Old pinned",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+        lastActivityAt: "2020-02-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("task-list-pinned-heading");
+    // The pinned row leads despite older activity.
+    const idxPinned = html.indexOf('href="/task/old-pinned"');
+    const idxUnpinned = html.indexOf('href="/task/recent-unpinned"');
+    expect(idxPinned).toBeGreaterThan(-1);
+    expect(idxPinned).toBeLessThan(idxUnpinned);
+    // Moved, not duplicated.
+    expect(html.indexOf('href="/task/old-pinned"')).toBe(
+      html.lastIndexOf('href="/task/old-pinned"'),
+    );
+  });
+
+  test("pinned section sorts its rows by activity", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "pinned-old",
+        pinnedAt: "2020-01-05T00:00:00.000Z",
+        lastActivityAt: "2020-01-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "pinned-new",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+        lastActivityAt: "2020-03-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html.indexOf('href="/task/pinned-new"')).toBeLessThan(
+      html.indexOf('href="/task/pinned-old"'),
+    );
+  });
+
+  test("both sections get accent headings and no divider rule between them", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "unpinned", title: "Unpinned work" }),
+      summary({
+        id: "pinned",
+        title: "Pinned work",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain(">Pinned<");
+    expect(html).toContain(">Recent<");
+    const pinnedHeading =
+      html.match(/<h2 class="(task-list-pinned-heading[^"]*)"/)?.[1] ?? "";
+    const restHeading =
+      html.match(/<h2 class="(task-list-rest-heading[^"]*)"/)?.[1] ?? "";
+    expect(pinnedHeading).toContain("text-accent");
+    expect(restHeading).toContain("text-accent");
+    // Section separation comes from the headings, not a horizontal rule.
+    // (Match "border-b" as a whole class; "border-border" on rows is fine.)
+    expect(html).not.toMatch(/border-b[ "]/);
+  });
+
+  test("no Pinned section renders when nothing is pinned", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", title: "CLI work" }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain("task-list-pinned-heading");
+    expect(html).not.toContain(">Pinned<");
+    // Without a Pinned section there is nothing to distinguish from, so the
+    // rest of the list gets no heading either.
+    expect(html).not.toContain("task-list-rest-heading");
+  });
+
+  test("an archived pinned task stays out of the Pinned section", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        title: "CLI work",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+        archivedAt: "2020-06-01T00:00:00.000Z",
+      }),
+    ];
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList tasks={tasks} />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain("task-list-pinned-heading");
+    expect(html).toContain('href="/task/task-1"');
+  });
+});
+
 describe("FilterBar", () => {
   test("shows 'All projects' in trigger when selectedProject is null", () => {
     const html = renderToStaticMarkup(
@@ -807,6 +1027,81 @@ describe("TaskRow hover-swap", () => {
     expect(
       screen.getByRole("button", { name: "Archive CLI work" }),
     ).toBeInTheDocument();
+  });
+
+  test("renders a pin button for an unpinned active row; clicking calls onPin", () => {
+    const onPin = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({ id: "task-1", slug: "cli-work", title: "CLI work" }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onPin={onPin} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    const pinBtn = screen.getByRole("button", { name: "Pin CLI work" });
+    fireEvent.click(pinBtn);
+
+    expect(onPin).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
+  });
+
+  test("renders an unpin button for a pinned row; clicking calls onUnpin", () => {
+    const onUnpin = vi.fn();
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        pinnedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const { container } = render(
+      <MemoryRouter>
+        <TaskList tasks={tasks} onPin={() => undefined} onUnpin={onUnpin} />
+      </MemoryRouter>,
+    );
+
+    const row = container.querySelector(".task-row")!;
+    fireEvent.mouseEnter(row);
+
+    expect(
+      screen.queryByRole("button", { name: "Pin CLI work" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unpin CLI work" }));
+
+    expect(onUnpin).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+    );
+  });
+
+  test("archived rows carry no pin toggle", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "task-1",
+        slug: "cli-work",
+        title: "CLI work",
+        archivedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <TaskList
+          tasks={tasks}
+          onPin={() => undefined}
+          onUnpin={() => undefined}
+          onUnarchive={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(html).not.toContain('aria-label="Pin CLI work"');
+    expect(html).not.toContain('aria-label="Unpin CLI work"');
   });
 
   test("clicking unarchive button calls onUnarchive with the task", () => {

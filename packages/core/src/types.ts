@@ -7,6 +7,7 @@ export type Task = {
   createdAt: string;
   projectRoot: string;
   archivedAt: string | null;
+  pinnedAt: string | null;
   // Optional agent-authored summary; absent on tasks created without one.
   description?: string;
 };
@@ -183,6 +184,8 @@ export type TaskStore = {
   updateTaskDescription(ref: string, description: string): Task;
   archiveTask(ref: string): Task;
   unarchiveTask(ref: string): Task;
+  pinTask(ref: string): Task;
+  unpinTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;
   setSessionParent(input: SetSessionParentInput): Session;
   assignSession(sessionId: string, taskId: string): Session;

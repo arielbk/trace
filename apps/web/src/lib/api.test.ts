@@ -19,8 +19,10 @@ import {
   useDocContents,
   useTasks,
   useTaskTimeline,
+  usePinTask,
   useToggleCheckbox,
   useUnarchiveTask,
+  useUnpinTask,
 } from "./api.ts";
 
 function makeFreshClient() {
@@ -56,6 +58,7 @@ function makeTask(id: string): TaskSummary {
     createdAt: "2026-01-01T00:00:00.000Z",
     projectRoot: "/work/proj",
     archivedAt: null,
+    pinnedAt: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
     tokenTotals: tokens(),
     agentTools: [],
@@ -72,6 +75,7 @@ function makeTimeline(slug: string): TaskTimeline {
       createdAt: "2026-01-01T00:00:00.000Z",
       projectRoot: "/work/proj",
       archivedAt: null,
+      pinnedAt: null,
     },
     items: [],
     tokenTotals: tokens(),
@@ -556,6 +560,122 @@ describe("useUnarchiveTask", () => {
 
     result.current.unarchive.mutate("a");
     await waitFor(() => expect(result.current.unarchive.isSuccess).toBe(true));
+
+    await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
+  });
+});
+
+// ─── usePinTask ───────────────────────────────────────────────────────────────
+
+describe("usePinTask", () => {
+  test("POSTs to the pin endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "t1", pinnedAt: "2026-06-15T00:00:00.000Z" }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const { result } = renderHook(() => usePinTask(), {
+      wrapper: wrapper(client),
+    });
+    result.current.mutate("my-task");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/my-task/pin",
+      { method: "POST" },
+    );
+  });
+
+  test("invalidates the tasks query on success", async () => {
+    const tasks = [makeTask("a")];
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        callCount++;
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "a", pinnedAt: "2026-06-15T00:00:00.000Z" }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({ tasks: useTasks(), pin: usePinTask() }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    const initialCallCount = callCount;
+
+    result.current.pin.mutate("a");
+    await waitFor(() => expect(result.current.pin.isSuccess).toBe(true));
+
+    await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
+  });
+});
+
+// ─── useUnpinTask ─────────────────────────────────────────────────────────────
+
+describe("useUnpinTask", () => {
+  test("POSTs to the unpin endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "t1", pinnedAt: null }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const { result } = renderHook(() => useUnpinTask(), {
+      wrapper: wrapper(client),
+    });
+    result.current.mutate("my-task");
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/my-task/unpin",
+      { method: "POST" },
+    );
+  });
+
+  test("invalidates the tasks query on success", async () => {
+    const tasks = [makeTask("a")];
+    let callCount = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/tasks") {
+        callCount++;
+        return Promise.resolve(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ id: "a", pinnedAt: null }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+
+    const { result } = renderHook(
+      () => ({ tasks: useTasks(), unpin: useUnpinTask() }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.tasks.isSuccess).toBe(true));
+    const initialCallCount = callCount;
+
+    result.current.unpin.mutate("a");
+    await waitFor(() => expect(result.current.unpin.isSuccess).toBe(true));
 
     await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
   });

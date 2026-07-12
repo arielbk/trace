@@ -99,6 +99,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "slug",
         "archived_at",
         "description",
+        "pinned_at",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -144,6 +145,48 @@ test("archive and unarchive round-trip by id and slug", () => {
     const unarchived = store.unarchiveTask(task.slug);
     expect(unarchived).toEqual({ ...archived, archivedAt: null });
     expect(store.getTaskByRef(task.slug)).toEqual(unarchived);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pin and unpin round-trip by id and slug", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    expect(task.pinnedAt).toBeNull();
+
+    const pinned = store.pinTask(task.id);
+    expect(pinned.pinnedAt).toEqual(expect.any(String));
+    expect(store.getTask(task.id)).toEqual(pinned);
+
+    const unpinned = store.unpinTask(task.slug);
+    expect(unpinned).toEqual({ ...pinned, pinnedAt: null });
+    expect(store.getTaskByRef(task.slug)).toEqual(unpinned);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("archiving a pinned task clears its pin", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.pinTask(task.id);
+
+    const archived = store.archiveTask(task.id);
+    expect(archived.pinnedAt).toBeNull();
+    expect(store.getTask(task.id)).toEqual(archived);
 
     store.close();
   } finally {
@@ -208,6 +251,161 @@ test("a UUID title gets a placeholder slug so it cannot shadow another task's id
     expect(store.getTaskByRef(original.id)).toEqual(original);
     expect(store.archiveTask(duplicate.slug).id).toBe(duplicate.id);
     expect(store.getTask(original.id)?.archivedAt).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTasks orders by last activity, most recent first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const first = store.createTask("First created", "/repo");
+    waitForNextMillisecond();
+    const second = store.createTask("Second created", "/repo");
+    waitForNextMillisecond();
+    const third = store.createTask("Third created", "/repo");
+
+    // With no sessions or docs, creation time is the only activity.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      third.id,
+      second.id,
+      first.id,
+    ]);
+
+    waitForNextMillisecond();
+    const session = store.registerSession({
+      id: "recency-session",
+      transcriptPath: "/tmp/recency-session.jsonl",
+      tool: "codex",
+      tokenTotals: { inputTokens: 1, outputTokens: 2 },
+    });
+    store.assignSession(session.id, first.id);
+
+    // A later session pulls the oldest-created task to the front.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      first.id,
+      third.id,
+      second.id,
+    ]);
+
+    waitForNextMillisecond();
+    store.addTaskDoc(second.id, "/tmp/spec.md");
+
+    // A later doc outranks the session.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      second.id,
+      first.id,
+      third.id,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listTasks puts pinned tasks first, ahead of newer unpinned activity", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const older = store.createTask("Older pinned", "/repo");
+    waitForNextMillisecond();
+    const newer = store.createTask("Newer unpinned", "/repo");
+
+    store.pinTask(older.id);
+
+    // The pin outranks the unpinned task's newer activity.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      older.id,
+      newer.id,
+    ]);
+
+    waitForNextMillisecond();
+    const alsoPinned = store.createTask("Newest pinned", "/repo");
+    store.pinTask(alsoPinned.id);
+
+    // Within the pinned partition, recency still orders.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      alsoPinned.id,
+      older.id,
+      newer.id,
+    ]);
+
+    store.unpinTask(older.id);
+
+    // Unpinning drops the task back into the recency order.
+    expect(store.listTasks().map((task) => task.id)).toEqual([
+      alsoPinned.id,
+      newer.id,
+      older.id,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recallCandidates orders by last activity, most recent first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const first = store.createTask("First created", "/repo");
+    waitForNextMillisecond();
+    const second = store.createTask("Second created", "/repo");
+
+    // Newer creation leads while neither task has other activity.
+    expect(store.recallCandidates("/repo").map((c) => c.slug)).toEqual([
+      second.slug,
+      first.slug,
+    ]);
+
+    waitForNextMillisecond();
+    store.addTaskDoc(first.id, "/tmp/spec.md");
+
+    // A later doc pulls the older task to the front.
+    expect(store.recallCandidates("/repo").map((c) => c.slug)).toEqual([
+      first.slug,
+      second.slug,
+    ]);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recallCandidates puts pinned tasks first without exposing a pin field", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const older = store.createTask("Older pinned", "/repo");
+    waitForNextMillisecond();
+    const newer = store.createTask("Newer unpinned", "/repo");
+
+    store.pinTask(older.id);
+
+    const candidates = store.recallCandidates("/repo");
+
+    // The pin outranks the unpinned task's newer activity.
+    expect(candidates.map((c) => c.slug)).toEqual([older.slug, newer.slug]);
+
+    // Sort position only — no pin annotation leaks into the agent-facing shape.
+    expect(candidates).toEqual([
+      { title: "Older pinned", slug: older.slug },
+      { title: "Newer unpinned", slug: newer.slug },
+    ]);
 
     store.close();
   } finally {
@@ -284,6 +482,24 @@ test("archive operations reject unknown refs", () => {
       "Task not found: missing",
     );
     expect(() => store.unarchiveTask("missing")).toThrow(
+      "Task not found: missing",
+    );
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pin operations reject unknown refs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+
+    expect(() => store.pinTask("missing")).toThrow("Task not found: missing");
+    expect(() => store.unpinTask("missing")).toThrow(
       "Task not found: missing",
     );
 
@@ -1181,6 +1397,7 @@ test("store reads and writes a database created with the old schema through node
       createdAt: "2026-05-29T00:00:00.000Z",
       projectRoot: "/repo",
       archivedAt: null,
+      pinnedAt: null,
     });
 
     const created = store.createTask("review", "/repo");
@@ -1190,9 +1407,10 @@ test("store reads and writes a database created with the old schema through node
       tool: "codex",
       tokenTotals: { inputTokens: 1, outputTokens: 2 },
     });
+    // Recency order: the freshly created task outranks the backdated task-1.
     expect(store.listTasks().map((task) => task.id)).toEqual([
-      "task-1",
       created.id,
+      "task-1",
     ]);
     expect(store.listUnassignedSessions()).toEqual([session]);
     store.close();
@@ -2443,6 +2661,90 @@ test("description migration applies to an existing pre-description database", ()
     // New rows can store a description through the migrated column.
     const created = store.createTask("review", "/repo", "Tidy the review flow");
     expect(store.getTask(created.id)?.description).toBe("Tidy the review flow");
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("pin migration applies to an existing pre-pin database", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const database = new DatabaseSync(databasePath);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+      INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES
+        ('e865f5c4052e9eefaf5c793f2187c83ef943c808028c87f81767919a93bad7fc', 1779991399241),
+        ('064d73bdd21ec45f9426da414e3063223941d74ffaa57a91fa291ccfcfda6085', 1779999700000),
+        ('415565e0a40c61e50a92f6774d3421e49f978ca93b897581c32fc975ec1fc41a', 1780019700000),
+        ('0003-task-slug', 1780099700000),
+        ('0004-task-archive', 1780119700000),
+        ('0005-task-description', 1780139700000),
+        ('0006-task-doc-description', 1780159700000),
+        ('0007-session-parent-attribution', 1780179700000),
+        ('0008-session-title', 1780199700000),
+        ('0009-task-doc-title', 1780219700000),
+        ('0010-session-context-tokens', 1780239700000);
+
+      CREATE TABLE tasks (
+        id text PRIMARY KEY NOT NULL,
+        title text NOT NULL,
+        created_at text NOT NULL,
+        project_root text DEFAULT '' NOT NULL,
+        slug text,
+        archived_at text,
+        description text
+      );
+      CREATE UNIQUE INDEX tasks_slug_unique ON tasks (slug);
+      CREATE TABLE sessions (
+        id text PRIMARY KEY NOT NULL,
+        transcript_path text NOT NULL,
+        tool text NOT NULL,
+        model text,
+        title text,
+        task_id text,
+        parent_session_id text REFERENCES sessions(id) ON DELETE set null,
+        origin text DEFAULT 'root' NOT NULL,
+        subagent_type text,
+        agent_id text,
+        created_at text NOT NULL,
+        input_tokens integer DEFAULT 0 NOT NULL,
+        output_tokens integer DEFAULT 0 NOT NULL,
+        cache_creation_input_tokens integer DEFAULT 0 NOT NULL,
+        cache_read_input_tokens integer DEFAULT 0 NOT NULL,
+        total_tokens integer DEFAULT 0 NOT NULL,
+        context_tokens_used integer,
+        context_tokens_limit integer,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE set null
+      );
+      CREATE TABLE task_docs (
+        task_id text NOT NULL,
+        path text NOT NULL,
+        created_at text NOT NULL,
+        title text,
+        description text,
+        PRIMARY KEY(task_id, path),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, created_at, project_root, slug)
+        VALUES ('task-1', 'checkout', '2026-05-29T00:00:00.000Z', '', 'checkout');
+    `);
+    database.close();
+
+    const store = openTraceStore(databasePath);
+    // The pre-existing row survives the ALTER and reads back unpinned.
+    expect(store.getTask("task-1")).toMatchObject({
+      id: "task-1",
+      pinnedAt: null,
+    });
+    // The migrated column stores pin state.
+    expect(store.pinTask("checkout").pinnedAt).toEqual(expect.any(String));
     store.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

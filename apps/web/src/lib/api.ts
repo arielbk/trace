@@ -52,6 +52,18 @@ export async function postUnarchive(ref: string): Promise<{ id: string; archived
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
+export async function postPin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/pin`, { method: "POST" });
+  if (!res.ok) throw new HttpError(res.status, `POST pin ${ref} failed: ${res.status}`);
+  return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
+}
+
+export async function postUnpin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/unpin`, { method: "POST" });
+  if (!res.ok) throw new HttpError(res.status, `POST unpin ${ref} failed: ${res.status}`);
+  return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
+}
+
 export async function postToggleCheckbox(
   ref: string,
   path: string,
@@ -134,6 +146,28 @@ export function useUnarchiveTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: postUnarchive,
+    onSuccess: (_data, ref) => {
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+    },
+  });
+}
+
+export function usePinTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: postPin,
+    onSuccess: (_data, ref) => {
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+    },
+  });
+}
+
+export function useUnpinTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: postUnpin,
     onSuccess: (_data, ref) => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });

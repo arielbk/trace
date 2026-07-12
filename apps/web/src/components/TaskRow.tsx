@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
 import { ReEnterButton } from "./ReEnterButton.tsx";
-import { ArchiveIcon, SuccessCheckIcon, UnarchiveIcon } from "./icons.tsx";
+import {
+  ArchiveIcon,
+  PinIcon,
+  SuccessCheckIcon,
+  UnarchiveIcon,
+  UnpinIcon,
+} from "./icons.tsx";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
 import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import { cn } from "../lib/utils.ts";
@@ -25,10 +31,14 @@ export function TaskRow({
   task,
   onArchive,
   onUnarchive,
+  onPin,
+  onUnpin,
 }: {
   task: TaskSummary;
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
+  onPin?: (task: TaskSummary) => void | Promise<void>;
+  onUnpin?: (task: TaskSummary) => void | Promise<void>;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [archivePhase, setArchivePhase] = useState<
@@ -38,9 +48,12 @@ export function TaskRow({
   const archiveCommitTimer = useRef<number | null>(null);
   const untitled = isUntitled(task.title);
   const archived = task.archivedAt !== null;
+  const pinned = task.pinnedAt !== null;
   const projectName = projectDisplayName(task.projectRoot || "Unknown");
   const archiveLabel = `Archive ${untitled ? "untitled task" : task.title}`;
   const unarchiveLabel = `Unarchive ${untitled ? "untitled task" : task.title}`;
+  const pinLabel = `Pin ${untitled ? "untitled task" : task.title}`;
+  const unpinLabel = `Unpin ${untitled ? "untitled task" : task.title}`;
 
   useEffect(() => {
     return () => {
@@ -167,6 +180,19 @@ export function TaskRow({
           slug={task.slug}
           className="task-row-action pointer-events-auto"
         />
+        {!archived && (pinned ? onUnpin : onPin) ? (
+          <button
+            type="button"
+            className={cn(
+              "task-row-action inline-flex items-center justify-center size-row-action p-0 rounded-lg border border-border bg-surface text-text-muted cursor-pointer hover:text-accent hover:border-border-strong pointer-events-auto",
+              pinned && "text-accent",
+            )}
+            aria-label={pinned ? unpinLabel : pinLabel}
+            onClick={() => void (pinned ? onUnpin?.(task) : onPin?.(task))}
+          >
+            {pinned ? <UnpinIcon /> : <PinIcon />}
+          </button>
+        ) : null}
         {archived && onUnarchive ? (
           <button
             type="button"

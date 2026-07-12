@@ -5,6 +5,7 @@ import {
   byActivityDesc,
   filterByProject,
   getProjectCounts,
+  partitionPinned,
   projectDisplayName,
   visibleTasks,
 } from "./task-list.ts";
@@ -28,6 +29,7 @@ function summary(
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
     archivedAt: null,
+    pinnedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
     tokenTotals: tokens(0),
     agentTools: [],
@@ -167,6 +169,55 @@ describe("buildSubtitle", () => {
 
   test("includes archived-hidden segment when count > 0", () => {
     expect(buildSubtitle(2, 5)).toContain("5 archived hidden");
+  });
+});
+
+describe("partitionPinned", () => {
+  test("moves pinned tasks into the pinned partition, sorted by activity", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "plain", lastActivityAt: "2020-05-01T00:00:00.000Z" }),
+      summary({
+        id: "pinned-old",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+        lastActivityAt: "2020-02-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "pinned-new",
+        pinnedAt: "2020-01-02T00:00:00.000Z",
+        lastActivityAt: "2020-03-01T00:00:00.000Z",
+      }),
+    ];
+    const { pinned, rest } = partitionPinned(tasks);
+    expect(pinned.map((t) => t.id)).toEqual(["pinned-new", "pinned-old"]);
+    expect(rest.map((t) => t.id)).toEqual(["plain"]);
+  });
+
+  test("sorts the rest partition by activity too", () => {
+    const tasks: TaskSummary[] = [
+      summary({ id: "older", lastActivityAt: "2020-01-01T00:00:00.000Z" }),
+      summary({ id: "newer", lastActivityAt: "2020-02-01T00:00:00.000Z" }),
+    ];
+    const { pinned, rest } = partitionPinned(tasks);
+    expect(pinned).toEqual([]);
+    expect(rest.map((t) => t.id)).toEqual(["newer", "older"]);
+  });
+
+  test("yields an empty pinned partition when nothing is pinned", () => {
+    const tasks: TaskSummary[] = [summary({ id: "a" }), summary({ id: "b" })];
+    expect(partitionPinned(tasks).pinned).toEqual([]);
+  });
+
+  test("an archived task never lands in the pinned partition", () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "archived-pinned",
+        pinnedAt: "2020-01-01T00:00:00.000Z",
+        archivedAt: "2020-06-01T00:00:00.000Z",
+      }),
+    ];
+    const { pinned, rest } = partitionPinned(tasks);
+    expect(pinned).toEqual([]);
+    expect(rest.map((t) => t.id)).toEqual(["archived-pinned"]);
   });
 });
 

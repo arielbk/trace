@@ -76,6 +76,20 @@ export function handleTraceApiRequest(
       }
     }
 
+    const pinMatch = /^\/api\/tasks\/([^/]+)\/(pin|unpin)\/?$/.exec(path);
+    if (pinMatch?.[1] && pinMatch[2]) {
+      if (method !== "POST") return methodNotAllowed();
+      const store = openTraceStore(databasePath);
+      try {
+        const ref = decodeURIComponent(pinMatch[1]);
+        const task =
+          pinMatch[2] === "pin" ? store.pinTask(ref) : store.unpinTask(ref);
+        return json(task);
+      } finally {
+        store.close();
+      }
+    }
+
     const match = /^\/api\/tasks\/([^/]+)\/timeline\/?$/.exec(path);
     if (match?.[1]) {
       if (method !== "GET") return methodNotAllowed();
