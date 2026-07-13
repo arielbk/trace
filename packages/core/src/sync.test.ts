@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import { openTraceStore } from "./store.ts";
+import type { Task } from "./types.ts";
 import {
   compareSyncRows,
   synchronize,
@@ -123,7 +124,14 @@ describe("row synchronization", () => {
 
     expect(await synchronize(first, server)).toEqual({ pushed: 2, pulled: 0 });
     expect(await synchronize(second, server)).toEqual({ pushed: 0, pulled: 2 });
-    expect(second.listTasks()).toEqual(first.listTasks());
+    // project_id never crosses the wire — each machine resolves the synced
+    // project_root to its own local project — so compare everything else and
+    // check the pulled task was mapped to some local project.
+    const stripProjectId = (task: Task) => ({ ...task, projectId: undefined });
+    expect(second.listTasks().map(stripProjectId)).toEqual(
+      first.listTasks().map(stripProjectId),
+    );
+    expect(second.listTasks()[0]?.projectId).toEqual(expect.any(String));
     expect(second.getSession("session-a")).toMatchObject({ taskId: task.id });
     expect(await synchronize(second, server)).toEqual({ pushed: 0, pulled: 0 });
 

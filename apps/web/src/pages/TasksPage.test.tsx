@@ -225,11 +225,13 @@ describe("TasksPage", () => {
     ];
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          new Response(JSON.stringify(tasks), { status: 200 }),
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve(
+          url === "/api/tasks"
+            ? new Response(JSON.stringify(tasks), { status: 200 })
+            : new Response(JSON.stringify({ state: "logged-out" }), { status: 200 }),
         ),
+      ),
     );
 
     render(<TasksPage />, {
@@ -307,6 +309,11 @@ describe("TasksPage", () => {
           new Response(JSON.stringify(pinCalled ? pinned : unpinned), {
             status: 200,
           }),
+        );
+      }
+      if (url === "/api/sync/status") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ state: "logged-out" }), { status: 200 }),
         );
       }
       pinCalled = true;

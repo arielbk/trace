@@ -1196,7 +1196,11 @@ class NodeSqliteTaskStore implements TaskStore {
            title=excluded.title, slug=excluded.slug, created_at=excluded.created_at,
            project_root=excluded.project_root, archived_at=excluded.archived_at,
            description=excluded.description, updated_at=excluded.updated_at,
-           machine_id=excluded.machine_id`,
+           machine_id=excluded.machine_id,
+           project_id=CASE
+             WHEN excluded.project_root = tasks.project_root THEN tasks.project_id
+             ELSE NULL
+           END`,
       );
       for (const row of tasks) {
         upsertTask.run(
@@ -1211,6 +1215,11 @@ class NodeSqliteTaskStore implements TaskStore {
           row.machineId,
         );
       }
+      // Project identity is machine-local, so the wire payload carries only
+      // project_root. Pulled rows land without a project_id (or lose it when
+      // their root moved); resolve them against this machine's projects the
+      // same way startup backfill does.
+      this.#backfillProjects();
 
       const upsertSession = this.#sqlite.prepare(
         `INSERT INTO sessions
