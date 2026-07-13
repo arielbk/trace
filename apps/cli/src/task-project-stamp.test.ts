@@ -17,7 +17,7 @@ test("task create stamps and task show prints the resolved project root", () => 
 
     const created = runTraceCli(["task", "create", "checkout"], env, nestedCwd);
     expect(created.exitCode).toBe(0);
-    expect(created.stderr).toBe("");
+    expect(created.stderr).toBe("created new project repo\n");
 
     const slug = created.stdout.trim();
     expect(slug).toBe("checkout");

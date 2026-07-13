@@ -2,11 +2,28 @@ import {
   resolveSessionName,
   resolveTaskDocsDir,
   type ActiveTask,
+  type ProjectResolution,
   type ReEntryManifest,
   type Session,
   type Task,
   type TaskDoc,
 } from "@trace/core";
+
+export function formatProjectResolution(
+  resolution: ProjectResolution,
+): string {
+  const lines = [
+    resolution.kind === "created"
+      ? `created new project ${resolution.project.slug}`
+      : `linked to existing project ${resolution.project.slug}`,
+  ];
+  if (resolution.collisionHint) {
+    lines.push(
+      `possible duplicate project; repair with: trace project merge ${resolution.collisionHint.duplicateSlug} ${resolution.collisionHint.canonicalSlug}`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 export function formatTask(task: Task, sessions: Session[] = [], docs: TaskDoc[] = []): string {
   const lines = [

@@ -30,8 +30,21 @@ export function attempt<T>(fn: () => T, exitCode = 2): Attempt<T> {
   }
 }
 
-export function resolveProjectRoot(project: string | undefined, cwd: string): Attempt<string> {
-  return attempt(() => resolveProjectRootArg(project, cwd));
+export function resolveProjectRoot(
+  project: string | undefined,
+  cwd: string,
+  store?: Store,
+): Attempt<string> {
+  return attempt(() => {
+    if (project !== undefined && store) {
+      const matched = store.getProjectBySlug(project);
+      if (matched) {
+        const root = store.getProjectRoot(matched.id);
+        if (root) return root;
+      }
+    }
+    return resolveProjectRootArg(project, cwd);
+  });
 }
 
 export function isHelpFlag(token: string | undefined): boolean {

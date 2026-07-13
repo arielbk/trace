@@ -992,6 +992,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     );
     expect(bound).toBe(
       [
+        `linked to existing project path-independent-project-identity`,
         `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl`,
         `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
@@ -1144,6 +1145,7 @@ test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION
     );
     expect(bound).toBe(
       [
+        `linked to existing project path-independent-project-identity`,
         `live-claude-session\tclaude\tclaude:live-claude-session`,
         `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
         "",

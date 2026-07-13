@@ -124,7 +124,7 @@ test("task create exits 0 and outputs a slug on stdout", () => {
       repo,
     );
     expect(r.exitCode).toBe(0);
-    expect(r.stderr).toBe("");
+    expect(r.stderr).toContain("created new project");
     expect(r.stdout.trim()).toMatch(/^[a-z0-9-]+$/);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -221,7 +221,7 @@ test("task capture exits 0 and outputs a task id on stdout", () => {
       repo,
     );
     expect(r.exitCode).toBe(0);
-    expect(r.stderr).toBe("");
+    expect(r.stderr).toContain("created new project");
     expect(r.stdout.trim().length).toBeGreaterThan(0);
   } finally {
     rmSync(home, { recursive: true, force: true });

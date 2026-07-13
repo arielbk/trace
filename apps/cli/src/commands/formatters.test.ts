@@ -14,6 +14,7 @@ const task: Task = {
   description: "Move formatting behind a seam",
   createdAt: "2026-06-18T17:00:00.000Z",
   projectRoot: "/repo",
+  projectId: "project-1",
   archivedAt: null,
   pinnedAt: null,
 };

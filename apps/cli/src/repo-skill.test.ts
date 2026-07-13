@@ -50,6 +50,7 @@ test("trace skill resolves or creates a task by title, binds a simulated session
     expect(title).toBe("checkout");
     expect(bound).toBe(
       [
+        `created new project path-independent-project-identity`,
         `claude-session-1\tclaude\t/tmp/claude-session-1.jsonl`,
         `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
