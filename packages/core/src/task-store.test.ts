@@ -89,7 +89,13 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
       const userTables = tableNames(database).filter(
         (name) => !name.startsWith("__drizzle"),
       );
-      expect(userTables).toEqual(["sessions", "task_docs", "tasks"]);
+      expect(userTables).toEqual([
+        "project_roots",
+        "projects",
+        "sessions",
+        "task_docs",
+        "tasks",
+      ]);
 
       expect(taskColumnNames(database)).toEqual([
         "id",
@@ -100,6 +106,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "archived_at",
         "description",
         "pinned_at",
+        "project_id",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -499,9 +506,7 @@ test("pin operations reject unknown refs", () => {
     const store = openTraceStore(databasePath);
 
     expect(() => store.pinTask("missing")).toThrow("Task not found: missing");
-    expect(() => store.unpinTask("missing")).toThrow(
-      "Task not found: missing",
-    );
+    expect(() => store.unpinTask("missing")).toThrow("Task not found: missing");
 
     store.close();
   } finally {
@@ -1390,12 +1395,14 @@ test("store reads and writes a database created with the old schema through node
     database.close();
 
     const store = openTraceStore(databasePath);
+    const project = store.getProjectByRoot("/repo")!;
     expect(store.getTask("task-1")).toEqual({
       id: "task-1",
       title: "checkout",
       slug: "checkout",
       createdAt: "2026-05-29T00:00:00.000Z",
       projectRoot: "/repo",
+      projectId: project.id,
       archivedAt: null,
       pinnedAt: null,
     });
@@ -1808,7 +1815,10 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
     });
 
     expect(store.getTaskTimeline(task.id)).toEqual({
-      task,
+      task: {
+        ...task,
+        projectSlug: store.getProject(task.projectId)?.slug,
+      },
       items: [
         {
           type: "session",
@@ -1835,7 +1845,10 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
     });
 
     expect(store.getTaskTimeline(emptyTask.id)).toEqual({
-      task: emptyTask,
+      task: {
+        ...emptyTask,
+        projectSlug: store.getProject(emptyTask.projectId)?.slug,
+      },
       items: [],
       lastActivityAt: emptyTask.createdAt,
       tokenTotals: {
@@ -1997,7 +2010,9 @@ test("re-entry manifest puts state.md in state: field and excludes it from docs:
 
     const manifest = store.getReEntryManifest(task.id);
 
-    expect(manifest?.state).toEqual(expect.objectContaining({ path: statePath }));
+    expect(manifest?.state).toEqual(
+      expect.objectContaining({ path: statePath }),
+    );
     const docPaths = manifest?.docs.map((d) => d.path) ?? [];
     expect(docPaths).not.toContain(statePath);
     expect(docPaths).toContain(otherDocPath);
@@ -2042,7 +2057,9 @@ test("re-entry manifest omits state: field when no state.md exists", () => {
     const manifest = store.getReEntryManifest(task.id);
 
     expect("state" in (manifest ?? {})).toBe(false);
-    expect(manifest?.docs.map((d) => d.path)).toContain(join(docsDir, "plan.md"));
+    expect(manifest?.docs.map((d) => d.path)).toContain(
+      join(docsDir, "plan.md"),
+    );
 
     store.close();
   } finally {
@@ -2098,6 +2115,7 @@ test("listTaskSummaries reports last activity and aggregated token totals", () =
 
     expect(summaries.find((summary) => summary.id === task.id)).toEqual({
       ...task,
+      projectSlug: store.getProject(task.projectId)?.slug,
       lastActivityAt: doc.createdAt,
       tokenTotals: {
         inputTokens: 17,
@@ -2112,6 +2130,7 @@ test("listTaskSummaries reports last activity and aggregated token totals", () =
 
     expect(summaries.find((summary) => summary.id === emptyTask.id)).toEqual({
       ...emptyTask,
+      projectSlug: store.getProject(emptyTask.projectId)?.slug,
       lastActivityAt: emptyTask.createdAt,
       tokenTotals: {
         inputTokens: 0,
@@ -2144,6 +2163,7 @@ test("listTaskSummaries falls back to task createdAt when only docs predate it i
     const [summary] = store.listTaskSummaries();
     expect(summary).toEqual({
       ...task,
+      projectSlug: store.getProject(task.projectId)?.slug,
       lastActivityAt: doc.createdAt,
       tokenTotals: {
         inputTokens: 0,
@@ -2246,9 +2266,7 @@ test("getSession does not clobber a stored model when a fresh parse yields null"
       transcriptPath,
       tool: "claude",
     });
-    expect(store.getSession("claude-session-1")!.model).toBe(
-      "claude-opus-4-7",
-    );
+    expect(store.getSession("claude-session-1")!.model).toBe("claude-opus-4-7");
 
     // Transcript no longer carries a model (e.g. a truncated tail) — the
     // previously stored model must survive.
@@ -2256,9 +2274,7 @@ test("getSession does not clobber a stored model when a fresh parse yields null"
       transcriptPath,
       `${JSON.stringify({ type: "assistant", session_id: "claude-session-1", message: { id: "msg_1" } })}\n`,
     );
-    expect(store.getSession("claude-session-1")!.model).toBe(
-      "claude-opus-4-7",
-    );
+    expect(store.getSession("claude-session-1")!.model).toBe("claude-opus-4-7");
 
     store.close();
   } finally {
@@ -2462,8 +2478,16 @@ test("listTaskSummaries agentTools: claude-only when only claude sessions exist"
   try {
     const store = openTraceStore(databasePath);
     const task = store.createTask("claude-only");
-    const s1 = store.registerSession({ id: "s1", transcriptPath: "/t1.jsonl", tool: "claude" });
-    const s2 = store.registerSession({ id: "s2", transcriptPath: "/t2.jsonl", tool: "claude" });
+    const s1 = store.registerSession({
+      id: "s1",
+      transcriptPath: "/t1.jsonl",
+      tool: "claude",
+    });
+    const s2 = store.registerSession({
+      id: "s2",
+      transcriptPath: "/t2.jsonl",
+      tool: "claude",
+    });
     store.assignSession(s1.id, task.id);
     store.assignSession(s2.id, task.id);
 
@@ -2483,7 +2507,11 @@ test("listTaskSummaries agentTools: codex-only when only codex sessions exist", 
   try {
     const store = openTraceStore(databasePath);
     const task = store.createTask("codex-only");
-    const s1 = store.registerSession({ id: "s1", transcriptPath: "/t1.jsonl", tool: "codex" });
+    const s1 = store.registerSession({
+      id: "s1",
+      transcriptPath: "/t1.jsonl",
+      tool: "codex",
+    });
     store.assignSession(s1.id, task.id);
 
     const [summary] = store.listTaskSummaries();
@@ -2502,8 +2530,16 @@ test("listTaskSummaries agentTools: both tools sorted when both claude and codex
   try {
     const store = openTraceStore(databasePath);
     const task = store.createTask("both-tools");
-    const claude = store.registerSession({ id: "c1", transcriptPath: "/c1.jsonl", tool: "claude" });
-    const codex = store.registerSession({ id: "cx1", transcriptPath: "/cx1.jsonl", tool: "codex" });
+    const claude = store.registerSession({
+      id: "c1",
+      transcriptPath: "/c1.jsonl",
+      tool: "claude",
+    });
+    const codex = store.registerSession({
+      id: "cx1",
+      transcriptPath: "/cx1.jsonl",
+      tool: "codex",
+    });
     store.assignSession(claude.id, task.id);
     store.assignSession(codex.id, task.id);
 

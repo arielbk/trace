@@ -4,9 +4,26 @@ import {
   sqliteTable,
   text,
   integer,
+  index,
   primaryKey,
   type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
+
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    slug: text("slug").notNull().unique(),
+    remoteUrl: text("remote_url"),
+    rootCommit: text("root_commit"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("projects_remote_url_index").on(table.remoteUrl),
+    index("projects_root_commit_index").on(table.rootCommit),
+  ],
+);
 
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
@@ -14,9 +31,20 @@ export const tasks = sqliteTable("tasks", {
   slug: text("slug").notNull().unique(),
   createdAt: text("created_at").notNull(),
   projectRoot: text("project_root").notNull().default(""),
+  projectId: text("project_id").references(() => projects.id, {
+    onDelete: "restrict",
+  }),
   archivedAt: text("archived_at"),
   description: text("description"),
   pinnedAt: text("pinned_at"),
+});
+
+export const projectRoots = sqliteTable("project_roots", {
+  rootPath: text("root_path").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: text("created_at").notNull(),
 });
 
 export const sessions = sqliteTable("sessions", {

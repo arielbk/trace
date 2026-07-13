@@ -1,4 +1,31 @@
 import type { ParsedStateMd } from "./state-parser.ts";
+import type { ProjectFingerprints } from "./project-fingerprint.ts";
+
+export type Project = {
+  id: string;
+  slug: string;
+  remoteUrl: string | null;
+  rootCommit: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectResolution = {
+  kind: "known" | "linked" | "created";
+  project: Project;
+  collisionHint?: {
+    duplicateSlug: string;
+    canonicalSlug: string;
+  };
+};
+
+export type ProjectMergeResult = {
+  duplicateSlug: string;
+  canonicalSlug: string;
+  tasksMoved: number;
+  rootsMoved: number;
+  fingerprintsAdded: Array<"remote URL" | "root commit">;
+};
 
 export type Task = {
   id: string;
@@ -6,6 +33,7 @@ export type Task = {
   slug: string;
   createdAt: string;
   projectRoot: string;
+  projectId: string;
   archivedAt: string | null;
   pinnedAt: string | null;
   // Optional agent-authored summary; absent on tasks created without one.
@@ -116,7 +144,7 @@ export type TaskTimelineItem =
     };
 
 export type TaskTimeline = {
-  task: Task;
+  task: Task & { projectSlug: string };
   items: TaskTimelineItem[];
   tokenTotals: TokenTotals;
   lastActivityAt: string;
@@ -124,6 +152,7 @@ export type TaskTimeline = {
 };
 
 export type TaskSummary = Task & {
+  projectSlug: string;
   lastActivityAt: string;
   tokenTotals: TokenTotals;
   agentTools: SessionTool[];
@@ -175,6 +204,16 @@ export type TaskStore = {
   createTask(title: string, projectRoot?: string, description?: string): Task;
   getTask(id: string): Task | null;
   getTaskByRef(ref: string): Task | null;
+  getProject(id: string): Project | null;
+  getProjectBySlug(slug: string): Project | null;
+  getProjectByFingerprint(fingerprints: ProjectFingerprints): Project | null;
+  getProjectByRoot(rootPath: string): Project | null;
+  getProjectRoot(projectId: string): string | null;
+  resolveProject(rootPath: string): ProjectResolution;
+  mergeProjects(
+    duplicateSlug: string,
+    canonicalSlug: string,
+  ): ProjectMergeResult;
   getSession(id: string): Session | null;
   listTasks(): Task[];
   listTaskSummaries(): TaskSummary[];
@@ -193,7 +232,11 @@ export type TaskStore = {
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;
-  addTaskDoc(taskId: string, path: string, options?: AddTaskDocOptions): TaskDoc;
+  addTaskDoc(
+    taskId: string,
+    path: string,
+    options?: AddTaskDocOptions,
+  ): TaskDoc;
   updateTaskDoc(
     taskId: string,
     path: string,
