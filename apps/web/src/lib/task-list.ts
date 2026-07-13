@@ -2,13 +2,13 @@ import type { TaskSummary } from "@trace/core/browser";
 
 export type ProjectCount = {
   projectId: string;
-  displayName: string;
+  projectSlug: string;
   count: number;
 };
 
 export type ProjectTaskGroup = {
   projectId: string;
-  displayName: string;
+  projectSlug: string;
   tasks: TaskSummary[];
 };
 
@@ -24,12 +24,12 @@ export function visibleTasks(
   return tasks.filter((task) => task.archivedAt === null);
 }
 
-export function filterByProject(
+export function filterByProjectSlug(
   tasks: TaskSummary[],
-  projectId: string | null,
+  projectSlug: string | null,
 ): TaskSummary[] {
-  if (!projectId) return tasks;
-  return tasks.filter((task) => task.projectId === projectId);
+  if (!projectSlug) return tasks;
+  return tasks.filter((task) => task.projectSlug === projectSlug);
 }
 
 export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
@@ -41,13 +41,13 @@ export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
     } else {
       map.set(task.projectId, {
         projectId: task.projectId,
-        displayName: task.projectSlug,
+        projectSlug: task.projectSlug,
         count: 1,
       });
     }
   }
   return Array.from(map.values()).sort((a, b) =>
-    a.displayName.localeCompare(b.displayName),
+    a.projectSlug.localeCompare(b.projectSlug),
   );
 }
 
@@ -101,7 +101,7 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
 
     groups.set(task.projectId, {
       projectId: task.projectId,
-      displayName: task.projectSlug,
+      projectSlug: task.projectSlug,
       tasks: [task],
     });
   }

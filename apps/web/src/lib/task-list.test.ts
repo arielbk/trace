@@ -3,7 +3,7 @@ import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   buildSubtitle,
   byActivityDesc,
-  filterByProject,
+  filterByProjectSlug,
   getProjectCounts,
   groupTasksByProject,
   partitionPinned,
@@ -64,53 +64,56 @@ describe("visibleTasks", () => {
   });
 });
 
-describe("filterByProject", () => {
-  test("returns all tasks when projectId is null", () => {
+describe("filterByProjectSlug", () => {
+  test("returns all tasks when projectSlug is null", () => {
     const tasks = [
       summary({ id: "a", projectRoot: "/work/alpha" }),
       summary({ id: "b", projectRoot: "/work/beta" }),
     ];
-    expect(filterByProject(tasks, null)).toEqual(tasks);
+    expect(filterByProjectSlug(tasks, null)).toEqual(tasks);
   });
 
-  test("returns only tasks matching the given projectId", () => {
+  test("returns only tasks matching the given project slug", () => {
     const tasks = [
-      summary({ id: "a", projectId: "project-alpha" }),
-      summary({ id: "b", projectId: "project-beta" }),
-      summary({ id: "c", projectId: "project-alpha" }),
+      summary({ id: "a", projectSlug: "alpha" }),
+      summary({ id: "b", projectSlug: "beta" }),
+      summary({ id: "c", projectSlug: "alpha" }),
     ];
-    expect(filterByProject(tasks, "project-alpha").map((t) => t.id)).toEqual([
+    expect(filterByProjectSlug(tasks, "alpha").map((t) => t.id)).toEqual([
       "a",
       "c",
     ]);
   });
 
   test("returns empty array when no tasks match", () => {
-    const tasks = [summary({ id: "a", projectId: "project-alpha" })];
-    expect(filterByProject(tasks, "project-other")).toEqual([]);
+    const tasks = [summary({ id: "a", projectSlug: "alpha" })];
+    expect(filterByProjectSlug(tasks, "other")).toEqual([]);
   });
 
-  test("matches stable project IDs across different checkout roots", () => {
+  test("matches one stable project slug across different checkout roots", () => {
     const tasks = [
       summary({
         id: "main",
         projectRoot: "/work/main",
         projectId: "project-alpha",
+        projectSlug: "alpha",
       }),
       summary({
         id: "worktree",
         projectRoot: "/tmp/alpha-worktree",
         projectId: "project-alpha",
+        projectSlug: "alpha",
       }),
       summary({
         id: "other",
         projectRoot: "/work/other",
         projectId: "project-beta",
+        projectSlug: "beta",
       }),
     ];
 
     expect(
-      filterByProject(tasks, "project-alpha").map((task) => task.id),
+      filterByProjectSlug(tasks, "alpha").map((task) => task.id),
     ).toEqual(["main", "worktree"]);
   });
 });
@@ -133,7 +136,7 @@ describe("getProjectCounts", () => {
     ];
 
     expect(getProjectCounts(tasks)).toEqual([
-      { projectId: "project-alpha", displayName: "alpha-app", count: 2 },
+      { projectId: "project-alpha", projectSlug: "alpha-app", count: 2 },
     ]);
   });
 
@@ -168,7 +171,7 @@ describe("getProjectCounts", () => {
     expect(alpha?.count).toBe(2);
   });
 
-  test("displayName is the persisted project slug", () => {
+  test("projectSlug is the persisted project slug", () => {
     const tasks = [
       summary({
         id: "a",
@@ -176,17 +179,17 @@ describe("getProjectCounts", () => {
         projectSlug: "trace-v2",
       }),
     ];
-    expect(getProjectCounts(tasks)[0]?.displayName).toBe("trace-v2");
+    expect(getProjectCounts(tasks)[0]?.projectSlug).toBe("trace-v2");
   });
 
-  test("results are sorted alphabetically by displayName", () => {
+  test("results are sorted alphabetically by projectSlug", () => {
     const tasks = [
       summary({ id: "a", projectId: "project-zebra", projectSlug: "zebra" }),
       summary({ id: "b", projectId: "project-alpha", projectSlug: "alpha" }),
     ];
     const counts = getProjectCounts(tasks);
-    expect(counts[0]?.displayName).toBe("alpha");
-    expect(counts[1]?.displayName).toBe("zebra");
+    expect(counts[0]?.projectSlug).toBe("alpha");
+    expect(counts[1]?.projectSlug).toBe("zebra");
   });
 });
 
@@ -212,7 +215,7 @@ describe("groupTasksByProject", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({
       projectId: "project-alpha",
-      displayName: "alpha-app",
+      projectSlug: "alpha-app",
     });
     expect(groups[0]?.tasks.map((task) => task.id)).toEqual([
       "worktree",

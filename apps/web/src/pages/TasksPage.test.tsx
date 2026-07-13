@@ -184,7 +184,7 @@ describe("TasksPage", () => {
     expect(screen.getByText("API work")).toBeInTheDocument();
   });
 
-  test("filters by project ID from the URL while displaying the project slug", async () => {
+  test("filters by project slug from the URL without exposing the project ID", async () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "main",
@@ -217,7 +217,7 @@ describe("TasksPage", () => {
     );
 
     render(<TasksPage />, {
-      wrapper: makeQueryWrapper(["/?project=project-alpha"]),
+      wrapper: makeQueryWrapper(["/?project=alpha-app"]),
     });
 
     expect(await screen.findByText("Main checkout task")).toBeInTheDocument();
@@ -907,11 +907,11 @@ describe("TaskList pinned section", () => {
 });
 
 describe("FilterBar", () => {
-  test("shows 'All projects' in trigger when selectedProject is null", () => {
+  test("shows 'All projects' in trigger when selectedProjectSlug is null", () => {
     const html = renderToStaticMarkup(
       <FilterBar
         projects={[]}
-        selectedProject={null}
+        selectedProjectSlug={null}
         onProjectChange={() => undefined}
         showArchived={false}
         onShowArchivedChange={() => undefined}
@@ -920,14 +920,14 @@ describe("FilterBar", () => {
     expect(html).toContain("All projects");
   });
 
-  test("shows selected project displayName in trigger when project is selected", () => {
+  test("shows the selected project slug in the trigger", () => {
     const projects = [
-      { projectId: "project-alpha", displayName: "alpha", count: 3 },
+      { projectId: "project-alpha", projectSlug: "alpha", count: 3 },
     ];
     const html = renderToStaticMarkup(
       <FilterBar
         projects={projects}
-        selectedProject="project-alpha"
+        selectedProjectSlug="alpha"
         onProjectChange={() => undefined}
         showArchived={false}
         onShowArchivedChange={() => undefined}
@@ -936,14 +936,14 @@ describe("FilterBar", () => {
     expect(html).toContain("alpha");
   });
 
-  test("selecting a project reports its stable ID while showing its slug", async () => {
+  test("selecting a project reports its slug without exposing its ID", async () => {
     const onProjectChange = vi.fn();
     render(
       <FilterBar
         projects={[
-          { projectId: "project-alpha", displayName: "alpha-app", count: 3 },
+          { projectId: "project-alpha", projectSlug: "alpha-app", count: 3 },
         ]}
-        selectedProject={null}
+        selectedProjectSlug={null}
         onProjectChange={onProjectChange}
         showArchived={false}
         onShowArchivedChange={() => undefined}
@@ -955,14 +955,14 @@ describe("FilterBar", () => {
     );
     fireEvent.click(await screen.findByText("alpha-app"));
 
-    expect(onProjectChange).toHaveBeenCalledWith("project-alpha");
+    expect(onProjectChange).toHaveBeenCalledWith("alpha-app");
   });
 
   test("renders the Show archived label", () => {
     const html = renderToStaticMarkup(
       <FilterBar
         projects={[]}
-        selectedProject={null}
+        selectedProjectSlug={null}
         onProjectChange={() => undefined}
         showArchived={false}
         onShowArchivedChange={() => undefined}
@@ -975,7 +975,7 @@ describe("FilterBar", () => {
     const html = renderToStaticMarkup(
       <FilterBar
         projects={[]}
-        selectedProject={null}
+        selectedProjectSlug={null}
         onProjectChange={() => undefined}
         showArchived={false}
         onShowArchivedChange={() => undefined}

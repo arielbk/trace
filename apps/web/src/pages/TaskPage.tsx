@@ -357,7 +357,7 @@ export function TaskTimelineView({
     <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader
         project={timeline.task.projectSlug}
-        projectHref={`/?project=${encodeURIComponent(timeline.task.projectId)}`}
+        projectHref={`/?project=${encodeURIComponent(timeline.task.projectSlug)}`}
         context={timeline.task.slug}
         bordered={false}
       />

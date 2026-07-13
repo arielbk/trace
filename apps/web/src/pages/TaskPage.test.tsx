@@ -791,7 +791,7 @@ test("TaskTimelineView shows the project slug in the header breadcrumb", () => {
   expect(html).not.toContain("renamed-checkout");
 });
 
-test("TaskTimelineView keeps path-only projects in the breadcrumb by slug and ID", () => {
+test("TaskTimelineView keeps path-only projects in the breadcrumb by slug", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
@@ -822,7 +822,8 @@ test("TaskTimelineView keeps path-only projects in the breadcrumb by slug and ID
   );
 
   expect(html).toContain("pathless-project");
-  expect(html).toContain('href="/?project=project-pathless"');
+  expect(html).toContain('href="/?project=pathless-project"');
+  expect(html).not.toContain('href="/?project=project-pathless"');
 });
 
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
@@ -1736,8 +1737,9 @@ test("TaskTimelineView breadcrumb links the project name to the filtered home vi
     </MemoryRouter>,
   );
   expect(html).toContain(
-    `href="/?project=${encodeURIComponent("project-trace-v2")}"`,
+    `href="/?project=${encodeURIComponent("trace-v2")}"`,
   );
+  expect(html).not.toContain("project-trace-v2");
 });
 
 // doc viewer Sheet
