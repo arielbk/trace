@@ -10,7 +10,7 @@ import { inferCliSessionIdentity } from "./identity.ts";
 import { looksLikeFlag, type Env } from "./seam.ts";
 
 export function taskCreateUsage(): string {
-  return "Usage: trace task create <title> [--description <text>] [--project <dir>]";
+  return "Usage: trace task create <title> [--description <text>] [--project <slug|dir>]";
 }
 
 export function parseTaskCreateArgs(args: string[]): {
@@ -93,7 +93,7 @@ export function parseTaskUpdateArgs(args: string[]): {
 }
 
 export function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <dir>]";
+  return "Usage: trace task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <slug|dir>]";
 }
 
 export function parseTaskCaptureArgs(args: string[]): {
@@ -333,7 +333,7 @@ export function isSessionOrigin(value: string): value is SessionOrigin {
 }
 
 export function sessionActiveTaskUsage(): string {
-  return "Usage: trace session active-task --id <session-id> [--project <dir>]";
+  return "Usage: trace session active-task --id <session-id> [--project <slug|dir>]";
 }
 
 export function parseSessionActiveTaskArgs(args: string[]): { id: string; project?: string } {
@@ -417,7 +417,7 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
 }
 
 export function skillWorkOnTaskUsage(): string {
-  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex|cursor>] [--model <name>] [--description <text>] [--project <dir>]";
+  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex|cursor>] [--model <name>] [--description <text>] [--project <slug|dir>]";
 }
 
 export function skillReEnterUsage(): string {
@@ -425,11 +425,11 @@ export function skillReEnterUsage(): string {
 }
 
 export function skillDocsDirUsage(): string {
-  return "Usage: trace skill docs-dir [--id <session>] [--project <dir>]";
+  return "Usage: trace skill docs-dir [--id <session>] [--project <slug|dir>]";
 }
 
 export function recallCandidatesUsage(): string {
-  return "Usage: trace skill recall-candidates [--project <dir>]";
+  return "Usage: trace skill recall-candidates [--project <slug|dir>]";
 }
 
 export function parseSkillWorkOnTaskArgs(

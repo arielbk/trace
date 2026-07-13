@@ -3,10 +3,10 @@ import type { TaskSummary, TokenTotals } from "@trace/core";
 import {
   buildSubtitle,
   byActivityDesc,
-  filterByProject,
+  filterByProjectSlug,
   getProjectCounts,
+  groupTasksByProject,
   partitionPinned,
-  projectDisplayName,
   visibleTasks,
 } from "./task-list.ts";
 
@@ -28,6 +28,8 @@ function summary(
     title: "Untitled",
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
+    projectId: "project-trace-v2",
+    projectSlug: "trace-v2",
     archivedAt: null,
     pinnedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
@@ -52,9 +54,9 @@ describe("visibleTasks", () => {
       summary({ id: "active", archivedAt: null }),
       summary({ id: "archived", archivedAt: "2026-06-01T00:00:00.000Z" }),
     ];
-    expect(visibleTasks(tasks, { showArchived: true }).map((t) => t.id)).toEqual(
-      ["active", "archived"],
-    );
+    expect(
+      visibleTasks(tasks, { showArchived: true }).map((t) => t.id),
+    ).toEqual(["active", "archived"]);
   });
 
   test("returns empty array unchanged", () => {
@@ -62,72 +64,163 @@ describe("visibleTasks", () => {
   });
 });
 
-describe("filterByProject", () => {
-  test("returns all tasks when projectRoot is null", () => {
+describe("filterByProjectSlug", () => {
+  test("returns all tasks when projectSlug is null", () => {
     const tasks = [
       summary({ id: "a", projectRoot: "/work/alpha" }),
       summary({ id: "b", projectRoot: "/work/beta" }),
     ];
-    expect(filterByProject(tasks, null)).toEqual(tasks);
+    expect(filterByProjectSlug(tasks, null)).toEqual(tasks);
   });
 
-  test("returns only tasks matching the given projectRoot", () => {
+  test("returns only tasks matching the given project slug", () => {
     const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/beta" }),
-      summary({ id: "c", projectRoot: "/work/alpha" }),
+      summary({ id: "a", projectSlug: "alpha" }),
+      summary({ id: "b", projectSlug: "beta" }),
+      summary({ id: "c", projectSlug: "alpha" }),
     ];
-    expect(filterByProject(tasks, "/work/alpha").map((t) => t.id)).toEqual([
+    expect(filterByProjectSlug(tasks, "alpha").map((t) => t.id)).toEqual([
       "a",
       "c",
     ]);
   });
 
   test("returns empty array when no tasks match", () => {
-    const tasks = [summary({ id: "a", projectRoot: "/work/alpha" })];
-    expect(filterByProject(tasks, "/work/other")).toEqual([]);
+    const tasks = [summary({ id: "a", projectSlug: "alpha" })];
+    expect(filterByProjectSlug(tasks, "other")).toEqual([]);
+  });
+
+  test("matches one stable project slug across different checkout roots", () => {
+    const tasks = [
+      summary({
+        id: "main",
+        projectRoot: "/work/main",
+        projectId: "project-alpha",
+        projectSlug: "alpha",
+      }),
+      summary({
+        id: "worktree",
+        projectRoot: "/tmp/alpha-worktree",
+        projectId: "project-alpha",
+        projectSlug: "alpha",
+      }),
+      summary({
+        id: "other",
+        projectRoot: "/work/other",
+        projectId: "project-beta",
+        projectSlug: "beta",
+      }),
+    ];
+
+    expect(
+      filterByProjectSlug(tasks, "alpha").map((task) => task.id),
+    ).toEqual(["main", "worktree"]);
   });
 });
 
 describe("getProjectCounts", () => {
-  test("returns one entry per unique projectRoot", () => {
+  test("groups checkout roots by project ID and displays the persisted slug", () => {
     const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/beta" }),
-      summary({ id: "c", projectRoot: "/work/alpha" }),
+      summary({
+        id: "main",
+        projectRoot: "/work/main",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+      }),
+      summary({
+        id: "worktree",
+        projectRoot: "/tmp/alpha-worktree",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+      }),
+    ];
+
+    expect(getProjectCounts(tasks)).toEqual([
+      { projectId: "project-alpha", projectSlug: "alpha-app", count: 2 },
+    ]);
+  });
+
+  test("returns one entry per unique projectId", () => {
+    const tasks = [
+      summary({ id: "a", projectId: "project-alpha", projectSlug: "alpha" }),
+      summary({ id: "b", projectId: "project-beta", projectSlug: "beta" }),
+      summary({ id: "c", projectId: "project-alpha", projectSlug: "alpha" }),
     ];
     const counts = getProjectCounts(tasks);
     expect(counts).toHaveLength(2);
-    expect(counts.map((p) => p.projectRoot).sort()).toEqual([
-      "/work/alpha",
-      "/work/beta",
+    expect(counts.map((project) => project.projectId).sort()).toEqual([
+      "project-alpha",
+      "project-beta",
     ]);
   });
 
   test("counts all tasks including archived", () => {
     const tasks = [
-      summary({ id: "a", projectRoot: "/work/alpha" }),
-      summary({ id: "b", projectRoot: "/work/alpha", archivedAt: "2026-06-01T00:00:00.000Z" }),
-      summary({ id: "c", projectRoot: "/work/beta" }),
+      summary({ id: "a", projectId: "project-alpha" }),
+      summary({
+        id: "b",
+        projectId: "project-alpha",
+        archivedAt: "2026-06-01T00:00:00.000Z",
+      }),
+      summary({ id: "c", projectId: "project-beta" }),
     ];
     const counts = getProjectCounts(tasks);
-    const alpha = counts.find((p) => p.projectRoot === "/work/alpha");
+    const alpha = counts.find(
+      (project) => project.projectId === "project-alpha",
+    );
     expect(alpha?.count).toBe(2);
   });
 
-  test("displayName is the basename of projectRoot", () => {
-    const tasks = [summary({ id: "a", projectRoot: "/work/trace-v2" })];
-    expect(getProjectCounts(tasks)[0]?.displayName).toBe("trace-v2");
+  test("projectSlug is the persisted project slug", () => {
+    const tasks = [
+      summary({
+        id: "a",
+        projectRoot: "/work/renamed-checkout",
+        projectSlug: "trace-v2",
+      }),
+    ];
+    expect(getProjectCounts(tasks)[0]?.projectSlug).toBe("trace-v2");
   });
 
-  test("results are sorted alphabetically by displayName", () => {
+  test("results are sorted alphabetically by projectSlug", () => {
     const tasks = [
-      summary({ id: "a", projectRoot: "/work/zebra" }),
-      summary({ id: "b", projectRoot: "/work/alpha" }),
+      summary({ id: "a", projectId: "project-zebra", projectSlug: "zebra" }),
+      summary({ id: "b", projectId: "project-alpha", projectSlug: "alpha" }),
     ];
     const counts = getProjectCounts(tasks);
-    expect(counts[0]?.displayName).toBe("alpha");
-    expect(counts[1]?.displayName).toBe("zebra");
+    expect(counts[0]?.projectSlug).toBe("alpha");
+    expect(counts[1]?.projectSlug).toBe("zebra");
+  });
+});
+
+describe("groupTasksByProject", () => {
+  test("groups sibling checkout roots under the stable project ID and slug", () => {
+    const groups = groupTasksByProject([
+      summary({
+        id: "main",
+        projectRoot: "/work/main",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+        lastActivityAt: "2026-01-01T00:00:00.000Z",
+      }),
+      summary({
+        id: "worktree",
+        projectRoot: "/tmp/alpha-worktree",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+        lastActivityAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      projectId: "project-alpha",
+      projectSlug: "alpha-app",
+    });
+    expect(groups[0]?.tasks.map((task) => task.id)).toEqual([
+      "worktree",
+      "main",
+    ]);
   });
 });
 
@@ -218,19 +311,5 @@ describe("partitionPinned", () => {
     const { pinned, rest } = partitionPinned(tasks);
     expect(pinned).toEqual([]);
     expect(rest.map((t) => t.id)).toEqual(["archived-pinned"]);
-  });
-});
-
-describe("projectDisplayName", () => {
-  test("returns the last path segment", () => {
-    expect(projectDisplayName("/work/trace-v2")).toBe("trace-v2");
-  });
-
-  test("handles trailing slashes", () => {
-    expect(projectDisplayName("/work/trace-v2/")).toBe("trace-v2");
-  });
-
-  test("returns the input as-is when it has no separators", () => {
-    expect(projectDisplayName("standalone")).toBe("standalone");
   });
 });

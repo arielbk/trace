@@ -25,12 +25,12 @@ function withTempContext(run: (ctx: { env: Env; cwd: string; stdin: string }) =>
 
 test("task create and show round-trip through direct operations", () => {
   withTempContext((ctx) => {
-    expect(
-      taskCreateOperation(
-        ["Checkout flow", "--description", "Tighten the cart path"],
-        ctx,
-      ),
-    ).toEqual({ exitCode: 0, stdout: "checkout-flow\n", stderr: "" });
+    const created = taskCreateOperation(
+      ["Checkout flow", "--description", "Tighten the cart path"],
+      ctx,
+    );
+    expect(created).toMatchObject({ exitCode: 0, stdout: "checkout-flow\n" });
+    expect(created.stderr).toContain("created new project");
 
     const shown = taskShowOperation(["checkout-flow"], ctx);
 
@@ -172,7 +172,8 @@ test("task capture with --description stays quiet", () => {
       ctx,
     );
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toBe("");
+    expect(result.stderr).toContain("created new project");
+    expect(result.stderr).not.toContain("Reminder:");
   });
 });
 

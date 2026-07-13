@@ -27,10 +27,9 @@ import {
 import { cn } from "../lib/utils.ts";
 import {
   buildSubtitle,
-  filterByProject,
+  filterByProjectSlug,
   getProjectCounts,
   partitionPinned,
-  projectDisplayName,
   type ProjectCount,
   visibleTasks,
 } from "../lib/task-list.ts";
@@ -43,14 +42,14 @@ export function TasksPage() {
   const unpinMutation = useUnpinTask();
   const [showArchived, setShowArchived] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const selectedProject = searchParams.get("project");
+  const selectedProjectSlug = searchParams.get("project");
 
-  function setSelectedProject(project: string | null) {
+  function setSelectedProject(projectSlug: string | null) {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (project) {
-          next.set("project", project);
+        if (projectSlug) {
+          next.set("project", projectSlug);
         } else {
           next.delete("project");
         }
@@ -62,15 +61,19 @@ export function TasksPage() {
 
   const reveal = useSkeletonReveal(!tasksQuery.isPending);
   const tasks = tasksQuery.data ?? [];
+  const projects = getProjectCounts(tasks);
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
-  const displayedTasks = filterByProject(visibleByArchive, selectedProject);
+  const displayedTasks = filterByProjectSlug(
+    visibleByArchive,
+    selectedProjectSlug,
+  );
   const archivedHidden = showArchived
     ? 0
-    : filterByProject(tasks, selectedProject).filter((t) => t.archivedAt !== null).length;
-  const crumb = selectedProject
-    ? projectDisplayName(selectedProject)
-    : "all projects";
+    : filterByProjectSlug(tasks, selectedProjectSlug).filter(
+        (t) => t.archivedAt !== null,
+      ).length;
+  const crumb = selectedProjectSlug ?? "all projects";
   const subtitle = buildSubtitle(displayedTasks.length, archivedHidden);
 
   async function handleArchive(task: TaskSummary): Promise<void> {
@@ -90,9 +93,7 @@ export function TasksPage() {
     <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader project={crumb} bordered={false} />
       <div className="pt-7 pb-header-y">
-        <h1 className="m-0 text-page-title font-extrabold">
-          Tasks
-        </h1>
+        <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>
         {reveal.showContent ? (
           <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
             {subtitle}
@@ -106,8 +107,8 @@ export function TasksPage() {
       </div>
       {reveal.showContent ? (
         <FilterBar
-          projects={getProjectCounts(tasks)}
-          selectedProject={selectedProject}
+          projects={projects}
+          selectedProjectSlug={selectedProjectSlug}
           onProjectChange={setSelectedProject}
           showArchived={showArchived}
           onShowArchivedChange={setShowArchived}
@@ -270,15 +271,15 @@ function FolderIcon() {
 
 export function FilterBar({
   projects,
-  selectedProject,
+  selectedProjectSlug,
   onProjectChange,
   showArchived,
   onShowArchivedChange,
   triggerCount,
 }: {
   projects: ProjectCount[];
-  selectedProject: string | null;
-  onProjectChange: (project: string | null) => void;
+  selectedProjectSlug: string | null;
+  onProjectChange: (projectSlug: string | null) => void;
   showArchived: boolean;
   onShowArchivedChange: (show: boolean) => void;
   triggerCount?: number;
@@ -286,10 +287,7 @@ export function FilterBar({
   const [open, setOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const selectedLabel = selectedProject
-    ? (projects.find((p) => p.projectRoot === selectedProject)?.displayName ??
-      selectedProject)
-    : "All projects";
+  const selectedLabel = selectedProjectSlug ?? "All projects";
 
   useEffect(() => {
     return () => {
@@ -376,7 +374,8 @@ export function FilterBar({
                     value="__all__"
                     className={cn(
                       "filter-bar-all-projects flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
-                      selectedProject === null && "bg-accent-soft text-accent",
+                      selectedProjectSlug === null &&
+                        "bg-accent-soft text-accent",
                     )}
                     onSelect={() => {
                       onProjectChange(null);
@@ -384,34 +383,36 @@ export function FilterBar({
                     }}
                   >
                     <span className="flex-1">All projects</span>
-                    {selectedProject === null && <CheckIcon />}
+                    {selectedProjectSlug === null && <CheckIcon />}
                   </CommandItem>
                   {projects.map((project) => (
                     <CommandItem
-                      key={project.projectRoot}
-                      value={project.displayName}
+                      key={project.projectId}
+                      value={project.projectSlug}
                       className={cn(
                         "filter-bar-project-item flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
-                        selectedProject === project.projectRoot &&
+                        selectedProjectSlug === project.projectSlug &&
                           "bg-accent-soft text-accent",
                       )}
                       onSelect={() => {
-                        onProjectChange(project.projectRoot);
+                        onProjectChange(project.projectSlug);
                         handleOpenChange(false);
                       }}
                     >
-                      <span className="flex-1">{project.displayName}</span>
+                      <span className="flex-1">{project.projectSlug}</span>
                       <span
                         className={cn(
                           "tabular-nums",
-                          selectedProject === project.projectRoot
+                          selectedProjectSlug === project.projectSlug
                             ? "text-accent"
                             : "text-text-muted",
                         )}
                       >
                         {project.count}
                       </span>
-                      {selectedProject === project.projectRoot && <CheckIcon />}
+                      {selectedProjectSlug === project.projectSlug && (
+                        <CheckIcon />
+                      )}
                     </CommandItem>
                   ))}
                 </CommandList>
@@ -438,5 +439,3 @@ export function FilterBar({
     </div>
   );
 }
-
-

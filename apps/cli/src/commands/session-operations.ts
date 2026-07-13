@@ -78,11 +78,10 @@ export function sessionActiveTaskOperation(
   if (!parsedAttempt.ok) return parsedAttempt.result;
   const parsed = parsedAttempt.value;
 
-  const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store) => {
+    const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
     const activeTask = store.resolveActiveTask(parsed.id, projectRoot);
     return success(`${JSON.stringify(formatActiveTask(activeTask))}\n`);
   });

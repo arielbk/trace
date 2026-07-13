@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  renderHook,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -57,6 +53,8 @@ function makeTask(id: string): TaskSummary {
     title: "Task " + id,
     createdAt: "2026-01-01T00:00:00.000Z",
     projectRoot: "/work/proj",
+    projectId: "project-proj",
+    projectSlug: "proj",
     archivedAt: null,
     pinnedAt: null,
     lastActivityAt: "2026-01-01T00:00:00.000Z",
@@ -74,6 +72,8 @@ function makeTimeline(slug: string): TaskTimeline {
       title: "Task " + slug,
       createdAt: "2026-01-01T00:00:00.000Z",
       projectRoot: "/work/proj",
+      projectId: "project-proj",
+      projectSlug: "proj",
       archivedAt: null,
       pinnedAt: null,
     },
@@ -95,9 +95,11 @@ describe("fetchTasks", () => {
     const tasks = [makeTask("a"), makeTask("b")];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(tasks), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        ),
     );
     const result = await fetchTasks();
     expect(result).toEqual(tasks);
@@ -121,9 +123,11 @@ describe("fetchTaskTimeline", () => {
     const timeline = makeTimeline("my-task");
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(timeline), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(timeline), { status: 200 }),
+        ),
     );
     const result = await fetchTaskTimeline("my-task");
     expect(result).toEqual(timeline);
@@ -135,8 +139,12 @@ describe("fetchTaskTimeline", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response("Not found", { status: 404 })),
     );
-    await expect(fetchTaskTimeline("missing")).rejects.toBeInstanceOf(HttpError);
-    await expect(fetchTaskTimeline("missing")).rejects.toMatchObject({ status: 404 });
+    await expect(fetchTaskTimeline("missing")).rejects.toBeInstanceOf(
+      HttpError,
+    );
+    await expect(fetchTaskTimeline("missing")).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   test("throws HttpError with status on generic non-OK", async () => {
@@ -144,7 +152,9 @@ describe("fetchTaskTimeline", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response("Err", { status: 503 })),
     );
-    await expect(fetchTaskTimeline("slug")).rejects.toMatchObject({ status: 503 });
+    await expect(fetchTaskTimeline("slug")).rejects.toMatchObject({
+      status: 503,
+    });
   });
 });
 
@@ -155,9 +165,11 @@ describe("useTasks", () => {
     const tasks = [makeTask("a"), makeTask("b")];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(tasks), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        ),
     );
     const client = makeFreshClient();
     const { result } = renderHook(() => useTasks(), {
@@ -189,9 +201,11 @@ describe("useTaskTimeline", () => {
     const timeline = makeTimeline("my-task");
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(timeline), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(timeline), { status: 200 }),
+        ),
     );
     const client = makeFreshClient();
     const { result } = renderHook(() => useTaskTimeline("my-task"), {
@@ -248,19 +262,31 @@ describe("fetchDocContents", () => {
 
     const result = await fetchDocContents("my-task", "/work/docs/data.json");
 
-    expect(result).toEqual({ contentType: "application/json", body: '{"a":1}' });
+    expect(result).toEqual({
+      contentType: "application/json",
+      body: '{"a":1}',
+    });
   });
 
   test("throws HttpError with status and body message on non-OK response", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(new Response("Doc could not be read", { status: 500 })),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("Doc could not be read", { status: 500 }),
+        ),
     );
 
-    const error = await fetchDocContents("my-task", "/work/docs/plan.md").catch((e) => e);
+    const error = await fetchDocContents("my-task", "/work/docs/plan.md").catch(
+      (e) => e,
+    );
 
     expect(error).toBeInstanceOf(HttpError);
-    expect(error).toMatchObject({ status: 500, message: "Doc could not be read" });
+    expect(error).toMatchObject({
+      status: 500,
+      message: "Doc could not be read",
+    });
   });
 });
 
@@ -278,11 +304,17 @@ describe("useDocContents", () => {
       ),
     );
     const client = makeFreshClient();
-    const { result } = renderHook(() => useDocContents("my-task", "/work/docs/plan.md"), {
-      wrapper: wrapper(client),
-    });
+    const { result } = renderHook(
+      () => useDocContents("my-task", "/work/docs/plan.md"),
+      {
+        wrapper: wrapper(client),
+      },
+    );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ contentType: "text/html", body: "<p>Hello</p>" });
+    expect(result.current.data).toEqual({
+      contentType: "text/html",
+      body: "<p>Hello</p>",
+    });
   });
 
   test("surfaces a 404 as a query error carrying status 404", async () => {
@@ -291,9 +323,12 @@ describe("useDocContents", () => {
       vi.fn().mockResolvedValue(new Response("", { status: 404 })),
     );
     const client = makeFreshClient();
-    const { result } = renderHook(() => useDocContents("my-task", "/work/docs/missing.md"), {
-      wrapper: wrapper(client),
-    });
+    const { result } = renderHook(
+      () => useDocContents("my-task", "/work/docs/missing.md"),
+      {
+        wrapper: wrapper(client),
+      },
+    );
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect((result.current.error as HttpError).status).toBe(404);
   });
@@ -311,13 +346,22 @@ describe("postToggleCheckbox", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await postToggleCheckbox("my-task", "/work/docs/plan.md", 2, true);
+    const result = await postToggleCheckbox(
+      "my-task",
+      "/work/docs/plan.md",
+      2,
+      true,
+    );
 
     expect(result).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "/work/docs/plan.md", index: 2, checked: true }),
+      body: JSON.stringify({
+        path: "/work/docs/plan.md",
+        index: 2,
+        checked: true,
+      }),
     });
   });
 
@@ -327,9 +371,12 @@ describe("postToggleCheckbox", () => {
       vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
     );
 
-    const error = await postToggleCheckbox("my-task", "/work/docs/plan.md", 0, false).catch(
-      (e) => e,
-    );
+    const error = await postToggleCheckbox(
+      "my-task",
+      "/work/docs/plan.md",
+      0,
+      false,
+    ).catch((e) => e);
 
     expect(error).toBeInstanceOf(HttpError);
     expect(error).toMatchObject({ status: 500 });
@@ -352,13 +399,22 @@ describe("useToggleCheckbox", () => {
       wrapper: wrapper(client),
     });
 
-    result.current.mutate({ ref: "my-task", path: "/work/docs/plan.md", index: 3, checked: true });
+    result.current.mutate({
+      ref: "my-task",
+      path: "/work/docs/plan.md",
+      index: 3,
+      checked: true,
+    });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/docs/checkbox", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "/work/docs/plan.md", index: 3, checked: true }),
+      body: JSON.stringify({
+        path: "/work/docs/plan.md",
+        index: 3,
+        checked: true,
+      }),
     });
   });
 
@@ -450,12 +506,14 @@ describe("useToggleCheckbox", () => {
 
 describe("useArchiveTask", () => {
   test("POSTs to the archive endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "t1", archivedAt: "2026-06-15T00:00:00.000Z" }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ id: "t1", archivedAt: "2026-06-15T00:00:00.000Z" }),
+          { status: 200 },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => useArchiveTask(), {
@@ -463,10 +521,9 @@ describe("useArchiveTask", () => {
     });
     result.current.mutate("my-task");
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/my-task/archive",
-      { method: "POST" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/archive", {
+      method: "POST",
+    });
   });
 
   test("invalidates the tasks query on success", async () => {
@@ -511,12 +568,13 @@ describe("useArchiveTask", () => {
 
 describe("useUnarchiveTask", () => {
   test("POSTs to the unarchive endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "t1", archivedAt: null }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ id: "t1", archivedAt: null }), {
+          status: 200,
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => useUnarchiveTask(), {
@@ -524,10 +582,9 @@ describe("useUnarchiveTask", () => {
     });
     result.current.mutate("my-task");
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/my-task/unarchive",
-      { method: "POST" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/unarchive", {
+      method: "POST",
+    });
   });
 
   test("invalidates the tasks query on success", async () => {
@@ -541,10 +598,9 @@ describe("useUnarchiveTask", () => {
         );
       }
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ id: "a", archivedAt: null }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ id: "a", archivedAt: null }), {
+          status: 200,
+        }),
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -569,12 +625,14 @@ describe("useUnarchiveTask", () => {
 
 describe("usePinTask", () => {
   test("POSTs to the pin endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "t1", pinnedAt: "2026-06-15T00:00:00.000Z" }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ id: "t1", pinnedAt: "2026-06-15T00:00:00.000Z" }),
+          { status: 200 },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => usePinTask(), {
@@ -582,10 +640,9 @@ describe("usePinTask", () => {
     });
     result.current.mutate("my-task");
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/my-task/pin",
-      { method: "POST" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/pin", {
+      method: "POST",
+    });
   });
 
   test("invalidates the tasks query on success", async () => {
@@ -627,12 +684,13 @@ describe("usePinTask", () => {
 
 describe("useUnpinTask", () => {
   test("POSTs to the unpin endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ id: "t1", pinnedAt: null }),
-        { status: 200 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ id: "t1", pinnedAt: null }), {
+          status: 200,
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => useUnpinTask(), {
@@ -640,10 +698,9 @@ describe("useUnpinTask", () => {
     });
     result.current.mutate("my-task");
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/my-task/unpin",
-      { method: "POST" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/my-task/unpin", {
+      method: "POST",
+    });
   });
 
   test("invalidates the tasks query on success", async () => {
@@ -657,10 +714,9 @@ describe("useUnpinTask", () => {
         );
       }
       return Promise.resolve(
-        new Response(
-          JSON.stringify({ id: "a", pinnedAt: null }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ id: "a", pinnedAt: null }), {
+          status: 200,
+        }),
       );
     });
     vi.stubGlobal("fetch", fetchMock);

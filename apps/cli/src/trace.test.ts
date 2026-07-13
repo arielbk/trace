@@ -40,6 +40,130 @@ test("task create --project keys the task to the override repo's git root", () =
   }
 });
 
+test("all --project commands resolve an existing slug before a same-named path", () => {
+  const home = tmp("trace-cli-home-");
+  const sandbox = tmp("trace-cli-sandbox-");
+  const projectParent = tmp("trace-cli-project-");
+  const projectRepo = join(projectParent, "checkout-app");
+  const databasePath = join(home, "trace.sqlite");
+  const env = { HOME: home, TRACE_DB: databasePath };
+
+  try {
+    mkdirSync(join(projectRepo, ".git"), { recursive: true });
+    const seeded = runTraceCli(
+      ["task", "create", "Seed task", "--project", projectRepo],
+      env,
+      sandbox,
+    );
+    expect(seeded.exitCode).toBe(0);
+
+    const store = openTraceStore(databasePath);
+    const project = store.getProjectByRoot(projectRepo)!;
+    store.close();
+    mkdirSync(join(sandbox, project.slug, ".git"), { recursive: true });
+
+    const created = runTraceCli(
+      ["task", "create", "Created by slug", "--project", project.slug],
+      env,
+      sandbox,
+    );
+    expect(created.exitCode).toBe(0);
+    const shown = runTraceCli(
+      ["task", "show", created.stdout.trim()],
+      env,
+      sandbox,
+    );
+    expect(shown.stdout).toContain(`projectRoot: ${projectRepo}`);
+
+    const docPath = join(sandbox, "capture.md");
+    writeFileSync(docPath, "# Captured by slug\n");
+    const captured = runTraceCli(
+      [
+        "task",
+        "capture",
+        "Captured by slug",
+        "--doc",
+        docPath,
+        "--project",
+        project.slug,
+      ],
+      env,
+      sandbox,
+    );
+    expect(captured.exitCode).toBe(0);
+    expect(
+      runTraceCli(["task", "show", captured.stdout.trim()], env, sandbox).stdout,
+    ).toContain(`projectRoot: ${projectRepo}`);
+
+    const bound = runTraceCli(
+      [
+        "skill",
+        "work-on-task",
+        "Bound by slug",
+        "--id",
+        "slug-session",
+        "--transcript",
+        join(sandbox, "session.jsonl"),
+        "--tool",
+        "claude",
+        "--project",
+        project.slug,
+      ],
+      env,
+      sandbox,
+    );
+    expect(bound.exitCode).toBe(0);
+
+    const active = runTraceCli(
+      [
+        "session",
+        "active-task",
+        "--id",
+        "slug-session",
+        "--project",
+        project.slug,
+      ],
+      env,
+      sandbox,
+    );
+    expect(JSON.parse(active.stdout)).toEqual({
+      kind: "bound",
+      task: { title: "Bound by slug", slug: "bound-by-slug" },
+    });
+
+    const docsDir = runTraceCli(
+      [
+        "skill",
+        "docs-dir",
+        "--id",
+        "slug-session",
+        "--project",
+        project.slug,
+      ],
+      env,
+      sandbox,
+    );
+    expect(docsDir.stdout).toBe(
+      `taskDocsDir: ${join(home, "tasks", "bound-by-slug", "docs")}\n`,
+    );
+
+    const recalled = runTraceCli(
+      ["skill", "recall-candidates", "--project", project.slug],
+      env,
+      sandbox,
+    );
+    expect(
+      (JSON.parse(recalled.stdout) as Array<{ title: string }>).map(
+        ({ title }) => title,
+      ),
+    ).toContain("Created by slug");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+    rmSync(projectParent, { recursive: true, force: true });
+  }
+});
+
 test("hook session-start registers a Claude session from stdin", () => {
   const home = tmp("trace-cli-hook-home-");
   const project = tmp("trace-cli-hook-project-");

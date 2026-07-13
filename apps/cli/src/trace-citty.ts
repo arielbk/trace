@@ -36,6 +36,7 @@ import {
   skillRecallCandidatesOperation,
   skillWorkOnTaskOperation,
 } from "./commands/skill-operations.ts";
+import { projectMergeOperation } from "./commands/project-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -149,6 +150,20 @@ export function buildTraceCittyRoot(
             meta: { description: "Update a registered doc's title or description" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return taskUpdateDocOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      project: defineCommand({
+        meta: { description: "Manage projects" },
+        subCommands: {
+          merge: defineCommand({
+            meta: {
+              description: "Merge a duplicate project into a canonical project",
+            },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return projectMergeOperation(args, { env });
             },
           }),
         },

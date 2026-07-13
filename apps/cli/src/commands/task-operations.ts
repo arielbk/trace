@@ -26,6 +26,7 @@ import {
   taskUpdateUsage,
 } from "./parsers.ts";
 import {
+  formatProjectResolution,
   formatTask,
   formatTaskDocSummary,
   formatTaskSummary,
@@ -125,13 +126,17 @@ export function taskCreateOperation(
   if (!parsedAttempt.ok) return parsedAttempt.result;
   const parsed = parsedAttempt.value;
 
-  const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store) => {
+    const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
+    const resolution = store.resolveProject(projectRoot);
     const task = store.createTask(parsed.title, projectRoot, parsed.description);
-    return success(`${task.slug}\n`);
+    return {
+      exitCode: 0,
+      stdout: `${task.slug}\n`,
+      stderr: formatProjectResolution(resolution),
+    };
   });
 }
 
@@ -180,11 +185,11 @@ export function taskCaptureOperation(
   if (!parsedAttempt.ok) return parsedAttempt.result;
   const parsed = parsedAttempt.value;
 
-  const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store, databasePath) => {
+    const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
+    const resolution = store.resolveProject(projectRoot);
     const contents = parsed.docPath
       ? readFileSync(parsed.docPath, "utf8")
       : ctx.stdin || readFileSync(0, "utf8");
@@ -213,12 +218,15 @@ export function taskCaptureOperation(
       return {
         exitCode: 0,
         stdout: `${task.id}\n`,
-        stderr:
-          "Reminder: no --description given; add one with `task update-doc` so the doc reads well in the manifest.\n",
+        stderr: `${formatProjectResolution(resolution)}Reminder: no --description given; add one with \`task update-doc\` so the doc reads well in the manifest.\n`,
       };
     }
 
-    return success(`${task.id}\n`);
+    return {
+      exitCode: 0,
+      stdout: `${task.id}\n`,
+      stderr: formatProjectResolution(resolution),
+    };
   });
 }
 

@@ -1,14 +1,14 @@
 import type { TaskSummary } from "@trace/core/browser";
 
 export type ProjectCount = {
-  projectRoot: string;
-  displayName: string;
+  projectId: string;
+  projectSlug: string;
   count: number;
 };
 
 export type ProjectTaskGroup = {
-  projectRoot: string;
-  displayName: string;
+  projectId: string;
+  projectSlug: string;
   tasks: TaskSummary[];
 };
 
@@ -24,37 +24,30 @@ export function visibleTasks(
   return tasks.filter((task) => task.archivedAt === null);
 }
 
-export function filterByProject(
+export function filterByProjectSlug(
   tasks: TaskSummary[],
-  projectRoot: string | null,
+  projectSlug: string | null,
 ): TaskSummary[] {
-  if (!projectRoot) return tasks;
-  return tasks.filter((t) => t.projectRoot === projectRoot);
-}
-
-export function projectDisplayName(projectRoot: string): string {
-  const normalizedPath = projectRoot.replace(/[/\\]+$/, "");
-  const parts = normalizedPath.split(/[/\\]/).filter(Boolean);
-  return parts.at(-1) ?? projectRoot;
+  if (!projectSlug) return tasks;
+  return tasks.filter((task) => task.projectSlug === projectSlug);
 }
 
 export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
   const map = new Map<string, ProjectCount>();
   for (const task of tasks) {
-    const root = task.projectRoot || "Unknown";
-    const existing = map.get(root);
+    const existing = map.get(task.projectId);
     if (existing) {
       existing.count += 1;
     } else {
-      map.set(root, {
-        projectRoot: root,
-        displayName: projectDisplayName(root),
+      map.set(task.projectId, {
+        projectId: task.projectId,
+        projectSlug: task.projectSlug,
         count: 1,
       });
     }
   }
   return Array.from(map.values()).sort((a, b) =>
-    a.displayName.localeCompare(b.displayName),
+    a.projectSlug.localeCompare(b.projectSlug),
   );
 }
 
@@ -99,17 +92,16 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
   const groups = new Map<string, ProjectTaskGroup>();
 
   for (const task of tasks) {
-    const projectRoot = task.projectRoot || "Unknown project";
-    const group = groups.get(projectRoot);
+    const group = groups.get(task.projectId);
 
     if (group) {
       group.tasks.push(task);
       continue;
     }
 
-    groups.set(projectRoot, {
-      projectRoot,
-      displayName: projectDisplayName(projectRoot),
+    groups.set(task.projectId, {
+      projectId: task.projectId,
+      projectSlug: task.projectSlug,
       tasks: [task],
     });
   }

@@ -60,6 +60,11 @@ export const migrationJournal = {
       tag: "0011_task_pin",
       breakpoints: false,
     },
+    {
+      when: 1780279700000,
+      tag: "0012_projects",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -85,4 +90,6 @@ export const migrationSqlByTag: Record<string, string> = {
   "0010_session_context_tokens":
     "ALTER TABLE `sessions` ADD `context_tokens_used` integer;\n--> statement-breakpoint\nALTER TABLE `sessions` ADD `context_tokens_limit` integer;\n",
   "0011_task_pin": "ALTER TABLE `tasks` ADD `pinned_at` text;\n",
+  "0012_projects":
+    "CREATE TABLE `projects` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`slug` text NOT NULL,\n\t`remote_url` text,\n\t`root_commit` text,\n\t`created_at` text NOT NULL,\n\t`updated_at` text NOT NULL\n);\n--> statement-breakpoint\nCREATE UNIQUE INDEX `projects_slug_unique` ON `projects` (`slug`);\n--> statement-breakpoint\nCREATE INDEX `projects_remote_url_index` ON `projects` (`remote_url`);\n--> statement-breakpoint\nCREATE INDEX `projects_root_commit_index` ON `projects` (`root_commit`);\n--> statement-breakpoint\nCREATE TABLE `project_roots` (\n\t`root_path` text PRIMARY KEY NOT NULL,\n\t`project_id` text NOT NULL,\n\t`created_at` text NOT NULL,\n\tFOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade\n);\n--> statement-breakpoint\nALTER TABLE `tasks` ADD `project_id` text REFERENCES `projects`(`id`) ON DELETE restrict;\n",
 };

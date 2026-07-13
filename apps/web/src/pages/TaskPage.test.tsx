@@ -48,6 +48,8 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -161,6 +163,8 @@ test("TaskTimelineView renders the Cursor brand mark for a cursor session", () =
       slug: "cursor-task",
       title: "Cursor task",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-06-11T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -225,6 +229,8 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
       slug: "codex-re-entry-support",
       title: "Codex re-entry support",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-06-11T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -285,6 +291,8 @@ test("TaskTimelineView renders relative timestamps, never raw ISO strings", () =
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -331,6 +339,8 @@ test("TaskTimelineView shows root resume commands and doc paths as copy chips", 
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -396,7 +406,9 @@ test("TaskTimelineView shows root resume commands and doc paths as copy chips", 
   expect(html).toContain(`title="claude --resume session-1"`);
   expect(html).not.toContain(">session-abc.jsonl<");
   expect(html).not.toContain(`title="${transcriptPath}"`);
-  expect(html).not.toContain("Copy /Users/me/.trace/sessions/session-abc.jsonl");
+  expect(html).not.toContain(
+    "Copy /Users/me/.trace/sessions/session-abc.jsonl",
+  );
   expect(html).toContain(">web-redesign.tasks.md<");
   expect(html).toContain(`title="${docPath}"`);
   // The full paths never render as bare body text.
@@ -412,6 +424,8 @@ test("TaskTimelineView doc row leads with resolved title + description, path dem
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -467,6 +481,8 @@ test("TaskTimelineView doc row falls back to filename and omits an empty descrip
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -512,6 +528,8 @@ test("TaskTimelineView stat cards show the cache split, compact with exact on ho
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -563,6 +581,8 @@ test("TaskTimelineView header includes the theme toggle", () => {
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -595,6 +615,8 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -636,6 +658,8 @@ test("TaskTimelineView renders the task description under the title when present
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -669,6 +693,8 @@ test("TaskTimelineView omits the description block when absent", () => {
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -700,6 +726,8 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
       slug: "cache-heavy",
       title: "cache heavy",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -729,13 +757,15 @@ test("TokenSummary renders cache reads/writes as a secondary line below the card
   expect(html).not.toContain("+999");
 });
 
-test("TaskTimelineView shows the project display name in the header breadcrumb when projectRoot is set", () => {
+test("TaskTimelineView shows the project slug in the header breadcrumb", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
       slug: "usable-v1",
       title: "usable v1",
-      projectRoot: "/Users/me/Projects/my-cool-app",
+      projectRoot: "/Users/me/Projects/renamed-checkout",
+      projectId: "project-my-cool-app",
+      projectSlug: "my-cool-app",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -758,17 +788,18 @@ test("TaskTimelineView shows the project display name in the header breadcrumb w
   );
 
   expect(html).toContain("my-cool-app");
-  // Full path must not render as bare visible text.
-  expect(html).not.toContain(">/Users/me/Projects/my-cool-app<");
+  expect(html).not.toContain("renamed-checkout");
 });
 
-test("TaskTimelineView omits the breadcrumb project segment when projectRoot is empty", () => {
+test("TaskTimelineView keeps path-only projects in the breadcrumb by slug", () => {
   const timeline: TaskTimeline = {
     task: {
       id: "task-1",
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "",
+      projectId: "project-pathless",
+      projectSlug: "pathless-project",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -790,11 +821,9 @@ test("TaskTimelineView omits the breadcrumb project segment when projectRoot is 
     </MemoryRouter>,
   );
 
-  // When projectRoot is empty, no project crumb segment should appear in the breadcrumb
-  // (only the wordmark "Trace" and the context title render in the nav).
-  expect(html).not.toContain("app-header-project");
-  // The truncated path should not appear as visible text either.
-  expect(html).not.toContain(">/Users/me/Projects<");
+  expect(html).toContain("pathless-project");
+  expect(html).toContain('href="/?project=pathless-project"');
+  expect(html).not.toContain('href="/?project=project-pathless"');
 });
 
 test("TaskTimelineView renders a sessionless doc-only task with zero token totals", () => {
@@ -804,6 +833,8 @@ test("TaskTimelineView renders a sessionless doc-only task with zero token total
       slug: "captured-findings",
       title: "Captured findings",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-06-03T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -854,6 +885,8 @@ function baseTimeline(
       slug: "usable-v1",
       title: "usable v1",
       projectRoot: "/work/trace-v2",
+      projectId: "project-trace-v2",
+      projectSlug: "trace-v2",
       createdAt: "2026-05-29T00:00:00.000Z",
       archivedAt: null,
       pinnedAt: null,
@@ -1704,8 +1737,9 @@ test("TaskTimelineView breadcrumb links the project name to the filtered home vi
     </MemoryRouter>,
   );
   expect(html).toContain(
-    `href="/?project=${encodeURIComponent("/work/trace-v2")}"`,
+    `href="/?project=${encodeURIComponent("trace-v2")}"`,
   );
+  expect(html).not.toContain("project-trace-v2");
 });
 
 // doc viewer Sheet
@@ -1881,6 +1915,8 @@ function makeTimeline(
       slug,
       title: "My task",
       projectRoot: "/work/proj",
+      projectId: "project-proj",
+      projectSlug: "proj",
       createdAt: "2026-06-01T00:00:00.000Z",
       archivedAt,
       pinnedAt: null,
@@ -2120,9 +2156,7 @@ describe("TaskPage", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    renderRoutedTaskPage(
-      `/task/my-task/docs/${encodeURIComponent(planPath)}`,
-    );
+    renderRoutedTaskPage(`/task/my-task/docs/${encodeURIComponent(planPath)}`);
     await screen.findByText("Next doc");
 
     fireEvent.click(screen.getByRole("link", { name: "Next doc" }));
@@ -2145,9 +2179,7 @@ describe("TaskPage", () => {
       state: {
         summary: undefined,
         decisions: [],
-        currentState: [
-          `<p>Continue from <a href="plan.md">the plan</a>.</p>`,
-        ],
+        currentState: [`<p>Continue from <a href="plan.md">the plan</a>.</p>`],
         nextStep: undefined,
         openQuestions: [],
       },

@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { openTraceStore } from "@trace/core";
 import { expect, test, vi } from "vitest";
 import {
@@ -67,6 +67,7 @@ test("skill work-on-task creates a task and binds the session", () => {
     ).toEqual({
       exitCode: 0,
       stdout: [
+        `created new project ${basename(ctx.cwd).toLowerCase()}`,
         `codex-session-1\tcodex\t${join(ctx.cwd, "codex-session-1.jsonl")}`,
         `taskDocsDir: ${join(ctx.cwd, "tasks", "checkout-flow", "docs")}`,
         "",

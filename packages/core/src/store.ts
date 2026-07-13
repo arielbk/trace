@@ -12,6 +12,10 @@ import {
 import { migrationJournal, migrationSqlByTag } from "./migrations.ts";
 import { getDatabaseSync, type DatabaseSync } from "./node-sqlite.ts";
 import {
+  readProjectFingerprints,
+  type ProjectFingerprints,
+} from "./project-fingerprint.ts";
+import {
   generatePlaceholderSlug,
   humanizeSlug,
   looksLikeSlug,
@@ -39,6 +43,9 @@ import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
+  Project,
+  ProjectMergeResult,
+  ProjectResolution,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
@@ -115,6 +122,7 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite.exec("PRAGMA foreign_keys = ON");
     applyMigrations(this.#sqlite);
     this.#backfillSlugs();
+    this.#backfillProjects();
   }
 
   createTask(title: string, projectRoot = "", description?: string): Task {
@@ -127,6 +135,7 @@ class NodeSqliteTaskStore implements TaskStore {
       : trimmedTitle;
     const normalizedProjectRoot = projectRoot.trim();
     const normalizedDescription = description?.trim() || undefined;
+    const project = this.resolveProject(normalizedProjectRoot).project;
 
     const id = randomUUID();
     const task: Task = {
@@ -135,6 +144,7 @@ class NodeSqliteTaskStore implements TaskStore {
       slug: this.#allocateSlug(slugify(normalizedTitle), id),
       createdAt: new Date().toISOString(),
       projectRoot: normalizedProjectRoot,
+      projectId: project.id,
       archivedAt: null,
       pinnedAt: null,
     };
@@ -143,8 +153,8 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root, archived_at, description, pinned_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -153,6 +163,7 @@ class NodeSqliteTaskStore implements TaskStore {
         task.slug,
         task.createdAt,
         task.projectRoot,
+        task.projectId,
         task.archivedAt,
         task.description ?? null,
         task.pinnedAt,
@@ -164,7 +175,7 @@ class NodeSqliteTaskStore implements TaskStore {
   getTask(id: string): Task | null {
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at FROM tasks WHERE id = ?",
+        "SELECT id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at FROM tasks WHERE id = ?",
       )
       .get(id);
     return row ? taskFromRow(row as TaskRow) : null;
@@ -179,17 +190,85 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const row = this.#sqlite
       .prepare(
-        "SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at FROM tasks WHERE slug = ?",
+        "SELECT id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at FROM tasks WHERE slug = ?",
       )
       .get(trimmed);
     return row ? taskFromRow(row as TaskRow) : null;
+  }
+
+  getProject(id: string): Project | null {
+    const row = this.#sqlite
+      .prepare(
+        "SELECT id, slug, remote_url, root_commit, created_at, updated_at FROM projects WHERE id = ?",
+      )
+      .get(id);
+    return row ? projectFromRow(row as ProjectRow) : null;
+  }
+
+  getProjectBySlug(slug: string): Project | null {
+    const row = this.#sqlite
+      .prepare(
+        "SELECT id, slug, remote_url, root_commit, created_at, updated_at FROM projects WHERE slug = ?",
+      )
+      .get(slug.trim());
+    return row ? projectFromRow(row as ProjectRow) : null;
+  }
+
+  getProjectByFingerprint(fingerprints: ProjectFingerprints): Project | null {
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (fingerprints.remoteUrl) {
+      clauses.push("remote_url = ?");
+      values.push(fingerprints.remoteUrl);
+    }
+    if (fingerprints.rootCommit) {
+      clauses.push("root_commit = ?");
+      values.push(fingerprints.rootCommit);
+    }
+    if (clauses.length === 0) return null;
+
+    const row = this.#sqlite
+      .prepare(
+        `SELECT id, slug, remote_url, root_commit, created_at, updated_at
+         FROM projects
+         WHERE ${clauses.join(" OR ")}
+         ORDER BY created_at ASC, id ASC
+         LIMIT 1`,
+      )
+      .get(...values);
+    return row ? projectFromRow(row as ProjectRow) : null;
+  }
+
+  getProjectByRoot(rootPath: string): Project | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT p.id, p.slug, p.remote_url, p.root_commit, p.created_at, p.updated_at
+         FROM project_roots pr
+         JOIN projects p ON p.id = pr.project_id
+         WHERE pr.root_path = ?`,
+      )
+      .get(rootPath.trim());
+    return row ? projectFromRow(row as ProjectRow) : null;
+  }
+
+  getProjectRoot(projectId: string): string | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT root_path
+         FROM project_roots
+         WHERE project_id = ?
+         ORDER BY created_at ASC, root_path ASC
+         LIMIT 1`,
+      )
+      .get(projectId) as { root_path: string } | undefined;
+    return row?.root_path ?? null;
   }
 
   listTasks(): Task[] {
     return this.#sqlite
       .prepare(
         `
-          SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.archived_at, t.description, t.pinned_at
+          SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.project_id, t.archived_at, t.description, t.pinned_at
           FROM tasks t
           ${LAST_ACTIVITY_JOINS}
           ${AGENT_ORDER_BY}
@@ -200,12 +279,16 @@ class NodeSqliteTaskStore implements TaskStore {
   }
 
   listTaskSummaries(): TaskSummary[] {
+    type TaskSummaryRow = TaskRow & { project_slug: string };
     const tasks = this.#sqlite
       .prepare(
-        `SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at
-         FROM tasks ORDER BY created_at ASC, id ASC`,
+        `SELECT t.id, t.title, t.slug, t.created_at, t.project_root, t.project_id,
+                t.archived_at, t.description, t.pinned_at, p.slug AS project_slug
+         FROM tasks t
+         JOIN projects p ON p.id = t.project_id
+         ORDER BY t.created_at ASC, t.id ASC`,
       )
-      .all() as TaskRow[];
+      .all() as TaskSummaryRow[];
 
     type SessionAggRow = {
       task_id: string;
@@ -272,22 +355,30 @@ class NodeSqliteTaskStore implements TaskStore {
 
       const hasDocs = (dAgg?.count ?? 0) > 0;
 
-      return { ...task, lastActivityAt, tokenTotals, agentTools, hasDocs };
+      return {
+        ...task,
+        projectSlug: row.project_slug,
+        lastActivityAt,
+        tokenTotals,
+        agentTools,
+        hasDocs,
+      };
     });
   }
 
   recallCandidates(projectRoot: string): RecallCandidate[] {
+    const projectId = this.resolveProject(projectRoot).project.id;
     const rows = this.#sqlite
       .prepare(
         `
           SELECT t.title, t.slug, t.description
           FROM tasks t
           ${LAST_ACTIVITY_JOINS}
-          WHERE t.project_root = ? AND t.archived_at IS NULL
+          WHERE t.project_id = ? AND t.archived_at IS NULL
           ${AGENT_ORDER_BY}
         `,
       )
-      .all(projectRoot.trim()) as Array<{
+      .all(projectId) as Array<{
       title: string;
       slug: string;
       description: string | null;
@@ -316,22 +407,23 @@ class NodeSqliteTaskStore implements TaskStore {
       }
     }
 
-    const recent = this.#mostRecentTask(projectRoot);
+    const projectId = this.resolveProject(projectRoot).project.id;
+    const recent = this.#mostRecentTask(projectId);
     return recent ? { kind: "re-enter", task: recent } : { kind: "none" };
   }
 
-  #mostRecentTask(projectRoot: string): Task | null {
+  #mostRecentTask(projectId: string): Task | null {
     const row = this.#sqlite
       .prepare(
         `
-          SELECT id, title, slug, created_at, project_root, archived_at, description, pinned_at
+          SELECT id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at
           FROM tasks
-          WHERE project_root = ? AND archived_at IS NULL
+          WHERE project_id = ? AND archived_at IS NULL
           ORDER BY created_at DESC, rowid DESC
           LIMIT 1
         `,
       )
-      .get(projectRoot.trim());
+      .get(projectId);
     return row ? taskFromRow(row as TaskRow) : null;
   }
 
@@ -380,7 +472,9 @@ class NodeSqliteTaskStore implements TaskStore {
     // current focus — no longer applies and is cleared rather than kept stale.
     const archivedAt = new Date().toISOString();
     this.#sqlite
-      .prepare("UPDATE tasks SET archived_at = ?, pinned_at = NULL WHERE id = ?")
+      .prepare(
+        "UPDATE tasks SET archived_at = ?, pinned_at = NULL WHERE id = ?",
+      )
       .run(archivedAt, task.id);
 
     return { ...task, archivedAt, pinnedAt: null };
@@ -630,7 +724,12 @@ class NodeSqliteTaskStore implements TaskStore {
     }
     this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
     return (
-      this.getSession(id) ?? { ...existing, parentSessionId, origin, subagentType }
+      this.getSession(id) ?? {
+        ...existing,
+        parentSessionId,
+        origin,
+        subagentType,
+      }
     );
   }
 
@@ -826,7 +925,10 @@ class NodeSqliteTaskStore implements TaskStore {
     const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
 
     return {
-      task,
+      task: {
+        ...task,
+        projectSlug: this.getProject(task.projectId)?.slug ?? task.projectId,
+      },
       items,
       lastActivityAt,
       tokenTotals: sessionList.reduce(
@@ -950,7 +1052,13 @@ class NodeSqliteTaskStore implements TaskStore {
           `,
         )
         .run(nextTitle, nextDescription, task.id, normalizedPath);
-      return toTaskDoc(task.id, normalizedPath, existing.createdAt, nextTitle, nextDescription);
+      return toTaskDoc(
+        task.id,
+        normalizedPath,
+        existing.createdAt,
+        nextTitle,
+        nextDescription,
+      );
     }
 
     // Insert-on-update: no row exists yet (e.g. a filesystem-discovered native
@@ -964,7 +1072,13 @@ class NodeSqliteTaskStore implements TaskStore {
         `,
       )
       .run(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
-    return toTaskDoc(task.id, normalizedPath, createdAt, nextTitle, nextDescription);
+    return toTaskDoc(
+      task.id,
+      normalizedPath,
+      createdAt,
+      nextTitle,
+      nextDescription,
+    );
   }
 
   listDocsForTask(taskId: string): TaskDoc[] {
@@ -985,9 +1099,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     return mergeTaskDocs(
       registeredDocs,
-      task?.slug
-        ? listNativeTaskDocs(this.#databasePath, id, task.slug)
-        : [],
+      task?.slug ? listNativeTaskDocs(this.#databasePath, id, task.slug) : [],
       task?.slug
         ? resolveTaskDocsDir(this.#databasePath, task.slug)
         : undefined,
@@ -1201,6 +1313,210 @@ class NodeSqliteTaskStore implements TaskStore {
     }
   }
 
+  #backfillProjects(): void {
+    const roots = this.#sqlite
+      .prepare(
+        `SELECT project_root
+         FROM tasks
+         WHERE project_id IS NULL
+         GROUP BY project_root
+         ORDER BY MIN(created_at) ASC, project_root ASC`,
+      )
+      .all() as { project_root: string }[];
+
+    const stampTasks = this.#sqlite.prepare(
+      "UPDATE tasks SET project_id = ? WHERE project_root = ? AND project_id IS NULL",
+    );
+    for (const { project_root: rootPath } of roots) {
+      const project = this.resolveProject(rootPath).project;
+      stampTasks.run(project.id, rootPath);
+    }
+  }
+
+  resolveProject(rootPath: string): ProjectResolution {
+    const normalizedRoot = rootPath.trim();
+    const mapped = this.getProjectByRoot(normalizedRoot);
+    if (mapped) return { kind: "known", project: mapped };
+
+    const fingerprints = readProjectFingerprints(normalizedRoot);
+    const matched = this.getProjectByFingerprint(fingerprints);
+    const slugStem = slugify(basename(normalizedRoot));
+    const sameNamed =
+      !matched && slugStem ? this.#getProjectBySlugStem(slugStem) : null;
+    const project =
+      matched ?? this.#createProject(normalizedRoot, fingerprints);
+    this.#sqlite
+      .prepare(
+        `INSERT INTO project_roots (root_path, project_id, created_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(root_path) DO UPDATE SET project_id = excluded.project_id`,
+      )
+      .run(normalizedRoot, project.id, new Date().toISOString());
+    if (matched) return { kind: "linked", project };
+    return {
+      kind: "created",
+      project,
+      ...(sameNamed
+        ? {
+            collisionHint: {
+              duplicateSlug: project.slug,
+              canonicalSlug: sameNamed.slug,
+            },
+          }
+        : {}),
+    };
+  }
+
+  mergeProjects(
+    duplicateSlug: string,
+    canonicalSlug: string,
+  ): ProjectMergeResult {
+    const normalizedDuplicateSlug = duplicateSlug.trim();
+    const normalizedCanonicalSlug = canonicalSlug.trim();
+    if (normalizedDuplicateSlug === normalizedCanonicalSlug) {
+      throw new Error(
+        `Cannot merge project ${normalizedDuplicateSlug} into itself`,
+      );
+    }
+
+    const duplicate = this.getProjectBySlug(normalizedDuplicateSlug);
+    if (!duplicate) {
+      throw new Error(this.#projectNotFoundMessage(normalizedDuplicateSlug));
+    }
+    const canonical = this.getProjectBySlug(normalizedCanonicalSlug);
+    if (!canonical) {
+      throw new Error(this.#projectNotFoundMessage(normalizedCanonicalSlug));
+    }
+
+    const remoteUrl = canonical.remoteUrl ?? duplicate.remoteUrl;
+    const rootCommit = canonical.rootCommit ?? duplicate.rootCommit;
+    const fingerprintsAdded: ProjectMergeResult["fingerprintsAdded"] = [];
+    if (!canonical.remoteUrl && duplicate.remoteUrl) {
+      fingerprintsAdded.push("remote URL");
+    }
+    if (!canonical.rootCommit && duplicate.rootCommit) {
+      fingerprintsAdded.push("root commit");
+    }
+
+    this.#sqlite.exec("BEGIN");
+    try {
+      const tasksMoved = Number(
+        this.#sqlite
+          .prepare("UPDATE tasks SET project_id = ? WHERE project_id = ?")
+          .run(canonical.id, duplicate.id).changes,
+      );
+      const rootsMoved = Number(
+        this.#sqlite
+          .prepare(
+            "UPDATE project_roots SET project_id = ? WHERE project_id = ?",
+          )
+          .run(canonical.id, duplicate.id).changes,
+      );
+      this.#sqlite
+        .prepare(
+          `UPDATE projects
+           SET remote_url = ?, root_commit = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(remoteUrl, rootCommit, new Date().toISOString(), canonical.id);
+      this.#sqlite
+        .prepare("DELETE FROM projects WHERE id = ?")
+        .run(duplicate.id);
+      this.#sqlite.exec("COMMIT");
+
+      return {
+        duplicateSlug: duplicate.slug,
+        canonicalSlug: canonical.slug,
+        tasksMoved,
+        rootsMoved,
+        fingerprintsAdded,
+      };
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  #createProject(rootPath: string, fingerprints: ProjectFingerprints): Project {
+    const id = randomUUID();
+    const baseSlug = slugify(basename(rootPath));
+    const slug = this.#allocateProjectSlug(
+      baseSlug || `project-${id.split("-")[0]}`,
+    );
+    const createdAt = new Date().toISOString();
+    const project: Project = {
+      id,
+      slug,
+      remoteUrl: fingerprints.remoteUrl ?? null,
+      rootCommit: fingerprints.rootCommit ?? null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    this.#sqlite
+      .prepare(
+        `INSERT INTO projects
+          (id, slug, remote_url, root_commit, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        project.id,
+        project.slug,
+        project.remoteUrl,
+        project.rootCommit,
+        project.createdAt,
+        project.updatedAt,
+      );
+    return project;
+  }
+
+  #allocateProjectSlug(base: string): string {
+    if (!this.#projectSlugExists(base)) return base;
+    for (let suffix = 2; ; suffix += 1) {
+      const candidate = `${base}-${suffix}`;
+      if (!this.#projectSlugExists(candidate)) return candidate;
+    }
+  }
+
+  #projectSlugExists(slug: string): boolean {
+    return (
+      this.#sqlite
+        .prepare("SELECT 1 FROM projects WHERE slug = ? LIMIT 1")
+        .get(slug) !== undefined
+    );
+  }
+
+  #getProjectBySlugStem(slugStem: string): Project | null {
+    const row = this.#sqlite
+      .prepare(
+        `SELECT id, slug, remote_url, root_commit, created_at, updated_at
+         FROM projects
+         WHERE slug = ? OR slug GLOB ?
+         ORDER BY CASE WHEN slug = ? THEN 0 ELSE 1 END, created_at ASC, id ASC
+         LIMIT 1`,
+      )
+      .get(slugStem, `${slugStem}-[0-9]*`, slugStem);
+    return row ? projectFromRow(row as ProjectRow) : null;
+  }
+
+  #projectNotFoundMessage(slug: string): string {
+    const needle = slug.toLowerCase();
+    const projects = this.#sqlite
+      .prepare(
+        `SELECT slug
+         FROM projects
+         WHERE ? <> '' AND LOWER(slug) LIKE ?
+         ORDER BY slug ASC
+         LIMIT 5`,
+      )
+      .all(needle, `%${needle}%`) as { slug: string }[];
+    const lines = [`Project not found: ${slug}`];
+    if (projects.length > 0) {
+      lines.push("Near candidates:");
+      for (const project of projects) lines.push(`  ${project.slug}`);
+    }
+    return lines.join("\n");
+  }
+
   private getTaskDoc(taskId: string, path: string): TaskDoc | null {
     const row = this.#sqlite
       .prepare(
@@ -1285,9 +1601,19 @@ type TaskRow = {
   slug: string;
   created_at: string;
   project_root: string;
+  project_id: string;
   archived_at: string | null;
   description: string | null;
   pinned_at: string | null;
+};
+
+type ProjectRow = {
+  id: string;
+  slug: string;
+  remote_url: string | null;
+  root_commit: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type SessionRow = {
@@ -1326,6 +1652,7 @@ function taskFromRow(row: TaskRow): Task {
     slug: row.slug,
     createdAt: row.created_at,
     projectRoot: row.project_root,
+    projectId: row.project_id,
     archivedAt: row.archived_at,
     pinnedAt: row.pinned_at,
   };
@@ -1333,6 +1660,17 @@ function taskFromRow(row: TaskRow): Task {
   // field absent rather than carrying a null so round-trips stay clean.
   if (row.description != null) task.description = row.description;
   return task;
+}
+
+function projectFromRow(row: ProjectRow): Project {
+  return {
+    id: row.id,
+    slug: row.slug,
+    remoteUrl: row.remote_url,
+    rootCommit: row.root_commit,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function sessionFromRow(row: SessionRow): Session {
@@ -1357,7 +1695,10 @@ function sessionFromRow(row: SessionRow): Session {
     },
     contextTokens:
       row.context_tokens_used != null
-        ? { used: row.context_tokens_used, limit: row.context_tokens_limit ?? 0 }
+        ? {
+            used: row.context_tokens_used,
+            limit: row.context_tokens_limit ?? 0,
+          }
         : null,
   };
 }

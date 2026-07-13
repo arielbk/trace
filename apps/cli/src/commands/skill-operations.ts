@@ -14,6 +14,7 @@ import {
   skillWorkOnTaskUsage,
 } from "./parsers.ts";
 import {
+  formatProjectResolution,
   formatReEntryManifest,
   formatSkillWorkOnTaskResult,
   resolveSkillTaskRef,
@@ -52,11 +53,11 @@ export function skillWorkOnTaskOperation(
 
   const { description, project, ...registerInput } = parsed;
 
-  const projectRootAttempt = resolveProjectRoot(project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store, databasePath) => {
+    const projectRootAttempt = resolveProjectRoot(project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
+    const projectResolution = store.resolveProject(projectRoot);
     const session = store.registerSession(registerInput);
 
     const resolvedTask =
@@ -69,7 +70,9 @@ export function skillWorkOnTaskOperation(
 
     const assigned = store.assignSession(session.id, task.id);
 
-    return success(formatSkillWorkOnTaskResult(assigned, task, databasePath));
+    return success(
+      `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
+    );
   });
 }
 
@@ -81,11 +84,10 @@ export function skillRecallCandidatesOperation(
   if (!projectAttempt.ok) return projectAttempt.result;
   const project = projectAttempt.value;
 
-  const projectRootAttempt = resolveProjectRoot(project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store) => {
+    const projectRootAttempt = resolveProjectRoot(project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
     const candidates = store.recallCandidates(projectRoot);
     return success(`${JSON.stringify(candidates)}\n`);
   });
@@ -101,6 +103,14 @@ export function skillReEnterOperation(
 
   const ref = rawArgs[0];
   if (!ref) return failure("Task slug or title is required");
+  const identity = inferCliSessionIdentity(ctx.env, ctx.cwd);
+  const projectRootAttempt =
+    identity.id !== undefined && identity.transcriptPath !== undefined
+      ? resolveProjectRoot(undefined, ctx.cwd)
+      : null;
+  if (projectRootAttempt && !projectRootAttempt.ok) {
+    return projectRootAttempt.result;
+  }
 
   return withStore(ctx.env, (store) => {
     const tasks = store.listTasks();
@@ -118,8 +128,14 @@ export function skillReEnterOperation(
     // Going back to a task is itself working on it, whatever terminal it runs
     // from — the wired inferrer means a re-enter issued from a Cursor session
     // registers that session the same way work-on-task does.
-    const identity = inferCliSessionIdentity(ctx.env, ctx.cwd);
+    let projectResolution = "";
     if (identity.id !== undefined && identity.transcriptPath !== undefined) {
+      const resolution = store.resolveProject(
+        projectRootAttempt && projectRootAttempt.ok
+          ? projectRootAttempt.value
+          : ctx.cwd,
+      );
+      projectResolution = formatProjectResolution(resolution);
       const session = store.registerSession({
         id: identity.id,
         transcriptPath: identity.transcriptPath,
@@ -128,7 +144,11 @@ export function skillReEnterOperation(
       store.assignSession(session.id, resolved.id);
     }
 
-    return success(formatReEntryManifest(manifest));
+    return {
+      exitCode: 0,
+      stdout: formatReEntryManifest(manifest),
+      stderr: projectResolution,
+    };
   });
 }
 
@@ -172,11 +192,10 @@ export function skillDocsDirOperation(
     return failure("Skill docs-dir requires --id or a current session env var");
   }
 
-  const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd);
-  if (!projectRootAttempt.ok) return projectRootAttempt.result;
-  const projectRoot = projectRootAttempt.value;
-
   return withStore(ctx.env, (store, databasePath) => {
+    const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd, store);
+    if (!projectRootAttempt.ok) return projectRootAttempt.result;
+    const projectRoot = projectRootAttempt.value;
     const activeTask = store.resolveActiveTask(identity.id as string, projectRoot);
 
     if (activeTask.kind === "bound") {
