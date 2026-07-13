@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   isSessionTool,
   type SessionOrigin,
@@ -383,8 +384,12 @@ export function parseCodexScanArgs(args: string[], env: Env): string {
   }
 
   if (codexHome) return codexHome;
-  if (!env.HOME) throw new Error("Codex scan requires --codex-home when HOME is not set");
-  return `${env.HOME}/.codex`;
+  const home = env.HOME || env.USERPROFILE;
+  if (!home)
+    throw new Error(
+      "Codex scan requires --codex-home when HOME/USERPROFILE is not set",
+    );
+  return join(home, ".codex");
 }
 
 export function claudeScanUsage(): string {
@@ -403,8 +408,12 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
   }
 
   if (projectsRoot) return projectsRoot;
-  if (!env.HOME) throw new Error("Claude scan requires --projects-root when HOME is not set");
-  return `${env.HOME}/.claude/projects`;
+  const home = env.HOME || env.USERPROFILE;
+  if (!home)
+    throw new Error(
+      "Claude scan requires --projects-root when HOME/USERPROFILE is not set",
+    );
+  return join(home, ".claude", "projects");
 }
 
 export function skillWorkOnTaskUsage(): string {
