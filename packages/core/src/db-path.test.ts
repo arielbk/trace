@@ -24,4 +24,19 @@ describe("resolveDatabasePath", () => {
   test("throws when both TRACE_DB and HOME are absent", () => {
     expect(() => resolveDatabasePath({})).toThrow();
   });
+
+  test("falls back to USERPROFILE when HOME is unset (native Windows)", () => {
+    expect(resolveDatabasePath({ USERPROFILE: "C:\\Users\\user" })).toBe(
+      join("C:\\Users\\user", ".trace", "trace.sqlite"),
+    );
+  });
+
+  test("prefers HOME over USERPROFILE when both are set", () => {
+    expect(
+      resolveDatabasePath({
+        HOME: "/home/user",
+        USERPROFILE: "C:\\Users\\user",
+      }),
+    ).toBe(join("/home/user", ".trace", "trace.sqlite"));
+  });
 });

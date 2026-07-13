@@ -1,5 +1,8 @@
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  parseClaudeScanArgs,
+  parseCodexScanArgs,
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseTaskCreateArgs,
@@ -177,4 +180,36 @@ test("parseSessionSetParentArgs rejects an invalid --tool value", () => {
       "gemini",
     ]),
   ).toThrow("Session tool must be claude, codex, or cursor");
+});
+
+test("parseCodexScanArgs falls back to USERPROFILE when HOME is unset (native Windows)", () => {
+  expect(parseCodexScanArgs([], { USERPROFILE: "C:\\Users\\user" })).toBe(
+    join("C:\\Users\\user", ".codex"),
+  );
+});
+
+test("parseCodexScanArgs prefers HOME over USERPROFILE when both are set", () => {
+  expect(
+    parseCodexScanArgs([], { HOME: "/home/user", USERPROFILE: "C:\\Users\\user" }),
+  ).toBe(join("/home/user", ".codex"));
+});
+
+test("parseCodexScanArgs throws without --codex-home when no home variable is set", () => {
+  expect(() => parseCodexScanArgs([], {})).toThrow();
+});
+
+test("parseClaudeScanArgs falls back to USERPROFILE when HOME is unset (native Windows)", () => {
+  expect(parseClaudeScanArgs([], { USERPROFILE: "C:\\Users\\user" })).toBe(
+    join("C:\\Users\\user", ".claude", "projects"),
+  );
+});
+
+test("parseClaudeScanArgs prefers HOME over USERPROFILE when both are set", () => {
+  expect(
+    parseClaudeScanArgs([], { HOME: "/home/user", USERPROFILE: "C:\\Users\\user" }),
+  ).toBe(join("/home/user", ".claude", "projects"));
+});
+
+test("parseClaudeScanArgs throws without --projects-root when no home variable is set", () => {
+  expect(() => parseClaudeScanArgs([], {})).toThrow();
 });
