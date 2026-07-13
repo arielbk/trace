@@ -30,7 +30,6 @@ import {
   filterByProject,
   getProjectCounts,
   partitionPinned,
-  projectDisplayName,
   type ProjectCount,
   visibleTasks,
 } from "../lib/task-list.ts";
@@ -62,14 +61,18 @@ export function TasksPage() {
 
   const reveal = useSkeletonReveal(!tasksQuery.isPending);
   const tasks = tasksQuery.data ?? [];
+  const projects = getProjectCounts(tasks);
 
   const visibleByArchive = visibleTasks(tasks, { showArchived });
   const displayedTasks = filterByProject(visibleByArchive, selectedProject);
   const archivedHidden = showArchived
     ? 0
-    : filterByProject(tasks, selectedProject).filter((t) => t.archivedAt !== null).length;
+    : filterByProject(tasks, selectedProject).filter(
+        (t) => t.archivedAt !== null,
+      ).length;
   const crumb = selectedProject
-    ? projectDisplayName(selectedProject)
+    ? (projects.find((project) => project.projectId === selectedProject)
+        ?.displayName ?? selectedProject)
     : "all projects";
   const subtitle = buildSubtitle(displayedTasks.length, archivedHidden);
 
@@ -90,9 +93,7 @@ export function TasksPage() {
     <main className="max-w-app mx-auto px-5 pb-16">
       <AppHeader project={crumb} bordered={false} />
       <div className="pt-7 pb-header-y">
-        <h1 className="m-0 text-page-title font-extrabold">
-          Tasks
-        </h1>
+        <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>
         {reveal.showContent ? (
           <p className="mt-subtitle-top mb-0 text-text-muted text-caption">
             {subtitle}
@@ -106,7 +107,7 @@ export function TasksPage() {
       </div>
       {reveal.showContent ? (
         <FilterBar
-          projects={getProjectCounts(tasks)}
+          projects={projects}
           selectedProject={selectedProject}
           onProjectChange={setSelectedProject}
           showArchived={showArchived}
@@ -287,8 +288,8 @@ export function FilterBar({
   const [isClosing, setIsClosing] = useState(false);
   const closeTimer = useRef<number | null>(null);
   const selectedLabel = selectedProject
-    ? (projects.find((p) => p.projectRoot === selectedProject)?.displayName ??
-      selectedProject)
+    ? (projects.find((project) => project.projectId === selectedProject)
+        ?.displayName ?? selectedProject)
     : "All projects";
 
   useEffect(() => {
@@ -388,15 +389,15 @@ export function FilterBar({
                   </CommandItem>
                   {projects.map((project) => (
                     <CommandItem
-                      key={project.projectRoot}
+                      key={project.projectId}
                       value={project.displayName}
                       className={cn(
                         "filter-bar-project-item flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
-                        selectedProject === project.projectRoot &&
+                        selectedProject === project.projectId &&
                           "bg-accent-soft text-accent",
                       )}
                       onSelect={() => {
-                        onProjectChange(project.projectRoot);
+                        onProjectChange(project.projectId);
                         handleOpenChange(false);
                       }}
                     >
@@ -404,14 +405,14 @@ export function FilterBar({
                       <span
                         className={cn(
                           "tabular-nums",
-                          selectedProject === project.projectRoot
+                          selectedProject === project.projectId
                             ? "text-accent"
                             : "text-text-muted",
                         )}
                       >
                         {project.count}
                       </span>
-                      {selectedProject === project.projectRoot && <CheckIcon />}
+                      {selectedProject === project.projectId && <CheckIcon />}
                     </CommandItem>
                   ))}
                 </CommandList>
@@ -438,5 +439,3 @@ export function FilterBar({
     </div>
   );
 }
-
-

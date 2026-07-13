@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
@@ -28,6 +34,18 @@ beforeAll(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
 });
 
 afterEach(() => {
@@ -54,6 +72,8 @@ function summary(
     title: "Untitled",
     createdAt: "2020-01-01T00:00:00.000Z",
     projectRoot: "/work/trace-v2",
+    projectId: "project-trace-v2",
+    projectSlug: "trace-v2",
     archivedAt: null,
     pinnedAt: null,
     lastActivityAt: "2020-01-01T00:00:00.000Z",
@@ -64,7 +84,7 @@ function summary(
   };
 }
 
-function makeQueryWrapper() {
+function makeQueryWrapper(initialEntries: string[] = ["/"]) {
   const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -75,7 +95,7 @@ function makeQueryWrapper() {
     return React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(MemoryRouter, null, children),
+      React.createElement(MemoryRouter, { initialEntries }, children),
     );
   };
 }
@@ -83,7 +103,9 @@ function makeQueryWrapper() {
 describe("TasksPage", () => {
   test("renders a pulsing row skeleton once a slow tasks query outlasts the delay, not a bare Loading string", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
 
     // The skeleton is deferred past the delay so a fast load never flashes it.
     await waitFor(() => {
@@ -100,12 +122,16 @@ describe("TasksPage", () => {
     ];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(tasks), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        ),
     );
 
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
     await screen.findByText("CLI work");
     // Data beat the delay threshold, so no skeleton row was ever painted.
     expect(container.querySelectorAll(".task-row-skeleton").length).toBe(0);
@@ -121,7 +147,9 @@ describe("TasksPage", () => {
     });
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending));
 
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
 
     // Skeleton appears once the load outlasts the delay.
     await waitFor(() => {
@@ -145,13 +173,59 @@ describe("TasksPage", () => {
     ];
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(tasks), { status: 200 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        ),
     );
     render(<TasksPage />, { wrapper: makeQueryWrapper() });
     await screen.findByText("CLI work");
     expect(screen.getByText("API work")).toBeInTheDocument();
+  });
+
+  test("filters by project ID from the URL while displaying the project slug", async () => {
+    const tasks: TaskSummary[] = [
+      summary({
+        id: "main",
+        title: "Main checkout task",
+        projectRoot: "/work/main",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+      }),
+      summary({
+        id: "worktree",
+        title: "Worktree task",
+        projectRoot: "/tmp/alpha-worktree",
+        projectId: "project-alpha",
+        projectSlug: "alpha-app",
+      }),
+      summary({
+        id: "other",
+        title: "Other project task",
+        projectId: "project-beta",
+        projectSlug: "beta-app",
+      }),
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(tasks), { status: 200 }),
+        ),
+    );
+
+    render(<TasksPage />, {
+      wrapper: makeQueryWrapper(["/?project=project-alpha"]),
+    });
+
+    expect(await screen.findByText("Main checkout task")).toBeInTheDocument();
+    expect(screen.getByText("Worktree task")).toBeInTheDocument();
+    expect(screen.queryByText("Other project task")).not.toBeInTheDocument();
+    const breadcrumb = screen.getByRole("navigation", { name: "Primary" });
+    expect(breadcrumb).toHaveTextContent(/Trace\s*\/\s*alpha-app/);
+    expect(breadcrumb).not.toHaveTextContent("project-alpha");
   });
 
   test("clicking archive fires POST to the archive endpoint after the settle time", async () => {
@@ -166,14 +240,19 @@ describe("TasksPage", () => {
       }
       return Promise.resolve(
         new Response(
-          JSON.stringify({ id: "task-1", archivedAt: "2026-01-01T00:00:00.000Z" }),
+          JSON.stringify({
+            id: "task-1",
+            archivedAt: "2026-01-01T00:00:00.000Z",
+          }),
           { status: 200 },
         ),
       );
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
 
     // Wait for tasks to load (real timers)
     await screen.findByText("CLI work");
@@ -188,10 +267,9 @@ describe("TasksPage", () => {
     // Advance past the 2200ms commit timer
     await vi.advanceTimersByTimeAsync(2200);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/cli-work/archive",
-      { method: "POST" },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/cli-work/archive", {
+      method: "POST",
+    });
   });
 
   test("clicking pin POSTs to the pin endpoint and the row moves into the Pinned section", async () => {
@@ -218,26 +296,32 @@ describe("TasksPage", () => {
       pinCalled = true;
       return Promise.resolve(
         new Response(
-          JSON.stringify({ id: "task-1", pinnedAt: "2026-01-01T00:00:00.000Z" }),
+          JSON.stringify({
+            id: "task-1",
+            pinnedAt: "2026-01-01T00:00:00.000Z",
+          }),
           { status: 200 },
         ),
       );
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
     await screen.findByText("CLI work");
-    expect(container.querySelector(".task-list-pinned")).not.toBeInTheDocument();
+    expect(
+      container.querySelector(".task-list-pinned"),
+    ).not.toBeInTheDocument();
 
     const row = container.querySelector(".task-row")!;
     fireEvent.mouseEnter(row);
     fireEvent.click(screen.getByRole("button", { name: "Pin CLI work" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/tasks/cli-work/pin",
-        { method: "POST" },
-      );
+      expect(fetchMock).toHaveBeenCalledWith("/api/tasks/cli-work/pin", {
+        method: "POST",
+      });
     });
     // Invalidation refetches the pinned payload; the row moves into the section.
     await waitFor(() => {
@@ -271,7 +355,9 @@ describe("TasksPage", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = render(<TasksPage />, { wrapper: makeQueryWrapper() });
+    const { container } = render(<TasksPage />, {
+      wrapper: makeQueryWrapper(),
+    });
     await screen.findByText("CLI work");
 
     const row = container.querySelector(".task-list-pinned .task-row")!;
@@ -279,10 +365,9 @@ describe("TasksPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unpin CLI work" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/tasks/cli-work/unpin",
-        { method: "POST" },
-      );
+      expect(fetchMock).toHaveBeenCalledWith("/api/tasks/cli-work/unpin", {
+        method: "POST",
+      });
     });
   });
 });
@@ -321,12 +406,13 @@ describe("TaskList rendering — flat recency-first", () => {
     expect(idxC).toBeLessThan(idxA);
   });
 
-  test("each row carries a project chip with the project basename", () => {
+  test("each row carries a project chip with the persisted project slug", () => {
     const tasks: TaskSummary[] = [
       summary({
         id: "task-1",
         title: "CLI work",
-        projectRoot: "/work/trace-v2",
+        projectRoot: "/work/renamed-checkout",
+        projectSlug: "trace-v2",
       }),
     ];
 
@@ -338,6 +424,7 @@ describe("TaskList rendering — flat recency-first", () => {
 
     expect(html).toContain("task-row-project");
     expect(html).toContain("trace-v2");
+    expect(html).not.toContain("renamed-checkout");
   });
 
   test("renders each row with title, relative time and compact token total", () => {
@@ -448,9 +535,7 @@ describe("TaskList rendering — flat recency-first", () => {
   });
 
   test("renders no description element when description is absent", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work" }),
-    ];
+    const tasks: TaskSummary[] = [summary({ id: "task-1", title: "CLI work" })];
 
     const html = renderToStaticMarkup(
       <MemoryRouter>
@@ -785,9 +870,7 @@ describe("TaskList pinned section", () => {
   });
 
   test("no Pinned section renders when nothing is pinned", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work" }),
-    ];
+    const tasks: TaskSummary[] = [summary({ id: "task-1", title: "CLI work" })];
 
     const html = renderToStaticMarkup(
       <MemoryRouter>
@@ -839,18 +922,40 @@ describe("FilterBar", () => {
 
   test("shows selected project displayName in trigger when project is selected", () => {
     const projects = [
-      { projectRoot: "/work/alpha", displayName: "alpha", count: 3 },
+      { projectId: "project-alpha", displayName: "alpha", count: 3 },
     ];
     const html = renderToStaticMarkup(
       <FilterBar
         projects={projects}
-        selectedProject="/work/alpha"
+        selectedProject="project-alpha"
         onProjectChange={() => undefined}
         showArchived={false}
         onShowArchivedChange={() => undefined}
       />,
     );
     expect(html).toContain("alpha");
+  });
+
+  test("selecting a project reports its stable ID while showing its slug", async () => {
+    const onProjectChange = vi.fn();
+    render(
+      <FilterBar
+        projects={[
+          { projectId: "project-alpha", displayName: "alpha-app", count: 3 },
+        ]}
+        selectedProject={null}
+        onProjectChange={onProjectChange}
+        showArchived={false}
+        onShowArchivedChange={() => undefined}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Project filter: All projects" }),
+    );
+    fireEvent.click(await screen.findByText("alpha-app"));
+
+    expect(onProjectChange).toHaveBeenCalledWith("project-alpha");
   });
 
   test("renders the Show archived label", () => {
@@ -882,9 +987,7 @@ describe("FilterBar", () => {
 
 describe("TaskRow hover-swap", () => {
   test("hovering a row hides the meta cluster and reveals the actions", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work" }),
-    ];
+    const tasks: TaskSummary[] = [summary({ id: "task-1", title: "CLI work" })];
     const { container } = render(
       <MemoryRouter>
         <TaskList tasks={tasks} onArchive={() => undefined} />
@@ -905,9 +1008,7 @@ describe("TaskRow hover-swap", () => {
   });
 
   test("mouse leave restores meta and hides actions", () => {
-    const tasks: TaskSummary[] = [
-      summary({ id: "task-1", title: "CLI work" }),
-    ];
+    const tasks: TaskSummary[] = [summary({ id: "task-1", title: "CLI work" })];
     const { container } = render(
       <MemoryRouter>
         <TaskList tasks={tasks} onArchive={() => undefined} />

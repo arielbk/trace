@@ -1,13 +1,13 @@
 import type { TaskSummary } from "@trace/core/browser";
 
 export type ProjectCount = {
-  projectRoot: string;
+  projectId: string;
   displayName: string;
   count: number;
 };
 
 export type ProjectTaskGroup = {
-  projectRoot: string;
+  projectId: string;
   displayName: string;
   tasks: TaskSummary[];
 };
@@ -26,29 +26,22 @@ export function visibleTasks(
 
 export function filterByProject(
   tasks: TaskSummary[],
-  projectRoot: string | null,
+  projectId: string | null,
 ): TaskSummary[] {
-  if (!projectRoot) return tasks;
-  return tasks.filter((t) => t.projectRoot === projectRoot);
-}
-
-export function projectDisplayName(projectRoot: string): string {
-  const normalizedPath = projectRoot.replace(/[/\\]+$/, "");
-  const parts = normalizedPath.split(/[/\\]/).filter(Boolean);
-  return parts.at(-1) ?? projectRoot;
+  if (!projectId) return tasks;
+  return tasks.filter((task) => task.projectId === projectId);
 }
 
 export function getProjectCounts(tasks: TaskSummary[]): ProjectCount[] {
   const map = new Map<string, ProjectCount>();
   for (const task of tasks) {
-    const root = task.projectRoot || "Unknown";
-    const existing = map.get(root);
+    const existing = map.get(task.projectId);
     if (existing) {
       existing.count += 1;
     } else {
-      map.set(root, {
-        projectRoot: root,
-        displayName: projectDisplayName(root),
+      map.set(task.projectId, {
+        projectId: task.projectId,
+        displayName: task.projectSlug,
         count: 1,
       });
     }
@@ -99,17 +92,16 @@ export function groupTasksByProject(tasks: TaskSummary[]): ProjectTaskGroup[] {
   const groups = new Map<string, ProjectTaskGroup>();
 
   for (const task of tasks) {
-    const projectRoot = task.projectRoot || "Unknown project";
-    const group = groups.get(projectRoot);
+    const group = groups.get(task.projectId);
 
     if (group) {
       group.tasks.push(task);
       continue;
     }
 
-    groups.set(projectRoot, {
-      projectRoot,
-      displayName: projectDisplayName(projectRoot),
+    groups.set(task.projectId, {
+      projectId: task.projectId,
+      displayName: task.projectSlug,
       tasks: [task],
     });
   }
