@@ -12,7 +12,11 @@ export type { ParsedStateMd } from "./state-parser.ts";
 export { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 export { resolveDocTitle } from "./display-title.ts";
 export type { ResolvableDoc } from "./display-title.ts";
-export { renderManifest, updateStateManifest } from "./state-manifest.ts";
+export {
+  renderManifest,
+  stripFence,
+  updateStateManifest,
+} from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export { SESSION_TOOLS, isSessionTool } from "./types.ts";
 export {
@@ -23,6 +27,13 @@ export {
 } from "./transcript-locator.ts";
 export type { CursorLocatorFlavor } from "./transcript-locator.ts";
 export { resumeCommand } from "./resume-command.ts";
+export {
+  computeDocsFingerprint,
+  hasProseBody,
+  readProseFingerprint,
+  renderProseMarker,
+} from "./prose-fingerprint.ts";
+export type { DocFingerprintInput } from "./prose-fingerprint.ts";
 export type {
   ActiveTask,
   AddTaskDocOptions,

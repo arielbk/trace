@@ -1,0 +1,46 @@
+import { createHash } from "node:crypto";
+import { basename } from "node:path";
+import { stripFence } from "./state-manifest.ts";
+
+// Machine-owned marker carrying the docs fingerprint that the last prose pass
+// reflected. `state reflect` stamps it; `state check` reads it to decide whether
+// the prose has drifted from the current docs. The format must never change.
+const PROSE_MARKER_RE = /<!--\s*trace:prose-fingerprint:([0-9a-f]+)\s*-->/;
+
+export function renderProseMarker(fingerprint: string): string {
+  return `<!-- trace:prose-fingerprint:${fingerprint} -->`;
+}
+
+// Read the fingerprint a prior prose pass stamped into state.md. Returns null
+// when the marker is absent or garbled (no valid hex hash) — both resolve to
+// drift at the call site.
+export function readProseFingerprint(content: string): string | null {
+  const match = content.match(PROSE_MARKER_RE);
+  return match?.[1] ?? null;
+}
+
+function sha256(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+export type DocFingerprintInput = { path: string; content: string };
+
+// Fingerprint over the sorted set of non-state doc relative paths, each combined
+// with a hash of its contents. Sorting makes the result independent of doc
+// ordering; state.md is excluded so its own churn never invalidates the prose.
+export function computeDocsFingerprint(docs: DocFingerprintInput[]): string {
+  const entries = docs
+    .filter((doc) => basename(doc.path) !== "state.md")
+    .map((doc) => `${doc.path} ${sha256(doc.content)}`)
+    .sort();
+  return sha256(entries.join("\n"));
+}
+
+// True when state.md carries authored prose beyond the scaffold `# title` line
+// (the docs-manifest fence is stripped first, so a freshly-seeded scaffold with
+// only a title and footer reads as empty).
+export function hasProseBody(content: string): boolean {
+  const body = stripFence(content).trim();
+  const withoutTitle = body.replace(/^#\s+[^\n]*\n?/, "").trim();
+  return withoutTitle.length > 0;
+}

@@ -149,6 +149,12 @@ export type TaskTimeline = {
   tokenTotals: TokenTotals;
   lastActivityAt: string;
   state?: ParsedStateMd;
+  /**
+   * True when the task's docs have changed since state.md's prose last
+   * reflected them (or the prose was never written). Present only when the
+   * task has at least one non-state doc to reflect on.
+   */
+  stateStale?: boolean;
 };
 
 export type TaskSummary = Task & {

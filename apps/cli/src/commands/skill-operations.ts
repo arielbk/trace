@@ -17,9 +17,12 @@ import {
   formatProjectResolution,
   formatReEntryManifest,
   formatSkillWorkOnTaskResult,
+  formatStateFreshness,
   resolveSkillTaskRef,
   taskNotFoundMessage,
 } from "./formatters.ts";
+import { computeStateFreshness, proseDriftReason } from "./state-operations.ts";
+import { reconcileStateFooter } from "./task-operations.ts";
 import {
   attempt,
   failure,
@@ -70,6 +73,11 @@ export function skillWorkOnTaskOperation(
 
     const assigned = store.assignSession(session.id, task.id);
 
+    // Materialize the docs-manifest footer at the bind seam so a task that
+    // already has a native doc (spec-first, task created after) gets a complete
+    // state.md on bind — no `trace state check` required.
+    reconcileStateFooter(store, databasePath, task);
+
     return success(
       `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
     );
@@ -112,7 +120,7 @@ export function skillReEnterOperation(
     return projectRootAttempt.result;
   }
 
-  return withStore(ctx.env, (store) => {
+  return withStore(ctx.env, (store, databasePath) => {
     const tasks = store.listTasks();
     const resolved = resolveSkillTaskRef(tasks, ref, (id) => store.getTask(id));
     if (!resolved) return failure(taskNotFoundMessage(tasks, ref), 1);
@@ -122,6 +130,11 @@ export function skillReEnterOperation(
     // the next Trace touchpoint after the session that spawned them.
     sweepSubagentSessions(store, resolved.id, ctx.env.CODEX_HOME);
 
+    // Re-entry is a bind seam like work-on-task: materialize the docs-manifest
+    // footer before the manifest is built, so a task whose docs were dropped in
+    // natively gets its state.md listed (and correct) for the entering agent.
+    reconcileStateFooter(store, databasePath, resolved);
+
     const manifest = store.getReEntryManifest(resolved.id);
     if (!manifest) return failure(taskNotFoundMessage(tasks, ref), 1);
 
@@ -129,6 +142,7 @@ export function skillReEnterOperation(
     // from — the wired inferrer means a re-enter issued from a Cursor session
     // registers that session the same way work-on-task does.
     let projectResolution = "";
+    let bound = false;
     if (identity.id !== undefined && identity.transcriptPath !== undefined) {
       const resolution = store.resolveProject(
         projectRootAttempt && projectRootAttempt.ok
@@ -142,11 +156,29 @@ export function skillReEnterOperation(
         tool: identity.tool,
       });
       store.assignSession(session.id, resolved.id);
+      bound = true;
     }
+
+    // The portable prose-freshness trigger: platforms without a live Stop hook
+    // (Codex, Cursor) get the drift verdict at their next Trace touchpoint —
+    // here. On Claude the warm Stop hook usually reconciled already, so this
+    // block only appears when drift survived a session boundary. Gated on an
+    // actual bind (a bare terminal reading the manifest is never directed to
+    // invoke a skill), mirroring `state check`'s strict-binding contract.
+    const freshness = bound
+      ? computeStateFreshness(store, databasePath, resolved)
+      : undefined;
+    const drift =
+      freshness?.needsProsePass && freshness.mode
+        ? formatStateFreshness({
+            mode: freshness.mode,
+            reason: proseDriftReason(freshness.mode, resolved.slug),
+          })
+        : "";
 
     return {
       exitCode: 0,
-      stdout: formatReEntryManifest(manifest),
+      stdout: `${formatReEntryManifest(manifest)}${drift}`,
       stderr: projectResolution,
     };
   });

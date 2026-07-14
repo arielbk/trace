@@ -53,8 +53,9 @@ Treat the command's output as a manifest and consume it in this order:
    re-derive it.
 2. If the manifest carries a `state:` field, **read that file first** and treat
    it as the authoritative snapshot of where the task stands. It is the living
-   state file written by the `handoff` skill — one summary line, decisions made,
-   current state, next step, and open questions. Open with a recap drawn from it.
+   state file written by the `trace-state` skill — one summary line, decisions
+   made, current state, next step, and open questions. Open with a recap drawn
+   from it.
 3. After reading `state.md`, pull other docs from `docs:` **only when**
    `state.md` links to them or the current work explicitly needs them. Do not
    read every sibling doc by default.
@@ -65,6 +66,24 @@ Treat the command's output as a manifest and consume it in this order:
 5. **Never paste raw transcripts** into the chat, and **never re-ask** the user
    to re-explain context that the manifest, docs, or transcript tail already
    cover.
+
+## State freshness
+
+The manifest may end with a `stateFreshness:` block — Trace's signal that
+`state.md`'s prose no longer reflects the task's docs (`mode: refresh`) or was
+never written (`mode: seed`). It appears only when there is real drift; most
+re-entries won't carry it.
+
+When it is present: **orient first, then repair.** Finish consuming the
+manifest as above — re-entry stays a read — and open with your recap. Then, in
+the same turn, invoke the `trace-state` skill to write or refresh the prose
+(it stamps the pass via `trace state reflect <slug>` when done). Do not ask
+the user for permission to do this; the block is the instruction.
+
+This is the portable fallback for drift that survived a session boundary —
+on platforms with a live `Stop` hook the prose is normally refreshed by the
+still-warm agent, so this block mostly appears when the prior session ran
+somewhere without one (Codex, Cursor) or docs changed out-of-band.
 
 ## Drift detection
 

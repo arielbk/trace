@@ -409,6 +409,7 @@ export function TaskTimelineView({
       </div>
       <LeftOffPanel
         state={timeline.state}
+        stale={timeline.stateStale}
         onDocLinkClick={navigateStateDocLink}
       />
       <TokenSummary totals={timeline.tokenTotals} />
@@ -807,17 +808,18 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
 
 export function LeftOffPanel({
   state,
+  stale,
   onDocLinkClick,
 }: {
   state?: ParsedStateMd;
+  stale?: boolean;
   onDocLinkClick?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   if (!state) {
     return (
       <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
-        No context saved yet — run{" "}
-        <code className="font-mono text-xs">/handoff</code> to capture where you
-        left off.
+        No context saved yet — say &ldquo;save state&rdquo; in a bound session
+        to capture where you left off.
       </p>
     );
   }
@@ -832,9 +834,19 @@ export function LeftOffPanel({
       className="mt-8 pt-6 border-t border-border"
       onClick={onDocLinkClick}
     >
-      <h2 className="m-0 mb-2.5 text-xs font-bold uppercase tracking-widest text-accent">
-        Where you left off
-      </h2>
+      <div className="flex items-baseline gap-3 mb-2.5">
+        <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-accent">
+          Where you left off
+        </h2>
+        {stale ? (
+          <span
+            data-testid="state-stale-badge"
+            className="font-mono text-crumb text-text-muted whitespace-nowrap"
+          >
+            docs changed since this was saved
+          </span>
+        ) : null}
+      </div>
       <ClampedSection maxHeight={200}>
         <div>
           {state.summary ? (

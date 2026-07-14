@@ -3,6 +3,7 @@ import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
 import { openBrowser, startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
+import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 import {
   failure,
@@ -37,6 +38,10 @@ import {
   skillWorkOnTaskOperation,
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
+import {
+  stateCheckOperation,
+  stateReflectOperation,
+} from "./commands/state-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -89,6 +94,12 @@ export function buildTraceCittyRoot(
             meta: { description: "Discover Claude subagent sessions on stop" },
             run(): CommandResult {
               return runClaudeSubagentStopHook(stdin, env) as unknown as CommandResult;
+            },
+          }),
+          stop: defineCommand({
+            meta: { description: "Block the main agent's turn on state.md drift" },
+            run(): CommandResult {
+              return runClaudeStopHook(stdin, env) as unknown as CommandResult;
             },
           }),
         },
@@ -227,6 +238,25 @@ export function buildTraceCittyRoot(
             },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return sessionDiscoverSubagentsOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      state: defineCommand({
+        meta: { description: "Maintain a task's state.md" },
+        subCommands: {
+          check: defineCommand({
+            meta: { description: "Reconcile a task's state.md docs footer" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return stateCheckOperation(args, { env, cwd, stdin });
+            },
+          }),
+
+          reflect: defineCommand({
+            meta: { description: "Stamp the prose fingerprint into state.md" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return stateReflectOperation(args, { env, cwd, stdin });
             },
           }),
         },

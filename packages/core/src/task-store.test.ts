@@ -10,7 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test } from "vitest";
-import { openTraceStore } from "./index.ts";
+import { openTraceStore, resolveTaskDocsDir } from "./index.ts";
+import {
+  computeDocsFingerprint,
+  renderProseMarker,
+} from "./prose-fingerprint.ts";
 
 const CLAUDE_FIXTURE = new URL(
   "./fixtures/claude-code-session.jsonl",
@@ -1842,6 +1846,8 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
         cacheReadInputTokens: 8,
         totalTokens: 58,
       },
+      // A registered doc with no state.md prose to reflect it → stale.
+      stateStale: true,
     });
 
     expect(store.getTaskTimeline(emptyTask.id)).toEqual({
@@ -1859,6 +1865,43 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
         totalTokens: 0,
       },
     });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("task timeline reports stateStale from the prose fingerprint", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+    mkdirSync(docsDir, { recursive: true });
+    const specPath = join(docsDir, "spec.md");
+    writeFileSync(specPath, "Spec body.\n");
+    store.addTaskDoc(task.id, specPath);
+
+    // Docs exist but the prose was never written → stale.
+    expect(store.getTaskTimeline(task.id)?.stateStale).toBe(true);
+
+    // Prose stamped against the current doc set (state.md is discovered
+    // natively from the docs dir) → fresh.
+    const fingerprint = computeDocsFingerprint([
+      { path: "spec.md", content: "Spec body.\n" },
+    ]);
+    writeFileSync(
+      join(docsDir, "state.md"),
+      `# checkout\n\nWhere things stand.\n\n${renderProseMarker(fingerprint)}\n`,
+    );
+    expect(store.getTaskTimeline(task.id)?.stateStale).toBe(false);
+
+    // An in-place doc edit moves the fingerprint → stale again.
+    writeFileSync(specPath, "Spec body, revised.\n");
+    expect(store.getTaskTimeline(task.id)?.stateStale).toBe(true);
 
     store.close();
   } finally {

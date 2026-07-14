@@ -47,12 +47,15 @@ From inside Claude Code, add this repo as a marketplace, then install the plugin
 <details>
 <summary>What this does</summary>
 
-The plugin wires up the skills and a `SessionStart` hook that captures each
-session live, with no global CLI link or manual settings edit. The skills and
-hook invoke the CLI on demand via a version-pinned `npx @arielbk/trace@<version>`,
-so there's nothing to build or link. After reloading, ask the agent
-_"Are we currently in a trace session?"_ and it should confirm the session is
-being tracked.
+The plugin wires up the skills and the hooks: `SessionStart` captures each
+session live, and `Stop` keeps the bound task's `state.md` fresh — when a
+turn ends with the task's docs ahead of the state file's prose, it sends the
+still-warm agent back to update it (a fingerprint gate means ordinary chat
+turns never trigger it). No global CLI link or manual settings edit; the
+skills and hooks invoke the CLI on demand via a version-pinned
+`npx @arielbk/trace@<version>`, so there's nothing to build or link. After
+reloading, ask the agent _"Are we currently in a trace session?"_ and it
+should confirm the session is being tracked.
 
 </details>
 
@@ -72,7 +75,8 @@ Codex installs from the same canonical skills tree as Claude, so it ships the
 full skill set (not just `trace`). Codex has no live session-start slot, so the
 skill captures sessions by backfill: it runs `trace session scan --codex` before
 it binds or re-enters a task. Same store, same manifest; just a different capture
-path.
+path. The same asymmetry covers `state.md` freshness: with no live stop hook,
+drift is reported in the re-entry manifest and repaired by the entering agent.
 
 </details>
 
@@ -98,7 +102,9 @@ re-enters a task, trace resolves the session you're in from the directory the
 command runs in. Both Cursor surfaces are covered: GUI composer sessions are read
 from Cursor's local session store (`state.vscdb`), and `cursor-agent` (CLI) chats
 from their transcript files under `~/.cursor/projects`. When both exist for a
-directory, the one you touched most recently wins.
+directory, the one you touched most recently wins. `state.md` freshness is
+pull-time too: drift is reported in the re-entry manifest and repaired by the
+entering agent.
 
 > Cursor does not record per-message token _spend_ in its local store, so the
 > board shows a session's context-window usage instead of an input/output total.
@@ -114,8 +120,12 @@ It's a loop:
    task's docs live.
 2. **Drop docs where re-entry can find them.** Any spec, plan, or note you write
    into that task's docs directory is associated with the task automatically.
-3. **Wrap up.** When you're done for the session, Trace distills it into the
-   task's living state file, so the next agent reads a summary, not a transcript.
+3. **Wrap up — or don't.** When you're done for the session, Trace distills it
+   into the task's living state file, so the next agent reads a summary, not a
+   transcript. And if you never wrap up, the state file keeps itself honest: on
+   Claude a `Stop` hook has the still-warm agent write it the moment the docs
+   move ahead of it, and on agents without a live hook the next re-entry
+   detects the drift and repairs it before continuing.
 4. **Come back and re-enter.** In a fresh session (tomorrow, next week, a clean
    `/clear`, or a different agent entirely) name the task. The agent reloads the
    state file, the docs, and only if needed the tail of the last session, then
@@ -152,7 +162,7 @@ yours to keep or replace.
 | **trace**               | say you're working on / scoping / defining something  | binds the session to a task (creating it if absent); nudges you when an untracked session is doing real work |
 | **trace-reenter**       | name a task by its exact slug or title                | reloads that task's full context from its re-entry manifest                                                  |
 | **trace-recall**        | gesture vaguely at past work ("that archiving thing") | figures out _which_ task you mean, then re-enters it                                                         |
-| **trace-handoff**       | wrap up, hand off, or start a new chat                | distills the session into the task's living `state.md`                                                       |
+| **trace-state**         | wrap up, hand off, or Trace reports state drift       | distills the session into the task's living `state.md`; also runs when Trace detects the docs moved ahead    |
 | **trace-doc-placement** | write a spec, PRD, plan, or note                      | lands the file in the current task's docs directory                                                          |
 | **trace-board**         | ask to open the board                                 | starts the local web UI for browsing tasks                                                                   |
 
