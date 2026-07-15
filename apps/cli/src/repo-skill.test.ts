@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const projectSlug = basename(repoRoot).toLowerCase();
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 const skillReadme = join(repoRoot, "plugin", "skills", "trace", "SKILL.md");
 
@@ -50,7 +51,7 @@ test("trace skill resolves or creates a task by title, binds a simulated session
     expect(title).toBe("checkout");
     expect(bound).toBe(
       [
-        `created new project path-independent-project-identity`,
+        `created new project ${projectSlug}`,
         `claude-session-1\tclaude\t/tmp/claude-session-1.jsonl`,
         `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
