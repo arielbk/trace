@@ -30,9 +30,9 @@
     "@trace/cursor-reader": "workspace:*",
     "@trace/web": "workspace:*",
     "@types/node": "^22.20.1",
+    "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.39.5",
     "tsup": "^8.5.1",
-    "typescript": "5.9.3",
     "vitest": "^4.1.10"
   }
 }
