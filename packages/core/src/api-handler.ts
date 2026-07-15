@@ -26,6 +26,16 @@ export interface TraceApiResponseSink {
 const JSON_CONTENT_TYPE = "application/json";
 
 /**
+ * Host-provided context the router cannot derive from the database: whether the
+ * serving process has a sync server configured (`TRACE_SERVER_URL`). The env
+ * stays at the host boundary, matching how `resolveDatabasePath(env)` is
+ * resolved by the caller.
+ */
+export interface TraceApiRequestOptions {
+  syncServerConfigured?: boolean;
+}
+
+/**
  * Framework-agnostic router for the trace web API. Returns a response for any
  * `/api/...` request, or `null` when the request is not an API request — so an
  * HTTP host can fall through to static assets / SPA handling. Shared by the Vite
@@ -36,6 +46,7 @@ export function handleTraceApiRequest(
   method: string,
   rawUrl: string,
   body?: string,
+  options?: TraceApiRequestOptions,
 ): TraceApiResponse | null {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
 
@@ -46,7 +57,12 @@ export function handleTraceApiRequest(
 
   if (path === "/api/sync/status") {
     if (method !== "GET") return methodNotAllowed();
-    return json(readSyncStatus(databasePath));
+    const status = readSyncStatus(databasePath);
+    return json(
+      status.state === "logged-out"
+        ? { ...status, serverConfigured: options?.syncServerConfigured ?? false }
+        : status,
+    );
   }
 
   if (path !== "/api/tasks" && !path.startsWith("/api/tasks/")) {

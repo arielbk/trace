@@ -647,14 +647,37 @@ test("POST /api/tasks/:ref/docs/checkbox rejects non-POST methods, unknown tasks
   }
 });
 
-test("GET /api/sync/status reports logged-out when no status file exists", () => {
+test("GET /api/sync/status reports logged-out (server unconfigured) when no status file exists", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 
   try {
     const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    expect(JSON.parse(response!.body)).toEqual({ state: "logged-out" });
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "logged-out",
+      serverConfigured: false,
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status carries the host's server-configured flag on logged-out", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/sync/status",
+      undefined,
+      { syncServerConfigured: true },
+    );
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "logged-out",
+      serverConfigured: true,
+    });
   } finally {
     cleanup();
   }

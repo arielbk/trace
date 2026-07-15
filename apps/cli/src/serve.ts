@@ -98,13 +98,16 @@ function serveFile(res: ServerResponse, filePath: string): void {
 export function createServeRequestListener(
   databasePath: string,
   assetsDir?: string,
+  syncServerConfigured?: boolean,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
     const dispatch = (body?: string): void => {
-      const response = handleTraceApiRequest(databasePath, method, url, body);
+      const response = handleTraceApiRequest(databasePath, method, url, body, {
+        syncServerConfigured,
+      });
 
       if (response) {
         writeTraceApiResponse(res, response);
@@ -220,7 +223,11 @@ export function createTraceServeServer(
   assetsDir: string | undefined = resolveWebAssetsDir(),
 ): Server {
   return createServer(
-    createServeRequestListener(resolveDatabasePath(env), assetsDir),
+    createServeRequestListener(
+      resolveDatabasePath(env),
+      assetsDir,
+      Boolean(env.TRACE_SERVER_URL),
+    ),
   );
 }
 

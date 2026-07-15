@@ -10,6 +10,9 @@ import { useSyncStatus } from "../lib/api.ts";
  *
  * Renders nothing until the first status resolves (and stays silent on an
  * error/malformed payload) so it never flashes a wrong state on the board.
+ * A logged-out machine with no sync server configured (`serverConfigured`
+ * false) renders nothing at all: cloud sync is invisible until a server URL
+ * exists to log in to.
  */
 export function SyncStatusBadge({ now }: { now?: Date }) {
   const { data } = useSyncStatus();
@@ -42,6 +45,9 @@ export function describeSyncStatus(
   const prefix = "identity" in status && status.identity ? `${status.identity} · ` : "";
   switch (status.state) {
     case "logged-out":
+      // No server configured means nothing to log in to — hide the badge
+      // rather than advertise a login that cannot succeed.
+      if (!status.serverConfigured) return null;
       return { text: "not logged in — run `trace login`" };
     case "never-synced":
       return { text: `${prefix}not synced yet` };

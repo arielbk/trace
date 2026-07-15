@@ -15,10 +15,19 @@ afterEach(() => {
 const NOW = new Date("2026-07-10T16:05:00.000Z");
 
 describe("describeSyncStatus", () => {
-  test("logged-out points the user at the CLI login command", () => {
-    expect(describeSyncStatus({ state: "logged-out" })).toEqual({
+  test("logged-out with a configured server points the user at the CLI login command", () => {
+    expect(
+      describeSyncStatus({ state: "logged-out", serverConfigured: true }),
+    ).toEqual({
       text: "not logged in — run `trace login`",
     });
+  });
+
+  test("logged-out without a configured server renders nothing", () => {
+    expect(describeSyncStatus({ state: "logged-out" })).toBeNull();
+    expect(
+      describeSyncStatus({ state: "logged-out", serverConfigured: false }),
+    ).toBeNull();
   });
 
   test("synced shows the identity and a relative time", () => {
@@ -78,10 +87,16 @@ describe("SyncStatusBadge", () => {
   }
 
   test("renders the logged-out prompt once the status resolves", async () => {
-    renderBadge({ state: "logged-out" });
+    renderBadge({ state: "logged-out", serverConfigured: true });
     expect(
       await screen.findByText("not logged in — run `trace login`"),
     ).toBeInTheDocument();
+  });
+
+  test("renders nothing when logged out with no server configured", async () => {
+    const { container } = renderBadge({ state: "logged-out", serverConfigured: false });
+    // Let the query resolve, then confirm the badge stayed empty.
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
   test("renders the synced identity and relative time", async () => {
