@@ -7,11 +7,15 @@ import {
   resolveCursorSession,
   resolveCursorSessionById,
 } from "@trace/cursor-reader";
+import { resolveCopilotSession } from "../copilot-session.ts";
 import type { Env } from "./seam.ts";
 
 type CliIdentityOverrides = Omit<
   SessionIdentityOverrides,
-  "cwd" | "resolveCursorSession" | "resolveCursorSessionById"
+  | "cwd"
+  | "resolveCursorSession"
+  | "resolveCursorSessionById"
+  | "resolveCopilotSession"
 >;
 
 // The CLI's composition root for session identity. Cursor session ids come
@@ -32,5 +36,6 @@ export function inferCliSessionIdentity(
     cwd,
     resolveCursorSession: (dir) => resolveCursorSession(dir),
     resolveCursorSessionById: (id) => resolveCursorSessionById(id, { cwd }),
+    resolveCopilotSession: () => resolveCopilotSession(env),
   });
 }
