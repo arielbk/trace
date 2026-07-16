@@ -29,7 +29,8 @@ export interface SyncStatusFile {
  * logged-in state, just without a name to show.
  *
  * `serverConfigured` on the logged-out state says whether the serving process
- * has a sync server to log in to (today: `TRACE_SERVER_URL` is set). It is
+ * has a sync server to log in to (`TRACE_SERVER_URL` or the `config.json`
+ * `serverUrl`, per `resolveConfiguredServerUrl`). It is
  * attached at the API boundary, not derived from the status file — the board
  * hides the sync badge entirely on a machine with no server configured, so
  * merged-but-unused cloud sync leaves no UI trace.

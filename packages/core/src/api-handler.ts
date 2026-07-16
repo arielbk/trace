@@ -27,9 +27,9 @@ const JSON_CONTENT_TYPE = "application/json";
 
 /**
  * Host-provided context the router cannot derive from the database: whether the
- * serving process has a sync server configured (`TRACE_SERVER_URL`). The env
- * stays at the host boundary, matching how `resolveDatabasePath(env)` is
- * resolved by the caller.
+ * serving process has a sync server configured (`resolveConfiguredServerUrl`).
+ * The env stays at the host boundary, matching how `resolveDatabasePath(env)`
+ * is resolved by the caller.
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;

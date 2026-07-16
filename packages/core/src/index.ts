@@ -22,6 +22,14 @@ export {
   writeSyncStatusFile,
 } from "./sync-status.ts";
 export type { SyncStatus, SyncStatusFile } from "./sync-status.ts";
+export {
+  readConfigFile,
+  resolveConfigPath,
+  resolveConfiguredServerUrl,
+  updateConfigFile,
+  writeConfigFile,
+} from "./config.ts";
+export type { TraceConfigFile } from "./config.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { readProjectFingerprints } from "./project-fingerprint.ts";
 export type { ProjectFingerprints } from "./project-fingerprint.ts";

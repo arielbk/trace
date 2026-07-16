@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { readSyncStatus } from "@trace/core";
+import { runTraceCli } from "../trace.ts";
 import { runAuthCommand } from "./auth.ts";
 
 function tmp(prefix: string): string {
@@ -229,6 +230,67 @@ test("login records the signed-in identity and logout clears it for the board", 
 
     await runAuthCommand("logout", { HOME: home });
     expect(readSyncStatus(databasePath)).toEqual({ state: "logged-out" });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("login and whoami refuse to run with no server configured", async () => {
+  const home = tmp("trace-auth-home-");
+  const expected = {
+    exitCode: 1,
+    stdout: "",
+    stderr: "No sync server configured. Run trace config set server-url <url>.\n",
+  };
+
+  try {
+    const fetch = async (): Promise<Response> => {
+      throw new Error("no request should be made");
+    };
+    expect(await runAuthCommand("login", { HOME: home }, { fetch })).toEqual(
+      expected,
+    );
+    expect(await runAuthCommand("whoami", { HOME: home }, { fetch })).toEqual(
+      expected,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("login resolves the server from config.json when the env var is absent", async () => {
+  const home = tmp("trace-auth-home-");
+
+  try {
+    const set = runTraceCli(
+      ["config", "set", "server-url", "http://configured.test"],
+      { HOME: home },
+    );
+    expect(set.exitCode).toBe(0);
+
+    const requests: string[] = [];
+    const result = await runAuthCommand(
+      "login",
+      { HOME: home },
+      {
+        fetch: async (url) => {
+          requests.push(String(url));
+          return String(url).endsWith("/device/code")
+            ? Response.json({
+                device_code: "device-code",
+                user_code: "ABCD-EFGH",
+                verification_uri: "https://github.com/login/device",
+                interval: 0,
+              })
+            : Response.json({ access_token: "bearer-token" });
+        },
+        openBrowser: () => {},
+        sleep: async () => undefined,
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(requests[0]).toBe("http://configured.test/api/auth/device/code");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

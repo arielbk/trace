@@ -40,6 +40,11 @@ import {
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
 import {
+  configGetOperation,
+  configSetOperation,
+  configUnsetOperation,
+} from "./commands/config-operations.ts";
+import {
   stateCheckOperation,
   stateReflectOperation,
 } from "./commands/state-operations.ts";
@@ -162,6 +167,32 @@ export function buildTraceCittyRoot(
             meta: { description: "Update a registered doc's title or description" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return taskUpdateDocOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      config: defineCommand({
+        meta: { description: "Read and write machine-local client settings" },
+        subCommands: {
+          get: defineCommand({
+            meta: { description: "Print a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configGetOperation(args, { env });
+            },
+          }),
+
+          set: defineCommand({
+            meta: { description: "Set a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configSetOperation(args, { env });
+            },
+          }),
+
+          unset: defineCommand({
+            meta: { description: "Remove a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configUnsetOperation(args, { env });
             },
           }),
         },

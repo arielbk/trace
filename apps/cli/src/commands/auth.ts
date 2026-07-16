@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   updateSyncStatusFile,
   writeSyncStatusFile,
@@ -62,7 +63,7 @@ async function login(
   env: Env,
   { fetch, sleep, openBrowser, onOutput }: AuthDependencies,
 ): Promise<CommandResult> {
-  const serverUrl = resolveServerUrl(env);
+  const serverUrl = requireServerUrl(env);
   const codeResponse = await fetch(`${serverUrl}/api/auth/device/code`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -96,7 +97,7 @@ async function login(
 
     if (tokenResponse.ok && token.access_token) {
       writeToken(env, { accessToken: token.access_token });
-      await recordSignedIn(env, fetch, token.access_token);
+      await recordSignedIn(env, serverUrl, fetch, token.access_token);
       return success(`${onOutput ? "" : prompt}Signed in.\n`);
     }
 
@@ -124,10 +125,11 @@ async function whoami(
   env: Env,
   { fetch }: AuthDependencies,
 ): Promise<CommandResult> {
+  const serverUrl = requireServerUrl(env);
   const token = readAuthToken(env);
   if (!token) return failure("Not logged in. Run trace login.");
 
-  const response = await fetch(`${resolveServerUrl(env)}/api/auth/get-session`, {
+  const response = await fetch(`${serverUrl}/api/auth/get-session`, {
     headers: { authorization: `Bearer ${token.accessToken}` },
   });
   const session = await readJson<SessionResponse>(response);
@@ -158,12 +160,13 @@ function identityFromSession(session: SessionResponse): string | null {
  */
 async function recordSignedIn(
   env: Env,
+  serverUrl: string,
   fetch: AuthDependencies["fetch"],
   accessToken: string,
 ): Promise<void> {
   let identity: string | null = null;
   try {
-    const response = await fetch(`${resolveServerUrl(env)}/api/auth/get-session`, {
+    const response = await fetch(`${serverUrl}/api/auth/get-session`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     if (response.ok) {
@@ -183,8 +186,18 @@ async function recordSignedIn(
   }
 }
 
-export function resolveServerUrl(env: Env): string {
-  return (env.TRACE_SERVER_URL ?? "http://localhost:3000").replace(/\/+$/, "");
+/**
+ * Cloud features are flagged off until a server URL is configured
+ * (`TRACE_SERVER_URL` or `trace config set server-url`); auth commands fail
+ * with this message rather than guessing at a server.
+ */
+export const NO_SERVER_CONFIGURED_MESSAGE =
+  "No sync server configured. Run trace config set server-url <url>.";
+
+function requireServerUrl(env: Env): string {
+  const serverUrl = resolveConfiguredServerUrl(env);
+  if (!serverUrl) throw new Error(NO_SERVER_CONFIGURED_MESSAGE);
+  return serverUrl;
 }
 
 function tokenPath(env: Env): string {

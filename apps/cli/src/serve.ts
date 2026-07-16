@@ -9,6 +9,7 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   handleTraceApiRequest,
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
 } from "@trace/core";
@@ -193,7 +194,7 @@ export function createTraceServeServer(
     createServeRequestListener(
       resolveDatabasePath(env),
       assetsDir,
-      Boolean(env.TRACE_SERVER_URL),
+      Boolean(resolveConfiguredServerUrl(env)),
     ),
   );
 }

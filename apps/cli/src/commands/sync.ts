@@ -1,5 +1,6 @@
 import {
   openTraceStore,
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   synchronize,
   updateSyncStatusFile,
@@ -9,7 +10,7 @@ import {
   type SyncTransport,
 } from "@trace/core";
 import { spawn as nodeSpawn } from "node:child_process";
-import { readAuthToken, resolveServerUrl } from "./auth.ts";
+import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
@@ -53,6 +54,12 @@ export async function runSyncCommand(
   env: Env,
   dependencies: { fetch?: typeof globalThis.fetch } = {},
 ): Promise<CommandResult> {
+  const serverUrl = resolveConfiguredServerUrl(env);
+  if (!serverUrl) {
+    // Cloud sync is flagged off without a configured server — soft no-op so a
+    // stray `trace sync` (foreground or background) never invents a server.
+    return { exitCode: 0, stdout: `${NO_SERVER_CONFIGURED_MESSAGE}\n`, stderr: "" };
+  }
   const token = readAuthToken(env);
   if (!token) {
     return { exitCode: 0, stdout: "Not logged in. Run trace login.\n", stderr: "" };
@@ -63,7 +70,7 @@ export async function runSyncCommand(
     const result = await synchronize(
       store,
       new HttpSyncTransport(
-        resolveServerUrl(env),
+        serverUrl,
         token.accessToken,
         dependencies.fetch ?? globalThis.fetch,
       ),

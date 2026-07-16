@@ -25,10 +25,25 @@ test("background sync detaches immediately and logged-out triggers spawn nothing
   expect(child.unref).toHaveBeenCalled();
 });
 
-test("sync exits with a login hint without making a network call", async () => {
+test("sync no-ops with a config hint when no server is configured", async () => {
   const home = mkdtempSync(join(tmpdir(), "trace-sync-cli-"));
   const fetch = vi.fn<typeof globalThis.fetch>();
   const result = await runSyncCommand({ HOME: home }, { fetch });
+  expect(result).toEqual({
+    exitCode: 0,
+    stdout: "No sync server configured. Run trace config set server-url <url>.\n",
+    stderr: "",
+  });
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("sync exits with a login hint without making a network call", async () => {
+  const home = mkdtempSync(join(tmpdir(), "trace-sync-cli-"));
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  const result = await runSyncCommand(
+    { HOME: home, TRACE_SERVER_URL: "https://sync.test" },
+    { fetch },
+  );
   expect(result).toEqual({
     exitCode: 0,
     stdout: "Not logged in. Run trace login.\n",
