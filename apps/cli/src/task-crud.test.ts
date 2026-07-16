@@ -10,12 +10,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openTraceStore, resolveProjectRoot } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const projectSlug = basename(repoRoot).toLowerCase();
 
 test("init reports plugin setup without writing Claude settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
@@ -992,7 +994,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     );
     expect(bound).toBe(
       [
-        `linked to existing project path-independent-project-identity`,
+        `linked to existing project ${projectSlug}`,
         `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl`,
         `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
@@ -1145,7 +1147,7 @@ test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION
     );
     expect(bound).toBe(
       [
-        `linked to existing project path-independent-project-identity`,
+        `linked to existing project ${projectSlug}`,
         `live-claude-session\tclaude\tclaude:live-claude-session`,
         `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
         "",

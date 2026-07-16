@@ -19,9 +19,24 @@ import {
 } from "./state-operations.ts";
 import type { Env } from "./seam.ts";
 
-function withTempContext(run: (ctx: { env: Env; cwd: string; stdin: string }) => void): void {
+function withoutSessionEnv(env: Env): Env {
+  const cleaned = { ...env };
+  delete cleaned.CLAUDE_CODE_SESSION_ID;
+  delete cleaned.CLAUDE_SESSION_ID;
+  delete cleaned.session_id;
+  delete cleaned.CODEX_THREAD_ID;
+  delete cleaned.CURSOR_CONVERSATION_ID;
+  return cleaned;
+}
+
+function withTempContext(
+  run: (ctx: { env: Env; cwd: string; stdin: string }) => void,
+): void {
   const dir = mkdtempSync(join(tmpdir(), "trace-state-ops-"));
-  const env: Env = { ...process.env, TRACE_DB: join(dir, "trace.sqlite") };
+  const env = withoutSessionEnv({
+    ...process.env,
+    TRACE_DB: join(dir, "trace.sqlite"),
+  });
   try {
     run({ env, cwd: dir, stdin: "" });
   } finally {
