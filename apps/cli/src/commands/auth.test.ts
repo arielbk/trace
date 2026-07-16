@@ -12,6 +12,7 @@ function tmp(prefix: string): string {
 test("login polls the device flow and persists its bearer token privately", async () => {
   const home = tmp("trace-auth-home-");
   const requests: Array<{ url: string; body?: unknown }> = [];
+  const openedUrls: string[] = [];
   let polls = 0;
 
   try {
@@ -29,6 +30,8 @@ test("login polls the device flow and persists its bearer token privately", asyn
               device_code: "device-code",
               user_code: "ABCD-EFGH",
               verification_uri: "https://github.com/login/device",
+              verification_uri_complete:
+                "https://github.com/login/device?user_code=ABCD-EFGH",
               interval: 0,
             });
           }
@@ -45,6 +48,7 @@ test("login polls the device flow and persists its bearer token privately", asyn
               )
             : Response.json({ access_token: "bearer-token" });
         },
+        openBrowser: (url) => openedUrls.push(url),
         sleep: async () => undefined,
       },
     );
@@ -52,9 +56,12 @@ test("login polls the device flow and persists its bearer token privately", asyn
     expect(result).toEqual({
       exitCode: 0,
       stdout:
-        "Visit https://github.com/login/device\nCode: ABCD-EFGH\nSigned in.\n",
+        "Visit https://github.com/login/device?user_code=ABCD-EFGH\nCode: ABCD-EFGH\nSigned in.\n",
       stderr: "",
     });
+    expect(openedUrls).toEqual([
+      "https://github.com/login/device?user_code=ABCD-EFGH",
+    ]);
     expect(requests).toEqual([
       {
         url: "http://auth.test/api/auth/device/code",
@@ -142,6 +149,44 @@ test("whoami reads the stored bearer token and logout clears it", async () => {
       stderr: "",
     });
     expect(() => readFileSync(join(authDir, "auth.json"))).toThrow();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("whoami treats a null session as logged out", async () => {
+  const home = tmp("trace-auth-home-");
+
+  try {
+    await runAuthCommand(
+      "login",
+      { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
+      {
+        fetch: async (url) =>
+          String(url).endsWith("/device/code")
+            ? Response.json({
+                device_code: "device-code",
+                user_code: "ABCD-EFGH",
+                verification_uri: "https://github.com/login/device",
+                interval: 0,
+              })
+            : Response.json({ access_token: "invalidated-token" }),
+        openBrowser: () => {},
+        sleep: async () => undefined,
+      },
+    );
+
+    const result = await runAuthCommand(
+      "whoami",
+      { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
+      { fetch: async () => Response.json(null) },
+    );
+
+    expect(result).toEqual({
+      exitCode: 1,
+      stdout: "",
+      stderr: "Not logged in. Run trace login.\n",
+    });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

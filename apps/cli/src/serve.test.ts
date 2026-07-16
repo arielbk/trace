@@ -9,10 +9,10 @@ import { openTraceStore } from "@trace/core";
 import {
   createServeRequestListener,
   DEFAULT_SERVE_PORT,
-  openBrowser,
   resolveWebAssetsDir,
   startTraceServe,
 } from "./serve.ts";
+import { openBrowser } from "./open-browser.ts";
 
 let dir: string;
 let databasePath: string;

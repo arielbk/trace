@@ -13,6 +13,7 @@ import {
   updateSyncStatusFile,
   writeSyncStatusFile,
 } from "@trace/core";
+import { openBrowser } from "../open-browser.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
 const CLIENT_ID = "trace-cli";
@@ -21,6 +22,7 @@ const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 export interface AuthDependencies {
   fetch: typeof globalThis.fetch;
   sleep: (milliseconds: number) => Promise<void>;
+  openBrowser: (url: string) => void;
   onOutput?: (output: string) => void;
 }
 
@@ -30,6 +32,7 @@ interface AuthToken {
 
 const defaultDependencies: AuthDependencies = {
   fetch: globalThis.fetch,
+  openBrowser,
   sleep: (milliseconds) =>
     new Promise((resolve) => {
       setTimeout(resolve, milliseconds);
@@ -57,7 +60,7 @@ export async function runAuthCommand(
 
 async function login(
   env: Env,
-  { fetch, sleep, onOutput }: AuthDependencies,
+  { fetch, sleep, openBrowser, onOutput }: AuthDependencies,
 ): Promise<CommandResult> {
   const serverUrl = resolveServerUrl(env);
   const codeResponse = await fetch(`${serverUrl}/api/auth/device/code`, {
@@ -72,8 +75,11 @@ async function login(
     throw new Error("Auth server returned an invalid device code response");
   }
 
-  const prompt = `Visit ${code.verification_uri}\nCode: ${code.user_code}\n`;
+  const verificationUrl =
+    code.verification_uri_complete ?? code.verification_uri;
+  const prompt = `Visit ${verificationUrl}\nCode: ${code.user_code}\n`;
   onOutput?.(prompt);
+  openBrowser(verificationUrl);
   let interval = Math.max(code.interval ?? 5, 0);
   while (true) {
     await sleep(interval * 1_000);
@@ -125,7 +131,7 @@ async function whoami(
     headers: { authorization: `Bearer ${token.accessToken}` },
   });
   const session = await readJson<SessionResponse>(response);
-  if (!response.ok || !session.user) {
+  if (!response.ok || !session?.user) {
     return failure("Not logged in. Run trace login.");
   }
 
@@ -229,6 +235,7 @@ interface DeviceCodeResponse {
   device_code?: string;
   user_code?: string;
   verification_uri?: string;
+  verification_uri_complete?: string;
   interval?: number;
 }
 

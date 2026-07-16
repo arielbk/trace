@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
-import { openBrowser, startTraceServe } from "./serve.ts";
+import { openBrowser } from "./open-browser.ts";
+import { startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
