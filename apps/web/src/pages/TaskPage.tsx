@@ -966,6 +966,7 @@ function docRouteFromStateClick(
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   claude: "Claude session",
   codex: "Codex session",
+  copilot: "Copilot session",
   cursor: "Cursor session",
   doc: "Document",
 };
@@ -983,6 +984,13 @@ const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
     background: "var(--color-tag-codex-bg)",
     borderColor:
       "color-mix(in srgb, var(--color-tag-codex) 25%, var(--color-border))",
+  },
+  copilot: {
+    color: "var(--color-tag-copilot)",
+    background:
+      "color-mix(in srgb, var(--color-tag-copilot) 10%, var(--color-surface))",
+    borderColor:
+      "color-mix(in srgb, var(--color-tag-copilot) 25%, var(--color-border))",
   },
   cursor: {
     color: "var(--color-text)",
@@ -1074,6 +1082,22 @@ function TypeIcon({
             aria-hidden="true"
           />
         </>
+      ) : type === "copilot" ? (
+        <svg
+          viewBox="0 0 24 24"
+          width={glyph}
+          height={glyph}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M6 18 18 6" />
+          <path d="m9 6 9 9" />
+          <path d="M6 9v9h9" />
+        </svg>
       ) : (
         <svg
           viewBox="0 0 24 24"

@@ -56,7 +56,7 @@ export type ActiveTask =
 // The single source of the tool axis: the schema enum, runtime validation, and
 // CLI flag parsing all derive from this list, so adding a tool is a one-line
 // change here plus a Drizzle migration.
-export const SESSION_TOOLS = ["claude", "codex", "cursor"] as const;
+export const SESSION_TOOLS = ["claude", "codex", "cursor", "copilot"] as const;
 export type SessionTool = (typeof SESSION_TOOLS)[number];
 
 export function isSessionTool(value: string): value is SessionTool {
