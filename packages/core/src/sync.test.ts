@@ -139,6 +139,40 @@ describe("row synchronization", () => {
     second.close();
   });
 
+  test("duplicate slugs from independent machines converge under a local suffix", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("first"));
+    const second = openTraceStore(database("second"));
+    // Both machines mint the same slug before ever syncing.
+    const fromFirst = first.createTask("Cloud sync", "/project-a");
+    const fromSecond = second.createTask("Cloud sync", "/project-b");
+
+    await synchronize(first, server);
+    await synchronize(second, server);
+    await synchronize(first, server);
+
+    // Each machine keeps its own task at the original slug and lands the
+    // pulled twin under an iterator suffix; nothing throws, nothing is lost.
+    expect(second.getTask(fromSecond.id)?.slug).toBe("cloud-sync");
+    expect(second.getTask(fromFirst.id)?.slug).toBe("cloud-sync-2");
+    expect(first.getTask(fromFirst.id)?.slug).toBe("cloud-sync");
+    expect(first.getTask(fromSecond.id)?.slug).toBe("cloud-sync-2");
+
+    // A remote edit still wins last-write-wins without disturbing the
+    // machine-local slug.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    first.updateTaskDescription(fromFirst.id, "edited on machine A");
+    await synchronize(first, server);
+    await synchronize(second, server);
+    expect(second.getTask(fromFirst.id)).toMatchObject({
+      description: "edited on machine A",
+      slug: "cloud-sync-2",
+    });
+
+    first.close();
+    second.close();
+  });
+
   test("last write wins, including archive versus edit conflicts", async () => {
     const server = new MemoryTransport();
     const first = openTraceStore(database("first"));

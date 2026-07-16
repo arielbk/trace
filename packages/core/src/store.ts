@@ -1188,12 +1188,19 @@ class NodeSqliteTaskStore implements TaskStore {
 
     this.#sqlite.exec("BEGIN");
     try {
+      // Slugs are machine-local stable addresses (docs dirs and refs key on
+      // them), so the ON CONFLICT update leaves them alone: a task this
+      // machine already knows keeps whatever slug it has here, even when the
+      // remote row wins last-write-wins on everything else. A genuinely new
+      // pulled task whose slug is already taken locally — independent stores
+      // can mint the same slug — lands under an iterator-suffixed one instead
+      // of aborting the merge on the tasks_slug_unique index.
       const upsertTask = this.#sqlite.prepare(
         `INSERT INTO tasks
            (id, title, slug, created_at, project_root, archived_at, description, updated_at, machine_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
-           title=excluded.title, slug=excluded.slug, created_at=excluded.created_at,
+           title=excluded.title, created_at=excluded.created_at,
            project_root=excluded.project_root, archived_at=excluded.archived_at,
            description=excluded.description, updated_at=excluded.updated_at,
            machine_id=excluded.machine_id,
@@ -1203,10 +1210,11 @@ class NodeSqliteTaskStore implements TaskStore {
            END`,
       );
       for (const row of tasks) {
+        const existing = localTasks.get(row.id);
         upsertTask.run(
           row.id,
           row.title,
-          row.slug,
+          existing ? existing.slug : this.#allocateSlug(row.slug, row.id),
           row.createdAt,
           row.projectRoot,
           row.archivedAt,
