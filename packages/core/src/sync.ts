@@ -35,7 +35,17 @@ export type SyncPayload = { tasks: SyncTaskRow[]; sessions: SyncSessionRow[] };
 
 export type SyncDocManifest = {
   taskId: string;
-  files: { path: string; blobHash: string }[];
+  files: {
+    path: string;
+    blobHash: string;
+    // Registered doc metadata travels with the file entry. An absent field
+    // means the pushing machine has no stored value for it (an unregistered
+    // native doc, or a manifest from before metadata sync) and the pulling
+    // machine must leave its local value untouched — metadata is never
+    // dropped by an entry that doesn't carry any.
+    title?: string;
+    description?: string;
+  }[];
   updatedAt: string;
   machineId: string;
 };

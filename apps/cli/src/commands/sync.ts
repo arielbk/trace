@@ -74,7 +74,12 @@ export async function runSyncCommand(
         token.accessToken,
         dependencies.fetch ?? globalThis.fetch,
       ),
-      new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks),
+      new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks, {
+        docs: {
+          list: (taskId) => store.listDocsForTask(taskId),
+          update: (taskId, path, fields) => void store.updateTaskDoc(taskId, path, fields),
+        },
+      }),
     );
     recordSyncStatus(databasePath, { loggedIn: true, lastSyncedAt: new Date().toISOString(), lastError: undefined });
     const documentChanges =

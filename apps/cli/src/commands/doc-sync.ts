@@ -23,16 +23,27 @@ type DocumentMetadata = {
   tasks: Record<string, { fingerprint: string; manifest: SyncDocManifest }>;
 };
 
+// Bridge to the store's task_docs rows, so registered doc titles and
+// descriptions travel inside the manifest rather than staying machine-local.
+export type DocMetadataAccessor = {
+  list(taskId: string): { path: string; title?: string; description?: string }[];
+  update(
+    taskId: string,
+    path: string,
+    fields: { title?: string; description?: string },
+  ): void;
+};
+
 export class FileSystemDocumentStore implements SyncDocumentStore {
   readonly #metadataPath: string;
   private readonly databasePath: string;
   private readonly tasks: () => SyncTaskRow[];
-  private readonly options: { now?: () => string };
+  private readonly options: { now?: () => string; docs?: DocMetadataAccessor };
 
   constructor(
     databasePath: string,
     tasks: () => SyncTaskRow[],
-    options: { now?: () => string } = {},
+    options: { now?: () => string; docs?: DocMetadataAccessor } = {},
   ) {
     this.databasePath = databasePath;
     this.tasks = tasks;
@@ -47,8 +58,14 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     let changed = false;
 
     for (const task of this.tasks()) {
-      const files = readFiles(resolveTaskDocsDir(this.databasePath, task.slug));
-      const manifestFiles = files.map((file) => ({ path: file.path, blobHash: file.hash }));
+      const docsDir = resolveTaskDocsDir(this.databasePath, task.slug);
+      const files = readFiles(docsDir);
+      const metadataByPath = this.#docMetadataByRelativePath(task.id, docsDir);
+      const manifestFiles = files.map((file) => ({
+        path: file.path,
+        blobHash: file.hash,
+        ...(metadataByPath.get(file.path) ?? {}),
+      }));
       const fingerprint = fingerprintOf(manifestFiles);
       let tracked = metadata.tasks[task.id];
       if (!tracked && files.length === 0) continue;
@@ -113,6 +130,16 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         mkdirSync(dirname(destination), { recursive: true });
         writeFileSync(destination, content);
       }
+      // Entries that carry metadata are authoritative for it; entries without
+      // any leave local task_docs rows untouched, so an old-format manifest
+      // can never strip labels this machine already has.
+      for (const file of manifest.files) {
+        if (file.title === undefined && file.description === undefined) continue;
+        this.options.docs?.update(task.id, join(docsDir, ...file.path.split("/")), {
+          ...(file.title === undefined ? {} : { title: file.title }),
+          ...(file.description === undefined ? {} : { description: file.description }),
+        });
+      }
       metadata.tasks[manifest.taskId] = {
         fingerprint: fingerprintOf(manifest.files),
         manifest: structuredClone(manifest),
@@ -122,6 +149,29 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
 
     if (pulled > 0) this.#writeMetadata(metadata);
     return { pulled, downloaded };
+  }
+
+  // Map registered docs onto manifest-relative paths. Only docs that carry a
+  // stored title or description contribute an entry: emitting nothing for the
+  // rest is what lets the apply side treat absent fields as "no opinion".
+  #docMetadataByRelativePath(
+    taskId: string,
+    docsDir: string,
+  ): Map<string, { title?: string; description?: string }> {
+    const metadataByPath = new Map<string, { title?: string; description?: string }>();
+    for (const doc of this.options.docs?.list(taskId) ?? []) {
+      if (doc.title === undefined && doc.description === undefined) continue;
+      // Legacy rows may hold a bare relative path; resolve it the same way
+      // the doc listing does before checking it lives inside the docs dir.
+      const absolute = isAbsolute(doc.path) ? doc.path : resolve(docsDir, doc.path);
+      const relativePath = relative(docsDir, absolute);
+      if (relativePath.startsWith("..") || isAbsolute(relativePath)) continue;
+      metadataByPath.set(relativePath.split(sep).join("/"), {
+        ...(doc.title === undefined ? {} : { title: doc.title }),
+        ...(doc.description === undefined ? {} : { description: doc.description }),
+      });
+    }
+    return metadataByPath;
   }
 
   #readMetadata(): DocumentMetadata {
@@ -162,8 +212,17 @@ function hash(content: Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+// Fingerprints must survive a round trip through the server, and Postgres
+// jsonb does not preserve object key order — so hash a canonical projection
+// rather than the entries' own serialization.
 function fingerprintOf(files: SyncDocManifest["files"]): string {
-  return createHash("sha256").update(JSON.stringify(files)).digest("hex");
+  const canonical = files.map((file) => [
+    file.path,
+    file.blobHash,
+    file.title ?? null,
+    file.description ?? null,
+  ]);
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 function validateManifest(manifest: SyncDocManifest): void {
