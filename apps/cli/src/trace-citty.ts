@@ -6,6 +6,12 @@ import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts
 import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
 import {
+  isCopilotHookPayload,
+  runCopilotAgentStopHook,
+  runCopilotSessionStartHook,
+  runCopilotSubagentStopHook,
+} from "./copilot-hook-runner.ts";
+import {
   failure,
   success,
   type CommandResult,
@@ -85,21 +91,27 @@ export function buildTraceCittyRoot(
         meta: { description: "Trace hook handlers" },
         subCommands: {
           "session-start": defineCommand({
-            meta: { description: "Register a new Claude session on start" },
+            meta: { description: "Register a new Claude or Copilot session on start" },
             run(): CommandResult {
-              return runClaudeSessionStartHook(stdin, env) as unknown as CommandResult;
+              return (isCopilotHookPayload(stdin)
+                ? runCopilotSessionStartHook(stdin, env)
+                : runClaudeSessionStartHook(stdin, env)) as unknown as CommandResult;
             },
           }),
           "subagent-stop": defineCommand({
-            meta: { description: "Discover Claude subagent sessions on stop" },
+            meta: { description: "Handle Claude or Copilot subagent stop" },
             run(): CommandResult {
-              return runClaudeSubagentStopHook(stdin, env) as unknown as CommandResult;
+              return (isCopilotHookPayload(stdin)
+                ? runCopilotSubagentStopHook(stdin)
+                : runClaudeSubagentStopHook(stdin, env)) as unknown as CommandResult;
             },
           }),
           stop: defineCommand({
-            meta: { description: "Block the main agent's turn on state.md drift" },
+            meta: { description: "Check Claude or Copilot state.md freshness" },
             run(): CommandResult {
-              return runClaudeStopHook(stdin, env) as unknown as CommandResult;
+              return (isCopilotHookPayload(stdin)
+                ? runCopilotAgentStopHook(stdin, env)
+                : runClaudeStopHook(stdin, env)) as unknown as CommandResult;
             },
           }),
         },
