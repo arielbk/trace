@@ -27,6 +27,13 @@ const traceSkill = join(skillsRoot, "trace", "SKILL.md");
 const traceClaudeResource = join(skillsRoot, "trace", "resources", "claude.md");
 const traceCodexResource = join(skillsRoot, "trace", "resources", "codex.md");
 const traceCursorResource = join(skillsRoot, "trace", "resources", "cursor.md");
+const traceCopilotResource = join(
+  skillsRoot,
+  "trace",
+  "resources",
+  "copilot.md",
+);
+const readme = join(repoRoot, "README.md");
 const recallSkill = join(skillsRoot, "recall", "SKILL.md");
 const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
 const boardSkill = join(skillsRoot, "board", "SKILL.md");
@@ -251,6 +258,7 @@ describe("plugin scaffold", () => {
     assert.match(source, /resources\/claude\.md/);
     assert.match(source, /resources\/codex\.md/);
     assert.match(source, /resources\/cursor\.md/);
+    assert.match(source, /resources\/copilot\.md/);
     // Re-entry is delegated to the trace-reenter skill, not inlined here.
     assert.match(source, /trace-reenter/);
 
@@ -274,11 +282,27 @@ describe("plugin scaffold", () => {
     assert.equal(cursor.includes("CLAUDE_CODE_SESSION_ID"), false);
     assert.equal(cursor.includes("CODEX_THREAD_ID"), false);
 
+    // Copilot resource: hooks pre-register live sessions, while the locator
+    // infers identity from the nearest Copilot process rather than env vars.
+    const copilot = readFileSync(traceCopilotResource, "utf8");
+    assert.match(copilot, /sessionStart/i);
+    assert.match(copilot, /agentStop/i);
+    assert.match(copilot, /lock/i);
+    assert.match(copilot, /re-enter/i);
+    assert.equal(copilot.includes("COPILOT_SESSION_ID"), false);
+
     // No host-specific CLI plumbing leaks into the shared tree.
-    for (const text of [source, claude, codex, cursor]) {
+    for (const text of [source, claude, codex, cursor, copilot]) {
       assert.equal(text.includes("CLAUDE_PLUGIN_ROOT"), false);
       assert.equal(text.includes("<trace-plugin-root>"), false);
     }
+  });
+
+  it("documents Copilot CLI installation and its output-only token total", () => {
+    const source = readFileSync(readme, "utf8");
+    assert.match(source, /### Copilot CLI/);
+    assert.match(source, /copilot plugin install .*plugin/);
+    assert.match(source, /output-only token/i);
   });
 
   it("ships a trigger-tuned recall skill that resolves vague references via the candidate pool", () => {
