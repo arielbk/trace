@@ -33,6 +33,9 @@ const boardSkill = join(skillsRoot, "board", "SKILL.md");
 const docPlacementSkill = join(skillsRoot, "doc-placement", "SKILL.md");
 const stateSkill = join(skillsRoot, "state", "SKILL.md");
 const pluginBinDir = join(repoRoot, "bin");
+const copilotPluginRoot = join(repoRoot, "plugin");
+const copilotPluginManifest = join(copilotPluginRoot, "plugin.json");
+const copilotHooksConfig = join(copilotPluginRoot, "hooks", "hooks.json");
 
 function pinnedTraceCommand(): string {
   const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
@@ -43,6 +46,44 @@ function pinnedTraceCommand(): string {
 }
 
 describe("plugin scaffold", () => {
+  it("ships a Copilot CLI plugin with lifecycle hooks and a binding nudge", () => {
+    const manifest = JSON.parse(readFileSync(copilotPluginManifest, "utf8")) as {
+      name?: string;
+      version?: string;
+      description?: string;
+    };
+    assert.equal(manifest.name, "trace");
+    assert.equal(typeof manifest.version, "string");
+    assert.equal(typeof manifest.description, "string");
+
+    const hooks = JSON.parse(readFileSync(copilotHooksConfig, "utf8")) as {
+      version?: number;
+      hooks?: Record<string, Array<Record<string, string>>>;
+    };
+    assert.equal(hooks.version, 1);
+    assert.deepEqual(hooks.hooks?.sessionStart, [
+      {
+        type: "command",
+        command: `${pinnedTraceCommand()} hook session-start`,
+      },
+      {
+        type: "prompt",
+        prompt:
+          "Consult the installed Trace skill before beginning work. If this session is not bound, use Trace to bind or re-enter the task.",
+      },
+    ]);
+    assert.deepEqual(hooks.hooks?.agentStop, [
+      { type: "command", command: `${pinnedTraceCommand()} hook stop` },
+    ]);
+    assert.deepEqual(hooks.hooks?.subagentStop, [
+      { type: "command", command: `${pinnedTraceCommand()} hook subagent-stop` },
+    ]);
+
+    const skill = readFileSync(traceSkill, "utf8");
+    assert.match(skill, /^---\nname:\s*trace\s*$/m);
+    assert.equal(skill.includes(pinnedTraceCommand()), true);
+  });
+
   it("ships a Claude Code plugin manifest, hook, and skills pinned to the npm CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
