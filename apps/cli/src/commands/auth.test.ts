@@ -99,6 +99,51 @@ test("login polls the device flow and persists its bearer token privately", asyn
   }
 });
 
+test("login floors the poll interval and gives up when the device code expires", async () => {
+  const home = tmp("trace-auth-home-");
+  const sleeps: number[] = [];
+  let polls = 0;
+
+  try {
+    const result = await runAuthCommand(
+      "login",
+      { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
+      {
+        fetch: async (url) => {
+          if (String(url).endsWith("/device/code")) {
+            return Response.json({
+              device_code: "device-code",
+              user_code: "ABCD-EFGH",
+              verification_uri: "https://github.com/login/device",
+              interval: 0,
+              expires_in: 10,
+            });
+          }
+          polls += 1;
+          return Response.json(
+            { error: "authorization_pending" },
+            { status: 400 },
+          );
+        },
+        openBrowser: () => {},
+        sleep: async (milliseconds) => {
+          sleeps.push(milliseconds);
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Device code expired");
+    // interval: 0 is floored to the RFC 8628 minimum of 5s, so a 10s
+    // lifetime allows exactly two polls before giving up.
+    expect(sleeps).toEqual([5_000, 5_000]);
+    expect(polls).toBe(2);
+    expect(() => readFileSync(join(home, ".trace", "auth.json"))).toThrow();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("whoami reads the stored bearer token and logout clears it", async () => {
   const home = tmp("trace-auth-home-");
   const authDir = join(home, ".trace");

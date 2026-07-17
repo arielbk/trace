@@ -19,6 +19,9 @@ import type { CommandResult, Env } from "./seam.ts";
 
 const CLIENT_ID = "trace-cli";
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+// RFC 8628 makes expires_in required, but a server that omits it must not
+// grant us an immortal polling loop; Better Auth's default lifetime is 30min.
+const DEVICE_CODE_LIFETIME_FALLBACK_SECONDS = 30 * 60;
 
 export interface AuthDependencies {
   fetch: typeof globalThis.fetch;
@@ -81,8 +84,11 @@ async function login(
   const prompt = `Visit ${verificationUrl}\nCode: ${code.user_code}\n`;
   onOutput?.(prompt);
   openBrowser(verificationUrl);
-  let interval = Math.max(code.interval ?? 5, 0);
-  while (true) {
+  // RFC 8628: poll no faster than every 5 seconds, and stop once the device
+  // code expires instead of polling forever on an abandoned browser flow.
+  let interval = Math.max(code.interval ?? 5, 5);
+  const expiresIn = code.expires_in ?? DEVICE_CODE_LIFETIME_FALLBACK_SECONDS;
+  for (let waited = 0; waited < expiresIn; waited += interval) {
     await sleep(interval * 1_000);
     const tokenResponse = await fetch(`${serverUrl}/api/auth/device/token`, {
       method: "POST",
@@ -108,6 +114,7 @@ async function login(
     }
     throw new Error(errorMessage(token));
   }
+  throw new Error("Device code expired before the login was approved. Run trace login to try again.");
 }
 
 function logout(env: Env): CommandResult {
@@ -250,6 +257,7 @@ interface DeviceCodeResponse {
   verification_uri?: string;
   verification_uri_complete?: string;
   interval?: number;
+  expires_in?: number;
 }
 
 interface TokenResponse extends ErrorResponse {
