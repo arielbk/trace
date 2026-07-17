@@ -149,14 +149,17 @@ export function stateCheckOperation(
 
 // The prose-pass directive shared by the Stop hook (via `check`) and the
 // re-entry manifest: name the skill that owns the template, and the reflect
-// command that advances the marker.
+// command that advances the marker. Seed is imperative — it fires once per
+// task and an unwritten state file always warrants a pass. Refresh is
+// advisory: any doc append re-drifts the fingerprint (a loop writing a log
+// drifts on every turn), so the agent judges whether a pass is worth it.
 export function proseDriftReason(
   mode: "seed" | "refresh",
   slug: string,
 ): string {
   return mode === "seed"
     ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`trace state reflect ${slug}\` when done).`
-    : `state.md prose has drifted from the current docs — invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${slug}\` when done).`;
+    : `state.md prose may be stale — the docs changed since it was last written. Use your judgment: if the changes carry meaningful new context (not just routine appends like logs), invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${slug}\` when done); otherwise no refresh is needed.`;
 }
 
 // Global form of the prose marker, used to strip any prior marker before
