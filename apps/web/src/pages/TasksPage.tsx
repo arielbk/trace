@@ -18,6 +18,7 @@ import {
   CommandList,
 } from "cmdk";
 import { AppHeader } from "../components/AppHeader.tsx";
+import { SyncStatusBadge } from "../components/SyncStatusBadge.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
 import {
@@ -91,7 +92,7 @@ export function TasksPage() {
 
   return (
     <main className="max-w-app mx-auto px-5 pb-16">
-      <AppHeader project={crumb} bordered={false} />
+      <AppHeader project={crumb} bordered={false} aside={<SyncStatusBadge />} />
       <div className="pt-7 pb-header-y">
         <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>
         {reveal.showContent ? (

@@ -16,6 +16,8 @@ import { openTraceStore, resolveProjectRoot } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
+// The project slug the CLI declares derives from this checkout's directory
+// name, which differs across clones and worktrees.
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectSlug = basename(repoRoot).toLowerCase();
 

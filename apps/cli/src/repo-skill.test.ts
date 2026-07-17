@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+// The project slug the CLI declares derives from this checkout's directory
+// name, which differs across clones and worktrees.
 const projectSlug = basename(repoRoot).toLowerCase();
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 const skillReadme = join(repoRoot, "plugin", "skills", "trace", "SKILL.md");

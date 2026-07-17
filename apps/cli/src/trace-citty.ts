@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
-import { openBrowser, startTraceServe } from "./serve.ts";
+import { openBrowser } from "./open-browser.ts";
+import { startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
@@ -38,6 +39,11 @@ import {
   skillWorkOnTaskOperation,
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
+import {
+  configGetOperation,
+  configSetOperation,
+  configUnsetOperation,
+} from "./commands/config-operations.ts";
 import {
   stateCheckOperation,
   stateReflectOperation,
@@ -161,6 +167,32 @@ export function buildTraceCittyRoot(
             meta: { description: "Update a registered doc's title or description" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return taskUpdateDocOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      config: defineCommand({
+        meta: { description: "Read and write machine-local client settings" },
+        subCommands: {
+          get: defineCommand({
+            meta: { description: "Print a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configGetOperation(args, { env });
+            },
+          }),
+
+          set: defineCommand({
+            meta: { description: "Set a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configSetOperation(args, { env });
+            },
+          }),
+
+          unset: defineCommand({
+            meta: { description: "Remove a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configUnsetOperation(args, { env });
             },
           }),
         },

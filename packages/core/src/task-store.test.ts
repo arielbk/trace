@@ -97,6 +97,7 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "project_roots",
         "projects",
         "sessions",
+        "sync_meta",
         "task_docs",
         "tasks",
       ]);
@@ -111,6 +112,8 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "description",
         "pinned_at",
         "project_id",
+        "updated_at",
+        "machine_id",
       ]);
 
       expect(sessionColumnNames(database)).toEqual([
@@ -132,6 +135,8 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "title",
         "context_tokens_used",
         "context_tokens_limit",
+        "updated_at",
+        "machine_id",
       ]);
     } finally {
       database.close();

@@ -37,6 +37,8 @@ export const tasks = sqliteTable("tasks", {
   archivedAt: text("archived_at"),
   description: text("description"),
   pinnedAt: text("pinned_at"),
+  updatedAt: text("updated_at").notNull(),
+  machineId: text("machine_id").notNull(),
 });
 
 export const projectRoots = sqliteTable("project_roots", {
@@ -76,6 +78,8 @@ export const sessions = sqliteTable("sessions", {
   // null means it was never observed (distinct from 0 used).
   contextTokensUsed: integer("context_tokens_used"),
   contextTokensLimit: integer("context_tokens_limit"),
+  updatedAt: text("updated_at").notNull(),
+  machineId: text("machine_id").notNull(),
 });
 
 export const taskDocs = sqliteTable(

@@ -1,4 +1,3 @@
-import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   createServer,
@@ -10,9 +9,11 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   handleTraceApiRequest,
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
 } from "@trace/core";
+import { triggerBackgroundSync } from "./commands/sync.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -28,6 +29,9 @@ export type StartTraceServeOptions = {
   host?: string;
   /** Injectable server, used by tests (the unit env cannot bind sockets). */
   server?: Server;
+  /** Injectable background-sync trigger; defaults to the real fire-and-forget
+   * spawn. Overridden by tests. */
+  triggerSync?: (env: Record<string, string | undefined>) => void;
 };
 
 /** How many consecutive ports to try when the preferred one is taken. */
@@ -94,13 +98,16 @@ function serveFile(res: ServerResponse, filePath: string): void {
 export function createServeRequestListener(
   databasePath: string,
   assetsDir?: string,
+  syncServerConfigured?: boolean,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
     const dispatch = (body?: string): void => {
-      const response = handleTraceApiRequest(databasePath, method, url, body);
+      const response = handleTraceApiRequest(databasePath, method, url, body, {
+        syncServerConfigured,
+      });
 
       if (response) {
         writeTraceApiResponse(res, response);
@@ -157,38 +164,6 @@ function serveOrFallback(
   res.end();
 }
 
-type BrowserSpawn = (
-  command: string,
-  args: string[],
-) => { unref: () => void; on: (event: string, handler: () => void) => void };
-
-const defaultBrowserSpawn: BrowserSpawn = (command, args) =>
-  nodeSpawn(command, args, { detached: true, stdio: "ignore" });
-
-/**
- * Open `url` in the user's default browser. Best-effort: failures are ignored —
- * the URL is printed to the terminal either way.
- */
-export function openBrowser(
-  url: string,
-  platform: NodeJS.Platform = process.platform,
-  spawn: BrowserSpawn = defaultBrowserSpawn,
-): void {
-  const [command, args] =
-    platform === "darwin"
-      ? ["open", [url] as string[]]
-      : platform === "win32"
-        ? ["cmd", ["/c", "start", "", url] as string[]]
-        : ["xdg-open", [url] as string[]];
-  try {
-    const child = spawn(command as string, args as string[]);
-    child.on("error", () => {});
-    child.unref();
-  } catch {
-    // Browser launch is a convenience; never fail serve over it.
-  }
-}
-
 /**
  * Locate the built web SPA relative to this module: `apps/web/dist` when
  * running from the repo (`src/` or `dist/`). Returns undefined when no build
@@ -216,7 +191,11 @@ export function createTraceServeServer(
   assetsDir: string | undefined = resolveWebAssetsDir(),
 ): Server {
   return createServer(
-    createServeRequestListener(resolveDatabasePath(env), assetsDir),
+    createServeRequestListener(
+      resolveDatabasePath(env),
+      assetsDir,
+      Boolean(resolveConfiguredServerUrl(env)),
+    ),
   );
 }
 
@@ -232,6 +211,10 @@ export function startTraceServe(
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const server = options.server ?? createTraceServeServer(env);
+
+  // Fire-and-forget a sync as the board starts, so a freshly opened board
+  // reflects other machines. No-ops instantly when logged out or offline.
+  (options.triggerSync ?? triggerBackgroundSync)(env);
 
   return new Promise((resolve, reject) => {
     const listenOn = (port: number, attemptsLeft: number): void => {

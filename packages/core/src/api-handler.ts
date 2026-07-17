@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { extname, resolve, sep } from "node:path";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+import { readSyncStatus } from "./sync-status.ts";
 
 export type TraceApiResponse = {
   status: number;
@@ -25,6 +26,16 @@ export interface TraceApiResponseSink {
 const JSON_CONTENT_TYPE = "application/json";
 
 /**
+ * Host-provided context the router cannot derive from the database: whether the
+ * serving process has a sync server configured (`resolveConfiguredServerUrl`).
+ * The env stays at the host boundary, matching how `resolveDatabasePath(env)`
+ * is resolved by the caller.
+ */
+export interface TraceApiRequestOptions {
+  syncServerConfigured?: boolean;
+}
+
+/**
  * Framework-agnostic router for the trace web API. Returns a response for any
  * `/api/...` request, or `null` when the request is not an API request — so an
  * HTTP host can fall through to static assets / SPA handling. Shared by the Vite
@@ -35,12 +46,23 @@ export function handleTraceApiRequest(
   method: string,
   rawUrl: string,
   body?: string,
+  options?: TraceApiRequestOptions,
 ): TraceApiResponse | null {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
 
   if (path === "/api/config") {
     if (method !== "GET") return methodNotAllowed();
     return json({ home: homedir() });
+  }
+
+  if (path === "/api/sync/status") {
+    if (method !== "GET") return methodNotAllowed();
+    const status = readSyncStatus(databasePath);
+    return json(
+      status.state === "logged-out"
+        ? { ...status, serverConfigured: options?.syncServerConfigured ?? false }
+        : status,
+    );
   }
 
   if (path !== "/api/tasks" && !path.startsWith("/api/tasks/")) {

@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
 
@@ -22,7 +23,9 @@ beforeAll(() => {
   });
 });
 
-function renderHeader(props: { project?: string; context?: string } = {}) {
+function renderHeader(
+  props: { project?: string; context?: string; aside?: ReactNode } = {},
+) {
   return render(
     <MemoryRouter>
       <AppHeader {...props} />
@@ -60,6 +63,11 @@ describe("AppHeader", () => {
   test("renders the context crumb when both project and context are provided", () => {
     renderHeader({ project: "trace-v2", context: "My Task" });
     expect(screen.getByText("My Task")).toBeInTheDocument();
+  });
+
+  test("renders the aside slot content when provided", () => {
+    renderHeader({ aside: <span>synced 2m ago</span> });
+    expect(screen.getByText("synced 2m ago")).toBeInTheDocument();
   });
 
   test("renders the accessible theme toggle button", () => {

@@ -5,6 +5,7 @@ import {
   type TaskStore,
 } from "@trace/core";
 import { inferCliSessionIdentity } from "./identity.ts";
+import { triggerBackgroundSync } from "./sync.ts";
 import {
   parseRecallCandidatesArgs,
   parseSkillDocsDirArgs,
@@ -35,7 +36,12 @@ import {
   type Env,
 } from "./seam.ts";
 
-export type CommandContext = { env: Env; cwd: string; stdin: string };
+export type CommandContext = {
+  env: Env;
+  cwd: string;
+  stdin: string;
+  triggerSync?: (env: Env) => void;
+};
 
 export function skillWorkOnTaskOperation(
   rawArgs: string[],
@@ -56,7 +62,7 @@ export function skillWorkOnTaskOperation(
 
   const { description, project, ...registerInput } = parsed;
 
-  return withStore(ctx.env, (store, databasePath) => {
+  const result = withStore(ctx.env, (store, databasePath) => {
     const projectRootAttempt = resolveProjectRoot(project, ctx.cwd, store);
     if (!projectRootAttempt.ok) return projectRootAttempt.result;
     const projectRoot = projectRootAttempt.value;
@@ -82,6 +88,8 @@ export function skillWorkOnTaskOperation(
       `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
     );
   });
+  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  return result;
 }
 
 export function skillRecallCandidatesOperation(

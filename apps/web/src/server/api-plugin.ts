@@ -1,6 +1,7 @@
 import type { Plugin } from "vite";
 import {
   handleTraceApiRequest,
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
 } from "@trace/core";
@@ -20,6 +21,11 @@ export function traceApiPlugin(): Plugin {
             method,
             req.url ?? "/",
             body,
+            {
+              syncServerConfigured: Boolean(
+                resolveConfiguredServerUrl(process.env),
+              ),
+            },
           );
           if (!response) {
             next();

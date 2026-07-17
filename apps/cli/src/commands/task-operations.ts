@@ -32,6 +32,7 @@ import {
   formatTaskDocSummary,
   formatTaskSummary,
 } from "./formatters.ts";
+import { triggerBackgroundSync } from "./sync.ts";
 import {
   attempt,
   failure,
@@ -45,7 +46,12 @@ import {
   type Store,
 } from "./seam.ts";
 
-export type CommandContext = { env: Env; cwd: string; stdin: string };
+export type CommandContext = {
+  env: Env;
+  cwd: string;
+  stdin: string;
+  triggerSync?: (env: Env) => void;
+};
 
 export function slugify(title: string): string {
   return (
@@ -213,7 +219,7 @@ export function taskCaptureOperation(
   if (!parsedAttempt.ok) return parsedAttempt.result;
   const parsed = parsedAttempt.value;
 
-  return withStore(ctx.env, (store, databasePath) => {
+  const result = withStore(ctx.env, (store, databasePath) => {
     const projectRootAttempt = resolveProjectRoot(parsed.project, ctx.cwd, store);
     if (!projectRootAttempt.ok) return projectRootAttempt.result;
     const projectRoot = projectRootAttempt.value;
@@ -256,6 +262,8 @@ export function taskCaptureOperation(
       stderr: formatProjectResolution(resolution),
     };
   });
+  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  return result;
 }
 
 export function taskShowOperation(
@@ -314,7 +322,7 @@ export function taskAddDocOperation(
   if (!optionsAttempt.ok) return optionsAttempt.result;
   const options = optionsAttempt.value;
 
-  return withStore(ctx.env, (store, databasePath) => {
+  const result = withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
     // Canonicalize before storing: the filesystem scan reports absolute
@@ -323,6 +331,8 @@ export function taskAddDocOperation(
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });
+  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  return result;
 }
 
 export function taskUpdateDocOperation(
@@ -339,11 +349,13 @@ export function taskUpdateDocOperation(
   if (!optionsAttempt.ok) return optionsAttempt.result;
   const options = optionsAttempt.value;
 
-  return withStore(ctx.env, (store, databasePath) => {
+  const result = withStore(ctx.env, (store, databasePath) => {
     const task = store.getTaskByRef(taskId);
     if (!task) return failure(`Task not found: ${taskId}`, 1);
     const doc = store.updateTaskDoc(task.id, resolve(ctx.cwd, path), options);
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });
+  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  return result;
 }
