@@ -48,6 +48,7 @@ import {
   stateCheckOperation,
   stateReflectOperation,
 } from "./commands/state-operations.ts";
+import { keyShowOperation } from "./commands/key.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -84,6 +85,18 @@ export function buildTraceCittyRoot(
               process.exitCode = 1;
             });
           return success("");
+        },
+      }),
+
+      key: defineCommand({
+        meta: { description: "Manage the document encryption key" },
+        subCommands: {
+          show: defineCommand({
+            meta: { description: "Print the document encryption key" },
+            run(): CommandResult {
+              return keyShowOperation(env);
+            },
+          }),
         },
       }),
 
