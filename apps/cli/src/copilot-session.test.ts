@@ -2,7 +2,22 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { resolveCopilotSession } from "./copilot-session.ts";
+import {
+  parentProcessCommand,
+  resolveCopilotSession,
+} from "./copilot-session.ts";
+
+test("uses PowerShell to walk native Windows parent PIDs", () => {
+  expect(parentProcessCommand(1234, "win32")).toEqual({
+    command: "powershell.exe",
+    args: [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "(Get-CimInstance Win32_Process -Filter 'ProcessId = 1234').ParentProcessId",
+    ],
+  });
+});
 
 test("resolves the live Copilot session from an ancestor PID lock", () => {
   const home = mkdtempSync(join(tmpdir(), "trace-copilot-home-"));
@@ -45,7 +60,10 @@ test("chooses only the concurrently running session whose lock PID is an ancesto
         { COPILOT_HOME: home },
         { ancestorPids: [101, 200], isPidAlive: () => true },
       ),
-    ).toEqual({ id: "matching", transcriptPath: join(matching, "events.jsonl") });
+    ).toEqual({
+      id: "matching",
+      transcriptPath: join(matching, "events.jsonl"),
+    });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -85,7 +103,10 @@ test("honors COPILOT_HOME over the default Copilot config directory", () => {
         { COPILOT_HOME: home },
         { ancestorPids: [200], isPidAlive: () => true },
       ),
-    ).toEqual({ id: "custom-home", transcriptPath: join(sessionDir, "events.jsonl") });
+    ).toEqual({
+      id: "custom-home",
+      transcriptPath: join(sessionDir, "events.jsonl"),
+    });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

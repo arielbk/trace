@@ -55,7 +55,9 @@ function sessionForPid(
     } catch {
       continue;
     }
-    if (!names.some((name) => lockName.test(name) && name === `inuse.${pid}.lock`)) {
+    if (
+      !names.some((name) => lockName.test(name) && name === `inuse.${pid}.lock`)
+    ) {
       continue;
     }
 
@@ -75,7 +77,8 @@ function resolveAncestorPids(): number[] {
     ancestors.push(pid);
     seen.add(pid);
     try {
-      const output = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], {
+      const lookup = parentProcessCommand(pid);
+      const output = execFileSync(lookup.command, lookup.args, {
         encoding: "utf8",
       }).trim();
       const parent = Number.parseInt(output, 10);
@@ -87,6 +90,25 @@ function resolveAncestorPids(): number[] {
   }
 
   return ancestors;
+}
+
+export function parentProcessCommand(
+  pid: number,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (platform === "win32") {
+    return {
+      command: "powershell.exe",
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').ParentProcessId`,
+      ],
+    };
+  }
+
+  return { command: "ps", args: ["-o", "ppid=", "-p", String(pid)] };
 }
 
 function pidIsAlive(pid: number): boolean {

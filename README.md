@@ -198,8 +198,8 @@ loop and works today. Cross-tool re-entry rides the shared manifest: a task
 worked in one agent can be re-entered from another. The agents supported right
 now are **Claude Code**, **Codex**, **Cursor** (both the GUI and the
 `cursor-agent` CLI; macOS, pull-time capture, no live hook yet), and **GitHub
-Copilot CLI** (macOS, live hooks, output-only token totals). More are a matter of
-adding adapters.
+Copilot CLI** (macOS, Linux, and Windows; live hooks; output-only token totals).
+More are a matter of adding adapters.
 
 <details>
 <summary>Why "meta-harness"?</summary>

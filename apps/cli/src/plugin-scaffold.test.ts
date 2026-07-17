@@ -54,7 +54,9 @@ function pinnedTraceCommand(): string {
 
 describe("plugin scaffold", () => {
   it("ships a Copilot CLI plugin with lifecycle hooks and a binding nudge", () => {
-    const manifest = JSON.parse(readFileSync(copilotPluginManifest, "utf8")) as {
+    const manifest = JSON.parse(
+      readFileSync(copilotPluginManifest, "utf8"),
+    ) as {
       name?: string;
       version?: string;
       description?: string;
@@ -71,7 +73,8 @@ describe("plugin scaffold", () => {
     assert.deepEqual(hooks.hooks?.sessionStart, [
       {
         type: "command",
-        command: `${pinnedTraceCommand()} hook session-start`,
+        bash: `${pinnedTraceCommand()} hook session-start`,
+        powershell: `${pinnedTraceCommand()} hook session-start`,
       },
       {
         type: "prompt",
@@ -80,10 +83,18 @@ describe("plugin scaffold", () => {
       },
     ]);
     assert.deepEqual(hooks.hooks?.agentStop, [
-      { type: "command", command: `${pinnedTraceCommand()} hook stop` },
+      {
+        type: "command",
+        bash: `${pinnedTraceCommand()} hook stop`,
+        powershell: `${pinnedTraceCommand()} hook stop`,
+      },
     ]);
     assert.deepEqual(hooks.hooks?.subagentStop, [
-      { type: "command", command: `${pinnedTraceCommand()} hook subagent-stop` },
+      {
+        type: "command",
+        bash: `${pinnedTraceCommand()} hook subagent-stop`,
+        powershell: `${pinnedTraceCommand()} hook subagent-stop`,
+      },
     ]);
 
     const skill = readFileSync(traceSkill, "utf8");
