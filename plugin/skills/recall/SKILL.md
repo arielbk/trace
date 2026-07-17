@@ -22,7 +22,7 @@ asks to open the board (the `trace-board` skill).
 Run, from the project the user is in:
 
 ```sh
-npx @arielbk/trace@0.13.0 skill recall-candidates
+node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill recall-candidates
 ```
 
 It prints a JSON array of the project's unarchived tasks, each
@@ -38,7 +38,7 @@ specific repo — pass `--project <dir>` pointing at that project so the candida
 pool is scoped to its git root instead of cwd's:
 
 ```sh
-npx @arielbk/trace@0.13.0 skill recall-candidates --project /path/to/that/repo
+node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill recall-candidates --project /path/to/that/repo
 ```
 
 Default to cwd (omit the flag) unless you have a concrete reason the recalled
@@ -74,7 +74,7 @@ hand off to the **`trace-reenter` skill** — it owns the re-entry flow. Re-ente
 the resolved task by its slug (the canonical ref):
 
 ```sh
-npx @arielbk/trace@0.13.0 skill re-enter "{slug}"
+node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill re-enter "{slug}"
 ```
 
 This single command both fetches the re-entry manifest **and** binds the

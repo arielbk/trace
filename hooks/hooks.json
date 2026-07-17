@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx @arielbk/trace@0.13.0 hook session-start"
+            "command": "node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js hook session-start"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx @arielbk/trace@0.13.0 hook subagent-stop"
+            "command": "node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js hook subagent-stop"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx @arielbk/trace@0.13.0 hook stop"
+            "command": "node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js hook stop"
           }
         ]
       }
