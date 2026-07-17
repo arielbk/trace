@@ -134,6 +134,18 @@ It's a loop:
 If you ever start real work in a session that _isn't_ tracked, Trace notices and
 offers to bind it, so you don't have to remember to.
 
+### Encrypted sync keys
+
+Task documents are encrypted before cloud sync. The first `trace login` for an
+empty account generates a document encryption key and shows it once; save that
+key somewhere secure. On another machine, `trace login` asks for the same key
+and verifies it against your synced documents. Run `trace key show` on a
+configured machine when you need to copy it.
+
+If every copy of the key is lost, generate a fresh key during login and re-upload
+from a machine that still has the plaintext task documents. Existing encrypted
+cloud copies cannot be recovered without the old key.
+
 ## What it looks like
 
 Open a task and the first thing you see is where you left off: a short summary,

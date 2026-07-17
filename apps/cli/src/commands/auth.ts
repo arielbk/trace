@@ -8,13 +8,20 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createInterface } from "node:readline/promises";
 import {
+  createDocCrypto,
+  generateDocCryptoKey,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   updateSyncStatusFile,
   writeSyncStatusFile,
 } from "@trace/core";
 import { openBrowser } from "../open-browser.ts";
+import {
+  readStoredDocCryptoKey,
+  writeStoredDocCryptoKey,
+} from "./key.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
 const CLIENT_ID = "trace-cli";
@@ -28,6 +35,7 @@ export interface AuthDependencies {
   sleep: (milliseconds: number) => Promise<void>;
   openBrowser: (url: string) => void;
   onOutput?: (output: string) => void;
+  prompt: (message: string) => Promise<string>;
 }
 
 interface AuthToken {
@@ -41,6 +49,17 @@ const defaultDependencies: AuthDependencies = {
     new Promise((resolve) => {
       setTimeout(resolve, milliseconds);
     }),
+  prompt: async (message) => {
+    const readline = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    try {
+      return await readline.question(message);
+    } finally {
+      readline.close();
+    }
+  },
 };
 
 export async function runAuthCommand(
@@ -64,7 +83,7 @@ export async function runAuthCommand(
 
 async function login(
   env: Env,
-  { fetch, sleep, openBrowser, onOutput }: AuthDependencies,
+  { fetch, sleep, openBrowser, onOutput, prompt: ask }: AuthDependencies,
 ): Promise<CommandResult> {
   const serverUrl = requireServerUrl(env);
   const codeResponse = await fetch(`${serverUrl}/api/auth/device/code`, {
@@ -102,9 +121,16 @@ async function login(
     const token = await readJson<TokenResponse>(tokenResponse);
 
     if (tokenResponse.ok && token.access_token) {
+      const keyOutput = await ensureDocCryptoKey(
+        env,
+        serverUrl,
+        fetch,
+        token.access_token,
+        ask,
+      );
       writeToken(env, { accessToken: token.access_token });
       await recordSignedIn(env, serverUrl, fetch, token.access_token);
-      return success(`${onOutput ? "" : prompt}Signed in.\n`);
+      return success(`${onOutput ? "" : prompt}Signed in.\n${keyOutput}`);
     }
 
     if (token.error === "authorization_pending") continue;
@@ -115,6 +141,73 @@ async function login(
     throw new Error(errorMessage(token));
   }
   throw new Error("Device code expired before the login was approved. Run trace login to try again.");
+}
+
+async function ensureDocCryptoKey(
+  env: Env,
+  serverUrl: string,
+  fetch: AuthDependencies["fetch"],
+  accessToken: string,
+  ask: AuthDependencies["prompt"],
+): Promise<string> {
+  if (readStoredDocCryptoKey(env)) return "";
+
+  const response = await fetch(`${serverUrl}/api/sync/docs/manifests`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+  const manifests = await readJson<unknown>(response);
+  if (!response.ok) throw new Error(errorMessage(manifests as ErrorResponse));
+  if (!Array.isArray(manifests)) {
+    throw new Error("Sync server returned an invalid document manifest response");
+  }
+
+  if (manifests.length === 0) {
+    const masterKey = generateDocCryptoKey();
+    writeStoredDocCryptoKey(env, masterKey);
+    return (
+      "Save this document encryption key somewhere safe. It will only be shown once during setup:\n" +
+      `${masterKey}\n`
+    );
+  }
+
+  const entered = (
+    await ask(
+      "Enter your 64-character document encryption key, or type NEW to create a fresh key: ",
+    )
+  ).trim();
+  if (entered.toUpperCase() === "NEW") {
+    return generateFreshKeyForExistingAccount(env, ask);
+  }
+
+  const first = manifests[0] as { filesCiphertext?: unknown };
+  try {
+    if (typeof first.filesCiphertext !== "string") throw new Error("missing ciphertext");
+    createDocCrypto(entered).openFilesList(first.filesCiphertext);
+  } catch {
+    throw new Error(
+      "That document encryption key could not decrypt your synced documents.",
+    );
+  }
+  writeStoredDocCryptoKey(env, entered.toLowerCase());
+  return "Document encryption key saved.\n";
+}
+
+async function generateFreshKeyForExistingAccount(
+  env: Env,
+  ask: AuthDependencies["prompt"],
+): Promise<string> {
+  const confirmation = await ask(
+    "Warning: a fresh key cannot decrypt your existing synced documents. Type GENERATE NEW KEY to continue: ",
+  );
+  if (confirmation.trim() !== "GENERATE NEW KEY") {
+    throw new Error("Fresh document encryption key generation cancelled");
+  }
+  const masterKey = generateDocCryptoKey();
+  writeStoredDocCryptoKey(env, masterKey);
+  return (
+    "Save this new document encryption key somewhere safe. Existing synced documents require the old key:\n" +
+    `${masterKey}\n`
+  );
 }
 
 function logout(env: Env): CommandResult {

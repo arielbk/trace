@@ -1,4 +1,5 @@
 import {
+  createDocCrypto,
   openTraceStore,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
@@ -12,6 +13,7 @@ import {
 import { spawn as nodeSpawn } from "node:child_process";
 import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
+import { readStoredDocCryptoKey } from "./key.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
 type BackgroundChild = {
@@ -64,6 +66,15 @@ export async function runSyncCommand(
   if (!token) {
     return { exitCode: 0, stdout: "Not logged in. Run trace login.\n", stderr: "" };
   }
+  const masterKey = readStoredDocCryptoKey(env);
+  if (!masterKey) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        "No document encryption key found. Run trace login to set one up.\n",
+    };
+  }
   const databasePath = resolveDatabasePath(env);
   const store = openTraceStore(databasePath);
   try {
@@ -75,6 +86,7 @@ export async function runSyncCommand(
         dependencies.fetch ?? globalThis.fetch,
       ),
       new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks, {
+        crypto: createDocCrypto(masterKey),
         docs: {
           list: (taskId) => store.listDocsForTask(taskId),
           update: (taskId, path, fields) => void store.updateTaskDoc(taskId, path, fields),

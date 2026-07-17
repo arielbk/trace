@@ -12,6 +12,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   compareSyncRows,
   resolveTaskDocsDir,
+  type DocCrypto,
+  type DocCryptoFile,
   type SyncBlob,
   type SyncDocManifest,
   type SyncDocumentStore,
@@ -38,12 +40,20 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
   readonly #metadataPath: string;
   private readonly databasePath: string;
   private readonly tasks: () => SyncTaskRow[];
-  private readonly options: { now?: () => string; docs?: DocMetadataAccessor };
+  private readonly options: {
+    crypto: DocCrypto;
+    now?: () => string;
+    docs?: DocMetadataAccessor;
+  };
 
   constructor(
     databasePath: string,
     tasks: () => SyncTaskRow[],
-    options: { now?: () => string; docs?: DocMetadataAccessor } = {},
+    options: {
+      crypto: DocCrypto;
+      now?: () => string;
+      docs?: DocMetadataAccessor;
+    },
   ) {
     this.databasePath = databasePath;
     this.tasks = tasks;
@@ -63,7 +73,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       const metadataByPath = this.#docMetadataByRelativePath(task.id, docsDir);
       const manifestFiles = files.map((file) => ({
         path: file.path,
-        blobHash: file.hash,
+        blobHash: this.options.crypto.address(file.content),
         ...(metadataByPath.get(file.path) ?? {}),
       }));
       const fingerprint = fingerprintOf(manifestFiles);
@@ -74,7 +84,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
           fingerprint,
           manifest: {
             taskId: task.id,
-            files: manifestFiles,
+            filesCiphertext: this.options.crypto.sealFilesList(manifestFiles),
             updatedAt: this.options.now?.() ?? new Date().toISOString(),
             machineId: metadata.machineId,
           },
@@ -83,7 +93,10 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         changed = true;
       }
       manifests.push(structuredClone(tracked.manifest));
-      for (const file of files) blobs.set(file.hash, file.content);
+      for (const file of files) {
+        const address = this.options.crypto.address(file.content);
+        blobs.set(address, this.options.crypto.sealBlob(file.content));
+      }
     }
 
     if (changed) this.#writeMetadata(metadata);
@@ -106,18 +119,39 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       const task = tasks.get(manifest.taskId);
       const tracked = metadata.tasks[manifest.taskId];
       if (!task || (tracked && compareSyncRows(manifest, tracked.manifest) <= 0)) continue;
-      validateManifest(manifest);
+      let manifestFiles: DocCryptoFile[];
+      try {
+        manifestFiles = this.options.crypto.openFilesList(
+          manifest.filesCiphertext,
+        );
+      } catch {
+        throw new Error(
+          `could not decrypt document manifest for task ${manifest.taskId}`,
+        );
+      }
+      validateManifest(manifestFiles);
 
       const docsDir = resolveTaskDocsDir(this.databasePath, task.slug);
-      const local = new Map(readFiles(docsDir).map((file) => [file.hash, file.content]));
+      const local = new Map(
+        readFiles(docsDir).map((file) => [
+          this.options.crypto.address(file.content),
+          file.content,
+        ]),
+      );
       const contents = new Map<string, Uint8Array>();
-      for (const file of manifest.files) {
+      for (const file of manifestFiles) {
         let content = local.get(file.blobHash);
         if (!content) {
-          content = (await download(file.blobHash)) ?? undefined;
-          if (!content) throw new Error(`sync server is missing blob ${file.blobHash}`);
-          if (hash(content) !== file.blobHash) {
-            throw new Error(`sync server returned corrupt blob ${file.blobHash}`);
+          const envelope = await download(file.blobHash);
+          if (!envelope) {
+            throw new Error(`sync server is missing blob ${file.blobHash}`);
+          }
+          try {
+            content = this.options.crypto.openBlob(envelope, file.blobHash);
+          } catch {
+            throw new Error(
+              `could not decrypt or verify document blob ${file.blobHash}`,
+            );
           }
           downloaded += 1;
         }
@@ -133,7 +167,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       // Entries that carry metadata are authoritative for it; entries without
       // any leave local task_docs rows untouched, so an old-format manifest
       // can never strip labels this machine already has.
-      for (const file of manifest.files) {
+      for (const file of manifestFiles) {
         if (file.title === undefined && file.description === undefined) continue;
         this.options.docs?.update(task.id, join(docsDir, ...file.path.split("/")), {
           ...(file.title === undefined ? {} : { title: file.title }),
@@ -141,7 +175,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         });
       }
       metadata.tasks[manifest.taskId] = {
-        fingerprint: fingerprintOf(manifest.files),
+        fingerprint: fingerprintOf(manifestFiles),
         manifest: structuredClone(manifest),
       };
       pulled += 1;
@@ -187,9 +221,9 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
   }
 }
 
-function readFiles(root: string): { path: string; hash: string; content: Uint8Array }[] {
+function readFiles(root: string): { path: string; content: Uint8Array }[] {
   if (!existsSync(root)) return [];
-  const files: { path: string; hash: string; content: Uint8Array }[] = [];
+  const files: { path: string; content: Uint8Array }[] = [];
   const visit = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
@@ -198,7 +232,6 @@ function readFiles(root: string): { path: string; hash: string; content: Uint8Ar
         const content = readFileSync(absolute);
         files.push({
           path: relative(root, absolute).split(sep).join("/"),
-          hash: hash(content),
           content,
         });
       }
@@ -208,14 +241,10 @@ function readFiles(root: string): { path: string; hash: string; content: Uint8Ar
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function hash(content: Uint8Array): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
 // Fingerprints must survive a round trip through the server, and Postgres
 // jsonb does not preserve object key order — so hash a canonical projection
 // rather than the entries' own serialization.
-function fingerprintOf(files: SyncDocManifest["files"]): string {
+function fingerprintOf(files: DocCryptoFile[]): string {
   const canonical = files.map((file) => [
     file.path,
     file.blobHash,
@@ -225,9 +254,9 @@ function fingerprintOf(files: SyncDocManifest["files"]): string {
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
-function validateManifest(manifest: SyncDocManifest): void {
+function validateManifest(files: DocCryptoFile[]): void {
   const paths = new Set<string>();
-  for (const file of manifest.files) {
+  for (const file of files) {
     if (
       !file.path ||
       isAbsolute(file.path) ||

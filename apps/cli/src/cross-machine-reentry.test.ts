@@ -121,6 +121,10 @@ function setupMachine(root: string, name: string, token: string) {
   const home = join(root, name, "home");
   mkdirSync(join(home, ".trace"), { recursive: true });
   writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: token }));
+  writeFileSync(
+    join(home, ".trace", "key.json"),
+    JSON.stringify({ masterKey: "12".repeat(32) }),
+  );
   const db = join(root, name, "trace.sqlite");
   const env: Env = { HOME: home, TRACE_DB: db, TRACE_SERVER_URL: "https://sync.test" };
   return { home, db, env };
