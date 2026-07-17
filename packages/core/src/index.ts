@@ -1,5 +1,10 @@
 export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 export { compareSyncRows, synchronize } from "./sync.ts";
+export {
+  createDocCrypto,
+  generateDocCryptoKey,
+} from "./doc-crypto.ts";
+export type { DocCrypto, DocCryptoFile } from "./doc-crypto.ts";
 export type {
   SyncPayload,
   SyncBlob,
