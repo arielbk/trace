@@ -114,11 +114,14 @@ entering agent.
 
 ### Copilot CLI
 
-From the root of a local Trace checkout, install the Copilot plugin:
+Install the Copilot plugin directly from GitHub:
 
 ```sh
-copilot plugin install ./plugin
+copilot plugin install arielbk/trace:plugin
 ```
+
+To develop the plugin from a local Trace checkout instead, run
+`copilot plugin install ./plugin` from the repository root.
 
 <details>
 <summary>What this does</summary>
