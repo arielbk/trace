@@ -30,9 +30,9 @@ test("login polls the device flow and persists its bearer token privately", asyn
             return Response.json({
               device_code: "device-code",
               user_code: "ABCD-EFGH",
-              verification_uri: "https://github.com/login/device",
+              verification_uri: "https://auth.test/device",
               verification_uri_complete:
-                "https://github.com/login/device?user_code=ABCD-EFGH",
+                "https://auth.test/device?user_code=ABCD-EFGH",
               interval: 0,
             });
           }
@@ -57,11 +57,11 @@ test("login polls the device flow and persists its bearer token privately", asyn
     expect(result).toEqual({
       exitCode: 0,
       stdout:
-        "Visit https://github.com/login/device?user_code=ABCD-EFGH\nCode: ABCD-EFGH\nSigned in.\n",
+        "Visit https://auth.test/device?user_code=ABCD-EFGH\nCode: ABCD-EFGH\nSigned in.\n",
       stderr: "",
     });
     expect(openedUrls).toEqual([
-      "https://github.com/login/device?user_code=ABCD-EFGH",
+      "https://auth.test/device?user_code=ABCD-EFGH",
     ]);
     expect(requests).toEqual([
       {
@@ -114,7 +114,7 @@ test("login floors the poll interval and gives up when the device code expires",
             return Response.json({
               device_code: "device-code",
               user_code: "ABCD-EFGH",
-              verification_uri: "https://github.com/login/device",
+              verification_uri: "https://auth.test/device",
               interval: 0,
               expires_in: 10,
             });
@@ -158,10 +158,11 @@ test("whoami reads the stored bearer token and logout clears it", async () => {
             ? Response.json({
                 device_code: "device-code",
                 user_code: "ABCD-EFGH",
-                verification_uri: "https://github.com/login/device",
+                verification_uri: "https://auth.test/device",
                 interval: 0,
               })
             : Response.json({ access_token: "bearer-token" }),
+        openBrowser: () => {},
         sleep: async () => undefined,
       },
     );
@@ -213,7 +214,7 @@ test("whoami treats a null session as logged out", async () => {
             ? Response.json({
                 device_code: "device-code",
                 user_code: "ABCD-EFGH",
-                verification_uri: "https://github.com/login/device",
+                verification_uri: "https://auth.test/device",
                 interval: 0,
               })
             : Response.json({ access_token: "invalidated-token" }),
@@ -252,7 +253,7 @@ test("login records the signed-in identity and logout clears it for the board", 
             return Response.json({
               device_code: "device-code",
               user_code: "ABCD-EFGH",
-              verification_uri: "https://github.com/login/device",
+              verification_uri: "https://auth.test/device",
               interval: 0,
             });
           }
@@ -263,6 +264,7 @@ test("login records the signed-in identity and logout clears it for the board", 
           }
           return Response.json({ access_token: "bearer-token" });
         },
+        openBrowser: () => {},
         sleep: async () => undefined,
       },
     );
@@ -324,7 +326,7 @@ test("login resolves the server from config.json when the env var is absent", as
             ? Response.json({
                 device_code: "device-code",
                 user_code: "ABCD-EFGH",
-                verification_uri: "https://github.com/login/device",
+                verification_uri: "https://auth.test/device",
                 interval: 0,
               })
             : Response.json({ access_token: "bearer-token" });
