@@ -173,6 +173,24 @@ describe("row synchronization", () => {
     second.close();
   });
 
+  test("a title-only rename propagates", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("first"));
+    const second = openTraceStore(database("second"));
+    const task = first.createTask("Old title");
+    await synchronize(first, server);
+    await synchronize(second, server);
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    first.updateTaskTitle(task.id, "New title");
+    expect(await synchronize(first, server)).toEqual({ pushed: 1, pulled: 0 });
+    expect(await synchronize(second, server)).toEqual({ pushed: 0, pulled: 1 });
+    expect(second.getTask(task.id)).toMatchObject({ title: "New title" });
+
+    first.close();
+    second.close();
+  });
+
   test("last write wins, including archive versus edit conflicts", async () => {
     const server = new MemoryTransport();
     const first = openTraceStore(database("first"));

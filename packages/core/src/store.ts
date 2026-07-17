@@ -479,8 +479,8 @@ class NodeSqliteTaskStore implements TaskStore {
       : trimmedTitle;
 
     this.#sqlite
-      .prepare("UPDATE tasks SET title = ? WHERE id = ?")
-      .run(normalizedTitle, task.id);
+      .prepare("UPDATE tasks SET title = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(normalizedTitle, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, title: normalizedTitle };
   }
