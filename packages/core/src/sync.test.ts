@@ -90,7 +90,7 @@ class MemoryDocumentStore implements SyncDocumentStore {
     if (!remote || compareSyncRows(remote, this.manifest) <= 0) return { pulled: 0, downloaded: 0 };
     let downloaded = 0;
     this.blobs.clear();
-    for (const file of remote.files) {
+    for (const file of testFiles(remote)) {
       const content = await download(file.blobHash);
       if (!content) throw new Error(`missing blob ${file.blobHash}`);
       this.blobs.set(file.blobHash, content);
@@ -101,8 +101,17 @@ class MemoryDocumentStore implements SyncDocumentStore {
   }
 
   paths() {
-    return this.manifest.files.map((file) => file.path);
+    return testFiles(this.manifest).map((file) => file.path);
   }
+}
+
+function testFiles(
+  manifest: SyncDocManifest,
+): { path: string; blobHash: string }[] {
+  return JSON.parse(manifest.filesCiphertext) as {
+    path: string;
+    blobHash: string;
+  }[];
 }
 
 function database(name: string) {
@@ -220,10 +229,10 @@ describe("document synchronization", () => {
     const first = new MemoryDocumentStore(
       {
         taskId: "task-a",
-        files: [
+        filesCiphertext: JSON.stringify([
           { path: "state.md", blobHash: "state-v1" },
           { path: "notes.md", blobHash: "notes-v1" },
-        ],
+        ]),
         updatedAt: "2026-01-01T00:00:00.000Z",
         machineId: "machine-a",
       },
@@ -235,7 +244,7 @@ describe("document synchronization", () => {
     const second = new MemoryDocumentStore(
       {
         taskId: "task-a",
-        files: [],
+        filesCiphertext: "[]",
         updatedAt: "2025-01-01T00:00:00.000Z",
         machineId: "machine-b",
       },
@@ -251,7 +260,9 @@ describe("document synchronization", () => {
     const removal = new MemoryDocumentStore(
       {
         taskId: "task-a",
-        files: [{ path: "state.md", blobHash: "state-v1" }],
+        filesCiphertext: JSON.stringify([
+          { path: "state.md", blobHash: "state-v1" },
+        ]),
         updatedAt: "2026-01-02T00:00:00.000Z",
         machineId: "machine-b",
       },

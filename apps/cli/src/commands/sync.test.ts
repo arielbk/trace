@@ -15,6 +15,10 @@ test("background sync detaches immediately and logged-out triggers spawn nothing
 
   mkdirSync(join(home, ".trace"));
   writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: "secret" }));
+  writeFileSync(
+    join(home, ".trace", "key.json"),
+    JSON.stringify({ masterKey: "12".repeat(32) }),
+  );
   triggerBackgroundSync({ HOME: home }, { spawn, executable: "/trace/cli.js" });
 
   expect(spawn).toHaveBeenCalledWith(
@@ -57,6 +61,10 @@ test("sync sends local rows with the bearer token and prints a summary", async (
   const databasePath = join(home, "trace.db");
   mkdirSync(join(home, ".trace"));
   writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: "secret" }));
+  writeFileSync(
+    join(home, ".trace", "key.json"),
+    JSON.stringify({ masterKey: "12".repeat(32) }),
+  );
   const store = openTraceStore(databasePath);
   store.createTask("Synced task");
   store.close();
@@ -94,6 +102,10 @@ test("a failed sync records the error for the board without throwing", async () 
   const databasePath = join(home, "trace.db");
   mkdirSync(join(home, ".trace"));
   writeFileSync(join(home, ".trace", "auth.json"), JSON.stringify({ accessToken: "secret" }));
+  writeFileSync(
+    join(home, ".trace", "key.json"),
+    JSON.stringify({ masterKey: "12".repeat(32) }),
+  );
   openTraceStore(databasePath).close();
   const fetch = vi.fn<typeof globalThis.fetch>(async () =>
     Response.json({}, { status: 500 }),

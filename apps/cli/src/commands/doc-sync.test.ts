@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
 import {
   compareSyncRows,
+  createDocCrypto,
   openTraceStore,
   resolveTaskDocsDir,
   synchronize,
@@ -52,6 +53,7 @@ test("registered doc titles and descriptions travel with the manifest", async ()
   const second = openTraceStore(secondDb);
   const task = first.createTask("Labelled docs");
   const server = new DocumentTransport();
+  const crypto = createDocCrypto("12".repeat(32));
   let tick = 0;
   const clock = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
   const docsAccessor = (store: typeof first) => ({
@@ -59,8 +61,8 @@ test("registered doc titles and descriptions travel with the manifest", async ()
     update: (taskId: string, path: string, fields: { title?: string; description?: string }) =>
       void store.updateTaskDoc(taskId, path, fields),
   });
-  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { now: clock, docs: docsAccessor(first) });
-  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { now: clock, docs: docsAccessor(second) });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { crypto, now: clock, docs: docsAccessor(first) });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock, docs: docsAccessor(second) });
 
   const firstDir = resolveTaskDocsDir(firstDb, task.slug);
   mkdirSync(firstDir, { recursive: true });
@@ -72,6 +74,14 @@ test("registered doc titles and descriptions travel with the manifest", async ()
   });
 
   await synchronize(first, server, firstDocs);
+  expect(server.manifests[0]).toMatchObject({
+    taskId: task.id,
+    filesCiphertext: expect.any(String),
+  });
+  expect(server.manifests[0]).not.toHaveProperty("files");
+  expect(Buffer.from(server.blobs.values().next().value!)).not.toContain(
+    Buffer.from("the spec"),
+  );
   await synchronize(second, server, secondDocs);
 
   const pulledDocs = second.listDocsForTask(task.id);
@@ -89,7 +99,7 @@ test("registered doc titles and descriptions travel with the manifest", async ()
   // machine already has: a legacy client (no docs accessor) on the second
   // machine edits the file and pushes a metadata-less manifest, yet first's
   // registered row keeps its title through the round trip.
-  const legacySecondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { now: clock });
+  const legacySecondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock });
   writeFileSync(join(secondDir, "spec.md"), "the spec, revised");
   await synchronize(second, server, legacySecondDocs);
   await synchronize(first, server, firstDocs);
@@ -109,10 +119,11 @@ test("two filesystem document stores converge additions, modifications, and remo
   const second = openTraceStore(secondDb);
   const task = first.createTask("Cloud docs");
   const server = new DocumentTransport();
+  const crypto = createDocCrypto("34".repeat(32));
   let tick = 0;
   const clock = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
-  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { now: clock });
-  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { now: clock });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { crypto, now: clock });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock });
 
   const firstDir = resolveTaskDocsDir(firstDb, task.slug);
   mkdirSync(firstDir, { recursive: true });
@@ -138,4 +149,38 @@ test("two filesystem document stores converge additions, modifications, and remo
 
   first.close();
   second.close();
+});
+
+test("a document store with a different key rejects the encrypted manifest", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const firstDb = join(root, "first", "trace.sqlite");
+  const secondDb = join(root, "second", "trace.sqlite");
+  const first = openTraceStore(firstDb);
+  const second = openTraceStore(secondDb);
+  const task = first.createTask("Private docs");
+  const server = new DocumentTransport();
+  const firstDocs = new FileSystemDocumentStore(
+    firstDb,
+    () => first.syncSnapshot().tasks,
+    { crypto: createDocCrypto("56".repeat(32)) },
+  );
+  const secondDocs = new FileSystemDocumentStore(
+    secondDb,
+    () => second.syncSnapshot().tasks,
+    { crypto: createDocCrypto("78".repeat(32)) },
+  );
+  const docsDir = resolveTaskDocsDir(firstDb, task.slug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "state.md"), "private state");
+
+  try {
+    await synchronize(first, server, firstDocs);
+    await expect(synchronize(second, server, secondDocs)).rejects.toThrow(
+      "could not decrypt document manifest",
+    );
+  } finally {
+    first.close();
+    second.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
