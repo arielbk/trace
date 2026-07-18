@@ -10,12 +10,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
-  createDocCrypto,
-  generateDocCryptoKey,
+  createKeyWrapper,
+  generateTaskKey,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   updateSyncStatusFile,
   writeSyncStatusFile,
+  type SyncDocManifest,
+  type SyncWrappedKey,
 } from "@trace/core";
 import { openBrowser } from "../open-browser.ts";
 import {
@@ -155,14 +157,14 @@ async function ensureDocCryptoKey(
   const response = await fetch(`${serverUrl}/api/sync/docs/manifests`, {
     headers: { authorization: `Bearer ${accessToken}` },
   });
-  const manifests = await readJson<unknown>(response);
-  if (!response.ok) throw new Error(errorMessage(manifests as ErrorResponse));
-  if (!Array.isArray(manifests)) {
+  const body = await readJson<DocManifestsResponse>(response);
+  if (!response.ok) throw new Error(errorMessage(body as ErrorResponse));
+  if (!Array.isArray(body.manifests) || !Array.isArray(body.wrappedKeys)) {
     throw new Error("Sync server returned an invalid document manifest response");
   }
 
-  if (manifests.length === 0) {
-    const masterKey = generateDocCryptoKey();
+  if (body.manifests.length === 0) {
+    const masterKey = generateTaskKey();
     writeStoredDocCryptoKey(env, masterKey);
     return (
       "Save this document encryption key somewhere safe. It will only be shown once during setup:\n" +
@@ -179,10 +181,13 @@ async function ensureDocCryptoKey(
     return generateFreshKeyForExistingAccount(env, ask);
   }
 
-  const first = manifests[0] as { filesCiphertext?: unknown };
+  // The master key is a KEK: it never opens a manifest directly. Validate the
+  // paste by unwrapping any one stored wrapped key — an AEAD tag failure (or a
+  // malformed key) means the wrong master key, caught before any persistence.
+  const [wrapped] = body.wrappedKeys;
   try {
-    if (typeof first.filesCiphertext !== "string") throw new Error("missing ciphertext");
-    createDocCrypto(entered).openFilesList(first.filesCiphertext);
+    if (typeof wrapped?.wrappedKey !== "string") throw new Error("missing wrapped key");
+    createKeyWrapper(entered).unwrapTaskKey(wrapped.wrappedKey);
   } catch {
     throw new Error(
       "That document encryption key could not decrypt your synced documents.",
@@ -202,7 +207,7 @@ async function generateFreshKeyForExistingAccount(
   if (confirmation.trim() !== "GENERATE NEW KEY") {
     throw new Error("Fresh document encryption key generation cancelled");
   }
-  const masterKey = generateDocCryptoKey();
+  const masterKey = generateTaskKey();
   writeStoredDocCryptoKey(env, masterKey);
   return (
     "Save this new document encryption key somewhere safe. Existing synced documents require the old key:\n" +
@@ -355,6 +360,16 @@ interface DeviceCodeResponse {
 
 interface TokenResponse extends ErrorResponse {
   access_token?: string;
+}
+
+/**
+ * The `/api/sync/docs/manifests` response: manifests paired with the wrapped
+ * DEK for each task (parallel arrays, keyed by `taskId`). Login only needs a
+ * wrapped key to validate the master key by unwrapping it.
+ */
+interface DocManifestsResponse {
+  manifests?: SyncDocManifest[];
+  wrappedKeys?: SyncWrappedKey[];
 }
 
 interface ErrorResponse {

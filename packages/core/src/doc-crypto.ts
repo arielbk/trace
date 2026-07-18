@@ -74,17 +74,6 @@ export function createTaskDocCrypto(taskKeyHex: string): DocCrypto {
   };
 }
 
-/**
- * @deprecated Temporary bridge for CLI call sites that still derive doc crypto
- * straight from the master key. Downstream slices (`per-task-doc-sync`,
- * `login-unwrap-validation`) rewire those sites onto per-task DEKs via
- * {@link createKeyWrapper}/{@link createTaskDocCrypto} and then delete these
- * aliases. These point at the v2 implementation — no v1 code path survives.
- * Do not add new usages.
- */
-export const createDocCrypto = createTaskDocCrypto;
-export const generateDocCryptoKey = generateTaskKey;
-
 export function createKeyWrapper(masterKeyHex: string): KeyWrapper {
   const wrapKey = deriveKey(parseKey(masterKeyHex), WRAP_INFO);
 

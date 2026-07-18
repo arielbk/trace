@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateDocCryptoKey } from "@trace/core";
+import { generateTaskKey } from "@trace/core";
 import { expect, test } from "vitest";
 import { runTraceCli } from "../trace.ts";
 import {
@@ -22,7 +22,7 @@ test("a generated document key can be persisted and shown through the CLI", () =
   const env = { HOME: home };
 
   try {
-    const key = generateDocCryptoKey();
+    const key = generateTaskKey();
     writeStoredDocCryptoKey(env, key);
 
     expect(runTraceCli(["key", "show"], env)).toEqual({
@@ -40,7 +40,7 @@ test("the stored document key is private to the current user", () => {
   const env = { HOME: home };
 
   try {
-    writeStoredDocCryptoKey(env, generateDocCryptoKey());
+    writeStoredDocCryptoKey(env, generateTaskKey());
 
     expect(statSync(resolveStoredDocCryptoKeyPath(env)).mode & 0o777).toBe(
       0o600,
