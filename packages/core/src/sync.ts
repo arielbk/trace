@@ -42,10 +42,20 @@ export type SyncDocManifest = {
 
 export type SyncBlob = { hash: string; content: Uint8Array };
 
+// A task's data-encryption key, sealed under the account master key (KEK). The
+// server stores and returns this opaque value verbatim; only a client holding
+// the master key can unwrap it. Paired with a manifest by `taskId`.
+export type SyncWrappedKey = { taskId: string; wrappedKey: string };
+
 export interface SyncDocumentStore {
-  snapshot(): Promise<{ manifests: SyncDocManifest[]; blobs: SyncBlob[] }>;
+  snapshot(): Promise<{
+    manifests: SyncDocManifest[];
+    blobs: SyncBlob[];
+    wrappedKeys: SyncWrappedKey[];
+  }>;
   apply(
     manifests: SyncDocManifest[],
+    wrappedKeys: SyncWrappedKey[],
     download: (hash: string) => Promise<Uint8Array | null>,
   ): Promise<{ pulled: number; downloaded: number }>;
 }
@@ -61,8 +71,12 @@ export interface SyncTransport {
   pushDocuments?(
     manifests: SyncDocManifest[],
     blobs: SyncBlob[],
+    wrappedKeys: SyncWrappedKey[],
   ): Promise<{ accepted: number; uploaded: number }>;
-  pullDocumentManifests?(): Promise<SyncDocManifest[]>;
+  pullDocumentManifests?(): Promise<{
+    manifests: SyncDocManifest[];
+    wrappedKeys: SyncWrappedKey[];
+  }>;
   missingBlobs?(hashes: string[]): Promise<string[]>;
   downloadBlob?(hash: string): Promise<Uint8Array | null>;
 }
@@ -107,9 +121,12 @@ export async function synchronize(
   const pushedDocuments = await transport.pushDocuments(
     snapshot.manifests,
     snapshot.blobs.filter((blob) => missing.has(blob.hash)),
+    snapshot.wrappedKeys,
   );
+  const remote = await transport.pullDocumentManifests();
   const pulledDocuments = await documents.apply(
-    await transport.pullDocumentManifests(),
+    remote.manifests,
+    remote.wrappedKeys,
     (hash) => transport.downloadBlob!(hash),
   );
   return {

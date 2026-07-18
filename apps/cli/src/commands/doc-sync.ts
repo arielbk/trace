@@ -11,18 +11,29 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   compareSyncRows,
+  createTaskDocCrypto,
+  generateTaskKey,
   resolveTaskDocsDir,
   type DocCrypto,
   type DocCryptoFile,
+  type KeyWrapper,
   type SyncBlob,
   type SyncDocManifest,
   type SyncDocumentStore,
   type SyncTaskRow,
+  type SyncWrappedKey,
 } from "@trace/core";
 
 type DocumentMetadata = {
   machineId: string;
-  tasks: Record<string, { fingerprint: string; manifest: SyncDocManifest }>;
+  // Per task: the fingerprint of the last pushed file set, the manifest we
+  // published, and the wrapped DEK. The wrapped key is minted once (on first
+  // push) or adopted from a pull, then persisted verbatim and never re-wrapped
+  // — so the server row stays byte-stable across re-pushes.
+  tasks: Record<
+    string,
+    { fingerprint: string; manifest: SyncDocManifest; wrappedKey: string }
+  >;
 };
 
 // Bridge to the store's task_docs rows, so registered doc titles and
@@ -41,7 +52,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
   private readonly databasePath: string;
   private readonly tasks: () => SyncTaskRow[];
   private readonly options: {
-    crypto: DocCrypto;
+    keyWrapper: KeyWrapper;
     now?: () => string;
     docs?: DocMetadataAccessor;
   };
@@ -50,7 +61,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     databasePath: string,
     tasks: () => SyncTaskRow[],
     options: {
-      crypto: DocCrypto;
+      keyWrapper: KeyWrapper;
       now?: () => string;
       docs?: DocMetadataAccessor;
     },
@@ -61,30 +72,50 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     this.#metadataPath = join(dirname(resolve(databasePath)), "doc-sync.json");
   }
 
-  async snapshot(): Promise<{ manifests: SyncDocManifest[]; blobs: SyncBlob[] }> {
+  async snapshot(): Promise<{
+    manifests: SyncDocManifest[];
+    blobs: SyncBlob[];
+    wrappedKeys: SyncWrappedKey[];
+  }> {
     const metadata = this.#readMetadata();
     const manifests: SyncDocManifest[] = [];
+    const wrappedKeys: SyncWrappedKey[] = [];
     const blobs = new Map<string, Uint8Array>();
     let changed = false;
 
     for (const task of this.tasks()) {
       const docsDir = resolveTaskDocsDir(this.databasePath, task.slug);
       const files = readFiles(docsDir);
+      let tracked = metadata.tasks[task.id];
+      // A task that has never synced and has no docs stays untouched — no DEK
+      // is minted, so tasks that never sync never carry key material.
+      if (!tracked && files.length === 0) continue;
+
+      // Mint the DEK on first push and persist its wrapped form; every later
+      // push reuses that exact envelope so the server row never churns.
+      const wrappedKey =
+        tracked?.wrappedKey ??
+        this.options.keyWrapper.wrapTaskKey(generateTaskKey());
+      const crypto = this.#cryptoFor(wrappedKey);
+
       const metadataByPath = this.#docMetadataByRelativePath(task.id, docsDir);
       const manifestFiles = files.map((file) => ({
         path: file.path,
-        blobHash: this.options.crypto.address(file.content),
+        blobHash: crypto.address(file.content),
         ...(metadataByPath.get(file.path) ?? {}),
       }));
       const fingerprint = fingerprintOf(manifestFiles);
-      let tracked = metadata.tasks[task.id];
-      if (!tracked && files.length === 0) continue;
-      if (!tracked || tracked.fingerprint !== fingerprint) {
+      if (
+        !tracked ||
+        tracked.fingerprint !== fingerprint ||
+        tracked.wrappedKey !== wrappedKey
+      ) {
         tracked = {
           fingerprint,
+          wrappedKey,
           manifest: {
             taskId: task.id,
-            filesCiphertext: this.options.crypto.sealFilesList(manifestFiles),
+            filesCiphertext: crypto.sealFilesList(manifestFiles),
             updatedAt: this.options.now?.() ?? new Date().toISOString(),
             machineId: metadata.machineId,
           },
@@ -93,9 +124,9 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         changed = true;
       }
       manifests.push(structuredClone(tracked.manifest));
+      wrappedKeys.push({ taskId: task.id, wrappedKey });
       for (const file of files) {
-        const address = this.options.crypto.address(file.content);
-        blobs.set(address, this.options.crypto.sealBlob(file.content));
+        blobs.set(crypto.address(file.content), crypto.sealBlob(file.content));
       }
     }
 
@@ -103,15 +134,20 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     return {
       manifests,
       blobs: [...blobs].map(([hash, content]) => ({ hash, content })),
+      wrappedKeys,
     };
   }
 
   async apply(
     manifests: SyncDocManifest[],
+    wrappedKeys: SyncWrappedKey[],
     download: (hash: string) => Promise<Uint8Array | null>,
   ): Promise<{ pulled: number; downloaded: number }> {
     const metadata = this.#readMetadata();
     const tasks = new Map(this.tasks().map((task) => [task.id, task]));
+    const wrappedByTask = new Map(
+      wrappedKeys.map(({ taskId, wrappedKey }) => [taskId, wrappedKey]),
+    );
     let pulled = 0;
     let downloaded = 0;
 
@@ -119,11 +155,20 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       const task = tasks.get(manifest.taskId);
       const tracked = metadata.tasks[manifest.taskId];
       if (!task || (tracked && compareSyncRows(manifest, tracked.manifest) <= 0)) continue;
+
+      const wrappedKey = wrappedByTask.get(manifest.taskId);
+      if (!wrappedKey) {
+        throw new Error(
+          `sync server is missing the wrapped key for task ${manifest.taskId}`,
+        );
+      }
+      // Unwrap the DEK with the master KEK before anything else — a wrong
+      // master key fails the AEAD tag here, before any local file is touched.
+      let crypto: DocCrypto;
       let manifestFiles: DocCryptoFile[];
       try {
-        manifestFiles = this.options.crypto.openFilesList(
-          manifest.filesCiphertext,
-        );
+        crypto = this.#cryptoFor(wrappedKey);
+        manifestFiles = crypto.openFilesList(manifest.filesCiphertext);
       } catch {
         throw new Error(
           `could not decrypt document manifest for task ${manifest.taskId}`,
@@ -134,7 +179,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       const docsDir = resolveTaskDocsDir(this.databasePath, task.slug);
       const local = new Map(
         readFiles(docsDir).map((file) => [
-          this.options.crypto.address(file.content),
+          crypto.address(file.content),
           file.content,
         ]),
       );
@@ -147,7 +192,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
             throw new Error(`sync server is missing blob ${file.blobHash}`);
           }
           try {
-            content = this.options.crypto.openBlob(envelope, file.blobHash);
+            content = crypto.openBlob(envelope, file.blobHash);
           } catch {
             throw new Error(
               `could not decrypt or verify document blob ${file.blobHash}`,
@@ -174,15 +219,25 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
           ...(file.description === undefined ? {} : { description: file.description }),
         });
       }
+      // Adopt the incoming wrapped key verbatim so a re-push re-sends the same
+      // envelope the minting machine produced — the surviving task id owns one
+      // stable server row even after slug convergence.
       metadata.tasks[manifest.taskId] = {
         fingerprint: fingerprintOf(manifestFiles),
         manifest: structuredClone(manifest),
+        wrappedKey,
       };
       pulled += 1;
     }
 
     if (pulled > 0) this.#writeMetadata(metadata);
     return { pulled, downloaded };
+  }
+
+  // Unwrap a stored/incoming wrapped DEK with the account master KEK and build
+  // the per-task crypto surface from it.
+  #cryptoFor(wrappedKey: string): DocCrypto {
+    return createTaskDocCrypto(this.options.keyWrapper.unwrapTaskKey(wrappedKey));
   }
 
   // Map registered docs onto manifest-relative paths. Only docs that carry a

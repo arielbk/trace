@@ -7,13 +7,17 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-const ENVELOPE_VERSION = 1;
+const ENVELOPE_VERSION = 2;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 
-const ADDRESS_INFO = "trace-e2ee:blob-address:v1";
-const BLOB_INFO = "trace-e2ee:blob-content:v1";
-const MANIFEST_INFO = "trace-e2ee:manifest:v1";
+// v2 labels are task-scoped: subkeys derive from a per-task DEK, not the
+// whole-corpus master key. The master key now only wraps task keys (see
+// createKeyWrapper). No v1 label or v1 read path survives.
+const ADDRESS_INFO = "trace-e2ee:task-blob-address:v2";
+const BLOB_INFO = "trace-e2ee:task-blob-content:v2";
+const MANIFEST_INFO = "trace-e2ee:task-manifest:v2";
+const WRAP_INFO = "trace-e2ee:task-key-wrap:v2";
 
 export type DocCryptoFile = {
   path: string;
@@ -30,15 +34,20 @@ export type DocCrypto = {
   openFilesList(ciphertext: string): DocCryptoFile[];
 };
 
-export function generateDocCryptoKey(): string {
+export type KeyWrapper = {
+  wrapTaskKey(taskKeyHex: string): string;
+  unwrapTaskKey(wrappedKey: string): string;
+};
+
+export function generateTaskKey(): string {
   return randomBytes(32).toString("hex");
 }
 
-export function createDocCrypto(masterKeyHex: string): DocCrypto {
-  const masterKey = parseMasterKey(masterKeyHex);
-  const addressKey = deriveKey(masterKey, ADDRESS_INFO);
-  const blobKey = deriveKey(masterKey, BLOB_INFO);
-  const manifestKey = deriveKey(masterKey, MANIFEST_INFO);
+export function createTaskDocCrypto(taskKeyHex: string): DocCrypto {
+  const taskKey = parseKey(taskKeyHex);
+  const addressKey = deriveKey(taskKey, ADDRESS_INFO);
+  const blobKey = deriveKey(taskKey, BLOB_INFO);
+  const manifestKey = deriveKey(taskKey, MANIFEST_INFO);
 
   const address = (plaintext: Uint8Array) => hmac(addressKey, plaintext);
 
@@ -65,15 +74,26 @@ export function createDocCrypto(masterKeyHex: string): DocCrypto {
   };
 }
 
-function parseMasterKey(masterKeyHex: string): Buffer {
-  if (!/^[0-9a-f]{64}$/i.test(masterKeyHex)) {
-    throw new Error("document encryption key must be 64 hexadecimal characters");
-  }
-  return Buffer.from(masterKeyHex, "hex");
+export function createKeyWrapper(masterKeyHex: string): KeyWrapper {
+  const wrapKey = deriveKey(parseKey(masterKeyHex), WRAP_INFO);
+
+  return {
+    wrapTaskKey: (taskKeyHex) =>
+      Buffer.from(seal(wrapKey, parseKey(taskKeyHex))).toString("base64"),
+    unwrapTaskKey: (wrappedKey) =>
+      Buffer.from(open(wrapKey, Buffer.from(wrappedKey, "base64"))).toString("hex"),
+  };
 }
 
-function deriveKey(masterKey: Buffer, info: string): Buffer {
-  return Buffer.from(hkdfSync("sha256", masterKey, Buffer.alloc(0), info, 32));
+function parseKey(keyHex: string): Buffer {
+  if (!/^[0-9a-f]{64}$/i.test(keyHex)) {
+    throw new Error("document encryption key must be 64 hexadecimal characters");
+  }
+  return Buffer.from(keyHex, "hex");
+}
+
+function deriveKey(baseKey: Buffer, info: string): Buffer {
+  return Buffer.from(hkdfSync("sha256", baseKey, Buffer.alloc(0), info, 32));
 }
 
 function hmac(key: Buffer, plaintext: Uint8Array): string {

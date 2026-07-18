@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "vitest";
 import {
   compareSyncRows,
-  createDocCrypto,
+  createKeyWrapper,
   openTraceStore,
   resolveTaskDocsDir,
   synchronize,
@@ -12,12 +12,14 @@ import {
   type SyncDocManifest,
   type SyncPayload,
   type SyncTransport,
+  type SyncWrappedKey,
 } from "@trace/core";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 
 class DocumentTransport implements SyncTransport {
   rows: SyncPayload = { tasks: [], sessions: [] };
   manifests: SyncDocManifest[] = [];
+  wrappedKeys = new Map<string, string>();
   blobs = new Map<string, Uint8Array>();
   async missingBlobs(hashes: string[]) { return hashes.filter((hash) => !this.blobs.has(hash)); }
 
@@ -28,20 +30,30 @@ class DocumentTransport implements SyncTransport {
     return { accepted: payload.tasks.length };
   }
   async pull() { return structuredClone(this.rows); }
-  async pushDocuments(manifests: SyncDocManifest[], blobs: SyncBlob[]) {
+  async pushDocuments(
+    manifests: SyncDocManifest[],
+    blobs: SyncBlob[],
+    wrappedKeys: SyncWrappedKey[],
+  ) {
     let accepted = 0;
     for (const manifest of manifests) {
       const index = this.manifests.findIndex((item) => item.taskId === manifest.taskId);
       if (index < 0) { this.manifests.push(structuredClone(manifest)); accepted += 1; }
       else if (compareSyncRows(manifest, this.manifests[index]!) > 0) { this.manifests[index] = structuredClone(manifest); accepted += 1; }
     }
+    for (const { taskId, wrappedKey } of wrappedKeys) this.wrappedKeys.set(taskId, wrappedKey);
     let uploaded = 0;
     for (const blob of blobs) {
       if (!this.blobs.has(blob.hash)) { this.blobs.set(blob.hash, blob.content.slice()); uploaded += 1; }
     }
     return { accepted, uploaded };
   }
-  async pullDocumentManifests() { return structuredClone(this.manifests); }
+  async pullDocumentManifests() {
+    return {
+      manifests: structuredClone(this.manifests),
+      wrappedKeys: [...this.wrappedKeys].map(([taskId, wrappedKey]) => ({ taskId, wrappedKey })),
+    };
+  }
   async downloadBlob(hash: string) { return this.blobs.get(hash)?.slice() ?? null; }
 }
 
@@ -53,7 +65,7 @@ test("registered doc titles and descriptions travel with the manifest", async ()
   const second = openTraceStore(secondDb);
   const task = first.createTask("Labelled docs");
   const server = new DocumentTransport();
-  const crypto = createDocCrypto("12".repeat(32));
+  const keyWrapper = createKeyWrapper("12".repeat(32));
   let tick = 0;
   const clock = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
   const docsAccessor = (store: typeof first) => ({
@@ -61,8 +73,8 @@ test("registered doc titles and descriptions travel with the manifest", async ()
     update: (taskId: string, path: string, fields: { title?: string; description?: string }) =>
       void store.updateTaskDoc(taskId, path, fields),
   });
-  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { crypto, now: clock, docs: docsAccessor(first) });
-  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock, docs: docsAccessor(second) });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { keyWrapper, now: clock, docs: docsAccessor(first) });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper, now: clock, docs: docsAccessor(second) });
 
   const firstDir = resolveTaskDocsDir(firstDb, task.slug);
   mkdirSync(firstDir, { recursive: true });
@@ -99,7 +111,7 @@ test("registered doc titles and descriptions travel with the manifest", async ()
   // machine already has: a legacy client (no docs accessor) on the second
   // machine edits the file and pushes a metadata-less manifest, yet first's
   // registered row keeps its title through the round trip.
-  const legacySecondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock });
+  const legacySecondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper, now: clock });
   writeFileSync(join(secondDir, "spec.md"), "the spec, revised");
   await synchronize(second, server, legacySecondDocs);
   await synchronize(first, server, firstDocs);
@@ -119,11 +131,11 @@ test("two filesystem document stores converge additions, modifications, and remo
   const second = openTraceStore(secondDb);
   const task = first.createTask("Cloud docs");
   const server = new DocumentTransport();
-  const crypto = createDocCrypto("34".repeat(32));
+  const keyWrapper = createKeyWrapper("34".repeat(32));
   let tick = 0;
   const clock = () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString();
-  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { crypto, now: clock });
-  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { crypto, now: clock });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { keyWrapper, now: clock });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper, now: clock });
 
   const firstDir = resolveTaskDocsDir(firstDb, task.slug);
   mkdirSync(firstDir, { recursive: true });
@@ -151,7 +163,7 @@ test("two filesystem document stores converge additions, modifications, and remo
   second.close();
 });
 
-test("a document store with a different key rejects the encrypted manifest", async () => {
+test("a document store with a different master key rejects the manifest before touching local files", async () => {
   const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
   const firstDb = join(root, "first", "trace.sqlite");
   const secondDb = join(root, "second", "trace.sqlite");
@@ -162,12 +174,12 @@ test("a document store with a different key rejects the encrypted manifest", asy
   const firstDocs = new FileSystemDocumentStore(
     firstDb,
     () => first.syncSnapshot().tasks,
-    { crypto: createDocCrypto("56".repeat(32)) },
+    { keyWrapper: createKeyWrapper("56".repeat(32)) },
   );
   const secondDocs = new FileSystemDocumentStore(
     secondDb,
     () => second.syncSnapshot().tasks,
-    { crypto: createDocCrypto("78".repeat(32)) },
+    { keyWrapper: createKeyWrapper("78".repeat(32)) },
   );
   const docsDir = resolveTaskDocsDir(firstDb, task.slug);
   mkdirSync(docsDir, { recursive: true });
@@ -178,6 +190,123 @@ test("a document store with a different key rejects the encrypted manifest", asy
     await expect(synchronize(second, server, secondDocs)).rejects.toThrow(
       "could not decrypt document manifest",
     );
+    // The wrong master key fails at unwrap, before any file is materialised.
+    expect(existsSync(resolveTaskDocsDir(secondDb, task.slug))).toBe(false);
+  } finally {
+    first.close();
+    second.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+type StoredMetadata = {
+  tasks: Record<string, { fingerprint: string; wrappedKey: string }>;
+};
+
+function readDocSyncMetadata(databasePath: string): StoredMetadata {
+  return JSON.parse(
+    readFileSync(join(dirname(databasePath), "doc-sync.json"), "utf8"),
+  ) as StoredMetadata;
+}
+
+test("the first push mints and persists a task wrapped key that the server stores verbatim", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const db = join(root, "trace.sqlite");
+  const store = openTraceStore(db);
+  const task = store.createTask("Keyed docs");
+  const server = new DocumentTransport();
+  const docs = new FileSystemDocumentStore(db, () => store.syncSnapshot().tasks, {
+    keyWrapper: createKeyWrapper("9a".repeat(32)),
+  });
+  const docsDir = resolveTaskDocsDir(db, task.slug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "state.md"), "first version");
+
+  try {
+    await synchronize(store, server, docs);
+    const persisted = readDocSyncMetadata(db).tasks[task.id]!;
+    expect(persisted.wrappedKey).toEqual(expect.any(String));
+    expect(persisted.wrappedKey.length).toBeGreaterThan(0);
+    // The server holds exactly the client's wrapped key, byte for byte.
+    expect(server.wrappedKeys.get(task.id)).toBe(persisted.wrappedKey);
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("unchanged content keeps the wrapped key and manifest stable across pushes (no re-wrap churn)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const db = join(root, "trace.sqlite");
+  const store = openTraceStore(db);
+  const task = store.createTask("Stable docs");
+  const server = new DocumentTransport();
+  let tick = 0;
+  const docs = new FileSystemDocumentStore(db, () => store.syncSnapshot().tasks, {
+    keyWrapper: createKeyWrapper("ab".repeat(32)),
+    now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)).toISOString(),
+  });
+  const docsDir = resolveTaskDocsDir(db, task.slug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "state.md"), "steady content");
+
+  try {
+    await synchronize(store, server, docs);
+    const first = readDocSyncMetadata(db).tasks[task.id]!;
+    const firstManifest = structuredClone(server.manifests[0]);
+
+    // A second sync with no content change must not re-wrap or re-seal.
+    const second = await synchronize(store, server, docs);
+    const after = readDocSyncMetadata(db).tasks[task.id]!;
+    expect(after.wrappedKey).toBe(first.wrappedKey);
+    expect(after.fingerprint).toBe(first.fingerprint);
+    expect(server.manifests[0]).toEqual(firstManifest);
+    expect(server.wrappedKeys.get(task.id)).toBe(first.wrappedKey);
+    expect(second).toMatchObject({ pushedManifests: 0, uploadedBlobs: 0 });
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("converged duplicate-slug tasks decrypt under the surviving task id's key", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const firstDb = join(root, "first", "trace.sqlite");
+  const secondDb = join(root, "second", "trace.sqlite");
+  const first = openTraceStore(firstDb);
+  const second = openTraceStore(secondDb);
+  // Both machines mint the same slug independently before ever syncing.
+  const fromFirst = first.createTask("Shared plan", "/project-a");
+  second.createTask("Shared plan", "/project-b");
+  const server = new DocumentTransport();
+  const keyWrapper = createKeyWrapper("cd".repeat(32));
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { keyWrapper });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper });
+
+  try {
+    const firstDir = resolveTaskDocsDir(firstDb, fromFirst.slug);
+    mkdirSync(firstDir, { recursive: true });
+    writeFileSync(join(firstDir, "plan.md"), "the surviving plan");
+
+    await synchronize(first, server, firstDocs);
+    await synchronize(second, server, secondDocs);
+
+    // The pulled twin lands under a local suffix, but the wrapped key is keyed
+    // by task id — so the second machine decrypts it under the surviving id.
+    const survivingSlug = second.getTask(fromFirst.id)!.slug;
+    expect(survivingSlug).toBe("shared-plan-2");
+    const materialised = join(resolveTaskDocsDir(secondDb, survivingSlug), "plan.md");
+    expect(readFileSync(materialised, "utf8")).toBe("the surviving plan");
+    // The second machine adopts the minting machine's wrapped key verbatim.
+    expect(readDocSyncMetadata(secondDb).tasks[fromFirst.id]!.wrappedKey).toBe(
+      server.wrappedKeys.get(fromFirst.id),
+    );
+
+    // Editing on the second machine re-sends the same envelope — one stable row.
+    const beforeEdit = server.wrappedKeys.get(fromFirst.id);
+    writeFileSync(materialised, "the surviving plan, revised");
+    await synchronize(second, server, secondDocs);
+    expect(server.wrappedKeys.get(fromFirst.id)).toBe(beforeEdit);
   } finally {
     first.close();
     second.close();

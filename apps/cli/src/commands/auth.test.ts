@@ -2,7 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { createDocCrypto, readSyncStatus } from "@trace/core";
+import {
+  createKeyWrapper,
+  createTaskDocCrypto,
+  generateTaskKey,
+  readSyncStatus,
+} from "@trace/core";
 import { runTraceCli } from "../trace.ts";
 import { runAuthCommand } from "./auth.ts";
 import { writeStoredDocCryptoKey } from "./key.ts";
@@ -11,7 +16,29 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-function loginFetch(manifests: unknown[]): typeof globalThis.fetch {
+/**
+ * Build a realistic `/docs/manifests` response for an account holding one
+ * synced task: a manifest sealed under a per-task DEK plus that DEK wrapped by
+ * the given master key. Login validates the pasted key by unwrapping the
+ * wrapped key, so the wrapped key is what actually gates the paste.
+ */
+function existingAccount(masterKey: string): {
+  manifests: unknown[];
+  wrappedKeys: unknown[];
+} {
+  const taskId = "task-1";
+  const taskKey = generateTaskKey();
+  return {
+    manifests: [
+      { taskId, filesCiphertext: createTaskDocCrypto(taskKey).sealFilesList([]) },
+    ],
+    wrappedKeys: [
+      { taskId, wrappedKey: createKeyWrapper(masterKey).wrapTaskKey(taskKey) },
+    ],
+  };
+}
+
+function loginFetch(manifestsResponse: unknown): typeof globalThis.fetch {
   return (async (input) => {
     const url = String(input);
     if (url.endsWith("/device/code")) {
@@ -22,7 +49,7 @@ function loginFetch(manifests: unknown[]): typeof globalThis.fetch {
         interval: 0,
       });
     }
-    if (url.endsWith("/docs/manifests")) return Response.json(manifests);
+    if (url.endsWith("/docs/manifests")) return Response.json(manifestsResponse);
     if (url.endsWith("/get-session")) {
       return Response.json({ user: { id: "user" } });
     }
@@ -138,7 +165,7 @@ test("login generates and displays a document key for an empty account", async (
             });
           }
           if (String(url).endsWith("/docs/manifests")) {
-            return Response.json([]);
+            return Response.json({ manifests: [], wrappedKeys: [] });
           }
           if (String(url).endsWith("/get-session")) {
             return Response.json({ user: { id: "user" } });
@@ -161,17 +188,16 @@ test("login generates and displays a document key for an empty account", async (
   }
 });
 
-test("login accepts a pasted key only when it decrypts existing manifests", async () => {
+test("login accepts a pasted key only when it unwraps a stored wrapped key", async () => {
   const home = tmp("trace-auth-key-home-");
   const masterKey = "bb".repeat(32);
-  const filesCiphertext = createDocCrypto(masterKey).sealFilesList([]);
 
   try {
     const result = await runAuthCommand(
       "login",
       { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
       {
-        fetch: loginFetch([{ filesCiphertext }]),
+        fetch: loginFetch(existingAccount(masterKey)),
         openBrowser: () => {},
         prompt: async () => masterKey,
         sleep: async () => undefined,
@@ -190,14 +216,13 @@ test("login accepts a pasted key only when it decrypts existing manifests", asyn
 
 test("login rejects a wrong pasted key before persisting the login", async () => {
   const home = tmp("trace-auth-key-home-");
-  const filesCiphertext = createDocCrypto("cc".repeat(32)).sealFilesList([]);
 
   try {
     const result = await runAuthCommand(
       "login",
       { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
       {
-        fetch: loginFetch([{ filesCiphertext }]),
+        fetch: loginFetch(existingAccount("cc".repeat(32))),
         openBrowser: () => {},
         prompt: async () => "dd".repeat(32),
         sleep: async () => undefined,
@@ -219,7 +244,6 @@ test("login rejects a wrong pasted key before persisting the login", async () =>
 
 test("login requires explicit confirmation before generating a fresh key for existing data", async () => {
   const home = tmp("trace-auth-key-home-");
-  const filesCiphertext = createDocCrypto("ee".repeat(32)).sealFilesList([]);
   const answers = ["NEW", "cancel"];
 
   try {
@@ -227,7 +251,7 @@ test("login requires explicit confirmation before generating a fresh key for exi
       "login",
       { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
       {
-        fetch: loginFetch([{ filesCiphertext }]),
+        fetch: loginFetch(existingAccount("ee".repeat(32))),
         openBrowser: () => {},
         prompt: async () => answers.shift() ?? "",
         sleep: async () => undefined,
@@ -246,7 +270,6 @@ test("login requires explicit confirmation before generating a fresh key for exi
 
 test("login generates a fresh key for existing data after the warning is confirmed", async () => {
   const home = tmp("trace-auth-key-home-");
-  const filesCiphertext = createDocCrypto("ff".repeat(32)).sealFilesList([]);
   const answers = ["NEW", "GENERATE NEW KEY"];
 
   try {
@@ -254,7 +277,7 @@ test("login generates a fresh key for existing data after the warning is confirm
       "login",
       { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
       {
-        fetch: loginFetch([{ filesCiphertext }]),
+        fetch: loginFetch(existingAccount("ff".repeat(32))),
         openBrowser: () => {},
         prompt: async () => answers.shift() ?? "",
         sleep: async () => undefined,

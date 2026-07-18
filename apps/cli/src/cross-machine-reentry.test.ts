@@ -23,6 +23,7 @@ class FakeSyncServer {
   readonly #token: string;
   #rows: SyncPayload = { tasks: [], sessions: [] };
   #manifests: SyncDocManifest[] = [];
+  readonly #wrappedKeys = new Map<string, string>();
   readonly #blobs = new Map<string, Uint8Array>();
 
   constructor(token: string) {
@@ -52,11 +53,20 @@ class FakeSyncServer {
       const payload = body() as {
         manifests: SyncDocManifest[];
         blobs: { hash: string; content: string }[];
+        wrappedKeys?: { taskId: string; wrappedKey: string }[];
       };
-      return Response.json(this.#pushDocuments(payload.manifests, payload.blobs));
+      return Response.json(
+        this.#pushDocuments(payload.manifests, payload.blobs, payload.wrappedKeys ?? []),
+      );
     }
     if (pathname === "/api/sync/docs/manifests") {
-      return Response.json(structuredClone(this.#manifests));
+      return Response.json({
+        manifests: structuredClone(this.#manifests),
+        wrappedKeys: [...this.#wrappedKeys].map(([taskId, wrappedKey]) => ({
+          taskId,
+          wrappedKey,
+        })),
+      });
     }
     if (pathname === "/api/sync/blobs/missing") {
       const { hashes } = body() as { hashes: string[] };
@@ -91,6 +101,7 @@ class FakeSyncServer {
   #pushDocuments(
     manifests: SyncDocManifest[],
     blobs: { hash: string; content: string }[],
+    wrappedKeys: { taskId: string; wrappedKey: string }[],
   ): { accepted: number; uploaded: number } {
     let accepted = 0;
     for (const manifest of manifests) {
@@ -102,6 +113,9 @@ class FakeSyncServer {
         this.#manifests[index] = structuredClone(manifest);
         accepted += 1;
       }
+    }
+    for (const { taskId, wrappedKey } of wrappedKeys) {
+      this.#wrappedKeys.set(taskId, wrappedKey);
     }
     let uploaded = 0;
     for (const blob of blobs) {
