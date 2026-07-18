@@ -516,10 +516,12 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);
 
+    // Bumping updated_at/machine_id puts the pin on the last-write-wins
+    // clock; without it a pin-only change never beats the stored sync row.
     const pinnedAt = new Date().toISOString();
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = ? WHERE id = ?")
-      .run(pinnedAt, task.id);
+      .prepare("UPDATE tasks SET pinned_at = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(pinnedAt, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt };
   }
@@ -529,8 +531,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!task) throw new Error(`Task not found: ${ref}`);
 
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = NULL WHERE id = ?")
-      .run(task.id);
+      .prepare("UPDATE tasks SET pinned_at = NULL, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt: null };
   }
@@ -1152,7 +1154,8 @@ class NodeSqliteTaskStore implements TaskStore {
       .prepare(
         `SELECT id, title, slug, created_at AS createdAt,
                 project_root AS projectRoot, archived_at AS archivedAt,
-                description, updated_at AS updatedAt, machine_id AS machineId
+                description, pinned_at AS pinnedAt,
+                updated_at AS updatedAt, machine_id AS machineId
          FROM tasks ORDER BY id`,
       )
       .all() as SyncPayload["tasks"];
@@ -1197,12 +1200,13 @@ class NodeSqliteTaskStore implements TaskStore {
       // of aborting the merge on the tasks_slug_unique index.
       const upsertTask = this.#sqlite.prepare(
         `INSERT INTO tasks
-           (id, title, slug, created_at, project_root, archived_at, description, updated_at, machine_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, title, slug, created_at, project_root, archived_at, description, pinned_at, updated_at, machine_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title=excluded.title, created_at=excluded.created_at,
            project_root=excluded.project_root, archived_at=excluded.archived_at,
-           description=excluded.description, updated_at=excluded.updated_at,
+           description=excluded.description, pinned_at=excluded.pinned_at,
+           updated_at=excluded.updated_at,
            machine_id=excluded.machine_id,
            project_id=CASE
              WHEN excluded.project_root = tasks.project_root THEN tasks.project_id
@@ -1219,6 +1223,7 @@ class NodeSqliteTaskStore implements TaskStore {
           row.projectRoot,
           row.archivedAt,
           row.description,
+          row.pinnedAt ?? null,
           row.updatedAt,
           row.machineId,
         );

@@ -6,6 +6,9 @@ export type SyncTaskRow = {
   projectRoot: string;
   archivedAt: string | null;
   description: string | null;
+  // Optional on the wire: rows from clients predating pin sync omit it, and
+  // absent merges as unpinned.
+  pinnedAt?: string | null;
   updatedAt: string;
   machineId: string;
 };

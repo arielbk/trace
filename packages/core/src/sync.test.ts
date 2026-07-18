@@ -223,6 +223,69 @@ describe("row synchronization", () => {
     second.close();
   });
 
+  test("pinning a task bumps the sync clock and the snapshot carries pinnedAt", async () => {
+    const store = openTraceStore(database("pin"));
+    const task = store.createTask("Pin me");
+    const before = store.syncSnapshot().tasks[0]!;
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    store.pinTask(task.id);
+    const pinned = store.syncSnapshot().tasks[0]!;
+    expect(pinned.pinnedAt).toEqual(expect.any(String));
+    expect(pinned.updatedAt > before.updatedAt).toBe(true);
+
+    store.unpinTask(task.id);
+    const unpinned = store.syncSnapshot().tasks[0]!;
+    expect(unpinned.pinnedAt).toBeNull();
+    expect(unpinned.updatedAt > pinned.updatedAt).toBe(true);
+
+    store.close();
+  });
+
+  test("pins and unpins propagate between machines", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("first"));
+    const second = openTraceStore(database("second"));
+    const task = first.createTask("Focus");
+    await synchronize(first, server);
+    await synchronize(second, server);
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    first.pinTask(task.id);
+    expect(await synchronize(first, server)).toEqual({ pushed: 1, pulled: 0 });
+    expect(await synchronize(second, server)).toEqual({ pushed: 0, pulled: 1 });
+    expect(second.getTask(task.id)?.pinnedAt).toEqual(expect.any(String));
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    second.unpinTask(task.id);
+    await synchronize(second, server);
+    await synchronize(first, server);
+    expect(first.getTask(task.id)?.pinnedAt).toBeNull();
+
+    first.close();
+    second.close();
+  });
+
+  test("a legacy payload row without pinnedAt merges cleanly as unpinned", async () => {
+    const store = openTraceStore(database("legacy"));
+    const task = store.createTask("From an old client");
+    store.pinTask(task.id);
+
+    // Rows pushed by clients predating pin sync carry no pinnedAt field at
+    // all; when such a row wins last-write-wins it lands as unpinned.
+    const [row] = store.syncSnapshot().tasks;
+    const legacy = {
+      ...row!,
+      updatedAt: new Date(Date.parse(row!.updatedAt) + 10).toISOString(),
+      machineId: "legacy-machine",
+    };
+    delete legacy.pinnedAt;
+    store.mergeSyncPayload({ tasks: [legacy], sessions: [] });
+
+    expect(store.getTask(task.id)?.pinnedAt).toBeNull();
+    store.close();
+  });
+
   test("last write wins, including archive versus edit conflicts", async () => {
     const server = new MemoryTransport();
     const first = openTraceStore(database("first"));
