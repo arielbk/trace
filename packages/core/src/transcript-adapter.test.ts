@@ -55,11 +55,11 @@ test("codex adapter answers identity, tokens, tail, and honors expected id", () 
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 17,
+      inputTokens: 6,
       outputTokens: 29,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 11,
-      totalTokens: 57,
+      totalTokens: 46,
     },
   });
   expect(() =>

@@ -51,11 +51,11 @@ test("Codex transcript adapter validates identity and returns token totals", () 
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 17,
+      inputTokens: 6,
       outputTokens: 29,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 11,
-      totalTokens: 57,
+      totalTokens: 46,
     },
   });
 });
@@ -81,11 +81,11 @@ test("Codex transcript adapter skips unparseable lines and sums the rest", () =>
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 17,
+      inputTokens: 6,
       outputTokens: 29,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 11,
-      totalTokens: 57,
+      totalTokens: 46,
     },
   });
 });

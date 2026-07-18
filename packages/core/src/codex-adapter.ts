@@ -62,6 +62,7 @@ type CodexUsage = {
   outputTokens?: number;
   cache_creation_input_tokens?: number;
   cacheCreationInputTokens?: number;
+  cached_input_tokens?: number;
   cache_read_input_tokens?: number;
   cacheReadInputTokens?: number;
   total_tokens?: number;
