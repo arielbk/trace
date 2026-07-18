@@ -4,6 +4,12 @@ export type SyncTaskRow = {
   slug: string;
   createdAt: string;
   projectRoot: string;
+  // Optional on the wire: the project's git identity, used on merge to attach
+  // the task to an existing local project even when projectRoot is a path
+  // from another machine. Rows from older clients omit them and fall back to
+  // path-based project resolution.
+  projectRemoteUrl?: string | null;
+  projectRootCommit?: string | null;
   archivedAt: string | null;
   description: string | null;
   // Optional on the wire: rows from clients predating pin sync omit it, and

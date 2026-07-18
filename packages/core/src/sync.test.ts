@@ -1,8 +1,10 @@
 import { join } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import { openTraceStore } from "./store.ts";
+import { readProjectFingerprints } from "./project-fingerprint.ts";
 import type { Task } from "./types.ts";
 import {
   compareSyncRows,
@@ -139,6 +141,21 @@ function testFiles(
 
 function database(name: string) {
   return join(mkdtempSync(join(tmpdir(), "trace-sync-")), `${name}.db`);
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
+
+function createRepository(root: string, remoteUrl?: string): void {
+  mkdirSync(root, { recursive: true });
+  git(root, "init", "--quiet");
+  git(root, "config", "user.email", "trace@example.com");
+  git(root, "config", "user.name", "Trace Tests");
+  writeFileSync(join(root, "README.md"), "trace\n");
+  git(root, "add", "README.md");
+  git(root, "commit", "--quiet", "-m", "initial");
+  if (remoteUrl) git(root, "remote", "add", "origin", remoteUrl);
 }
 
 describe("row synchronization", () => {
@@ -283,6 +300,150 @@ describe("row synchronization", () => {
     store.mergeSyncPayload({ tasks: [legacy], sessions: [] });
 
     expect(store.getTask(task.id)?.pinnedAt).toBeNull();
+    store.close();
+  });
+
+  test("snapshot rows carry the project's fingerprints", () => {
+    const dir = mkdtempSync(join(tmpdir(), "trace-sync-"));
+    const root = join(dir, "checkout");
+    createRepository(root, "git@github.com:trace/checkout.git");
+    const store = openTraceStore(join(dir, "trace.db"));
+    store.createTask("Fingerprinted", root);
+    store.createTask("Rootless");
+
+    const fingerprints = readProjectFingerprints(root);
+    const rows = store.syncSnapshot().tasks;
+    expect(rows.find((row) => row.projectRoot === root)).toMatchObject({
+      projectRemoteUrl: fingerprints.remoteUrl,
+      projectRootCommit: fingerprints.rootCommit,
+    });
+    // A project without a git identity rides as nulls, not a crash.
+    expect(rows.find((row) => row.projectRoot === "")).toMatchObject({
+      projectRemoteUrl: null,
+      projectRootCommit: null,
+    });
+    store.close();
+  });
+
+  test("a merged task joins an existing project by fingerprint when its root is foreign", () => {
+    const dir = mkdtempSync(join(tmpdir(), "trace-sync-"));
+    const root = join(dir, "checkout");
+    createRepository(root, "git@github.com:trace/checkout.git");
+    const store = openTraceStore(join(dir, "trace.db"));
+    const local = store.createTask("Local task", root);
+    const fingerprints = readProjectFingerprints(root);
+
+    store.mergeSyncPayload({
+      tasks: [
+        {
+          id: "task-from-a",
+          title: "From machine A",
+          slug: "from-machine-a",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          projectRoot: "/machine-a/dev/checkout",
+          projectRemoteUrl: fingerprints.remoteUrl,
+          projectRootCommit: fingerprints.rootCommit,
+          archivedAt: null,
+          description: null,
+          pinnedAt: null,
+          updatedAt: "2026-07-18T00:00:00.000Z",
+          machineId: "machine-a",
+        },
+      ],
+      sessions: [],
+    });
+
+    // No checkout-2 duplicate is minted; both tasks share the one project.
+    expect(store.getTask("task-from-a")?.projectId).toBe(
+      store.getTask(local.id)?.projectId,
+    );
+    expect(store.getProjectBySlug("checkout-2")).toBeNull();
+    store.close();
+  });
+
+  test("an unmatched fingerprint mints a new project carrying that fingerprint", () => {
+    const store = openTraceStore(database("unmatched"));
+
+    store.mergeSyncPayload({
+      tasks: [
+        {
+          id: "task-from-a",
+          title: "From machine A",
+          slug: "from-machine-a",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          projectRoot: "/machine-a/dev/checkout",
+          projectRemoteUrl: "git@github.com:trace/checkout.git",
+          projectRootCommit: "0123456789abcdef0123456789abcdef01234567",
+          archivedAt: null,
+          description: null,
+          pinnedAt: null,
+          updatedAt: "2026-07-18T00:00:00.000Z",
+          machineId: "machine-a",
+        },
+      ],
+      sessions: [],
+    });
+
+    const project = store.getProjectBySlug("checkout");
+    expect(project).toMatchObject({
+      remoteUrl: "git@github.com:trace/checkout.git",
+      rootCommit: "0123456789abcdef0123456789abcdef01234567",
+    });
+    expect(store.getTask("task-from-a")?.projectId).toBe(project?.id);
+    // The next pull with the same fingerprint reuses this project.
+    expect(
+      store.getProjectByFingerprint({
+        remoteUrl: "git@github.com:trace/checkout.git",
+      })?.id,
+    ).toBe(project?.id);
+    store.close();
+  });
+
+  test("a merged task without fingerprints keeps path-based project resolution", () => {
+    const dir = mkdtempSync(join(tmpdir(), "trace-sync-"));
+    const root = join(dir, "checkout");
+    createRepository(root, "git@github.com:trace/checkout.git");
+    const store = openTraceStore(join(dir, "trace.db"));
+    const local = store.createTask("Local task", root);
+
+    store.mergeSyncPayload({
+      tasks: [
+        {
+          id: "legacy-same-root",
+          title: "Legacy row, same root",
+          slug: "legacy-same-root",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          projectRoot: root,
+          archivedAt: null,
+          description: null,
+          pinnedAt: null,
+          updatedAt: "2026-07-18T00:00:00.000Z",
+          machineId: "machine-a",
+        },
+        {
+          id: "legacy-foreign-root",
+          title: "Legacy row, foreign root",
+          slug: "legacy-foreign-root",
+          createdAt: "2026-07-18T00:00:00.000Z",
+          projectRoot: "/machine-a/dev/checkout",
+          archivedAt: null,
+          description: null,
+          pinnedAt: null,
+          updatedAt: "2026-07-18T00:00:00.000Z",
+          machineId: "machine-a",
+        },
+      ],
+      sessions: [],
+    });
+
+    // A known root joins the existing project; a foreign root without a
+    // fingerprint still mints a duplicate, exactly as before this field.
+    expect(store.getTask("legacy-same-root")?.projectId).toBe(
+      store.getTask(local.id)?.projectId,
+    );
+    const foreign = store.getTask("legacy-foreign-root");
+    expect(foreign?.projectId).not.toBeNull();
+    expect(foreign?.projectId).not.toBe(store.getTask(local.id)?.projectId);
     store.close();
   });
 
