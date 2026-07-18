@@ -192,16 +192,16 @@ export function parseCodexTranscript(
       model ??= event.model;
     }
 
-    // Codex Desktop format: session_meta names no model; the first
-    // turn_context (or applied thread settings) does.
+    // Codex Desktop format: session_meta names no model. Model-bearing events
+    // can change during a session, so the latest observed setting wins.
     if (event.type === "turn_context") {
-      model ??= event.payload?.model;
+      model = event.payload?.model ?? model;
     }
     if (
       event.type === "event_msg" &&
       event.payload?.type === "thread_settings_applied"
     ) {
-      model ??= event.payload.thread_settings?.model;
+      model = event.payload.thread_settings?.model ?? model;
     }
 
     // Codex Desktop format: session identity in session_meta payload

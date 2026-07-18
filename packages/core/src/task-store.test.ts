@@ -753,7 +753,14 @@ test("read refresh heals a codex session bound under a synthetic locator", () =>
         JSON.stringify({ type: "session_meta", payload: { id: threadId } }),
         JSON.stringify({
           type: "turn_context",
-          payload: { turn_id: "turn-1", model: "gpt-5.6-sol" },
+          payload: { turn_id: "turn-1", model: "gpt-5.6-terra" },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "thread_settings_applied",
+            thread_settings: { model: "gpt-5.6-sol" },
+          },
         }),
         JSON.stringify({
           type: "event_msg",
@@ -785,6 +792,7 @@ test("read refresh heals a codex session bound under a synthetic locator", () =>
       id: threadId,
       transcriptPath: `codex:${threadId}`,
       tool: "codex",
+      model: "gpt-5.6-terra",
     });
 
     const session = store.getSession(threadId)!;
@@ -802,6 +810,7 @@ test("read refresh heals a codex session bound under a synthetic locator", () =>
       used: 1050,
       limit: 258_400,
     });
+    expect(reopened.getSession(threadId)?.model).toBe("gpt-5.6-sol");
     reopened.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

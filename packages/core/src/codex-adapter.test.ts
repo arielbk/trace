@@ -367,7 +367,7 @@ test("Codex Desktop transcript: uses last token_count as cumulative total", () =
   expect(result.tokenTotals.totalTokens).toBe(280);
 });
 
-test("Codex Desktop transcript: model comes from turn_context", () => {
+test("Codex Desktop transcript: model comes from the latest turn_context", () => {
   const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
   const transcript = [
     JSON.stringify({
@@ -376,16 +376,15 @@ test("Codex Desktop transcript: model comes from turn_context", () => {
     }),
     JSON.stringify({
       type: "turn_context",
-      payload: { turn_id: "turn-1", model: "gpt-5.6-sol", effort: "high" },
+      payload: { turn_id: "turn-1", model: "gpt-5.6-terra", effort: "high" },
     }),
     JSON.stringify({
       type: "turn_context",
-      payload: { turn_id: "turn-2", model: "gpt-5.5", effort: "high" },
+      payload: { turn_id: "turn-2", model: "gpt-5.6-sol", effort: "high" },
     }),
   ].join("\n");
 
   const result = parseCodexTranscript({ transcript, transcriptPath });
-  // First model wins, matching the claude adapter's convention.
   expect(result.model).toBe("gpt-5.6-sol");
 });
 
@@ -401,6 +400,31 @@ test("Codex Desktop transcript: model falls back to thread_settings_applied", ()
       payload: {
         type: "thread_settings_applied",
         thread_settings: { model: "gpt-5.6-sol", reasoning_effort: "high" },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseCodexTranscript({ transcript, transcriptPath }).model).toBe(
+    "gpt-5.6-sol",
+  );
+});
+
+test("Codex Desktop transcript: applied settings override an earlier model", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: { turn_id: "turn-1", model: "gpt-5.6-terra" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "thread_settings_applied",
+        thread_settings: { model: "gpt-5.6-sol" },
       },
     }),
   ].join("\n");
