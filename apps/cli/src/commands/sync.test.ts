@@ -72,7 +72,7 @@ test("sync sends local rows with the bearer token and prints a summary", async (
     expect(init?.headers).toMatchObject({ authorization: "Bearer secret" });
     if (String(input).endsWith("/blobs/missing")) return Response.json([]);
     if (String(input).endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
-    if (String(input).endsWith("/docs/manifests")) return Response.json([]);
+    if (String(input).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
     return String(input).endsWith("/sync/push")
       ? Response.json({ accepted: 1 })
       : Response.json({ tasks: [], sessions: [] });

@@ -12,11 +12,13 @@ import {
   type SyncDocumentStore,
   type SyncPayload,
   type SyncTransport,
+  type SyncWrappedKey,
 } from "./sync.ts";
 
 class MemoryTransport implements SyncTransport {
   payload: SyncPayload = { tasks: [], sessions: [] };
   manifests: SyncDocManifest[] = [];
+  wrappedKeys = new Map<string, string>();
   blobs = new Map<string, Uint8Array>();
   blobUploadSizes: number[] = [];
 
@@ -41,7 +43,11 @@ class MemoryTransport implements SyncTransport {
     return structuredClone(this.payload);
   }
 
-  async pushDocuments(manifests: SyncDocManifest[], blobs: SyncBlob[]) {
+  async pushDocuments(
+    manifests: SyncDocManifest[],
+    blobs: SyncBlob[],
+    wrappedKeys: SyncWrappedKey[],
+  ) {
     this.blobUploadSizes.push(blobs.length);
     let accepted = 0;
     for (const manifest of manifests) {
@@ -54,6 +60,9 @@ class MemoryTransport implements SyncTransport {
         accepted += 1;
       }
     }
+    for (const { taskId, wrappedKey } of wrappedKeys) {
+      this.wrappedKeys.set(taskId, wrappedKey);
+    }
     let uploaded = 0;
     for (const blob of blobs) {
       if (!this.blobs.has(blob.hash)) uploaded += 1;
@@ -63,7 +72,13 @@ class MemoryTransport implements SyncTransport {
   }
 
   async pullDocumentManifests() {
-    return structuredClone(this.manifests);
+    return {
+      manifests: structuredClone(this.manifests),
+      wrappedKeys: [...this.wrappedKeys].map(([taskId, wrappedKey]) => ({
+        taskId,
+        wrappedKey,
+      })),
+    };
   }
 
   async missingBlobs(hashes: string[]) {
@@ -82,10 +97,18 @@ class MemoryDocumentStore implements SyncDocumentStore {
   ) {}
 
   async snapshot() {
-    return { manifests: [structuredClone(this.manifest)], blobs: [...this.blobs].map(([hash, content]) => ({ hash, content })) };
+    return {
+      manifests: [structuredClone(this.manifest)],
+      blobs: [...this.blobs].map(([hash, content]) => ({ hash, content })),
+      wrappedKeys: [{ taskId: this.manifest.taskId, wrappedKey: "wrapped" }],
+    };
   }
 
-  async apply(manifests: SyncDocManifest[], download: (hash: string) => Promise<Uint8Array | null>) {
+  async apply(
+    manifests: SyncDocManifest[],
+    _wrappedKeys: SyncWrappedKey[],
+    download: (hash: string) => Promise<Uint8Array | null>,
+  ) {
     const remote = manifests.find((item) => item.taskId === this.manifest.taskId);
     if (!remote || compareSyncRows(remote, this.manifest) <= 0) return { pulled: 0, downloaded: 0 };
     let downloaded = 0;
@@ -253,6 +276,8 @@ describe("document synchronization", () => {
 
     expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first))
       .toMatchObject({ uploadedBlobs: 2, pushedManifests: 1 });
+    // Wrapped keys ride alongside manifests through synchronize().
+    expect(server.wrappedKeys.get("task-a")).toBe("wrapped");
     expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, second))
       .toMatchObject({ downloadedBlobs: 2, pulledManifests: 1 });
     expect(second.paths()).toEqual(["state.md", "notes.md"]);

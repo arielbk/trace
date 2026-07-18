@@ -1,5 +1,5 @@
 import {
-  createDocCrypto,
+  createKeyWrapper,
   openTraceStore,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
@@ -9,6 +9,7 @@ import {
   type SyncBlob,
   type SyncDocManifest,
   type SyncTransport,
+  type SyncWrappedKey,
 } from "@trace/core";
 import { spawn as nodeSpawn } from "node:child_process";
 import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
@@ -86,7 +87,7 @@ export async function runSyncCommand(
         dependencies.fetch ?? globalThis.fetch,
       ),
       new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks, {
-        crypto: createDocCrypto(masterKey),
+        keyWrapper: createKeyWrapper(masterKey),
         docs: {
           list: (taskId) => store.listDocsForTask(taskId),
           update: (taskId, path, fields) => void store.updateTaskDoc(taskId, path, fields),
@@ -167,6 +168,7 @@ class HttpSyncTransport implements SyncTransport {
   async pushDocuments(
     manifests: SyncDocManifest[],
     blobs: SyncBlob[],
+    wrappedKeys: SyncWrappedKey[],
   ): Promise<{ accepted: number; uploaded: number }> {
     return this.request("/api/sync/docs/push", {
       method: "POST",
@@ -177,11 +179,15 @@ class HttpSyncTransport implements SyncTransport {
           hash: blob.hash,
           content: Buffer.from(blob.content).toString("base64"),
         })),
+        wrappedKeys,
       }),
     });
   }
 
-  async pullDocumentManifests(): Promise<SyncDocManifest[]> {
+  async pullDocumentManifests(): Promise<{
+    manifests: SyncDocManifest[];
+    wrappedKeys: SyncWrappedKey[];
+  }> {
     return this.request("/api/sync/docs/manifests");
   }
 

@@ -17,6 +17,7 @@ export type {
   SyncStore,
   SyncTaskRow,
   SyncTransport,
+  SyncWrappedKey,
 } from "./sync.ts";
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
