@@ -212,6 +212,90 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
   });
 });
 
+test("Codex Desktop transcript: separates context growth from cache-miss replay", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const tokenCounts = [
+    {
+      total_token_usage: {
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        output_tokens: 10,
+        total_tokens: 110,
+      },
+      last_token_usage: {
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        output_tokens: 10,
+        total_tokens: 110,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 250,
+        cached_input_tokens: 100,
+        output_tokens: 30,
+        total_tokens: 280,
+      },
+      last_token_usage: {
+        input_tokens: 150,
+        cached_input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 170,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 330,
+        cached_input_tokens: 120,
+        output_tokens: 35,
+        total_tokens: 365,
+      },
+      last_token_usage: {
+        input_tokens: 80,
+        cached_input_tokens: 20,
+        output_tokens: 5,
+        total_tokens: 85,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 440,
+        cached_input_tokens: 200,
+        output_tokens: 42,
+        total_tokens: 482,
+      },
+      last_token_usage: {
+        input_tokens: 110,
+        cached_input_tokens: 80,
+        output_tokens: 7,
+        total_tokens: 117,
+      },
+    },
+  ];
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    ...tokenCounts.map((info) =>
+      JSON.stringify({
+        type: "event_msg",
+        payload: { type: "token_count", info },
+      }),
+    ),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath }).tokenTotals,
+  ).toEqual({
+    inputTokens: 180,
+    outputTokens: 42,
+    cacheCreationInputTokens: 60,
+    cacheReadInputTokens: 200,
+    totalTokens: 482,
+  });
+});
+
 test("Codex Desktop transcript: uses last token_count as cumulative total", () => {
   const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
   const transcript = [

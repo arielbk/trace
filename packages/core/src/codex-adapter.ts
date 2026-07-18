@@ -97,6 +97,7 @@ type CodexJsonlEvent = {
     };
     info?: {
       total_token_usage?: CodexDesktopUsage;
+      last_token_usage?: CodexDesktopUsage;
     };
     // session_meta: how this thread came to exist — a plain string for user
     // threads ("cli", "vscode", "exec"), an object for subagent children,
@@ -154,6 +155,9 @@ export function parseCodexTranscript(
   // Desktop format: each token_count event carries cumulative session totals;
   // we keep the last one so a live transcript gives the freshest count.
   let lastDesktopTotals: TokenTotals | null = null;
+  let previousDesktopContextTokens = 0;
+  let desktopContextGrowthTokens = 0;
+  let canRealignDesktopTotals = true;
   const subagentSpawns: CodexSubagentSpawn[] = [];
   // Both spawn shapes can name the same child; first record wins.
   const addSpawn = (spawn: CodexSubagentSpawn) => {
@@ -283,9 +287,22 @@ export function parseCodexTranscript(
 
     // Codex Desktop format: cumulative session usage in event_msg/token_count
     if (event.type === "event_msg" && event.payload?.type === "token_count") {
-      const usage = event.payload.info?.total_token_usage;
+      const info = event.payload.info;
+      const usage = info?.total_token_usage;
       if (usage) {
         lastDesktopTotals = desktopTokenTotals(usage);
+        const currentContextTokens =
+          info.last_token_usage?.input_tokens ??
+          info.last_token_usage?.total_tokens;
+        if (currentContextTokens === undefined) {
+          canRealignDesktopTotals = false;
+        } else {
+          desktopContextGrowthTokens += Math.max(
+            0,
+            currentContextTokens - previousDesktopContextTokens,
+          );
+          previousDesktopContextTokens = currentContextTokens;
+        }
       }
     }
   }
@@ -314,7 +331,13 @@ export function parseCodexTranscript(
     // The rollout itself carries no conversation name; Codex keeps thread
     // names next door in <codexHome>/session_index.jsonl.
     title: codexThreadTitleFromIndex(input.transcriptPath, id),
-    tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
+    tokenTotals:
+      lastDesktopTotals && canRealignDesktopTotals
+        ? realignDesktopTokenTotals(
+            lastDesktopTotals,
+            desktopContextGrowthTokens,
+          )
+        : (lastDesktopTotals ?? turnCompletedTotals),
     subagentSpawns,
     subagentSource,
   };
@@ -382,6 +405,18 @@ function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
     cacheCreationInputTokens: 0,
     cacheReadInputTokens,
     totalTokens: usage.total_tokens ?? rawInputTokens + outputTokens,
+  };
+}
+
+function realignDesktopTokenTotals(
+  totals: TokenTotals,
+  contextGrowthTokens: number,
+): TokenTotals {
+  const inputTokens = Math.min(totals.inputTokens, contextGrowthTokens);
+  return {
+    ...totals,
+    inputTokens,
+    cacheCreationInputTokens: totals.inputTokens - inputTokens,
   };
 }
 
