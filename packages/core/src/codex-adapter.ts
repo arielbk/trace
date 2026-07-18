@@ -13,7 +13,7 @@ import {
   emptyTokenTotals,
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
-import type { TokenTotals } from "./types.ts";
+import type { ContextTokens, TokenTotals } from "./types.ts";
 
 export type CodexTokenTotals = TokenTotals;
 
@@ -44,6 +44,7 @@ export type ParsedCodexSession = {
   model: string | null;
   title: string | null;
   tokenTotals: CodexTokenTotals;
+  contextTokens?: ContextTokens | null;
   subagentSpawns: CodexSubagentSpawn[];
   subagentSource: CodexSubagentSource | null;
 };
@@ -61,6 +62,7 @@ type CodexUsage = {
   outputTokens?: number;
   cache_creation_input_tokens?: number;
   cacheCreationInputTokens?: number;
+  cached_input_tokens?: number;
   cache_read_input_tokens?: number;
   cacheReadInputTokens?: number;
   total_tokens?: number;
@@ -97,6 +99,8 @@ type CodexJsonlEvent = {
     };
     info?: {
       total_token_usage?: CodexDesktopUsage;
+      last_token_usage?: CodexDesktopUsage;
+      model_context_window?: number;
     };
     // session_meta: how this thread came to exist — a plain string for user
     // threads ("cli", "vscode", "exec"), an object for subagent children,
@@ -154,6 +158,10 @@ export function parseCodexTranscript(
   // Desktop format: each token_count event carries cumulative session totals;
   // we keep the last one so a live transcript gives the freshest count.
   let lastDesktopTotals: TokenTotals | null = null;
+  let previousDesktopContextTokens = 0;
+  let desktopContextGrowthTokens = 0;
+  let canRealignDesktopTotals = true;
+  let lastDesktopContextTokens: ContextTokens | null = null;
   const subagentSpawns: CodexSubagentSpawn[] = [];
   // Both spawn shapes can name the same child; first record wins.
   const addSpawn = (spawn: CodexSubagentSpawn) => {
@@ -184,16 +192,16 @@ export function parseCodexTranscript(
       model ??= event.model;
     }
 
-    // Codex Desktop format: session_meta names no model; the first
-    // turn_context (or applied thread settings) does.
+    // Codex Desktop format: session_meta names no model. Model-bearing events
+    // can change during a session, so the latest observed setting wins.
     if (event.type === "turn_context") {
-      model ??= event.payload?.model;
+      model = event.payload?.model ?? model;
     }
     if (
       event.type === "event_msg" &&
       event.payload?.type === "thread_settings_applied"
     ) {
-      model ??= event.payload.thread_settings?.model;
+      model = event.payload.thread_settings?.model ?? model;
     }
 
     // Codex Desktop format: session identity in session_meta payload
@@ -283,9 +291,34 @@ export function parseCodexTranscript(
 
     // Codex Desktop format: cumulative session usage in event_msg/token_count
     if (event.type === "event_msg" && event.payload?.type === "token_count") {
-      const usage = event.payload.info?.total_token_usage;
+      const info = event.payload.info;
+      const usage = info?.total_token_usage;
+      const usedContextTokens =
+        info?.last_token_usage?.total_tokens ??
+        info?.last_token_usage?.input_tokens;
+      if (
+        usedContextTokens !== undefined &&
+        info?.model_context_window !== undefined
+      ) {
+        lastDesktopContextTokens = {
+          used: usedContextTokens,
+          limit: info.model_context_window,
+        };
+      }
       if (usage) {
         lastDesktopTotals = desktopTokenTotals(usage);
+        const currentContextTokens =
+          info.last_token_usage?.input_tokens ??
+          info.last_token_usage?.total_tokens;
+        if (currentContextTokens === undefined) {
+          canRealignDesktopTotals = false;
+        } else {
+          desktopContextGrowthTokens += Math.max(
+            0,
+            currentContextTokens - previousDesktopContextTokens,
+          );
+          previousDesktopContextTokens = currentContextTokens;
+        }
       }
     }
   }
@@ -314,7 +347,16 @@ export function parseCodexTranscript(
     // The rollout itself carries no conversation name; Codex keeps thread
     // names next door in <codexHome>/session_index.jsonl.
     title: codexThreadTitleFromIndex(input.transcriptPath, id),
-    tokenTotals: lastDesktopTotals ?? turnCompletedTotals,
+    tokenTotals:
+      lastDesktopTotals && canRealignDesktopTotals
+        ? realignDesktopTokenTotals(
+            lastDesktopTotals,
+            desktopContextGrowthTokens,
+          )
+        : (lastDesktopTotals ?? turnCompletedTotals),
+    ...(lastDesktopContextTokens
+      ? { contextTokens: lastDesktopContextTokens }
+      : {}),
     subagentSpawns,
     subagentSource,
   };
@@ -382,6 +424,18 @@ function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
     cacheCreationInputTokens: 0,
     cacheReadInputTokens,
     totalTokens: usage.total_tokens ?? rawInputTokens + outputTokens,
+  };
+}
+
+function realignDesktopTokenTotals(
+  totals: TokenTotals,
+  contextGrowthTokens: number,
+): TokenTotals {
+  const inputTokens = Math.min(totals.inputTokens, contextGrowthTokens);
+  return {
+    ...totals,
+    inputTokens,
+    cacheCreationInputTokens: totals.inputTokens - inputTokens,
   };
 }
 

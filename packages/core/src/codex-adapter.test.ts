@@ -51,11 +51,11 @@ test("Codex transcript adapter validates identity and returns token totals", () 
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 17,
+      inputTokens: 6,
       outputTokens: 29,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 11,
-      totalTokens: 57,
+      totalTokens: 46,
     },
   });
 });
@@ -81,11 +81,11 @@ test("Codex transcript adapter skips unparseable lines and sums the rest", () =>
     subagentSpawns: [],
     subagentSource: null,
     tokenTotals: {
-      inputTokens: 17,
+      inputTokens: 6,
       outputTokens: 29,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: 11,
-      totalTokens: 57,
+      totalTokens: 46,
     },
   });
 });
@@ -212,6 +212,128 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
   });
 });
 
+test("Codex Desktop transcript: separates context growth from cache-miss replay", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const tokenCounts = [
+    {
+      total_token_usage: {
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        output_tokens: 10,
+        total_tokens: 110,
+      },
+      last_token_usage: {
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        output_tokens: 10,
+        total_tokens: 110,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 250,
+        cached_input_tokens: 100,
+        output_tokens: 30,
+        total_tokens: 280,
+      },
+      last_token_usage: {
+        input_tokens: 150,
+        cached_input_tokens: 100,
+        output_tokens: 20,
+        total_tokens: 170,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 330,
+        cached_input_tokens: 120,
+        output_tokens: 35,
+        total_tokens: 365,
+      },
+      last_token_usage: {
+        input_tokens: 80,
+        cached_input_tokens: 20,
+        output_tokens: 5,
+        total_tokens: 85,
+      },
+    },
+    {
+      total_token_usage: {
+        input_tokens: 440,
+        cached_input_tokens: 200,
+        output_tokens: 42,
+        total_tokens: 482,
+      },
+      last_token_usage: {
+        input_tokens: 110,
+        cached_input_tokens: 80,
+        output_tokens: 7,
+        total_tokens: 117,
+      },
+    },
+  ];
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    ...tokenCounts.map((info) =>
+      JSON.stringify({
+        type: "event_msg",
+        payload: { type: "token_count", info },
+      }),
+    ),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath }).tokenTotals,
+  ).toEqual({
+    inputTokens: 180,
+    outputTokens: 42,
+    cacheCreationInputTokens: 60,
+    cacheReadInputTokens: 200,
+    totalTokens: 482,
+  });
+});
+
+test("Codex Desktop transcript: reports the latest context-window occupancy", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 250,
+            cached_input_tokens: 100,
+            output_tokens: 30,
+            total_tokens: 280,
+          },
+          last_token_usage: {
+            input_tokens: 150,
+            cached_input_tokens: 100,
+            output_tokens: 20,
+            total_tokens: 170,
+          },
+          model_context_window: 258_400,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath }).contextTokens,
+  ).toEqual({
+    used: 170,
+    limit: 258_400,
+  });
+});
+
 test("Codex Desktop transcript: uses last token_count as cumulative total", () => {
   const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
   const transcript = [
@@ -245,7 +367,7 @@ test("Codex Desktop transcript: uses last token_count as cumulative total", () =
   expect(result.tokenTotals.totalTokens).toBe(280);
 });
 
-test("Codex Desktop transcript: model comes from turn_context", () => {
+test("Codex Desktop transcript: model comes from the latest turn_context", () => {
   const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
   const transcript = [
     JSON.stringify({
@@ -254,16 +376,15 @@ test("Codex Desktop transcript: model comes from turn_context", () => {
     }),
     JSON.stringify({
       type: "turn_context",
-      payload: { turn_id: "turn-1", model: "gpt-5.6-sol", effort: "high" },
+      payload: { turn_id: "turn-1", model: "gpt-5.6-terra", effort: "high" },
     }),
     JSON.stringify({
       type: "turn_context",
-      payload: { turn_id: "turn-2", model: "gpt-5.5", effort: "high" },
+      payload: { turn_id: "turn-2", model: "gpt-5.6-sol", effort: "high" },
     }),
   ].join("\n");
 
   const result = parseCodexTranscript({ transcript, transcriptPath });
-  // First model wins, matching the claude adapter's convention.
   expect(result.model).toBe("gpt-5.6-sol");
 });
 
@@ -279,6 +400,31 @@ test("Codex Desktop transcript: model falls back to thread_settings_applied", ()
       payload: {
         type: "thread_settings_applied",
         thread_settings: { model: "gpt-5.6-sol", reasoning_effort: "high" },
+      },
+    }),
+  ].join("\n");
+
+  expect(parseCodexTranscript({ transcript, transcriptPath }).model).toBe(
+    "gpt-5.6-sol",
+  );
+});
+
+test("Codex Desktop transcript: applied settings override an earlier model", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "turn_context",
+      payload: { turn_id: "turn-1", model: "gpt-5.6-terra" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "thread_settings_applied",
+        thread_settings: { model: "gpt-5.6-sol" },
       },
     }),
   ].join("\n");
