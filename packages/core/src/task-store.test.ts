@@ -766,6 +766,13 @@ test("read refresh heals a codex session bound under a synthetic locator", () =>
                 output_tokens: 50,
                 total_tokens: 1050,
               },
+              last_token_usage: {
+                input_tokens: 1000,
+                cached_input_tokens: 600,
+                output_tokens: 50,
+                total_tokens: 1050,
+              },
+              model_context_window: 258_400,
             },
           },
         }),
@@ -785,8 +792,17 @@ test("read refresh heals a codex session bound under a synthetic locator", () =>
     expect(session.model).toBe("gpt-5.6-sol");
     expect(session.tokenTotals.inputTokens).toBe(400);
     expect(session.tokenTotals.cacheReadInputTokens).toBe(600);
+    expect(session.contextTokens).toEqual({ used: 1050, limit: 258_400 });
 
     store.close();
+    unlinkSync(rolloutPath);
+
+    const reopened = openTraceStore(databasePath, { codexHome });
+    expect(reopened.getSession(threadId)?.contextTokens).toEqual({
+      used: 1050,
+      limit: 258_400,
+    });
+    reopened.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -23,8 +23,8 @@ export type ParsedTranscript = {
   model: string | null;
   title: string | null;
   tokenTotals: TokenTotals;
-  // Live context-window occupancy when the tool exposes it (Cursor); absent
-  // otherwise. Not persisted — surfaced through to the refreshed session.
+  // Live context-window occupancy when the tool exposes it (Cursor/Codex);
+  // absent otherwise. Surfaced through to the refreshed session.
   contextTokens?: ContextTokens | null;
   // Parent-side in-process subagent spawn records when the tool logs them in
   // the transcript itself (Codex `collab_agent_spawn_end`); absent for tools

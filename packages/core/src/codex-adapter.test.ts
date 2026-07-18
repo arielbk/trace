@@ -296,6 +296,44 @@ test("Codex Desktop transcript: separates context growth from cache-miss replay"
   });
 });
 
+test("Codex Desktop transcript: reports the latest context-window occupancy", () => {
+  const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: "019eb759-7cb3-7700-9370-77db8da46f94" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: 250,
+            cached_input_tokens: 100,
+            output_tokens: 30,
+            total_tokens: 280,
+          },
+          last_token_usage: {
+            input_tokens: 150,
+            cached_input_tokens: 100,
+            output_tokens: 20,
+            total_tokens: 170,
+          },
+          model_context_window: 258_400,
+        },
+      },
+    }),
+  ].join("\n");
+
+  expect(
+    parseCodexTranscript({ transcript, transcriptPath }).contextTokens,
+  ).toEqual({
+    used: 170,
+    limit: 258_400,
+  });
+});
+
 test("Codex Desktop transcript: uses last token_count as cumulative total", () => {
   const transcriptPath = "/tmp/019eb759-7cb3-7700-9370-77db8da46f94.jsonl";
   const transcript = [
