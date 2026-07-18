@@ -2,9 +2,12 @@ export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 export { compareSyncRows, synchronize } from "./sync.ts";
 export {
   createDocCrypto,
+  createKeyWrapper,
+  createTaskDocCrypto,
   generateDocCryptoKey,
+  generateTaskKey,
 } from "./doc-crypto.ts";
-export type { DocCrypto, DocCryptoFile } from "./doc-crypto.ts";
+export type { DocCrypto, DocCryptoFile, KeyWrapper } from "./doc-crypto.ts";
 export type {
   SyncPayload,
   SyncBlob,
