@@ -8,9 +8,14 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { openTraceStore } from "@trace/core";
 import {
   createServeRequestListener,
+  createSyncHooks,
   DEFAULT_SERVE_PORT,
+  MUTATION_SYNC_DELAY_MS,
+  PERIODIC_SYNC_INTERVAL_MS,
+  REQUEST_SYNC_MIN_INTERVAL_MS,
   resolveWebAssetsDir,
   startTraceServe,
+  type ServeSyncHooks,
 } from "./serve.ts";
 import { openBrowser } from "./open-browser.ts";
 
@@ -58,6 +63,7 @@ function dispatch(
   method: string,
   url: string,
   assetsDir?: string,
+  syncHooks?: ServeSyncHooks,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -81,7 +87,7 @@ function dispatch(
     },
   } as unknown as ServerResponse;
 
-  createServeRequestListener(databasePath, assetsDir)(
+  createServeRequestListener(databasePath, assetsDir, undefined, syncHooks)(
     { method, url } as IncomingMessage,
     res,
   );
@@ -197,6 +203,84 @@ test("trace serve fires a background sync on start", async () => {
 
   expect(triggerSync).toHaveBeenCalledOnce();
   await running.close();
+});
+
+test("board mutations and POST /api/sync reach the sync hooks through the serve listener", () => {
+  const syncHooks = { onMutation: vi.fn(), requestSync: vi.fn() };
+
+  dispatch("POST", `/api/tasks/${taskId}/pin`, undefined, syncHooks);
+  expect(syncHooks.onMutation).toHaveBeenCalledOnce();
+  expect(syncHooks.requestSync).not.toHaveBeenCalled();
+
+  dispatch("POST", "/api/sync", undefined, syncHooks);
+  expect(syncHooks.requestSync).toHaveBeenCalledOnce();
+
+  // Reads never schedule a sync.
+  dispatch("GET", "/api/tasks", undefined, syncHooks);
+  expect(syncHooks.onMutation).toHaveBeenCalledOnce();
+});
+
+test("createSyncHooks debounces a burst of mutations into one sync", () => {
+  vi.useFakeTimers();
+  try {
+    const trigger = vi.fn();
+    const hooks = createSyncHooks(trigger);
+
+    hooks.onMutation();
+    hooks.onMutation();
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS - 1);
+    hooks.onMutation();
+    expect(trigger).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS);
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // A later mutation schedules a fresh sync.
+    hooks.onMutation();
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS);
+    expect(trigger).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("createSyncHooks runs a requested sync immediately but throttles repeats", () => {
+  let now = 1_000_000;
+  const trigger = vi.fn();
+  const hooks = createSyncHooks(trigger, () => now);
+
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledOnce();
+
+  now += REQUEST_SYNC_MIN_INTERVAL_MS - 1;
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledOnce();
+
+  now += 1;
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledTimes(2);
+});
+
+test("trace serve syncs periodically while running, and stops on close", async () => {
+  vi.useFakeTimers();
+  try {
+    const server = fakeServerWithTakenPorts(new Set());
+    const triggerSync = vi.fn();
+
+    const running = await startTraceServe({}, { server, triggerSync });
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS);
+    expect(triggerSync).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+
+    await running.close();
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS * 2);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("resolveWebAssetsDir finds the built web app relative to the cli module", () => {

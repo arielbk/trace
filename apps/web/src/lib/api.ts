@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { SyncStatus, TaskSummary, TaskTimeline } from "@trace/core/browser";
 
 export class HttpError extends Error {
@@ -44,6 +45,28 @@ export async function fetchSyncStatus(): Promise<SyncStatus> {
   const res = await fetch("/api/sync/status");
   if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
   return res.json() as Promise<SyncStatus>;
+}
+
+/** Ask the serving process to run a background sync now (fire-and-forget).
+ * The server throttles repeat requests, so callers can fire freely; failures
+ * (a dev server with no sync trigger, a network hiccup) never surface. */
+export function requestServerSync(): void {
+  void fetch("/api/sync", { method: "POST" }).catch(() => {});
+}
+
+/**
+ * Request a server-side sync on mount and whenever the board window regains
+ * focus. The polling queries only read the local database; this asks the
+ * server to converge that database with other machines first, so acting on a
+ * just-focused board (pin, archive) starts from fresh rows instead of stale
+ * ones — shrinking the cross-machine last-write-wins clobber window.
+ */
+export function useServerSyncOnFocus(): void {
+  useEffect(() => {
+    requestServerSync();
+    window.addEventListener("focus", requestServerSync);
+    return () => window.removeEventListener("focus", requestServerSync);
+  }, []);
 }
 
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {

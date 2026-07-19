@@ -37,6 +37,52 @@ export type StartTraceServeOptions = {
 /** How many consecutive ports to try when the preferred one is taken. */
 const PORT_FALLBACK_ATTEMPTS = 10;
 
+/** Debounce between a board mutation and the follow-up background sync, so a
+ * burst of pins/archives coalesces into one sync shortly after it ends. */
+export const MUTATION_SYNC_DELAY_MS = 5_000;
+
+/** Minimum gap between focus-requested syncs (`POST /api/sync`). */
+export const REQUEST_SYNC_MIN_INTERVAL_MS = 15_000;
+
+/** How often the long-running serve process syncs in the background, keeping
+ * an idle-but-open board's database converging with other machines. */
+export const PERIODIC_SYNC_INTERVAL_MS = 5 * 60_000;
+
+export type ServeSyncHooks = {
+  onMutation: () => void;
+  requestSync: () => void;
+};
+
+/**
+ * Sync scheduling for the serve process: board mutations debounce into one
+ * background sync shortly after the burst ends; explicit requests (the board
+ * client on window focus) run immediately but at most once per
+ * {@link REQUEST_SYNC_MIN_INTERVAL_MS}. The trigger itself no-ops when logged
+ * out, so neither path needs an auth check here.
+ */
+export function createSyncHooks(
+  trigger: () => void,
+  now: () => number = Date.now,
+): ServeSyncHooks {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastRequestedAt = -Infinity;
+  return {
+    onMutation: () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        trigger();
+      }, MUTATION_SYNC_DELAY_MS);
+      timer.unref?.();
+    },
+    requestSync: () => {
+      if (now() - lastRequestedAt < REQUEST_SYNC_MIN_INTERVAL_MS) return;
+      lastRequestedAt = now();
+      trigger();
+    },
+  };
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -99,6 +145,7 @@ export function createServeRequestListener(
   databasePath: string,
   assetsDir?: string,
   syncServerConfigured?: boolean,
+  syncHooks?: ServeSyncHooks,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
@@ -107,6 +154,8 @@ export function createServeRequestListener(
     const dispatch = (body?: string): void => {
       const response = handleTraceApiRequest(databasePath, method, url, body, {
         syncServerConfigured,
+        onMutation: syncHooks?.onMutation,
+        requestSync: syncHooks?.requestSync,
       });
 
       if (response) {
@@ -189,12 +238,14 @@ export function resolveWebAssetsDir(
 export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
+  syncHooks?: ServeSyncHooks,
 ): Server {
   return createServer(
     createServeRequestListener(
       resolveDatabasePath(env),
       assetsDir,
       Boolean(resolveConfiguredServerUrl(env)),
+      syncHooks,
     ),
   );
 }
@@ -210,11 +261,22 @@ export function startTraceServe(
 ): Promise<TraceServer> {
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
-  const server = options.server ?? createTraceServeServer(env);
+  const triggerSync = options.triggerSync ?? triggerBackgroundSync;
+  const server =
+    options.server ??
+    createTraceServeServer(env, undefined, createSyncHooks(() => triggerSync(env)));
 
   // Fire-and-forget a sync as the board starts, so a freshly opened board
   // reflects other machines. No-ops instantly when logged out or offline.
-  (options.triggerSync ?? triggerBackgroundSync)(env);
+  triggerSync(env);
+
+  // Between mutations, keep an idle-but-open board converging with other
+  // machines. unref'd so the timer never holds the process alive on its own.
+  const periodicSync = setInterval(
+    () => triggerSync(env),
+    PERIODIC_SYNC_INTERVAL_MS,
+  );
+  periodicSync.unref?.();
 
   return new Promise((resolve, reject) => {
     const listenOn = (port: number, attemptsLeft: number): void => {
@@ -236,6 +298,7 @@ export function startTraceServe(
           port: boundPort,
           close: () =>
             new Promise<void>((resolveClose, rejectClose) => {
+              clearInterval(periodicSync);
               server.close((error) =>
                 error ? rejectClose(error) : resolveClose(),
               );

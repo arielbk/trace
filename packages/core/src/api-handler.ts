@@ -33,6 +33,14 @@ const JSON_CONTENT_TYPE = "application/json";
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;
+  /** Called after any successful mutating request (archive/unarchive, pin/unpin,
+   * checkbox toggle) so the host can schedule a background sync that pushes the
+   * change promptly instead of waiting for the next unrelated sync. */
+  onMutation?: () => void;
+  /** Host hook behind `POST /api/sync`: run a background sync now (the board
+   * client asks on window focus). Absent when the host has no sync trigger
+   * (e.g. the Vite dev middleware). */
+  requestSync?: () => void;
 }
 
 /**
@@ -65,6 +73,12 @@ export function handleTraceApiRequest(
     );
   }
 
+  if (path === "/api/sync" || path === "/api/sync/") {
+    if (method !== "POST") return methodNotAllowed();
+    options?.requestSync?.();
+    return json({ requested: Boolean(options?.requestSync) });
+  }
+
   if (path !== "/api/tasks" && !path.startsWith("/api/tasks/")) {
     return path.startsWith("/api/") ? notFound() : null;
   }
@@ -92,6 +106,7 @@ export function handleTraceApiRequest(
           archiveMatch[2] === "archive"
             ? store.archiveTask(ref)
             : store.unarchiveTask(ref);
+        options?.onMutation?.();
         return json(task);
       } finally {
         store.close();
@@ -106,6 +121,7 @@ export function handleTraceApiRequest(
         const ref = decodeURIComponent(pinMatch[1]);
         const task =
           pinMatch[2] === "pin" ? store.pinTask(ref) : store.unpinTask(ref);
+        options?.onMutation?.();
         return json(task);
       } finally {
         store.close();
@@ -133,7 +149,9 @@ export function handleTraceApiRequest(
       try {
         const task = store.getTaskByRef(decodeURIComponent(checkboxMatch[1]));
         if (!task) return notFound();
-        return toggleTaskDocCheckbox(databasePath, task.slug, body);
+        const response = toggleTaskDocCheckbox(databasePath, task.slug, body);
+        if (response.status === 200) options?.onMutation?.();
+        return response;
       } finally {
         store.close();
       }
