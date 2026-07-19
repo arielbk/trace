@@ -35,7 +35,7 @@ verb. Write `state.md` whenever a trigger above asks for it.
 Follow the `trace-doc-placement` skill's resolution flow verbatim:
 
 ```sh
-node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill docs-dir
+npx @arielbk/trace@0.15.1 skill docs-dir
 ```
 
 **Exit 0 — session is bound.** stdout contains `taskDocsDir: <path>`. Extract
@@ -136,7 +136,7 @@ After writing the prose, stamp `state.md` so Trace records that the prose now
 reflects the current docs:
 
 ```sh
-node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js state reflect <slug>
+npx @arielbk/trace@0.15.1 state reflect <slug>
 ```
 
 This advances the prose-fingerprint marker. Skipping it leaves the marker stale,
