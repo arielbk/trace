@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
 import { updateOperation } from "./commands/update-operations.ts";
+import { checkUpdateWarning } from "./commands/update-warning.ts";
 
 type CommandResult = {
   exitCode: number;
@@ -45,7 +46,16 @@ export async function runTraceCliAsync(
   if (command === "update") {
     return updateOperation(argv.slice(1), { env, cwd, stdin });
   }
-  return runTraceCli(argv, env, cwd, stdin);
+
+  const inner = runTraceCli(argv, env, cwd, stdin);
+
+  // Automated hooks and setup/update stay silent — they either address the
+  // staleness or must not pollute their output with unrelated warnings.
+  if (command === "hook" || command === "setup") return inner;
+
+  const warning = checkUpdateWarning(env);
+  if (!warning) return inner;
+  return { ...inner, stderr: warning + inner.stderr };
 }
 
 function failure(stderr: string, exitCode = 2): CommandResult {
