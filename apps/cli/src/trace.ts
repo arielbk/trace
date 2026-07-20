@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
+import { updateOperation } from "./commands/update-operations.ts";
 
 type CommandResult = {
   exitCode: number;
@@ -41,6 +42,9 @@ export async function runTraceCliAsync(
   ) {
     return runAuthCommand(command, env, { onOutput });
   }
+  if (command === "update") {
+    return updateOperation(argv.slice(1), { env, cwd, stdin });
+  }
   return runTraceCli(argv, env, cwd, stdin);
 }
 
@@ -50,7 +54,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 
 function usage(): CommandResult {
   return failure(
-    "Usage: trace init | trace setup --tool claude [--yes] | trace serve | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> server-url ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...",
+    "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace serve | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> server-url ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...",
   );
 }
 
