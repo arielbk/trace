@@ -4,6 +4,8 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -51,6 +53,8 @@ export const TRACE_CLAUDE_HOOKS = [
 ] as const;
 
 export type PackageManager = "npm" | "pnpm" | "bun";
+
+export type GuardrailsResult = { ok: true } | { ok: false; error: string };
 
 /** Shared options for all agent setup targets. */
 export type AgentSetupOptions = {
@@ -102,8 +106,13 @@ export function resolvePackagedSkillsDir(): string {
  * Installs the Trace skills and hooks into a Claude config root. Idempotent:
  * files are only written when their bytes differ, so a second run against an
  * already-current target performs no filesystem mutation.
+ *
+ * Throws with remediation guidance if guardrail checks detect unowned
+ * collisions, legacy plugins, or pinned npx hooks.
  */
 export function applyClaudeSetup(options: ClaudeSetupOptions): void {
+  const check = checkClaudeGuardrails(options);
+  if (!check.ok) throw new Error(check.error);
   installSkills(options, TRACE_CLAUDE_SKILLS);
   installHooks(options);
   recordTarget(
@@ -117,8 +126,12 @@ export function applyClaudeSetup(options: ClaudeSetupOptions): void {
 /**
  * Installs the Trace skills into a Codex config root. Codex has no hook
  * system, so only skills and registry metadata are written.
+ *
+ * Throws with remediation guidance if an unowned skill directory is detected.
  */
 export function applyCodexSetup(options: CodexSetupOptions): void {
+  const check = checkCodexGuardrails(options);
+  if (!check.ok) throw new Error(check.error);
   installSkills(options, TRACE_CODEX_SKILLS);
   recordTarget(options, "codex", TRACE_CODEX_SKILLS, []);
 }
@@ -126,8 +139,12 @@ export function applyCodexSetup(options: CodexSetupOptions): void {
 /**
  * Installs the Trace skills into a Cursor config root. Cursor has no hook
  * system, so only skills and registry metadata are written.
+ *
+ * Throws with remediation guidance if an unowned skill directory is detected.
  */
 export function applyCursorSetup(options: CursorSetupOptions): void {
+  const check = checkCursorGuardrails(options);
+  if (!check.ok) throw new Error(check.error);
   installSkills(options, TRACE_CURSOR_SKILLS);
   recordTarget(options, "cursor", TRACE_CURSOR_SKILLS, []);
 }
@@ -247,10 +264,27 @@ function writeFileIfChanged(path: string, content: Buffer | string): void {
   if (existsSync(path)) {
     const current = readFileSync(path);
     if (current.equals(buffer)) return;
-  } else {
-    mkdirSync(dirname(path), { recursive: true });
   }
-  writeFileSync(path, buffer);
+  writeFileAtomically(path, buffer);
+}
+
+/**
+ * Writes `buffer` to `path` atomically: the bytes land in a sibling temp file
+ * first, then a single `rename` moves it into place. This guarantees that a
+ * process killed mid-write never leaves a partial file at the final path.
+ */
+function writeFileAtomically(path: string, buffer: Buffer): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.trace-tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, buffer);
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch { /* best-effort cleanup; ignore if temp file already gone */ }
+    throw err;
+  }
 }
 
 /** Renders the human-readable installation plan shown before applying. */
@@ -285,6 +319,166 @@ export function planCursorSetup(options: CursorSetupOptions): string {
     `  skills: ${TRACE_CURSOR_SKILLS.join(", ")}`,
   ];
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Checks whether a Claude setup can safely proceed without clobbering
+ * user-owned artifacts. Returns `{ ok: false, error }` with exact
+ * remediation guidance when a blocking condition is detected.
+ */
+export function checkClaudeGuardrails(options: ClaudeSetupOptions): GuardrailsResult {
+  const settingsPath = join(options.configRoot, "settings.json");
+
+  if (existsSync(settingsPath)) {
+    let settings: Record<string, unknown>;
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    } catch {
+      return {
+        ok: false,
+        error:
+          `${settingsPath} contains malformed JSON. Fix or remove it before running trace setup.`,
+      };
+    }
+
+    // Detect legacy @arielbk/trace plugin entries.
+    const plugins = settings.plugins;
+    if (
+      Array.isArray(plugins) &&
+      plugins.some((p) => typeof p === "string" && p.includes("@arielbk/trace"))
+    ) {
+      return {
+        ok: false,
+        error:
+          `Detected legacy @arielbk/trace plugin in ${settingsPath}.\n` +
+          `  Remediation: remove the "@arielbk/trace" entry from the "plugins" array, then re-run trace setup.`,
+      };
+    }
+
+    const hooks = settings.hooks as Record<string, unknown> | undefined;
+    if (hooks) {
+      // Detect pinned npx trace hooks (legacy installation pattern).
+      for (const [event, entries] of Object.entries(hooks)) {
+        if (!Array.isArray(entries)) continue;
+        for (const entry of entries) {
+          if (typeof entry !== "object" || !entry) continue;
+          const hooksList = (entry as { hooks?: unknown }).hooks;
+          if (!Array.isArray(hooksList)) continue;
+          for (const hook of hooksList) {
+            if (typeof hook !== "object" || !hook) continue;
+            const command = (hook as { command?: unknown }).command;
+            if (
+              typeof command === "string" &&
+              /npx\s+(@arielbk\/)?trace\b/.test(command)
+            ) {
+              return {
+                ok: false,
+                error:
+                  `Detected pinned npx trace hook in ${settingsPath} (event "${event}"):\n` +
+                  `  "${command}"\n` +
+                  `  Remediation: remove this hook entry, then re-run trace setup.`,
+              };
+            }
+          }
+        }
+      }
+
+      // Detect unowned hook event collisions.
+      const ownedHooks = getOwnedHooks(options.registryPath, options.configRoot);
+      for (const { event } of TRACE_CLAUDE_HOOKS) {
+        if (event in hooks && !ownedHooks.has(event)) {
+          return {
+            ok: false,
+            error:
+              `Unowned "${event}" hook detected in ${settingsPath}.\n` +
+              `  Trace cannot overwrite a hook it did not install.\n` +
+              `  Remediation: remove or back up the "${event}" hook entry, then re-run trace setup.`,
+          };
+        }
+      }
+    }
+  }
+
+  // Detect unowned skill directory collisions.
+  const ownedSkills = getOwnedSkills(options.registryPath, options.configRoot);
+  for (const skill of TRACE_CLAUDE_SKILLS) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath) && !ownedSkills.has(skill)) {
+      return {
+        ok: false,
+        error:
+          `Unowned skill directory at ${skillPath}.\n` +
+          `  Trace cannot overwrite a skill it did not install.\n` +
+          `  Remediation: remove or back up the "${skill}" directory, then re-run trace setup.`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Checks whether a Codex setup can safely proceed without clobbering
+ * user-owned skill directories.
+ */
+export function checkCodexGuardrails(options: CodexSetupOptions): GuardrailsResult {
+  const ownedSkills = getOwnedSkills(options.registryPath, options.configRoot);
+  for (const skill of TRACE_CODEX_SKILLS) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath) && !ownedSkills.has(skill)) {
+      return {
+        ok: false,
+        error:
+          `Unowned skill directory at ${skillPath}.\n` +
+          `  Trace cannot overwrite a skill it did not install.\n` +
+          `  Remediation: remove or back up the "${skill}" directory, then re-run trace setup.`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Checks whether a Cursor setup can safely proceed without clobbering
+ * user-owned skill directories.
+ */
+export function checkCursorGuardrails(options: CursorSetupOptions): GuardrailsResult {
+  const ownedSkills = getOwnedSkills(options.registryPath, options.configRoot);
+  for (const skill of TRACE_CURSOR_SKILLS) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath) && !ownedSkills.has(skill)) {
+      return {
+        ok: false,
+        error:
+          `Unowned skill directory at ${skillPath}.\n` +
+          `  Trace cannot overwrite a skill it did not install.\n` +
+          `  Remediation: remove or back up the "${skill}" directory, then re-run trace setup.`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+function getOwnedHooks(registryPath: string, configRoot: string): Set<string> {
+  if (!existsSync(registryPath)) return new Set();
+  try {
+    const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
+    const target = registry.targets.find((t) => t.root === configRoot);
+    return new Set(target?.hooks ?? []);
+  } catch {
+    return new Set();
+  }
+}
+
+function getOwnedSkills(registryPath: string, configRoot: string): Set<string> {
+  if (!existsSync(registryPath)) return new Set();
+  try {
+    const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
+    const target = registry.targets.find((t) => t.root === configRoot);
+    return new Set(target?.skills ?? []);
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -483,7 +677,11 @@ export function setupOperation(
     const opts: CodexSetupOptions = { configRoot: codexRoot, ...shared };
     plans.push(planCodexSetup(opts));
     if (apply) {
-      applyCodexSetup(opts);
+      try {
+        applyCodexSetup(opts);
+      } catch (err) {
+        return failure(err instanceof Error ? err.message : String(err));
+      }
       installed.push(codexRoot);
     }
   }
@@ -491,7 +689,11 @@ export function setupOperation(
     const opts: CursorSetupOptions = { configRoot: cursorRoot, ...shared };
     plans.push(planCursorSetup(opts));
     if (apply) {
-      applyCursorSetup(opts);
+      try {
+        applyCursorSetup(opts);
+      } catch (err) {
+        return failure(err instanceof Error ? err.message : String(err));
+      }
       installed.push(cursorRoot);
     }
   }
@@ -532,7 +734,13 @@ function setupSingleTool(
     if (!apply) {
       return success(`${plan}\nRe-run with --yes to apply.\n`);
     }
-    for (const options of optionsPerRoot) applyClaudeSetup(options);
+    for (const options of optionsPerRoot) {
+      try {
+        applyClaudeSetup(options);
+      } catch (err) {
+        return failure(err instanceof Error ? err.message : String(err));
+      }
+    }
     return success(`${plan}\nInstalled Trace into ${roots.join(", ")}.\n`);
   }
 
@@ -543,7 +751,11 @@ function setupSingleTool(
     if (!apply) {
       return success(`${plan}\nRe-run with --yes to apply.\n`);
     }
-    applyCodexSetup(opts);
+    try {
+      applyCodexSetup(opts);
+    } catch (err) {
+      return failure(err instanceof Error ? err.message : String(err));
+    }
     return success(`${plan}\nInstalled Trace into ${root}.\n`);
   }
 
@@ -554,7 +766,11 @@ function setupSingleTool(
   if (!apply) {
     return success(`${plan}\nRe-run with --yes to apply.\n`);
   }
-  applyCursorSetup(opts);
+  try {
+    applyCursorSetup(opts);
+  } catch (err) {
+    return failure(err instanceof Error ? err.message : String(err));
+  }
   return success(`${plan}\nInstalled Trace into ${root}.\n`);
 }
 
