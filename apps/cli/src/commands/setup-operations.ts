@@ -207,8 +207,13 @@ export function planClaudeSetup(options: ClaudeSetupOptions): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Resolves the default Claude config root for the active user. */
+/**
+ * Resolves the Claude config root for ordinary setup: an explicit
+ * `CLAUDE_CONFIG_DIR` wins over the default `~/.claude` root. Callers layer an
+ * explicit `--target` on top of this (explicit target > env > default).
+ */
 export function resolveClaudeConfigRoot(env: Env): string {
+  if (env.CLAUDE_CONFIG_DIR) return env.CLAUDE_CONFIG_DIR;
   const home = env.HOME || env.USERPROFILE;
   if (!home) {
     throw new Error("HOME/USERPROFILE must be set to resolve the Claude config root");
@@ -271,37 +276,81 @@ export function detectPackageManager(env: Env, cliPath: string): PackageManager 
   return "npm";
 }
 
+/**
+ * Parses an explicit `--target tool=/path` selector. Returns `undefined` when
+ * no `--target` flag is present, and throws on a missing or malformed value so
+ * the caller can surface usage guidance rather than silently guessing a root.
+ */
+export function parseTargetFlag(
+  args: string[],
+): { tool: string; root: string } | undefined {
+  const index = args.indexOf("--target");
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  const separator = value?.indexOf("=") ?? -1;
+  if (!value || separator <= 0 || separator === value.length - 1) {
+    throw new Error("Usage: trace setup --target <tool>=<path> [--yes]");
+  }
+  return { tool: value.slice(0, separator), root: value.slice(separator + 1) };
+}
+
+/** Reads the Claude config roots already registered in the integration registry. */
+function registeredClaudeRoots(registryPath: string): string[] {
+  if (!existsSync(registryPath)) return [];
+  const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
+  return registry.targets
+    .filter((target) => target.tool === "claude")
+    .map((target) => target.root);
+}
+
 export function setupOperation(
   rawArgs: string[],
   ctx: { env: Env; cwd: string; stdin: string },
 ): CommandResult {
-  const tool = flagValue(rawArgs, "--tool");
   const apply = rawArgs.includes("--yes");
 
+  let explicitTarget: { tool: string; root: string } | undefined;
+  try {
+    explicitTarget = parseTargetFlag(rawArgs);
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : String(error));
+  }
+
+  const tool = explicitTarget?.tool ?? flagValue(rawArgs, "--tool");
   if (tool !== "claude") {
     return failure(
       tool === undefined
-        ? "Usage: trace setup --tool claude [--yes]"
+        ? "Usage: trace setup --tool claude | --target claude=<path> [--yes]"
         : `Unsupported tool "${tool}" (supported: claude)`,
     );
   }
 
-  const options: ClaudeSetupOptions = {
-    configRoot: resolveClaudeConfigRoot(ctx.env),
-    registryPath: resolveRegistryPath(ctx.env),
+  const registryPath = resolveRegistryPath(ctx.env);
+  const cliPath = resolveTraceCliPath(ctx.env);
+  const shared = {
+    registryPath,
     skillsSourceDir: resolvePackagedSkillsDir(),
-    cliPath: resolveTraceCliPath(ctx.env),
+    cliPath,
     version: resolvePackagedVersion(),
-    packageManager: detectPackageManager(ctx.env, resolveTraceCliPath(ctx.env)),
+    packageManager: detectPackageManager(ctx.env, cliPath),
   };
 
-  const plan = planClaudeSetup(options);
+  // An ordinary run resolves one primary root (explicit target > env >
+  // default), but every already-registered root is reconciled alongside it so
+  // additively registered targets never drift.
+  const primaryRoot = explicitTarget?.root ?? resolveClaudeConfigRoot(ctx.env);
+  const roots = [...new Set([...registeredClaudeRoots(registryPath), primaryRoot])];
+  const optionsPerRoot = roots.map(
+    (configRoot): ClaudeSetupOptions => ({ configRoot, ...shared }),
+  );
+
+  const plan = optionsPerRoot.map(planClaudeSetup).join("\n");
   if (!apply) {
     return success(`${plan}\nRe-run with --yes to apply.\n`);
   }
 
-  applyClaudeSetup(options);
-  return success(`${plan}\nInstalled Trace into ${options.configRoot}.\n`);
+  for (const options of optionsPerRoot) applyClaudeSetup(options);
+  return success(`${plan}\nInstalled Trace into ${roots.join(", ")}.\n`);
 }
 
 function flagValue(args: string[], flag: string): string | undefined {
