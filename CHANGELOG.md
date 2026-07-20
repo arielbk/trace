@@ -30,3 +30,12 @@ server changes are involved.
   0.14.0 release accidentally shipped skill/hook templates pointing at a
   local development build path instead of `npx @arielbk/trace@<version>`;
   the pins are restored and stamped to 0.15.1.
+
+### Improvements
+
+- **The board syncs more eagerly, shrinking the divergence window.** While
+  `trace serve` is running, the board now syncs shortly after board
+  mutations (pin, archive, checkbox…), on mount and window focus, and on a
+  periodic timer while left open — so acting on a freshly-focused board
+  starts from up-to-date rows instead of waiting for the next manual sync.
+  Triggers no-op when logged out and are throttled server-side.
