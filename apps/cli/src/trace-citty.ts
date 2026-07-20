@@ -49,6 +49,7 @@ import {
   stateReflectOperation,
 } from "./commands/state-operations.ts";
 import { keyShowOperation } from "./commands/key.ts";
+import { setupOperation } from "./commands/setup-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -65,6 +66,13 @@ export function buildTraceCittyRoot(
         meta: { description: "Install Trace into Claude Code" },
         run(): CommandResult {
           return success(runInit(env, cwd));
+        },
+      }),
+
+      setup: defineCommand({
+        meta: { description: "Install Trace integrations into an agent config root" },
+        run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+          return setupOperation(args, { env, cwd, stdin });
         },
       }),
 
