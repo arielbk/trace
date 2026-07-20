@@ -10,7 +10,10 @@ const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 test("a Claude task can be re-entered from Codex with prior docs and sessions", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-claude-to-codex-"));
   const databasePath = join(dir, "trace.sqlite");
-  const env = { ...process.env, TRACE_DB: databasePath };
+  // HOME anchors auth.json/key.json (TRACE_DB only isolates the store), so
+  // point it at the temp dir too — otherwise a spawned trace reads the real
+  // ~/.trace credentials and background-syncs these fixtures to a live server.
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, TRACE_DB: databasePath };
 
   try {
     const bound = execFileSync(
@@ -73,7 +76,7 @@ test("a Claude task can be re-entered from Codex with prior docs and sessions", 
 test("a Cursor-bound task surfaces its cursor session in the re-entry manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cursor-reentry-"));
   const databasePath = join(dir, "trace.sqlite");
-  const env = { ...process.env, TRACE_DB: databasePath };
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, TRACE_DB: databasePath };
   const composerId = "11111111-2222-3333-4444-555555555555";
 
   try {
@@ -129,7 +132,7 @@ test("a Cursor-bound task surfaces its cursor session in the re-entry manifest",
 test("Codex-created work can be re-entered from Claude through the same manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-codex-to-claude-"));
   const databasePath = join(dir, "trace.sqlite");
-  const env = { ...process.env, TRACE_DB: databasePath };
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, TRACE_DB: databasePath };
 
   try {
     const bound = execFileSync(
