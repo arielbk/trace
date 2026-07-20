@@ -23,6 +23,26 @@ export const TRACE_CLAUDE_SKILLS = [
   "trace",
 ] as const;
 
+/** The user-level skills Trace installs into a Codex config root. */
+export const TRACE_CODEX_SKILLS = [
+  "board",
+  "doc-placement",
+  "recall",
+  "reenter",
+  "state",
+  "trace",
+] as const;
+
+/** The user-level skills Trace installs into a Cursor config root. */
+export const TRACE_CURSOR_SKILLS = [
+  "board",
+  "doc-placement",
+  "recall",
+  "reenter",
+  "state",
+  "trace",
+] as const;
+
 /** The Claude Code hook events Trace registers, with their settings matchers. */
 export const TRACE_CLAUDE_HOOKS = [
   { event: "SessionStart", command: "hook session-start", matcher: "startup|resume|clear|compact" },
@@ -32,8 +52,9 @@ export const TRACE_CLAUDE_HOOKS = [
 
 export type PackageManager = "npm" | "pnpm" | "bun";
 
-export type ClaudeSetupOptions = {
-  /** The Claude config root to install into (e.g. `~/.claude`). */
+/** Shared options for all agent setup targets. */
+export type AgentSetupOptions = {
+  /** The agent config root to install into (e.g. `~/.claude`, `~/.codex`, `~/.cursor`). */
   configRoot: string;
   /** Path to the Trace integration registry (e.g. `~/.trace/integrations.json`). */
   registryPath: string;
@@ -46,6 +67,10 @@ export type ClaudeSetupOptions = {
   /** The package manager that owns the CLI install. */
   packageManager: PackageManager;
 };
+
+export type ClaudeSetupOptions = AgentSetupOptions;
+export type CodexSetupOptions = AgentSetupOptions;
+export type CursorSetupOptions = AgentSetupOptions;
 
 /**
  * Locates the packaged skill templates. Works both from the source tree
@@ -79,13 +104,38 @@ export function resolvePackagedSkillsDir(): string {
  * already-current target performs no filesystem mutation.
  */
 export function applyClaudeSetup(options: ClaudeSetupOptions): void {
-  installSkills(options);
+  installSkills(options, TRACE_CLAUDE_SKILLS);
   installHooks(options);
-  recordTarget(options);
+  recordTarget(
+    options,
+    "claude",
+    TRACE_CLAUDE_SKILLS,
+    TRACE_CLAUDE_HOOKS.map((hook) => hook.event),
+  );
 }
 
+/**
+ * Installs the Trace skills into a Codex config root. Codex has no hook
+ * system, so only skills and registry metadata are written.
+ */
+export function applyCodexSetup(options: CodexSetupOptions): void {
+  installSkills(options, TRACE_CODEX_SKILLS);
+  recordTarget(options, "codex", TRACE_CODEX_SKILLS, []);
+}
+
+/**
+ * Installs the Trace skills into a Cursor config root. Cursor has no hook
+ * system, so only skills and registry metadata are written.
+ */
+export function applyCursorSetup(options: CursorSetupOptions): void {
+  installSkills(options, TRACE_CURSOR_SKILLS);
+  recordTarget(options, "cursor", TRACE_CURSOR_SKILLS, []);
+}
+
+type ToolName = "claude" | "codex" | "cursor";
+
 type TargetRecord = {
-  tool: "claude";
+  tool: ToolName;
   root: string;
   cliPath: string;
   version: string;
@@ -100,18 +150,23 @@ type Registry = { packageManager: PackageManager; targets: TargetRecord[] };
  * (tool, root) so re-registering the same root replaces its record and new
  * roots append additively. Records the package manager that owns the install.
  */
-function recordTarget(options: ClaudeSetupOptions): void {
+function recordTarget(
+  options: AgentSetupOptions,
+  tool: ToolName,
+  skills: readonly string[],
+  hooks: string[],
+): void {
   const existing = existsSync(options.registryPath)
     ? (JSON.parse(readFileSync(options.registryPath, "utf8")) as Registry)
     : { packageManager: options.packageManager, targets: [] as TargetRecord[] };
 
   const record: TargetRecord = {
-    tool: "claude",
+    tool,
     root: options.configRoot,
     cliPath: options.cliPath,
     version: options.version,
-    skills: [...TRACE_CLAUDE_SKILLS],
-    hooks: TRACE_CLAUDE_HOOKS.map((hook) => hook.event),
+    skills: [...skills],
+    hooks,
   };
 
   const targets = existing.targets.filter(
@@ -144,7 +199,7 @@ function traceHookEntries(cliPath: string): Record<string, HookEntry[]> {
   return entries;
 }
 
-function installHooks(options: ClaudeSetupOptions): void {
+function installHooks(options: AgentSetupOptions): void {
   const settingsPath = join(options.configRoot, "settings.json");
   const settings = existsSync(settingsPath)
     ? (JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>)
@@ -156,9 +211,12 @@ function installHooks(options: ClaudeSetupOptions): void {
   writeFileIfChanged(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
-function installSkills(options: ClaudeSetupOptions): void {
+function installSkills(
+  options: AgentSetupOptions,
+  skills: readonly string[],
+): void {
   const skillsRoot = join(options.configRoot, "skills");
-  for (const skill of TRACE_CLAUDE_SKILLS) {
+  for (const skill of skills) {
     const source = join(options.skillsSourceDir, skill);
     const destination = join(skillsRoot, skill);
     copyTreeIfChanged(source, destination);
@@ -207,6 +265,28 @@ export function planClaudeSetup(options: ClaudeSetupOptions): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** Renders the human-readable installation plan for a Codex target. */
+export function planCodexSetup(options: CodexSetupOptions): string {
+  const lines = [
+    `Trace setup plan for Codex (v${options.version}, via ${options.packageManager})`,
+    `  target root: ${options.configRoot}`,
+    `  CLI command: ${options.cliPath}`,
+    `  skills: ${TRACE_CODEX_SKILLS.join(", ")}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+/** Renders the human-readable installation plan for a Cursor target. */
+export function planCursorSetup(options: CursorSetupOptions): string {
+  const lines = [
+    `Trace setup plan for Cursor (v${options.version}, via ${options.packageManager})`,
+    `  target root: ${options.configRoot}`,
+    `  CLI command: ${options.cliPath}`,
+    `  skills: ${TRACE_CURSOR_SKILLS.join(", ")}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * Resolves the Claude config root for ordinary setup: an explicit
  * `CLAUDE_CONFIG_DIR` wins over the default `~/.claude` root. Callers layer an
@@ -219,6 +299,54 @@ export function resolveClaudeConfigRoot(env: Env): string {
     throw new Error("HOME/USERPROFILE must be set to resolve the Claude config root");
   }
   return join(home, ".claude");
+}
+
+/**
+ * Resolves the Codex config root: `CODEX_HOME` wins over the default
+ * `~/.codex`. Callers may layer an explicit `--target` on top.
+ */
+export function resolveCodexConfigRoot(env: Env): string {
+  if (env.CODEX_HOME) return env.CODEX_HOME;
+  const home = env.HOME || env.USERPROFILE;
+  if (!home) {
+    throw new Error("HOME/USERPROFILE must be set to resolve the Codex config root");
+  }
+  return join(home, ".codex");
+}
+
+/** Resolves the Cursor config root (`~/.cursor`). */
+export function resolveCursorConfigRoot(env: Env): string {
+  const home = env.HOME || env.USERPROFILE;
+  if (!home) {
+    throw new Error("HOME/USERPROFILE must be set to resolve the Cursor config root");
+  }
+  return join(home, ".cursor");
+}
+
+/**
+ * Returns the Codex config root if a Codex installation is detected
+ * (i.e. the root directory already exists), otherwise `undefined`.
+ */
+export function detectCodexInstall(env: Env): string | undefined {
+  try {
+    const root = resolveCodexConfigRoot(env);
+    return existsSync(root) ? root : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Returns the Cursor config root if a Cursor installation is detected
+ * (i.e. the root directory already exists), otherwise `undefined`.
+ */
+export function detectCursorInstall(env: Env): string | undefined {
+  try {
+    const root = resolveCursorConfigRoot(env);
+    return existsSync(root) ? root : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Resolves the Trace integration registry path (beside the Trace database). */
@@ -294,12 +422,12 @@ export function parseTargetFlag(
   return { tool: value.slice(0, separator), root: value.slice(separator + 1) };
 }
 
-/** Reads the Claude config roots already registered in the integration registry. */
-function registeredClaudeRoots(registryPath: string): string[] {
+/** Reads the already-registered config roots for a given tool from the registry. */
+function registeredTargetRoots(registryPath: string, tool: ToolName): string[] {
   if (!existsSync(registryPath)) return [];
   const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
   return registry.targets
-    .filter((target) => target.tool === "claude")
+    .filter((target) => target.tool === tool)
     .map((target) => target.root);
 }
 
@@ -316,12 +444,28 @@ export function setupOperation(
     return failure(error instanceof Error ? error.message : String(error));
   }
 
-  const tool = explicitTarget?.tool ?? flagValue(rawArgs, "--tool");
-  if (tool !== "claude") {
+  const toolArg = explicitTarget?.tool ?? flagValue(rawArgs, "--tool");
+
+  // When a tool is explicitly specified, route to that tool's setup.
+  if (toolArg !== undefined) {
+    if (toolArg !== "claude" && toolArg !== "codex" && toolArg !== "cursor") {
+      return failure(
+        `Unsupported tool "${toolArg}" (supported: claude, codex, cursor)`,
+      );
+    }
+    return setupSingleTool(toolArg, explicitTarget?.root, apply, ctx);
+  }
+
+  // No explicit tool — detect installed hosts and run setup for each.
+  const plans: string[] = [];
+  const installed: string[] = [];
+
+  const codexRoot = detectCodexInstall(ctx.env);
+  const cursorRoot = detectCursorInstall(ctx.env);
+
+  if (!codexRoot && !cursorRoot) {
     return failure(
-      tool === undefined
-        ? "Usage: trace setup --tool claude | --target claude=<path> [--yes]"
-        : `Unsupported tool "${tool}" (supported: claude)`,
+      "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]",
     );
   }
 
@@ -335,22 +479,83 @@ export function setupOperation(
     packageManager: detectPackageManager(ctx.env, cliPath),
   };
 
-  // An ordinary run resolves one primary root (explicit target > env >
-  // default), but every already-registered root is reconciled alongside it so
-  // additively registered targets never drift.
-  const primaryRoot = explicitTarget?.root ?? resolveClaudeConfigRoot(ctx.env);
-  const roots = [...new Set([...registeredClaudeRoots(registryPath), primaryRoot])];
-  const optionsPerRoot = roots.map(
-    (configRoot): ClaudeSetupOptions => ({ configRoot, ...shared }),
-  );
+  if (codexRoot) {
+    const opts: CodexSetupOptions = { configRoot: codexRoot, ...shared };
+    plans.push(planCodexSetup(opts));
+    if (apply) {
+      applyCodexSetup(opts);
+      installed.push(codexRoot);
+    }
+  }
+  if (cursorRoot) {
+    const opts: CursorSetupOptions = { configRoot: cursorRoot, ...shared };
+    plans.push(planCursorSetup(opts));
+    if (apply) {
+      applyCursorSetup(opts);
+      installed.push(cursorRoot);
+    }
+  }
 
-  const plan = optionsPerRoot.map(planClaudeSetup).join("\n");
+  const plan = plans.join("\n");
   if (!apply) {
     return success(`${plan}\nRe-run with --yes to apply.\n`);
   }
+  return success(`${plan}\nInstalled Trace into ${installed.join(", ")}.\n`);
+}
 
-  for (const options of optionsPerRoot) applyClaudeSetup(options);
-  return success(`${plan}\nInstalled Trace into ${roots.join(", ")}.\n`);
+function setupSingleTool(
+  tool: ToolName,
+  explicitRoot: string | undefined,
+  apply: boolean,
+  ctx: { env: Env; cwd: string; stdin: string },
+): CommandResult {
+  const registryPath = resolveRegistryPath(ctx.env);
+  const cliPath = resolveTraceCliPath(ctx.env);
+  const shared = {
+    registryPath,
+    skillsSourceDir: resolvePackagedSkillsDir(),
+    cliPath,
+    version: resolvePackagedVersion(),
+    packageManager: detectPackageManager(ctx.env, cliPath),
+  };
+
+  if (tool === "claude") {
+    // Reconcile all already-registered Claude roots alongside the primary root.
+    const primaryRoot = explicitRoot ?? resolveClaudeConfigRoot(ctx.env);
+    const roots = [
+      ...new Set([...registeredTargetRoots(registryPath, "claude"), primaryRoot]),
+    ];
+    const optionsPerRoot = roots.map(
+      (configRoot): ClaudeSetupOptions => ({ configRoot, ...shared }),
+    );
+    const plan = optionsPerRoot.map(planClaudeSetup).join("\n");
+    if (!apply) {
+      return success(`${plan}\nRe-run with --yes to apply.\n`);
+    }
+    for (const options of optionsPerRoot) applyClaudeSetup(options);
+    return success(`${plan}\nInstalled Trace into ${roots.join(", ")}.\n`);
+  }
+
+  if (tool === "codex") {
+    const root = explicitRoot ?? resolveCodexConfigRoot(ctx.env);
+    const opts: CodexSetupOptions = { configRoot: root, ...shared };
+    const plan = planCodexSetup(opts);
+    if (!apply) {
+      return success(`${plan}\nRe-run with --yes to apply.\n`);
+    }
+    applyCodexSetup(opts);
+    return success(`${plan}\nInstalled Trace into ${root}.\n`);
+  }
+
+  // tool === "cursor"
+  const root = explicitRoot ?? resolveCursorConfigRoot(ctx.env);
+  const opts: CursorSetupOptions = { configRoot: root, ...shared };
+  const plan = planCursorSetup(opts);
+  if (!apply) {
+    return success(`${plan}\nRe-run with --yes to apply.\n`);
+  }
+  applyCursorSetup(opts);
+  return success(`${plan}\nInstalled Trace into ${root}.\n`);
 }
 
 function flagValue(args: string[], flag: string): string | undefined {
