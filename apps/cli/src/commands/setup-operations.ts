@@ -543,8 +543,12 @@ export function detectCursorInstall(env: Env): string | undefined {
   }
 }
 
-/** Resolves the Trace integration registry path (beside the Trace database). */
+/**
+ * Resolves the Trace integration registry path. `TRACE_REGISTRY_PATH` env
+ * overrides the default (`~/.trace/integrations.json`) — useful in tests.
+ */
 export function resolveRegistryPath(env: Env): string {
+  if (env.TRACE_REGISTRY_PATH) return env.TRACE_REGISTRY_PATH;
   const home = env.HOME || env.USERPROFILE;
   if (!home) {
     throw new Error("HOME/USERPROFILE must be set to resolve the Trace registry path");
