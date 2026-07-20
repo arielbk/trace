@@ -516,10 +516,12 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);
 
+    // Bumping updated_at/machine_id puts the pin on the last-write-wins
+    // clock; without it a pin-only change never beats the stored sync row.
     const pinnedAt = new Date().toISOString();
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = ? WHERE id = ?")
-      .run(pinnedAt, task.id);
+      .prepare("UPDATE tasks SET pinned_at = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(pinnedAt, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt };
   }
@@ -529,8 +531,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!task) throw new Error(`Task not found: ${ref}`);
 
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = NULL WHERE id = ?")
-      .run(task.id);
+      .prepare("UPDATE tasks SET pinned_at = NULL, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt: null };
   }
@@ -1150,10 +1152,15 @@ class NodeSqliteTaskStore implements TaskStore {
   syncSnapshot(): SyncPayload {
     const tasks = this.#sqlite
       .prepare(
-        `SELECT id, title, slug, created_at AS createdAt,
-                project_root AS projectRoot, archived_at AS archivedAt,
-                description, updated_at AS updatedAt, machine_id AS machineId
-         FROM tasks ORDER BY id`,
+        `SELECT t.id, t.title, t.slug, t.created_at AS createdAt,
+                t.project_root AS projectRoot,
+                p.remote_url AS projectRemoteUrl,
+                p.root_commit AS projectRootCommit,
+                t.archived_at AS archivedAt,
+                t.description, t.pinned_at AS pinnedAt,
+                t.updated_at AS updatedAt, t.machine_id AS machineId
+         FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+         ORDER BY t.id`,
       )
       .all() as SyncPayload["tasks"];
     const sessions = this.#sqlite
@@ -1197,12 +1204,13 @@ class NodeSqliteTaskStore implements TaskStore {
       // of aborting the merge on the tasks_slug_unique index.
       const upsertTask = this.#sqlite.prepare(
         `INSERT INTO tasks
-           (id, title, slug, created_at, project_root, archived_at, description, updated_at, machine_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, title, slug, created_at, project_root, archived_at, description, pinned_at, updated_at, machine_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title=excluded.title, created_at=excluded.created_at,
            project_root=excluded.project_root, archived_at=excluded.archived_at,
-           description=excluded.description, updated_at=excluded.updated_at,
+           description=excluded.description, pinned_at=excluded.pinned_at,
+           updated_at=excluded.updated_at,
            machine_id=excluded.machine_id,
            project_id=CASE
              WHEN excluded.project_root = tasks.project_root THEN tasks.project_id
@@ -1219,14 +1227,49 @@ class NodeSqliteTaskStore implements TaskStore {
           row.projectRoot,
           row.archivedAt,
           row.description,
+          row.pinnedAt ?? null,
           row.updatedAt,
           row.machineId,
         );
       }
-      // Project identity is machine-local, so the wire payload carries only
-      // project_root. Pulled rows land without a project_id (or lose it when
-      // their root moved); resolve them against this machine's projects the
-      // same way startup backfill does.
+      // Project identity is machine-local, so pulled rows land without a
+      // project_id (or lose it when their root moved). Rows carrying git
+      // fingerprints resolve against existing projects by identity first —
+      // a root path from another machine must not mint a duplicate project.
+      // Rows without fingerprints (older clients, non-git roots) fall
+      // through to the same path-based backfill startup uses.
+      const needsProject = this.#sqlite.prepare(
+        "SELECT 1 FROM tasks WHERE id = ? AND project_id IS NULL",
+      );
+      const stampProject = this.#sqlite.prepare(
+        "UPDATE tasks SET project_id = ? WHERE id = ?",
+      );
+      const registerRoot = this.#sqlite.prepare(
+        `INSERT INTO project_roots (root_path, project_id, created_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(root_path) DO UPDATE SET project_id = excluded.project_id`,
+      );
+      for (const row of tasks) {
+        const fingerprints: ProjectFingerprints = {
+          ...(row.projectRemoteUrl ? { remoteUrl: row.projectRemoteUrl } : {}),
+          ...(row.projectRootCommit
+            ? { rootCommit: row.projectRootCommit }
+            : {}),
+        };
+        if (!fingerprints.remoteUrl && !fingerprints.rootCommit) continue;
+        if (!needsProject.get(row.id)) continue;
+        const project =
+          this.getProjectByFingerprint(fingerprints) ??
+          this.#createProject(row.projectRoot, fingerprints);
+        if (row.projectRoot) {
+          registerRoot.run(
+            row.projectRoot,
+            project.id,
+            new Date().toISOString(),
+          );
+        }
+        stampProject.run(project.id, row.id);
+      }
       this.#backfillProjects();
 
       const upsertSession = this.#sqlite.prepare(

@@ -50,7 +50,7 @@ surface). Draft it yourself from what you know; don't stop to interview the
 user for it.
 
 ```sh
-node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill work-on-task "X" --description "Rework the checkout into a multi-step wizard"
+npx @arielbk/trace@0.15.1 skill work-on-task "X" --description "Rework the checkout into a multi-step wizard"
 ```
 
 `--description` only seeds a freshly created task; when the task already
@@ -64,7 +64,7 @@ the task belongs to a specific repo — pass `--project <dir>` pointing at that
 project so the task keys to its git root instead of cwd's:
 
 ```sh
-node /Users/arielbk/Projects/side/trace-v2/apps/cli/dist/trace.js skill work-on-task "X" --project /path/to/that/repo
+npx @arielbk/trace@0.15.1 skill work-on-task "X" --project /path/to/that/repo
 ```
 
 Default to cwd (omit the flag) unless you have a concrete reason the work belongs

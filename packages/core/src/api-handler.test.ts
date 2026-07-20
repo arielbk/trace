@@ -736,6 +736,88 @@ test("non-GET /api/sync/status is rejected with 405", () => {
   }
 });
 
+test("successful mutations invoke the host onMutation hook", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "todo.md");
+  writeFileSync(docPath, "- [ ] first\n");
+  let mutations = 0;
+  const options = { onMutation: () => mutations++ };
+
+  try {
+    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/pin`, undefined, options);
+    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/archive`, undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: docPath, index: 0, checked: true }),
+      options,
+    );
+    expect(mutations).toBe(3);
+  } finally {
+    cleanup();
+  }
+});
+
+test("reads and failed mutations never invoke onMutation", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  let mutations = 0;
+  const options = { onMutation: () => mutations++ };
+
+  try {
+    handleTraceApiRequest(databasePath, "GET", "/api/tasks", undefined, options);
+    handleTraceApiRequest(databasePath, "POST", "/api/tasks/no-such-task/pin", undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      "not json",
+      options,
+    );
+    expect(mutations).toBe(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/sync invokes the host requestSync hook", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  let requests = 0;
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync", undefined, {
+      requestSync: () => requests++,
+    });
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({ requested: true });
+    expect(requests).toBe(1);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/sync without a host hook reports requested: false, non-POST is 405", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({ requested: false });
+
+    expect(handleTraceApiRequest(databasePath, "GET", "/api/sync")!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
 test("non-API requests return null so the host can fall through", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 

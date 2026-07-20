@@ -24,6 +24,9 @@ export type DocCryptoFile = {
   blobHash: string;
   title?: string;
   description?: string;
+  // Source-machine fs mtime (ISO string). Rides inside filesCiphertext, so it
+  // stays E2EE-opaque to the server; absent on manifests from older clients.
+  modifiedAt?: string;
 };
 
 export type DocCrypto = {

@@ -5,6 +5,8 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
@@ -102,6 +104,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       const manifestFiles = files.map((file) => ({
         path: file.path,
         blobHash: crypto.address(file.content),
+        modifiedAt: file.modifiedAt,
         ...(metadataByPath.get(file.path) ?? {}),
       }));
       const fingerprint = fingerprintOf(manifestFiles);
@@ -204,10 +207,16 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
       }
 
       rmSync(docsDir, { recursive: true, force: true });
-      for (const [path, content] of contents) {
-        const destination = join(docsDir, ...path.split("/"));
+      for (const file of manifestFiles) {
+        const destination = join(docsDir, ...file.path.split("/"));
         mkdirSync(dirname(destination), { recursive: true });
-        writeFileSync(destination, content);
+        writeFileSync(destination, contents.get(file.path)!);
+        // Restore the source machine's edit time; manifests from older
+        // clients carry no date and keep the local write time.
+        if (file.modifiedAt !== undefined) {
+          const modifiedAt = new Date(file.modifiedAt);
+          utimesSync(destination, modifiedAt, modifiedAt);
+        }
       }
       // Entries that carry metadata are authoritative for it; entries without
       // any leave local task_docs rows untouched, so an old-format manifest
@@ -276,9 +285,11 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
   }
 }
 
-function readFiles(root: string): { path: string; content: Uint8Array }[] {
+function readFiles(
+  root: string,
+): { path: string; content: Uint8Array; modifiedAt: string }[] {
   if (!existsSync(root)) return [];
-  const files: { path: string; content: Uint8Array }[] = [];
+  const files: { path: string; content: Uint8Array; modifiedAt: string }[] = [];
   const visit = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
@@ -288,6 +299,7 @@ function readFiles(root: string): { path: string; content: Uint8Array }[] {
         files.push({
           path: relative(root, absolute).split(sep).join("/"),
           content,
+          modifiedAt: statSync(absolute).mtime.toISOString(),
         });
       }
     }
