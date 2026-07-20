@@ -86,10 +86,8 @@ export function discoverTemplatePaths(
   return found.sort();
 }
 
-export function defaultVersionedManifestPaths(repoRoot: string): string[] {
-  return ["plugin/.codex-plugin/plugin.json"].map((path) =>
-    resolve(repoRoot, path),
-  );
+export function defaultVersionedManifestPaths(): string[] {
+  return [];
 }
 
 export function bumpVersion(
@@ -141,8 +139,7 @@ export function stampReleaseVersion(
   const templatePaths =
     options.templatePaths ?? defaultTemplatePaths(options.repoRoot);
   const versionedManifestPaths =
-    options.versionedManifestPaths ??
-    defaultVersionedManifestPaths(options.repoRoot);
+    options.versionedManifestPaths ?? defaultVersionedManifestPaths();
   const updatedTemplatePaths: string[] = [];
 
   for (const templatePath of templatePaths) {

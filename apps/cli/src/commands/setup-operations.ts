@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
@@ -77,20 +77,18 @@ export type CodexSetupOptions = AgentSetupOptions;
 export type CursorSetupOptions = AgentSetupOptions;
 
 /**
- * Locates the packaged skill templates. Works both from the source tree
- * (`plugin/skills` above the CLI package) and from a published bundle, where
- * `__TRACE_BUNDLE_DIR__` marks the directory of the running `trace.js`.
+ * Locates the packaged skill templates. Checks two locations:
+ * 1. Source tree: `plugin/skills` four levels above `src/commands/setup-operations.ts`
+ * 2. Published bundle: `dist/skills/` adjacent to `dist/trace.js` (copied there
+ *    by the build step so the tarball ships the canonical templates)
  */
 export function resolvePackagedSkillsDir(): string {
   const sourceRoot = fileURLToPath(new URL("../../../..", import.meta.url));
-  const bundleDir = (globalThis as { __TRACE_BUNDLE_DIR__?: string })
-    .__TRACE_BUNDLE_DIR__;
+  const bundleDir = dirname(resolve(fileURLToPath(import.meta.url)));
 
   const candidates = [
     join(sourceRoot, "plugin", "skills"),
-    ...(bundleDir
-      ? [join(bundleDir, "skills"), join(bundleDir, "plugin", "skills")]
-      : []),
+    join(bundleDir, "skills"),
   ];
 
   for (const candidate of candidates) {
