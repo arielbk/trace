@@ -108,6 +108,11 @@ export {
   resolveCodexTranscriptPathById,
   scanCodexSessions,
 } from "./codex-adapter.ts";
+export {
+  parseCopilotTranscript,
+  parseCopilotTranscriptFile,
+} from "./copilot-adapter.ts";
+export type { ParsedCopilotSession } from "./copilot-adapter.ts";
 export type {
   CodexSubagentSource,
   CodexSubagentSpawn,

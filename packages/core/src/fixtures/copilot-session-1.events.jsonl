@@ -1,0 +1,10 @@
+{"type":"session.start","data":{"sessionId":"copilot-session-1","cwd":"/work/trace","gitRoot":"/work/trace","repository":"arielbk/trace","branch":"main"}}
+{"type":"user.message","data":{"content":"Inspect the failing test"}}
+{"type":"assistant.turn_start","data":{}}
+{"type":"assistant.message","data":{"model":"gpt-5-mini","content":"I will inspect it.","outputTokens":12}}
+this is an incomplete live write
+{"type":"user.message","data":{"content":"Run the focused suite"}}
+{"type":"assistant.turn_end","data":{}}
+{"type":"assistant.turn_start","data":{}}
+{"type":"assistant.message","data":{"model":"gpt-5-mini","content":"The focused suite passes.","outputTokens":25}}
+{"type":"assistant.turn_end","data":{}}

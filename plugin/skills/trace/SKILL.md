@@ -15,7 +15,7 @@ active task for this session.
 
 ## First, follow your host's binding flow
 
-Trace runs in Claude Code, Codex, and Cursor. The hosts differ only in how a
+Trace runs in Claude Code, Codex, Cursor, and GitHub Copilot CLI. The hosts differ only in how a
 session is identified and in how the "no active task" signal arrives — the
 verbs below are the same in all of them. Before binding, read the file for your
 host and follow it:
@@ -28,6 +28,9 @@ host and follow it:
 - **Cursor** — no session env var and no session-start hook; the CLI resolves
   your session from the directory it runs in. Read
   [resources/cursor.md](resources/cursor.md).
+- **GitHub Copilot CLI** — lifecycle hooks register the session and check state
+  freshness; the CLI infers its identity from Copilot's live-session lock. Read
+  [resources/copilot.md](resources/copilot.md).
 
 ## We're working on X
 

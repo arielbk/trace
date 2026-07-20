@@ -27,12 +27,22 @@ const traceSkill = join(skillsRoot, "trace", "SKILL.md");
 const traceClaudeResource = join(skillsRoot, "trace", "resources", "claude.md");
 const traceCodexResource = join(skillsRoot, "trace", "resources", "codex.md");
 const traceCursorResource = join(skillsRoot, "trace", "resources", "cursor.md");
+const traceCopilotResource = join(
+  skillsRoot,
+  "trace",
+  "resources",
+  "copilot.md",
+);
+const readme = join(repoRoot, "README.md");
 const recallSkill = join(skillsRoot, "recall", "SKILL.md");
 const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
 const boardSkill = join(skillsRoot, "board", "SKILL.md");
 const docPlacementSkill = join(skillsRoot, "doc-placement", "SKILL.md");
 const stateSkill = join(skillsRoot, "state", "SKILL.md");
 const pluginBinDir = join(repoRoot, "bin");
+const copilotPluginRoot = join(repoRoot, "plugin");
+const copilotPluginManifest = join(copilotPluginRoot, "plugin.json");
+const copilotHooksConfig = join(copilotPluginRoot, "hooks", "hooks.json");
 
 function pinnedTraceCommand(): string {
   const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
@@ -43,6 +53,55 @@ function pinnedTraceCommand(): string {
 }
 
 describe("plugin scaffold", () => {
+  it("ships a Copilot CLI plugin with lifecycle hooks and a binding nudge", () => {
+    const manifest = JSON.parse(
+      readFileSync(copilotPluginManifest, "utf8"),
+    ) as {
+      name?: string;
+      version?: string;
+      description?: string;
+    };
+    assert.equal(manifest.name, "trace");
+    assert.equal(typeof manifest.version, "string");
+    assert.equal(typeof manifest.description, "string");
+
+    const hooks = JSON.parse(readFileSync(copilotHooksConfig, "utf8")) as {
+      version?: number;
+      hooks?: Record<string, Array<Record<string, string>>>;
+    };
+    assert.equal(hooks.version, 1);
+    assert.deepEqual(hooks.hooks?.sessionStart, [
+      {
+        type: "command",
+        bash: `${pinnedTraceCommand()} hook session-start`,
+        powershell: `${pinnedTraceCommand()} hook session-start`,
+      },
+      {
+        type: "prompt",
+        prompt:
+          "Consult the installed Trace skill before beginning work. If this session is not bound, use Trace to bind or re-enter the task.",
+      },
+    ]);
+    assert.deepEqual(hooks.hooks?.agentStop, [
+      {
+        type: "command",
+        bash: `${pinnedTraceCommand()} hook stop`,
+        powershell: `${pinnedTraceCommand()} hook stop`,
+      },
+    ]);
+    assert.deepEqual(hooks.hooks?.subagentStop, [
+      {
+        type: "command",
+        bash: `${pinnedTraceCommand()} hook subagent-stop`,
+        powershell: `${pinnedTraceCommand()} hook subagent-stop`,
+      },
+    ]);
+
+    const skill = readFileSync(traceSkill, "utf8");
+    assert.match(skill, /^---\nname:\s*trace\s*$/m);
+    assert.equal(skill.includes(pinnedTraceCommand()), true);
+  });
+
   it("ships a Claude Code plugin manifest, hook, and skills pinned to the npm CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
@@ -210,6 +269,7 @@ describe("plugin scaffold", () => {
     assert.match(source, /resources\/claude\.md/);
     assert.match(source, /resources\/codex\.md/);
     assert.match(source, /resources\/cursor\.md/);
+    assert.match(source, /resources\/copilot\.md/);
     // Re-entry is delegated to the trace-reenter skill, not inlined here.
     assert.match(source, /trace-reenter/);
 
@@ -233,11 +293,27 @@ describe("plugin scaffold", () => {
     assert.equal(cursor.includes("CLAUDE_CODE_SESSION_ID"), false);
     assert.equal(cursor.includes("CODEX_THREAD_ID"), false);
 
+    // Copilot resource: hooks pre-register live sessions, while the locator
+    // infers identity from the nearest Copilot process rather than env vars.
+    const copilot = readFileSync(traceCopilotResource, "utf8");
+    assert.match(copilot, /sessionStart/i);
+    assert.match(copilot, /agentStop/i);
+    assert.match(copilot, /lock/i);
+    assert.match(copilot, /re-enter/i);
+    assert.equal(copilot.includes("COPILOT_SESSION_ID"), false);
+
     // No host-specific CLI plumbing leaks into the shared tree.
-    for (const text of [source, claude, codex, cursor]) {
+    for (const text of [source, claude, codex, cursor, copilot]) {
       assert.equal(text.includes("CLAUDE_PLUGIN_ROOT"), false);
       assert.equal(text.includes("<trace-plugin-root>"), false);
     }
+  });
+
+  it("documents Copilot CLI installation and its output-only token total", () => {
+    const source = readFileSync(readme, "utf8");
+    assert.match(source, /### Copilot CLI/);
+    assert.match(source, /copilot plugin install .*plugin/);
+    assert.match(source, /output-only token/i);
   });
 
   it("ships a trigger-tuned recall skill that resolves vague references via the candidate pool", () => {

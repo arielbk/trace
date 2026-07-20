@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "npx @arielbk/trace@0.13.0 hook session-start",
+        "powershell": "npx @arielbk/trace@0.13.0 hook session-start"
+      },
+      {
+        "type": "prompt",
+        "prompt": "Consult the installed Trace skill before beginning work. If this session is not bound, use Trace to bind or re-enter the task."
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "npx @arielbk/trace@0.13.0 hook stop",
+        "powershell": "npx @arielbk/trace@0.13.0 hook stop"
+      }
+    ],
+    "subagentStop": [
+      {
+        "type": "command",
+        "bash": "npx @arielbk/trace@0.13.0 hook subagent-stop",
+        "powershell": "npx @arielbk/trace@0.13.0 hook subagent-stop"
+      }
+    ]
+  }
+}
