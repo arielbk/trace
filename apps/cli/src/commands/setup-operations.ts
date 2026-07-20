@@ -151,7 +151,7 @@ export function applyCursorSetup(options: CursorSetupOptions): void {
 
 type ToolName = "claude" | "codex" | "cursor";
 
-type TargetRecord = {
+export type TargetRecord = {
   tool: ToolName;
   root: string;
   cliPath: string;
@@ -633,6 +633,10 @@ export function setupOperation(
   rawArgs: string[],
   ctx: { env: Env; cwd: string; stdin: string },
 ): CommandResult {
+  if (rawArgs.includes("--remove")) {
+    return removeOperation(rawArgs, ctx);
+  }
+
   const apply = rawArgs.includes("--yes");
 
   let explicitTarget: { tool: string; root: string } | undefined;
@@ -782,4 +786,213 @@ function flagValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   if (index === -1) return undefined;
   return args[index + 1];
+}
+
+// ─── Removal ──────────────────────────────────────────────────────────────────
+
+export type RemovalOptions = {
+  configRoot: string;
+  registryPath: string;
+};
+
+/** Renders the human-readable removal plan for a Claude Code target. */
+export function planClaudeRemoval(target: TargetRecord): string {
+  const lines = [
+    `Trace removal plan for Claude Code`,
+    `  target root: ${target.root}`,
+    `  skills: ${target.skills.join(", ")}`,
+    ...(target.hooks.length > 0 ? [`  hooks: ${target.hooks.join(", ")}`] : []),
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+/** Renders the human-readable removal plan for a Codex target. */
+export function planCodexRemoval(target: TargetRecord): string {
+  const lines = [
+    `Trace removal plan for Codex`,
+    `  target root: ${target.root}`,
+    `  skills: ${target.skills.join(", ")}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+/** Renders the human-readable removal plan for a Cursor target. */
+export function planCursorRemoval(target: TargetRecord): string {
+  const lines = [
+    `Trace removal plan for Cursor`,
+    `  target root: ${target.root}`,
+    `  skills: ${target.skills.join(", ")}`,
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function readRegistry(registryPath: string): Registry | null {
+  if (!existsSync(registryPath)) return null;
+  try {
+    return JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes Trace-owned skills, hooks, and registry entry for a Claude Code
+ * target. Only removes artifacts recorded in the registry for this target.
+ * Leaves all unrelated configuration untouched. Idempotent.
+ */
+export function applyClaudeRemoval(options: RemovalOptions): void {
+  const registry = readRegistry(options.registryPath);
+  const target = registry?.targets.find(
+    (t) => t.tool === "claude" && t.root === options.configRoot,
+  );
+  if (!target) return;
+
+  for (const skill of target.skills) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath)) rmSync(skillPath, { recursive: true, force: true });
+  }
+
+  if (target.hooks.length > 0) {
+    const settingsPath = join(options.configRoot, "settings.json");
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(
+        readFileSync(settingsPath, "utf8"),
+      ) as Record<string, unknown>;
+      const hooks = settings.hooks as Record<string, unknown> | undefined;
+      if (hooks) {
+        for (const event of target.hooks) {
+          delete hooks[event];
+        }
+        if (Object.keys(hooks).length === 0) {
+          delete settings.hooks;
+        }
+        writeFileIfChanged(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+      }
+    }
+  }
+
+  unrecordTarget(options.registryPath, registry!, "claude", options.configRoot);
+}
+
+/**
+ * Removes Trace-owned skills and registry entry for a Codex target.
+ * Idempotent.
+ */
+export function applyCodexRemoval(options: RemovalOptions): void {
+  const registry = readRegistry(options.registryPath);
+  const target = registry?.targets.find(
+    (t) => t.tool === "codex" && t.root === options.configRoot,
+  );
+  if (!target) return;
+
+  for (const skill of target.skills) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath)) rmSync(skillPath, { recursive: true, force: true });
+  }
+
+  unrecordTarget(options.registryPath, registry!, "codex", options.configRoot);
+}
+
+/**
+ * Removes Trace-owned skills and registry entry for a Cursor target.
+ * Idempotent.
+ */
+export function applyCursorRemoval(options: RemovalOptions): void {
+  const registry = readRegistry(options.registryPath);
+  const target = registry?.targets.find(
+    (t) => t.tool === "cursor" && t.root === options.configRoot,
+  );
+  if (!target) return;
+
+  for (const skill of target.skills) {
+    const skillPath = join(options.configRoot, "skills", skill);
+    if (existsSync(skillPath)) rmSync(skillPath, { recursive: true, force: true });
+  }
+
+  unrecordTarget(options.registryPath, registry!, "cursor", options.configRoot);
+}
+
+/** Removes a single target record from the registry file. */
+function unrecordTarget(
+  registryPath: string,
+  registry: Registry,
+  tool: ToolName,
+  configRoot: string,
+): void {
+  const updated: Registry = {
+    ...registry,
+    targets: registry.targets.filter(
+      (t) => !(t.tool === tool && t.root === configRoot),
+    ),
+  };
+  writeFileIfChanged(registryPath, `${JSON.stringify(updated, null, 2)}\n`);
+}
+
+function planForTarget(target: TargetRecord): string {
+  if (target.tool === "claude") return planClaudeRemoval(target);
+  if (target.tool === "codex") return planCodexRemoval(target);
+  return planCursorRemoval(target);
+}
+
+function applyRemovalForTarget(target: TargetRecord, registryPath: string): void {
+  const opts: RemovalOptions = { configRoot: target.root, registryPath };
+  if (target.tool === "claude") applyClaudeRemoval(opts);
+  else if (target.tool === "codex") applyCodexRemoval(opts);
+  else applyCursorRemoval(opts);
+}
+
+function removeOperation(
+  rawArgs: string[],
+  ctx: { env: Env; cwd: string; stdin: string },
+): CommandResult {
+  const apply = rawArgs.includes("--yes");
+
+  let explicitTarget: { tool: string; root: string } | undefined;
+  try {
+    explicitTarget = parseTargetFlag(rawArgs);
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : String(error));
+  }
+
+  const toolArg = explicitTarget?.tool ?? flagValue(rawArgs, "--tool");
+  const registryPath = resolveRegistryPath(ctx.env);
+  const registry = readRegistry(registryPath);
+
+  // Determine the set of targets to remove.
+  let targetsToRemove: TargetRecord[];
+
+  if (explicitTarget) {
+    const tool = explicitTarget.tool as ToolName;
+    if (tool !== "claude" && tool !== "codex" && tool !== "cursor") {
+      return failure(`Unsupported tool "${tool}" (supported: claude, codex, cursor)`);
+    }
+    const found = registry?.targets.find(
+      (t) => t.tool === tool && t.root === explicitTarget!.root,
+    );
+    targetsToRemove = found ? [found] : [];
+  } else if (toolArg !== undefined) {
+    if (toolArg !== "claude" && toolArg !== "codex" && toolArg !== "cursor") {
+      return failure(`Unsupported tool "${toolArg}" (supported: claude, codex, cursor)`);
+    }
+    targetsToRemove = registry?.targets.filter((t) => t.tool === toolArg) ?? [];
+  } else {
+    targetsToRemove = registry?.targets ?? [];
+  }
+
+  if (targetsToRemove.length === 0) {
+    return success("Nothing to remove.\n");
+  }
+
+  const plan = targetsToRemove.map(planForTarget).join("\n");
+
+  if (!apply) {
+    return success(`${plan}\nRe-run with --yes to apply.\n`);
+  }
+
+  for (const target of targetsToRemove) {
+    applyRemovalForTarget(target, registryPath);
+  }
+
+  const roots = targetsToRemove.map((t) => t.root).join(", ");
+  return success(`${plan}\nRemoved Trace from ${roots}.\n`);
 }
