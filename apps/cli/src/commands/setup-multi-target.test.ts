@@ -2,11 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  parseTargetFlag,
-  resolveClaudeConfigRoot,
-  setupOperation,
-} from "./setup-operations.ts";
+import { setupOperation } from "./setup-operations.ts";
 
 const CLI_PATH = "/opt/global/bin/trace";
 
@@ -15,97 +11,75 @@ function tempDir(prefix: string): { dir: string; cleanup: () => void } {
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function readTargets(dir: string): { tool: string; root: string }[] {
-  return JSON.parse(readFileSync(join(dir, ".trace", "integrations.json"), "utf8"))
-    .targets;
+function roots(home: string): string[] {
+  return JSON.parse(
+    readFileSync(join(home, ".trace", "integrations.json"), "utf8"),
+  ).targets.map((target: { root: string }) => target.root);
 }
 
-test("resolveClaudeConfigRoot honors CLAUDE_CONFIG_DIR over the default root", () => {
-  expect(resolveClaudeConfigRoot({ HOME: "/home/u" })).toBe("/home/u/.claude");
-  expect(
-    resolveClaudeConfigRoot({ HOME: "/home/u", CLAUDE_CONFIG_DIR: "/custom/claude" }),
-  ).toBe("/custom/claude");
-});
-
-test("parseTargetFlag extracts tool=path pairs and rejects malformed input", () => {
-  expect(parseTargetFlag(["--yes"])).toBeUndefined();
-  expect(parseTargetFlag(["--target", "claude=/a/b"])).toEqual({
-    tool: "claude",
-    root: "/a/b",
-  });
-  expect(() => parseTargetFlag(["--target", "claude"])).toThrow();
-  expect(() => parseTargetFlag(["--target"])).toThrow();
-});
-
-test("setup --target claude=/path installs into that explicit root over env/default", () => {
-  const { dir, cleanup } = tempDir("trace-mt-explicit-");
+test("explicit Claude target wins over environment and default roots", () => {
+  const { dir, cleanup } = tempDir("trace-setup-target-");
   try {
-    const explicit = join(dir, "explicit-root");
-    const env = {
-      HOME: dir,
-      TRACE_CLI_PATH: CLI_PATH,
-      CLAUDE_CONFIG_DIR: join(dir, "env-root"),
-    };
+    const explicit = join(dir, "explicit");
+    const envRoot = join(dir, "from-env");
     const result = setupOperation(["--target", `claude=${explicit}`, "--yes"], {
-      env,
+      env: { HOME: dir, CLAUDE_CONFIG_DIR: envRoot, TRACE_CLI_PATH: CLI_PATH },
       cwd: dir,
       stdin: "",
     });
-
     expect(result.exitCode).toBe(0);
     expect(existsSync(join(explicit, "skills", "trace", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(dir, "env-root"))).toBe(false);
+    expect(existsSync(envRoot)).toBe(false);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
-    expect(readTargets(dir).map((t) => t.root)).toEqual([explicit]);
   } finally {
     cleanup();
   }
 });
 
-test("ordinary setup resolves CLAUDE_CONFIG_DIR over the default root", () => {
-  const { dir, cleanup } = tempDir("trace-mt-env-");
+test("ordinary Claude setup honors CLAUDE_CONFIG_DIR", () => {
+  const { dir, cleanup } = tempDir("trace-setup-env-");
   try {
-    const envRoot = join(dir, "env-root");
-    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH, CLAUDE_CONFIG_DIR: envRoot };
+    const root = join(dir, "from-env");
     const result = setupOperation(["--tool", "claude", "--yes"], {
-      env,
+      env: { HOME: dir, CLAUDE_CONFIG_DIR: root, TRACE_CLI_PATH: CLI_PATH },
       cwd: dir,
       stdin: "",
     });
-
     expect(result.exitCode).toBe(0);
-    expect(existsSync(join(envRoot, "skills", "trace", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(dir, ".claude"))).toBe(false);
-    expect(readTargets(dir).map((t) => t.root)).toEqual([envRoot]);
+    expect(existsSync(join(root, "skills", "trace", "SKILL.md"))).toBe(true);
   } finally {
     cleanup();
   }
 });
 
-test("registering two Claude roots is additive and a later run reconciles both", () => {
-  const { dir, cleanup } = tempDir("trace-mt-additive-");
+test("registering two Claude roots is additive", () => {
+  const { dir, cleanup } = tempDir("trace-setup-additive-");
   try {
-    const rootA = join(dir, "root-a");
-    const rootB = join(dir, "root-b");
-    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH };
-    const ctx = { env, cwd: dir, stdin: "" };
+    const rootA = join(dir, "a");
+    const rootB = join(dir, "b");
+    const ctx = {
+      env: { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
+      cwd: dir,
+      stdin: "",
+    };
+    expect(setupOperation(["--target", `claude=${rootA}`, "--yes"], ctx).exitCode).toBe(0);
+    expect(setupOperation(["--target", `claude=${rootB}`, "--yes"], ctx).exitCode).toBe(0);
+    expect(roots(dir).sort()).toEqual([rootA, rootB].sort());
+  } finally {
+    cleanup();
+  }
+});
 
-    setupOperation(["--target", `claude=${rootA}`, "--yes"], ctx);
-    setupOperation(["--target", `claude=${rootB}`, "--yes"], ctx);
-
-    expect(readTargets(dir).map((t) => t.root).sort()).toEqual([rootA, rootB].sort());
-
-    // An ordinary run pointed at one registered root reconciles every
-    // registered root, not just the resolved one.
-    const reconcile = setupOperation(["--tool", "claude", "--yes"], {
-      env: { ...env, CLAUDE_CONFIG_DIR: rootA },
+test("setup rejects malformed explicit targets", () => {
+  const { dir, cleanup } = tempDir("trace-setup-malformed-target-");
+  try {
+    const result = setupOperation(["--target", "claude", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
       cwd: dir,
       stdin: "",
     });
-    expect(reconcile.exitCode).toBe(0);
-    expect(existsSync(join(rootA, "skills", "board", "SKILL.md"))).toBe(true);
-    expect(existsSync(join(rootB, "skills", "board", "SKILL.md"))).toBe(true);
-    expect(readTargets(dir).map((t) => t.root).sort()).toEqual([rootA, rootB].sort());
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--target <tool>=<path>");
   } finally {
     cleanup();
   }

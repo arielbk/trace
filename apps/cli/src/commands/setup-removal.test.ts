@@ -9,398 +9,134 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import {
-  applyClaudeRemoval,
-  applyCodexRemoval,
-  applyCursorRemoval,
-  applyClaudeSetup,
-  applyCodexSetup,
-  applyCursorSetup,
-  planClaudeRemoval,
-  planCodexRemoval,
-  planCursorRemoval,
-  resolvePackagedSkillsDir,
-  setupOperation,
-  TRACE_CLAUDE_SKILLS,
-  TRACE_CODEX_SKILLS,
-  TRACE_CURSOR_SKILLS,
-} from "./setup-operations.ts";
+import { setupOperation } from "./setup-operations.ts";
 
 const CLI_PATH = "/opt/global/bin/trace";
-const VERSION = "9.9.9";
 
 function tempDir(prefix: string): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function baseSetupOptions(
-  configRoot: string,
-  registryPath = join(configRoot, "registry.json"),
-) {
+function context(home: string) {
   return {
-    configRoot,
-    registryPath,
-    skillsSourceDir: resolvePackagedSkillsDir(),
-    cliPath: CLI_PATH,
-    version: VERSION,
-    packageManager: "npm" as const,
+    env: { HOME: home, TRACE_CLI_PATH: CLI_PATH },
+    cwd: home,
+    stdin: "",
   };
 }
 
-function baseRemovalOptions(
-  configRoot: string,
-  registryPath = join(configRoot, "registry.json"),
-) {
-  return { configRoot, registryPath };
+function registeredTargets(home: string): { tool: string; root: string }[] {
+  return JSON.parse(
+    readFileSync(join(home, ".trace", "integrations.json"), "utf8"),
+  ).targets.map(({ tool, root }: { tool: string; root: string }) => ({ tool, root }));
 }
 
-function readRegistry(registryPath: string) {
-  return JSON.parse(readFileSync(registryPath, "utf8"));
-}
-
-// ─── Claude removal ────────────────────────────────────────────────────────────
-
-test("applyClaudeRemoval removes owned skills from the config root", () => {
-  const { dir, cleanup } = tempDir("trace-remove-claude-skills-");
+test("removal previews without changing the registered target", () => {
+  const { dir, cleanup } = tempDir("trace-remove-preview-");
   try {
-    const opts = baseSetupOptions(dir);
-    applyClaudeSetup(opts);
+    const ctx = context(dir);
+    expect(setupOperation(["--tool", "claude", "--yes"], ctx).exitCode).toBe(0);
 
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(true);
-    }
-
-    applyClaudeRemoval(baseRemovalOptions(dir, opts.registryPath));
-
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(false);
-    }
-  } finally {
-    cleanup();
-  }
-});
-
-test("applyClaudeRemoval removes owned hooks from settings.json leaving unrelated entries", () => {
-  const { dir, cleanup } = tempDir("trace-remove-claude-hooks-");
-  try {
-    writeFileSync(
-      join(dir, "settings.json"),
-      JSON.stringify({
-        theme: "dark",
-        hooks: { UserPromptSubmit: [{ hooks: [] }] },
-      }),
-    );
-
-    const opts = baseSetupOptions(dir);
-    applyClaudeSetup(opts);
-
-    const settingsBefore = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
-    expect(settingsBefore.hooks.SessionStart).toBeDefined();
-    expect(settingsBefore.hooks.Stop).toBeDefined();
-    expect(settingsBefore.hooks.SubagentStop).toBeDefined();
-
-    applyClaudeRemoval(baseRemovalOptions(dir, opts.registryPath));
-
-    const settingsAfter = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
-    expect(settingsAfter.theme).toBe("dark");
-    expect(settingsAfter.hooks.UserPromptSubmit).toEqual([{ hooks: [] }]);
-    expect(settingsAfter.hooks.SessionStart).toBeUndefined();
-    expect(settingsAfter.hooks.Stop).toBeUndefined();
-    expect(settingsAfter.hooks.SubagentStop).toBeUndefined();
-  } finally {
-    cleanup();
-  }
-});
-
-test("applyClaudeRemoval removes the target record from the registry", () => {
-  const { dir, cleanup } = tempDir("trace-remove-claude-registry-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyClaudeSetup(baseSetupOptions(dir, registryPath));
-    expect(readRegistry(registryPath).targets).toHaveLength(1);
-
-    applyClaudeRemoval(baseRemovalOptions(dir, registryPath));
-
-    const registry = readRegistry(registryPath);
-    expect(registry.targets).toHaveLength(0);
-  } finally {
-    cleanup();
-  }
-});
-
-test("applyClaudeRemoval is idempotent — second removal is a no-op", () => {
-  const { dir, cleanup } = tempDir("trace-remove-claude-idempotent-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyClaudeSetup(baseSetupOptions(dir, registryPath));
-    applyClaudeRemoval(baseRemovalOptions(dir, registryPath));
-
-    // Second removal should not throw and should stay clean.
-    expect(() => applyClaudeRemoval(baseRemovalOptions(dir, registryPath))).not.toThrow();
-    const registry = readRegistry(registryPath);
-    expect(registry.targets).toHaveLength(0);
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(false);
-    }
-  } finally {
-    cleanup();
-  }
-});
-
-// ─── Codex removal ─────────────────────────────────────────────────────────────
-
-test("applyCodexRemoval removes owned skills and registry entry, leaves unrelated dirs", () => {
-  const { dir, cleanup } = tempDir("trace-remove-codex-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    // Create an unrelated directory the user owns.
-    mkdirSync(join(dir, "skills", "my-custom-skill"), { recursive: true });
-    writeFileSync(join(dir, "skills", "my-custom-skill", "README.md"), "user skill");
-
-    applyCodexSetup(baseSetupOptions(dir, registryPath));
-
-    for (const skill of TRACE_CODEX_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(true);
-    }
-
-    applyCodexRemoval(baseRemovalOptions(dir, registryPath));
-
-    for (const skill of TRACE_CODEX_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(false);
-    }
-    // User's unrelated skill survives.
-    expect(existsSync(join(dir, "skills", "my-custom-skill", "README.md"))).toBe(true);
-
-    const registry = readRegistry(registryPath);
-    expect(registry.targets).toHaveLength(0);
-  } finally {
-    cleanup();
-  }
-});
-
-test("applyCodexRemoval is idempotent", () => {
-  const { dir, cleanup } = tempDir("trace-remove-codex-idempotent-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyCodexSetup(baseSetupOptions(dir, registryPath));
-    applyCodexRemoval(baseRemovalOptions(dir, registryPath));
-
-    expect(() => applyCodexRemoval(baseRemovalOptions(dir, registryPath))).not.toThrow();
-    expect(readRegistry(registryPath).targets).toHaveLength(0);
-  } finally {
-    cleanup();
-  }
-});
-
-// ─── Cursor removal ────────────────────────────────────────────────────────────
-
-test("applyCursorRemoval removes owned skills and registry entry", () => {
-  const { dir, cleanup } = tempDir("trace-remove-cursor-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyCursorSetup(baseSetupOptions(dir, registryPath));
-
-    for (const skill of TRACE_CURSOR_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(true);
-    }
-
-    applyCursorRemoval(baseRemovalOptions(dir, registryPath));
-
-    for (const skill of TRACE_CURSOR_SKILLS) {
-      expect(existsSync(join(dir, "skills", skill))).toBe(false);
-    }
-    expect(readRegistry(registryPath).targets).toHaveLength(0);
-  } finally {
-    cleanup();
-  }
-});
-
-// ─── Plan (preview) ────────────────────────────────────────────────────────────
-
-test("planClaudeRemoval describes skills and hooks to be removed", () => {
-  const target = {
-    tool: "claude" as const,
-    root: "/home/user/.claude",
-    cliPath: CLI_PATH,
-    version: VERSION,
-    skills: [...TRACE_CLAUDE_SKILLS],
-    hooks: ["SessionStart", "SubagentStop", "Stop"],
-  };
-  const plan = planClaudeRemoval(target);
-  expect(plan).toContain("Claude Code");
-  expect(plan).toContain("/home/user/.claude");
-  for (const skill of TRACE_CLAUDE_SKILLS) {
-    expect(plan).toContain(skill);
-  }
-  expect(plan).toContain("SessionStart");
-});
-
-test("planCodexRemoval describes skills to be removed", () => {
-  const target = {
-    tool: "codex" as const,
-    root: "/home/user/.codex",
-    cliPath: CLI_PATH,
-    version: VERSION,
-    skills: [...TRACE_CODEX_SKILLS],
-    hooks: [] as string[],
-  };
-  const plan = planCodexRemoval(target);
-  expect(plan).toContain("Codex");
-  expect(plan).toContain("/home/user/.codex");
-  for (const skill of TRACE_CODEX_SKILLS) {
-    expect(plan).toContain(skill);
-  }
-});
-
-test("planCursorRemoval describes skills to be removed", () => {
-  const target = {
-    tool: "cursor" as const,
-    root: "/home/user/.cursor",
-    cliPath: CLI_PATH,
-    version: VERSION,
-    skills: [...TRACE_CURSOR_SKILLS],
-    hooks: [] as string[],
-  };
-  const plan = planCursorRemoval(target);
-  expect(plan).toContain("Cursor");
-  expect(plan).toContain("/home/user/.cursor");
-});
-
-// ─── setupOperation --remove ────────────────────────────────────────────────────
-
-test("setup --remove --tool claude: preview without --yes shows plan but makes no changes", () => {
-  const { dir, cleanup } = tempDir("trace-remove-op-preview-");
-  try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const claudeRoot = join(homeDir, ".claude");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
-
-    setupOperation(["--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-    expect(existsSync(join(claudeRoot, "skills", "trace", "SKILL.md"))).toBe(true);
-
-    const result = setupOperation(["--remove", "--tool", "claude"], { env, cwd: homeDir, stdin: "" });
+    const result = setupOperation(["--remove", "--tool", "claude"], ctx);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Claude Code");
+    expect(result.stdout).toContain("removal plan");
     expect(result.stdout).toContain("--yes");
-    // No files removed in preview mode.
-    expect(existsSync(join(claudeRoot, "skills", "trace", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(dir, ".claude", "skills", "trace"))).toBe(true);
+    expect(registeredTargets(dir)).toHaveLength(1);
   } finally {
     cleanup();
   }
 });
 
-test("setup --remove --tool claude --yes removes Claude integration", () => {
-  const { dir, cleanup } = tempDir("trace-remove-op-claude-");
+test("Claude removal deletes owned artifacts and preserves unrelated settings", () => {
+  const { dir, cleanup } = tempDir("trace-remove-claude-");
   try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const claudeRoot = join(homeDir, ".claude");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
-
-    setupOperation(["--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-    expect(existsSync(join(claudeRoot, "skills", "trace", "SKILL.md"))).toBe(true);
-
-    const result = setupOperation(["--remove", "--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Removed");
-
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(claudeRoot, "skills", skill))).toBe(false);
-    }
-    const registry = JSON.parse(
-      readFileSync(join(homeDir, ".trace", "integrations.json"), "utf8"),
-    );
-    expect(registry.targets).toHaveLength(0);
-  } finally {
-    cleanup();
-  }
-});
-
-test("setup --remove --target claude=/path --yes removes the explicit target only", () => {
-  const { dir, cleanup } = tempDir("trace-remove-op-target-");
-  try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const customRoot = join(dir, "custom-claude");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
-
-    // Install into a custom root.
-    setupOperation(
-      ["--target", `claude=${customRoot}`, "--yes"],
-      { env, cwd: homeDir, stdin: "" },
-    );
-    expect(existsSync(join(customRoot, "skills", "trace", "SKILL.md"))).toBe(true);
+    const ctx = context(dir);
+    expect(setupOperation(["--tool", "claude", "--yes"], ctx).exitCode).toBe(0);
+    const settingsPath = join(dir, ".claude", "settings.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
+    settings.model = "claude-3";
+    settings.hooks.UserPromptSubmit = [
+      { hooks: [{ type: "command", command: "my-tool prompt" }] },
+    ];
+    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 
     const result = setupOperation(
-      ["--remove", "--target", `claude=${customRoot}`, "--yes"],
-      { env, cwd: homeDir, stdin: "" },
+      ["--remove", "--tool", "claude", "--yes"],
+      ctx,
     );
 
     expect(result.exitCode).toBe(0);
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(customRoot, "skills", skill))).toBe(false);
-    }
-    const registry = JSON.parse(
-      readFileSync(join(homeDir, ".trace", "integrations.json"), "utf8"),
-    );
-    expect(registry.targets).toHaveLength(0);
+    expect(existsSync(join(dir, ".claude", "skills", "trace"))).toBe(false);
+    const remaining = JSON.parse(readFileSync(settingsPath, "utf8"));
+    expect(remaining.model).toBe("claude-3");
+    expect(remaining.hooks).toEqual({
+      UserPromptSubmit: [
+        { hooks: [{ type: "command", command: "my-tool prompt" }] },
+      ],
+    });
+    expect(registeredTargets(dir)).toHaveLength(0);
   } finally {
     cleanup();
   }
 });
 
-test("setup --remove --yes without --tool removes all registered targets", () => {
-  const { dir, cleanup } = tempDir("trace-remove-op-all-");
+test("explicit removal removes only the exact registered target", () => {
+  const { dir, cleanup } = tempDir("trace-remove-exact-");
   try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const claudeRoot = join(homeDir, ".claude");
-    const codexRoot = join(homeDir, ".codex");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
+    const rootA = join(dir, "claude-a");
+    const rootB = join(dir, "claude-b");
+    const ctx = context(dir);
+    expect(setupOperation(["--target", `claude=${rootA}`, "--yes"], ctx).exitCode).toBe(0);
+    expect(setupOperation(["--target", `claude=${rootB}`, "--yes"], ctx).exitCode).toBe(0);
 
-    // Install Claude and Codex targets.
-    setupOperation(["--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-    mkdirSync(codexRoot, { recursive: true }); // make it detectable for setup
-    setupOperation(["--tool", "codex", "--yes"], { env, cwd: homeDir, stdin: "" });
-
-    const registryBefore = JSON.parse(
-      readFileSync(join(homeDir, ".trace", "integrations.json"), "utf8"),
+    const result = setupOperation(
+      ["--remove", "--target", `claude=${rootA}`, "--yes"],
+      ctx,
     );
-    expect(registryBefore.targets).toHaveLength(2);
-
-    const result = setupOperation(["--remove", "--yes"], { env, cwd: homeDir, stdin: "" });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Removed");
-
-    const registryAfter = JSON.parse(
-      readFileSync(join(homeDir, ".trace", "integrations.json"), "utf8"),
-    );
-    expect(registryAfter.targets).toHaveLength(0);
-
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(existsSync(join(claudeRoot, "skills", skill))).toBe(false);
-    }
-    for (const skill of TRACE_CODEX_SKILLS) {
-      expect(existsSync(join(codexRoot, "skills", skill))).toBe(false);
-    }
+    expect(existsSync(join(rootA, "skills", "trace"))).toBe(false);
+    expect(existsSync(join(rootB, "skills", "trace"))).toBe(true);
+    expect(registeredTargets(dir)).toEqual([{ tool: "claude", root: rootB }]);
   } finally {
     cleanup();
   }
 });
 
-test("setup --remove --yes with no registered targets is a successful no-op", () => {
-  const { dir, cleanup } = tempDir("trace-remove-op-empty-");
+test("removal without a selector removes every registered target", () => {
+  const { dir, cleanup } = tempDir("trace-remove-all-");
   try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
+    const claudeRoot = join(dir, "claude");
+    const codexRoot = join(dir, "codex");
+    const cursorRoot = join(dir, "cursor");
+    const ctx = context(dir);
+    for (const [tool, root] of [
+      ["claude", claudeRoot],
+      ["codex", codexRoot],
+      ["cursor", cursorRoot],
+    ] as const) {
+      expect(setupOperation(["--target", `${tool}=${root}`, "--yes"], ctx).exitCode).toBe(0);
+    }
 
-    const result = setupOperation(["--remove", "--yes"], { env, cwd: homeDir, stdin: "" });
+    const result = setupOperation(["--remove", "--yes"], ctx);
+
+    expect(result.exitCode).toBe(0);
+    for (const root of [claudeRoot, codexRoot, cursorRoot]) {
+      expect(existsSync(join(root, "skills", "trace"))).toBe(false);
+    }
+    expect(registeredTargets(dir)).toHaveLength(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("removal with no registered targets is a successful no-op", () => {
+  const { dir, cleanup } = tempDir("trace-remove-empty-");
+  try {
+    const result = setupOperation(["--remove", "--yes"], context(dir));
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Nothing to remove");
   } finally {
@@ -408,65 +144,41 @@ test("setup --remove --yes with no registered targets is a successful no-op", ()
   }
 });
 
-test("setup --remove preserves unrelated settings.json keys and hooks", () => {
-  const { dir, cleanup } = tempDir("trace-remove-unrelated-");
+test("removal rejects unsafe registry artifact names without deleting user data", () => {
+  const { dir, cleanup } = tempDir("trace-remove-unsafe-registry-");
   try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const claudeRoot = join(homeDir, ".claude");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
+    const root = join(dir, "codex");
+    const userData = join(dir, "user-data");
+    const registryPath = join(dir, ".trace", "integrations.json");
+    mkdirSync(join(root, "skills"), { recursive: true });
+    mkdirSync(userData);
+    writeFileSync(join(userData, "keep.txt"), "user-owned\n");
+    mkdirSync(join(registryPath, ".."), { recursive: true });
+    const originalRegistry = `${JSON.stringify(
+      {
+        packageManager: "npm",
+        targets: [
+          {
+            tool: "codex",
+            root,
+            cliPath: CLI_PATH,
+            version: "1.0.0",
+            skills: ["../../user-data"],
+            hooks: [],
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(registryPath, originalRegistry);
 
-    mkdirSync(claudeRoot, { recursive: true });
-    writeFileSync(
-      join(claudeRoot, "settings.json"),
-      JSON.stringify({
-        theme: "dark",
-        hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "my-tool" }] }] },
-      }),
-    );
+    const result = setupOperation(["--remove", "--yes"], context(dir));
 
-    setupOperation(["--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-    setupOperation(["--remove", "--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-
-    const settings = JSON.parse(readFileSync(join(claudeRoot, "settings.json"), "utf8"));
-    expect(settings.theme).toBe("dark");
-    expect(settings.hooks.UserPromptSubmit).toBeDefined();
-    expect(settings.hooks.SessionStart).toBeUndefined();
-    expect(settings.hooks.Stop).toBeUndefined();
-    expect(settings.hooks.SubagentStop).toBeUndefined();
-  } finally {
-    cleanup();
-  }
-});
-
-test("setup --remove does not remove one target when removing a different tool", () => {
-  const { dir, cleanup } = tempDir("trace-remove-partial-");
-  try {
-    const homeDir = join(dir, "home");
-    mkdirSync(homeDir, { recursive: true });
-    const claudeRoot = join(homeDir, ".claude");
-    const codexRoot = join(homeDir, ".codex");
-    const env = { HOME: homeDir, TRACE_CLI_PATH: CLI_PATH };
-
-    setupOperation(["--tool", "claude", "--yes"], { env, cwd: homeDir, stdin: "" });
-    mkdirSync(codexRoot, { recursive: true });
-    setupOperation(["--tool", "codex", "--yes"], { env, cwd: homeDir, stdin: "" });
-
-    const result = setupOperation(["--remove", "--tool", "codex", "--yes"], { env, cwd: homeDir, stdin: "" });
-    expect(result.exitCode).toBe(0);
-
-    // Codex gone.
-    for (const skill of TRACE_CODEX_SKILLS) {
-      expect(existsSync(join(codexRoot, "skills", skill))).toBe(false);
-    }
-    // Claude untouched.
-    expect(existsSync(join(claudeRoot, "skills", "trace", "SKILL.md"))).toBe(true);
-
-    const registry = JSON.parse(
-      readFileSync(join(homeDir, ".trace", "integrations.json"), "utf8"),
-    );
-    expect(registry.targets).toHaveLength(1);
-    expect(registry.targets[0].tool).toBe("claude");
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toMatch(/integration registry.*corrupt/i);
+    expect(readFileSync(join(userData, "keep.txt"), "utf8")).toBe("user-owned\n");
+    expect(readFileSync(registryPath, "utf8")).toBe(originalRegistry);
   } finally {
     cleanup();
   }

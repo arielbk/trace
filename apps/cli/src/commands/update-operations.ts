@@ -1,21 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
+import {
+  IntegrationRegistry,
+  type PackageManager,
+} from "./integration-registry.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
-import { resolvePackagedVersion, type PackageManager } from "./setup-operations.ts";
-
-type ToolName = "claude" | "codex" | "cursor";
-
-type TargetRecord = {
-  tool: ToolName;
-  root: string;
-  cliPath: string;
-  version: string;
-  skills: string[];
-  hooks: string[];
-};
-
-type Registry = { packageManager: PackageManager; targets: TargetRecord[] };
+import { resolvePackagedVersion } from "./setup-operations.ts";
 
 export type SpawnResult = { status: number | null; stderr: string };
 
@@ -28,25 +17,10 @@ export type UpdateDeps = {
    */
   spawnInstall: (pm: PackageManager, version: string) => SpawnResult;
   /**
-   * Spawns the newly installed CLI to reconcile one tool's targets.
-   * Receives the absolute CLI path and the tool name.
+   * Spawns the newly installed CLI to reconcile every registered target.
    */
-  spawnReconcile: (cliPath: string, tool: string) => SpawnResult;
+  spawnReconcile: (cliPath: string) => SpawnResult;
 };
-
-/** Returns the registry path from env override or the default location. */
-function resolveRegistryPath(env: Env): string {
-  if (env.TRACE_REGISTRY_PATH) return env.TRACE_REGISTRY_PATH;
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) throw new Error("HOME/USERPROFILE must be set");
-  return join(home, ".trace", "integrations.json");
-}
-
-/** Reads the registry file and returns it parsed, or undefined if missing. */
-function readRegistry(registryPath: string): Registry | undefined {
-  if (!existsSync(registryPath)) return undefined;
-  return JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
-}
 
 /** Returns the install args for the given package manager. */
 function installArgs(pm: PackageManager, version: string): { cmd: string; args: string[] } {
@@ -73,8 +47,8 @@ const defaultDeps: UpdateDeps = {
       stderr: typeof result.stderr === "string" ? result.stderr : "",
     };
   },
-  spawnReconcile(cliPath, tool) {
-    const result = nodeSpawnSync(cliPath, ["setup", "--tool", tool, "--yes"], { encoding: "utf8" });
+  spawnReconcile(cliPath) {
+    const result = nodeSpawnSync(cliPath, ["setup", "--registered", "--yes"], { encoding: "utf8" });
     return {
       status: result.status,
       stderr: typeof result.stderr === "string" ? result.stderr : "",
@@ -89,15 +63,12 @@ export async function updateOperation(
 ): Promise<CommandResult> {
   const apply = rawArgs.includes("--yes");
 
-  // Read registry.
-  let registryPath: string;
+  let registry;
   try {
-    registryPath = resolveRegistryPath(ctx.env);
+    registry = IntegrationRegistry.fromEnv(ctx.env).read();
   } catch (err) {
     return failure(err instanceof Error ? err.message : String(err));
   }
-
-  const registry = readRegistry(registryPath);
   if (!registry) {
     return failure(
       "No Trace integrations registered. Run `trace setup` first.",
@@ -137,23 +108,16 @@ export async function updateOperation(
     return failure(`Install failed: ${detail}`);
   }
 
-  // Reconcile all registered targets with the new CLI.
-  // Use the cliPath from the first target for each unique tool.
-  const toolToCliPath = new Map<string, string>();
-  for (const target of targets) {
-    if (!toolToCliPath.has(target.tool)) {
-      toolToCliPath.set(target.tool, target.cliPath);
-    }
-  }
-
-  for (const [tool, cliPath] of toolToCliPath) {
-    const reconcileResult = deps.spawnReconcile(cliPath, tool);
+  // Reconcile the complete registry in one invocation so the new CLI can
+  // preflight every target before mutating any of them.
+  const cliPath = targets[0]?.cliPath;
+  if (cliPath) {
+    const reconcileResult = deps.spawnReconcile(cliPath);
     if (reconcileResult.status !== 0) {
       const detail = reconcileResult.stderr.trim() || "non-zero exit";
-      return failure(`Reconcile failed for ${tool}: ${detail}`);
+      return failure(`Reconcile failed: ${detail}`);
     }
   }
 
-  const toolList = [...toolToCliPath.keys()].join(", ");
-  return success(`${planLine}\nUpdated to v${latestVersion} and reconciled targets: ${toolList}.\n`);
+  return success(`${planLine}\nUpdated to v${latestVersion} and reconciled registered targets.\n`);
 }

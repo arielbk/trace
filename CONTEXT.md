@@ -52,6 +52,15 @@ docs, and architecture reviews so names stay consistent.
 
 ## Tool integration seams
 
+- **Integration Target** — one supported agent tool paired with one user-level
+  config root; this `(tool, root)` pair is the identity Trace registers,
+  reconciles, and removes.
+- **Integration Registry** — the machine-local record of the package manager
+  owning the installed CLI and every registered Integration Target.
+- **Reconciliation** — making every Trace-owned artifact for selected
+  Integration Targets match the currently installed CLI package, after the
+  complete target set passes guardrails.
+
 - **Transcript Adapter** — the one place that knows, per `SessionTool`, how to
   read session identity, model, token totals, and the message head/tail out of a
   transcript. Callers consult `getTranscriptAdapter(tool)` rather than importing

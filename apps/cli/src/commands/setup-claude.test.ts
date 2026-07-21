@@ -1,184 +1,126 @@
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { fileURLToPath } from "node:url";
 import { runTraceCli } from "../trace.ts";
-import {
-  applyClaudeSetup,
-  planClaudeSetup,
-  resolvePackagedSkillsDir,
-  setupOperation,
-  TRACE_CLAUDE_SKILLS,
-} from "./setup-operations.ts";
+import { setupOperation } from "./setup-operations.ts";
 
-const packagedVersion = JSON.parse(
-  readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
-).version as string;
+const CLI_PATH = "/opt/global/bin/trace";
+const SKILLS = ["board", "doc-placement", "recall", "reenter", "state", "trace"];
 
 function tempDir(prefix: string): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-const CLI_PATH = "/opt/global/bin/trace";
-const VERSION = "9.9.9";
-
-function baseOptions(configRoot: string, registryPath = join(configRoot, "registry.json")) {
-  return {
-    configRoot,
-    registryPath,
-    skillsSourceDir: resolvePackagedSkillsDir(),
-    cliPath: CLI_PATH,
-    version: VERSION,
-    packageManager: "pnpm" as const,
-  };
-}
-
-test("apply installs the six packaged Trace skills into the Claude config root", () => {
+test("Claude setup installs skills and hooks while preserving unrelated settings", () => {
   const { dir, cleanup } = tempDir("trace-setup-claude-");
   try {
-    applyClaudeSetup(baseOptions(dir));
-
-    for (const skill of TRACE_CLAUDE_SKILLS) {
-      expect(
-        existsSync(join(dir, "skills", skill, "SKILL.md")),
-        `expected skill ${skill}`,
-      ).toBe(true);
-    }
-    expect(TRACE_CLAUDE_SKILLS).toHaveLength(6);
-  } finally {
-    cleanup();
-  }
-});
-
-test("apply registers hooks with the absolute CLI path, preserving unrelated settings", () => {
-  const { dir, cleanup } = tempDir("trace-setup-claude-");
-  try {
+    const root = join(dir, ".claude");
+    mkdirSync(root);
     writeFileSync(
-      join(dir, "settings.json"),
-      JSON.stringify({ theme: "dark", hooks: { UserPromptSubmit: [{ hooks: [] }] } }),
+      join(root, "settings.json"),
+      JSON.stringify({ model: "claude-3" }),
     );
-
-    applyClaudeSetup(baseOptions(dir));
-
-    const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
-    expect(settings.theme).toBe("dark");
-    expect(settings.hooks.UserPromptSubmit).toEqual([{ hooks: [] }]);
-
-    const sessionStart = settings.hooks.SessionStart;
-    expect(sessionStart[0].matcher).toBe("startup|resume|clear|compact");
-    expect(sessionStart[0].hooks[0].command).toBe(`${CLI_PATH} hook session-start`);
-    expect(settings.hooks.Stop[0].hooks[0].command).toBe(`${CLI_PATH} hook stop`);
-    expect(settings.hooks.SubagentStop[0].hooks[0].command).toBe(
-      `${CLI_PATH} hook subagent-stop`,
-    );
-    // No npx-pinned command survives.
-    expect(readFileSync(join(dir, "settings.json"), "utf8")).not.toContain("npx ");
-  } finally {
-    cleanup();
-  }
-});
-
-test("apply records ownership, version, package manager, and the target", () => {
-  const { dir, cleanup } = tempDir("trace-setup-claude-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyClaudeSetup(baseOptions(dir, registryPath));
-
-    const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-    expect(registry.packageManager).toBe("pnpm");
-    expect(registry.targets).toHaveLength(1);
-
-    const target = registry.targets[0];
-    expect(target.tool).toBe("claude");
-    expect(target.root).toBe(dir);
-    expect(target.cliPath).toBe(CLI_PATH);
-    expect(target.version).toBe(VERSION);
-    expect([...target.skills].sort()).toEqual([...TRACE_CLAUDE_SKILLS].sort());
-    expect(target.hooks).toEqual(["SessionStart", "SubagentStop", "Stop"]);
-  } finally {
-    cleanup();
-  }
-});
-
-function snapshotMtimes(root: string): Map<string, number> {
-  const seen = new Map<string, number>();
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else seen.set(full, statSync(full).mtimeMs);
-    }
-  };
-  walk(root);
-  return seen;
-}
-
-test("re-running apply on an up-to-date target changes nothing on disk", () => {
-  const { dir, cleanup } = tempDir("trace-setup-claude-");
-  const registryPath = join(dir, "registry.json");
-  try {
-    applyClaudeSetup(baseOptions(dir, registryPath));
-    const before = snapshotMtimes(dir);
-
-    applyClaudeSetup(baseOptions(dir, registryPath));
-    const after = snapshotMtimes(dir);
-
-    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
-    for (const [path, mtime] of before) {
-      expect(after.get(path), `mtime changed for ${path}`).toBe(mtime);
-    }
-  } finally {
-    cleanup();
-  }
-});
-
-test("setup --tool claude --yes installs into ~/.claude and records the target", () => {
-  const { dir, cleanup } = tempDir("trace-setup-home-");
-  try {
-    const env = {
-      HOME: dir,
-      TRACE_CLI_PATH: CLI_PATH,
-      npm_config_user_agent: "pnpm/9.0.0 npm/? node/v22.0.0 darwin arm64",
-    };
     const result = setupOperation(["--tool", "claude", "--yes"], {
-      env,
+      env: { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
       cwd: dir,
       stdin: "",
     });
 
     expect(result.exitCode).toBe(0);
-    expect(existsSync(join(dir, ".claude", "skills", "trace", "SKILL.md"))).toBe(true);
+    for (const skill of SKILLS) {
+      expect(existsSync(join(root, "skills", skill, "SKILL.md"))).toBe(true);
+    }
+    const settings = JSON.parse(readFileSync(join(root, "settings.json"), "utf8"));
+    expect(settings.model).toBe("claude-3");
+    expect(settings.hooks.SessionStart[0].hooks[0].command).toContain(CLI_PATH);
+    expect(settings.hooks.SubagentStop[0].hooks[0].command).toContain(CLI_PATH);
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain(CLI_PATH);
+
     const registry = JSON.parse(
       readFileSync(join(dir, ".trace", "integrations.json"), "utf8"),
     );
-    expect(registry.packageManager).toBe("pnpm");
-    expect(registry.targets[0].root).toBe(join(dir, ".claude"));
-    expect(registry.targets[0].version).toBe(packagedVersion);
-    expect(registry.targets[0].cliPath).toBe(CLI_PATH);
+    expect(registry.targets[0]).toMatchObject({
+      tool: "claude",
+      root,
+      cliPath: CLI_PATH,
+      skills: SKILLS,
+      hooks: ["SessionStart", "SubagentStop", "Stop"],
+    });
   } finally {
     cleanup();
   }
 });
 
-test("setup --tool claude without --yes previews the plan and writes nothing", () => {
-  const { dir, cleanup } = tempDir("trace-setup-home-");
+test("Claude setup previews without writing until --yes", () => {
+  const { dir, cleanup } = tempDir("trace-setup-claude-preview-");
   try {
-    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH };
-    const result = setupOperation(["--tool", "claude"], { env, cwd: dir, stdin: "" });
+    const result = setupOperation(["--tool", "claude"], {
+      env: { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
+      cwd: dir,
+      stdin: "",
+    });
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Claude Code");
     expect(result.stdout).toContain("--yes");
-    expect(result.stdout).toContain(join(dir, ".claude"));
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("trace setup dispatches through the CLI", () => {
+  const { dir, cleanup } = tempDir("trace-setup-claude-cli-");
+  try {
+    const result = runTraceCli(
+      ["setup", "--tool", "claude", "--yes"],
+      { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
+      dir,
+      "",
+    );
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(dir, ".claude", "skills", "trace", "SKILL.md"))).toBe(true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("setup rejects an unknown tool", () => {
+  const result = setupOperation(["--tool", "emacs", "--yes"], {
+    env: { HOME: "/tmp", TRACE_CLI_PATH: CLI_PATH },
+    cwd: "/tmp",
+    stdin: "",
+  });
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("Unsupported tool");
+});
+
+test("setup refuses to register an ephemeral npx cache executable", () => {
+  const { dir, cleanup } = tempDir("trace-setup-npx-cache-");
+  try {
+    const cliPath = join(
+      dir,
+      ".npm",
+      "_npx",
+      "temporary",
+      "node_modules",
+      "@arielbk",
+      "trace",
+      "dist",
+      "trace.js",
+    );
+
+    const result = setupOperation(["--tool", "claude", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("npx");
+    expect(result.stderr).toMatch(/persistent global CLI/i);
     expect(existsSync(join(dir, ".claude"))).toBe(false);
     expect(existsSync(join(dir, ".trace", "integrations.json"))).toBe(false);
   } finally {
@@ -186,37 +128,46 @@ test("setup --tool claude without --yes previews the plan and writes nothing", (
   }
 });
 
-test("plan lists the skills, hooks, target root, and CLI command path", () => {
-  const { dir, cleanup } = tempDir("trace-setup-plan-");
+test("setup refuses to register a source-checkout executable", () => {
+  const { dir, cleanup } = tempDir("trace-setup-source-checkout-");
   try {
-    const plan = planClaudeSetup(baseOptions(dir));
-    expect(plan).toContain(dir);
-    expect(plan).toContain(CLI_PATH);
-    for (const skill of TRACE_CLAUDE_SKILLS) expect(plan).toContain(skill);
-    expect(plan).toContain("SessionStart");
+    const cliPath = join(dir, "trace-v2", "apps", "cli", "src", "trace.ts");
+
+    const result = setupOperation(["--tool", "claude", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toMatch(/source checkout/i);
+    expect(result.stderr).toMatch(/persistent global CLI/i);
+    expect(existsSync(join(dir, ".claude"))).toBe(false);
+    expect(existsSync(join(dir, ".trace", "integrations.json"))).toBe(false);
   } finally {
     cleanup();
   }
 });
 
-test("trace setup dispatches through the CLI and installs the target", () => {
-  const { dir, cleanup } = tempDir("trace-setup-cli-");
+test("Claude hooks quote an absolute CLI path containing spaces", () => {
+  const { dir, cleanup } = tempDir("trace-setup-spaced-cli-");
   try {
-    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH };
-    const result = runTraceCli(["setup", "--tool", "claude", "--yes"], env, dir, "");
+    const cliPath = "/opt/Trace CLI/bin/trace";
+
+    const result = setupOperation(["--tool", "claude", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+    });
+
     expect(result.exitCode).toBe(0);
-    expect(existsSync(join(dir, ".claude", "skills", "board", "SKILL.md"))).toBe(true);
+    const settings = JSON.parse(
+      readFileSync(join(dir, ".claude", "settings.json"), "utf8"),
+    );
+    expect(settings.hooks.SessionStart[0].hooks[0].command).toBe(
+      `'${cliPath}' hook session-start`,
+    );
   } finally {
     cleanup();
   }
-});
-
-test("setup rejects an unknown tool", () => {
-  const result = setupOperation(["--tool", "emacs"], {
-    env: { HOME: "/tmp" },
-    cwd: "/tmp",
-    stdin: "",
-  });
-  expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain("emacs");
 });

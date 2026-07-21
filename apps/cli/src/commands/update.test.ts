@@ -55,6 +55,25 @@ test("fails when no integrations registry exists", async () => {
 
 // ─── behavior 2: fetch error → fail ──────────────────────────────────────────
 
+test("fails explicitly when the integrations registry is corrupt", async () => {
+  const { dir, cleanup } = tempDir("trace-update-");
+  try {
+    const registryPath = join(dir, "integrations.json");
+    writeFileSync(registryPath, "not valid json");
+
+    const result = await updateOperation(
+      [],
+      { env: { TRACE_REGISTRY_PATH: registryPath }, cwd: dir, stdin: "" },
+      makeDeps(),
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toMatch(/integration registry.*corrupt/i);
+  } finally {
+    cleanup();
+  }
+});
+
 test("fails when registry version fetch throws", async () => {
   const { dir, cleanup } = tempDir("trace-update-");
   try {
@@ -230,7 +249,7 @@ test("surfaces install error when package manager spawn fails", async () => {
 
 // ─── behavior 9: post-install reconcile calls new CLI ────────────────────────
 
-test("after install, reconciles each unique tool in the registry", async () => {
+test("after install, launches the new CLI once to reconcile the complete registry", async () => {
   const { dir, cleanup } = tempDir("trace-update-");
   try {
     const cliPath = "/usr/local/bin/trace";
@@ -241,20 +260,19 @@ test("after install, reconciles each unique tool in the registry", async () => {
         { tool: "codex", root: join(dir, ".codex"), cliPath, version: "1.0.0", skills: [], hooks: [] },
       ],
     });
-    const reconcileCalls: { cliPath: string; tool: string }[] = [];
+    const reconcileCalls: string[] = [];
     const result = await updateOperation(
       ["--yes"],
       { env: { HOME: dir, TRACE_REGISTRY_PATH: registryPath, TRACE_CURRENT_VERSION: "1.0.0" }, cwd: dir, stdin: "" },
       makeDeps({
         fetchLatestVersion: async () => "1.2.3",
         spawnInstall: () => ({ status: 0, stderr: "" }),
-        spawnReconcile: (cli, tool) => { reconcileCalls.push({ cliPath: cli, tool }); return { status: 0, stderr: "" }; },
+        spawnReconcile: (cli) => { reconcileCalls.push(cli); return { status: 0, stderr: "" }; },
       }),
     );
     expect(result.exitCode).toBe(0);
-    expect(reconcileCalls).toHaveLength(2);
-    expect(reconcileCalls.map((c) => c.tool).sort()).toEqual(["claude", "codex"]);
-    expect(reconcileCalls.every((c) => c.cliPath === cliPath)).toBe(true);
+    expect(reconcileCalls).toHaveLength(1);
+    expect(reconcileCalls).toEqual([cliPath]);
   } finally {
     cleanup();
   }
@@ -295,18 +313,17 @@ test("uses cliPath from registry for reconciliation, not process.argv[1]", async
       packageManager: "npm",
       targets: [{ tool: "cursor", root: join(dir, ".cursor"), cliPath: recordedCli, version: "1.0.0", skills: [], hooks: [] }],
     });
-    const reconcileCalls: { cliPath: string; tool: string }[] = [];
+    const reconcileCalls: string[] = [];
     await updateOperation(
       ["--yes"],
       { env: { HOME: dir, TRACE_REGISTRY_PATH: registryPath, TRACE_CURRENT_VERSION: "1.0.0" }, cwd: dir, stdin: "" },
       makeDeps({
         fetchLatestVersion: async () => "1.2.3",
         spawnInstall: () => ({ status: 0, stderr: "" }),
-        spawnReconcile: (cli, tool) => { reconcileCalls.push({ cliPath: cli, tool }); return { status: 0, stderr: "" }; },
+        spawnReconcile: (cli) => { reconcileCalls.push(cli); return { status: 0, stderr: "" }; },
       }),
     );
-    expect(reconcileCalls[0]?.cliPath).toBe(recordedCli);
-    expect(reconcileCalls[0]?.tool).toBe("cursor");
+    expect(reconcileCalls).toEqual([recordedCli]);
   } finally {
     cleanup();
   }
