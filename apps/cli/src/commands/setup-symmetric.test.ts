@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -119,6 +120,60 @@ test("--registered preview shows the same install/skip partition as apply", () =
     expect(result.stdout).toContain("@arielbk/trace");
     expect(result.stdout.toLowerCase()).toContain("skip");
     expect(result.stdout).toContain("--yes");
+  } finally {
+    cleanup();
+  }
+});
+
+/** Marks a host as installed by creating its config root under HOME. */
+function installHost(home: string, name: string): string {
+  const root = join(home, name);
+  mkdirSync(root, { recursive: true });
+  return root;
+}
+
+test("bare setup auto-detects and installs Claude alongside Codex and Cursor", () => {
+  const { dir, cleanup } = tempDir("trace-symmetric-bare-all-");
+  try {
+    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH };
+    const ctx = { env, cwd: dir, stdin: "" };
+
+    const claudeRoot = installHost(dir, ".claude");
+    const codexRoot = installHost(dir, ".codex");
+    const cursorRoot = installHost(dir, ".cursor");
+
+    const result = setupOperation(["--yes"], ctx);
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(claudeRoot, "skills", "board", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(codexRoot, "skills", "board", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(cursorRoot, "skills", "board", "SKILL.md"))).toBe(true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("bare setup skips a legacy-plugin Claude but still installs Codex and Cursor", () => {
+  const { dir, cleanup } = tempDir("trace-symmetric-bare-skip-claude-");
+  try {
+    const env = { HOME: dir, TRACE_CLI_PATH: CLI_PATH };
+    const ctx = { env, cwd: dir, stdin: "" };
+
+    const claudeRoot = installHost(dir, ".claude");
+    const codexRoot = installHost(dir, ".codex");
+    const cursorRoot = installHost(dir, ".cursor");
+    injectLegacyPlugin(claudeRoot);
+
+    const result = setupOperation(["--yes"], ctx);
+
+    // Claude trips its guardrail and is skipped with a visible reason; Codex and
+    // Cursor still install; the batch succeeds.
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(codexRoot, "skills", "board", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(cursorRoot, "skills", "board", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(claudeRoot, "skills", "board", "SKILL.md"))).toBe(false);
+    expect(result.stdout).toContain("@arielbk/trace");
+    expect(result.stdout.toLowerCase()).toContain("skip");
   } finally {
     cleanup();
   }

@@ -328,6 +328,19 @@ function resolveCursorConfigRoot(env: Env): string {
 }
 
 /**
+ * Returns the Claude config root if a Claude Code installation is detected
+ * (i.e. the root directory already exists), otherwise `undefined`.
+ */
+function detectClaudeInstall(env: Env): string | undefined {
+  try {
+    const root = resolveClaudeConfigRoot(env);
+    return existsSync(root) ? root : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Returns the Codex config root if a Codex installation is detected
  * (i.e. the root directory already exists), otherwise `undefined`.
  */
@@ -703,16 +716,18 @@ export function setupOperation(
   }
 
   // No explicit tool — detect installed hosts and run setup for each.
+  const claudeRoot = detectClaudeInstall(ctx.env);
   const codexRoot = detectCodexInstall(ctx.env);
   const cursorRoot = detectCursorInstall(ctx.env);
 
-  if (!codexRoot && !cursorRoot) {
+  if (!claudeRoot && !codexRoot && !cursorRoot) {
     return failure(
       "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]",
     );
   }
 
   const targets = [
+    ...(claudeRoot ? targetsForTool("claude", claudeRoot, registeredTargets) : []),
     ...(codexRoot ? targetsForTool("codex", codexRoot, registeredTargets) : []),
     ...(cursorRoot ? targetsForTool("cursor", cursorRoot, registeredTargets) : []),
   ];
