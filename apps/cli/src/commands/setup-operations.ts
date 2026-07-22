@@ -537,11 +537,23 @@ function sharedSetupOptions(
   };
 }
 
+/**
+ * Reconciles a batch of targets. `onGuardrailFailure` decides what a failed
+ * pre-flight means:
+ * - `"abort"` (explicit `--tool` / `--target`): the first failing target is
+ *   fatal — the batch stops before any write. Byte-for-byte the original
+ *   behavior, so a target the user named is never silently skipped.
+ * - `"skip"` (auto-discovered batches: no-tool auto-detect, `--registered`):
+ *   failing targets are set aside with their remediation, the healthy ones
+ *   still install, and the summary lists what was skipped and why. Only when
+ *   *every* target is skipped does the batch fail.
+ */
 function reconcileInstalledTargets(
   targets: InstalledTarget[],
   apply: boolean,
   env: Env,
   registry: IntegrationRegistry,
+  onGuardrailFailure: "abort" | "skip",
 ): CommandResult {
   if (targets.length === 0) return success("Nothing to reconcile.\n");
 
@@ -552,23 +564,63 @@ function reconcileInstalledTargets(
     adapter,
     options: { configRoot: root, ...shared },
   }));
-  const plan = installations
-    .map(({ adapter, options }) => planInstalledTarget(options, adapter))
+
+  // Abort-mode preview keeps the original guardrail-free plan (the explicit
+  // path is unchanged); guardrails still run on apply, failing fast below.
+  if (!apply && onGuardrailFailure === "abort") {
+    const plan = installations
+      .map(({ adapter, options }) => planInstalledTarget(options, adapter))
+      .join("\n");
+    return success(`${plan}\nRe-run with --yes to apply.\n`);
+  }
+
+  // Partition by pre-flight. Runs for every apply and for skip-mode preview, so
+  // the plan a skip-mode preview shows matches what the apply would do.
+  const installable: typeof installations = [];
+  const skipped: { root: string; label: string; reason: string }[] = [];
+  for (const { adapter, options } of installations) {
+    const check = checkInstalledTarget(options, adapter);
+    if (check.ok) {
+      installable.push({ adapter, options });
+    } else if (onGuardrailFailure === "abort") {
+      return failure(check.error);
+    } else {
+      skipped.push({
+        root: options.configRoot,
+        label: adapter.label,
+        reason: check.error,
+      });
+    }
+  }
+
+  const skipLines = skipped
+    .map(({ label, root, reason }) => `- ${label} (${root}):\n  ${reason}`)
     .join("\n");
 
-  if (!apply) return success(`${plan}\nRe-run with --yes to apply.\n`);
+  // Nothing safe to install: surface every reason rather than a hollow success.
+  if (installable.length === 0) {
+    return failure(`No targets could be reconciled.\n${skipLines}`);
+  }
+
+  const plan = installable
+    .map(({ adapter, options }) => planInstalledTarget(options, adapter))
+    .join("\n");
+  const skippedBlock =
+    skipped.length > 0
+      ? `\nSkipped (guardrail checks failed):\n${skipLines}\n`
+      : "";
+
+  if (!apply) {
+    return success(`${plan}${skippedBlock}\nRe-run with --yes to apply.\n`);
+  }
 
   try {
-    for (const { adapter, options } of installations) {
-      const check = checkInstalledTarget(options, adapter);
-      if (!check.ok) return failure(check.error);
-    }
-    for (const { adapter, options } of installations) {
+    for (const { adapter, options } of installable) {
       applyInstalledTarget(options, adapter);
     }
     shared.registry.upsertMany(
       shared.packageManager,
-      installations.map(({ adapter, options }) =>
+      installable.map(({ adapter, options }) =>
         targetRecord(
           options,
           adapter.tool,
@@ -581,8 +633,8 @@ function reconcileInstalledTargets(
     return failure(error instanceof Error ? error.message : String(error));
   }
 
-  const roots = installations.map(({ options }) => options.configRoot).join(", ");
-  return success(`${plan}\nInstalled Trace into ${roots}.\n`);
+  const roots = installable.map(({ options }) => options.configRoot).join(", ");
+  return success(`${plan}${skippedBlock}\nInstalled Trace into ${roots}.\n`);
 }
 
 function targetsForTool(
@@ -629,7 +681,7 @@ export function setupOperation(
       adapter: SETUP_ADAPTERS[target.tool],
       root: target.root,
     }));
-    return reconcileInstalledTargets(targets, apply, ctx.env, registry);
+    return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
   }
 
   // When a tool is explicitly specified, route to that tool's setup.
@@ -646,6 +698,7 @@ export function setupOperation(
       apply,
       ctx.env,
       registry,
+      "abort",
     );
   }
 
@@ -663,7 +716,7 @@ export function setupOperation(
     ...(codexRoot ? targetsForTool("codex", codexRoot, registeredTargets) : []),
     ...(cursorRoot ? targetsForTool("cursor", cursorRoot, registeredTargets) : []),
   ];
-  return reconcileInstalledTargets(targets, apply, ctx.env, registry);
+  return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
 }
 
 function flagValue(args: string[], flag: string): string | undefined {
