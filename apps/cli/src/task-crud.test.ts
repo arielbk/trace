@@ -21,7 +21,7 @@ const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectSlug = basename(repoRoot).toLowerCase();
 
-test("init reports plugin setup without writing Claude settings", () => {
+test("init reports CLI-first setup without writing Claude settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
   const env = {
     ...process.env,
@@ -35,12 +35,11 @@ test("init reports plugin setup without writing Claude settings", () => {
       env,
     });
 
-    expect(output).toContain(
-      "trace is now installed through the Claude Code plugin",
-    );
-    expect(output).toContain("/plugin marketplace add arielbk/trace");
-    expect(output).toContain("/plugin install trace@trace");
-    expect(output).toContain("trace skill: found");
+    expect(output).toContain("npm install -g @arielbk/trace");
+    expect(output).toContain("trace setup");
+    expect(output).toContain("trace update");
+    expect(output).toContain("trace setup --remove");
+    expect(output).not.toContain("plugin marketplace");
     expect(output).not.toContain("pnpm link --global");
     expect(output).not.toContain("SessionStart hook");
     expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(false);
@@ -83,9 +82,8 @@ test("init preserves existing Claude settings without adding SessionStart hooks"
       env,
     });
 
-    expect(secondOutput).toContain(
-      "trace is now installed through the Claude Code plugin",
-    );
+    expect(secondOutput).toContain("npm install -g @arielbk/trace");
+    expect(secondOutput).toContain("trace setup");
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       permissions?: { allow?: string[] };

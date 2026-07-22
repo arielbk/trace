@@ -31,85 +31,89 @@ re-enter in another, even a different agent, all in the same store underneath.
 
 ## Setup
 
-Install the agents you use. They share one SQLite store and one re-entry
-manifest, so a task is visible from whichever session you re-enter on.
+Install the CLI globally, then run setup once to wire up the agent tools you use.
+The CLI, skills, and hooks are all managed by one persistent install — no plugin
+marketplace, no per-repo config, no pinned `npx` commands.
 
-### Claude Code
-
-From inside Claude Code, add this repo as a marketplace, then install the plugin:
+### Install
 
 ```sh
-/plugin marketplace add arielbk/trace
-/plugin install trace@trace
-/reload-plugins
+npm install -g @arielbk/trace
+# or
+pnpm add -g @arielbk/trace
+# or
+bun install -g @arielbk/trace
 ```
+
+### Wire up your agents
+
+```sh
+trace setup
+```
+
+Running `trace setup` with no flags auto-detects installed Codex and Cursor
+roots and installs the six Trace skills into each. For Claude Code, pass
+`--tool claude`:
+
+```sh
+trace setup --tool claude
+```
+
+You can run `trace setup` at any time to add new tools or reconcile existing
+installs. It is idempotent: re-running it changes nothing when everything is
+already current.
 
 <details>
 <summary>What this does</summary>
 
-The plugin wires up the skills and the hooks: `SessionStart` captures each
-session live, and `Stop` keeps the bound task's `state.md` fresh — when a
-turn ends with the task's docs ahead of the state file's prose, it sends the
-still-warm agent back to update it (a fingerprint gate means ordinary chat
-turns never trigger it). No global CLI link or manual settings edit; the
-skills and hooks invoke the CLI on demand via a version-pinned
-`npx @arielbk/trace@<version>`, so there's nothing to build or link. After
-reloading, ask the agent _"Are we currently in a trace session?"_ and it
-should confirm the session is being tracked.
+`trace setup` copies the six canonical Trace skills (`trace`, `trace-reenter`,
+`trace-recall`, `trace-state`, `trace-doc-placement`, `trace-board`) into each
+agent's user-level skills directory, registers Claude Code's `SessionStart`,
+`SubagentStop`, and `Stop` hooks with the CLI's absolute path so hooks survive
+across updates, and records each installed target in `~/.trace/integrations.json`
+so `trace update` can reconcile them later.
 
 </details>
 
-### Codex
-
-From your terminal, add this repo as a marketplace, then install the plugin:
+### Update
 
 ```sh
-codex plugin marketplace add arielbk/trace
-codex plugin add trace@trace
+trace update
 ```
 
-<details>
-<summary>What this does</summary>
+Resolves the latest published version, reinstalls via your package manager, then
+runs `trace setup` for each registered agent to reconcile skills and hooks.
 
-Codex installs from the same canonical skills tree as Claude, so it ships the
-full skill set (not just `trace`). Codex has no live session-start slot, so the
-skill captures sessions by backfill: it runs `trace session scan --codex` before
-it binds or re-enters a task. Same store, same manifest; just a different capture
-path. The same asymmetry covers `state.md` freshness: with no live stop hook,
-drift is reported in the re-entry manifest and repaired by the entering agent.
-
-</details>
-
-### Cursor
-
-Cursor has no plugin marketplace but supports Agent Skills, so you install the
-skills directly. From your project:
+### Target a specific tool or path
 
 ```sh
-npx skills add arielbk/trace-v2/plugin/skills
+trace setup --tool codex
+trace setup --tool cursor
+trace setup --tool claude --target claude=/path/to/custom/config
 ```
 
-<details>
-<summary>What this does</summary>
+### Remove
 
-That installs the same six trace skills the Claude and Codex plugins ship, from
-the same canonical tree; Cursor's agent routes on the skill descriptions exactly
-as the other hosts do. (The `/plugin/skills` subpath matters: it scopes the
-install to the real skills.)
+```sh
+trace setup --remove
+```
 
-There's no session-start hook, so capture is **pull-time**: when a skill binds or
-re-enters a task, trace resolves the session you're in from the directory the
-command runs in. Both Cursor surfaces are covered: GUI composer sessions are read
-from Cursor's local session store (`state.vscdb`), and `cursor-agent` (CLI) chats
-from their transcript files under `~/.cursor/projects`. When both exist for a
-directory, the one you touched most recently wins. `state.md` freshness is
-pull-time too: drift is reported in the re-entry manifest and repaired by the
-entering agent.
+Removes only Trace-owned skills, hooks, and metadata. Unrelated agent
+configuration is never touched.
 
-> Cursor does not record per-message token _spend_ in its local store, so the
-> board shows a session's context-window usage instead of an input/output total.
+### Migrating from the old plugin install
 
-</details>
+If you previously installed Trace via the Claude Code plugin marketplace or
+`codex plugin`, run:
+
+```sh
+trace setup --tool claude    # or codex, cursor
+```
+
+Trace will detect the legacy plugin entry or pinned `npx` hook and print exact
+remediation guidance before making any change. Follow the instructions (typically:
+remove the old plugin, then re-run setup with `--yes`) and your configuration will
+be on the CLI-first path.
 
 ## How it works
 

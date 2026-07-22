@@ -56,8 +56,9 @@ test("init exits 0 and describes installation", () => {
     const r = runTraceCli(["init"], makeEnv(home), sandbox);
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBe("");
-    // Must mention the plugin-based install path — not the old CLAUDE.md approach.
-    expect(r.stdout).toContain("plugin");
+    // Must mention the CLI-first install path — not the old CLAUDE.md approach.
+    expect(r.stdout).toContain("npm install -g @arielbk/trace");
+    expect(r.stdout).toContain("trace setup");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });

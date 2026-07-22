@@ -8,7 +8,8 @@
   },
   "files": [
     "dist/trace.js",
-    "dist/web/**"
+    "dist/web/**",
+    "dist/skills/**"
   ],
   "publishConfig": {
     "access": "public"
