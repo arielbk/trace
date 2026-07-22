@@ -24,6 +24,6 @@
   "dependencies": {
     "@trace/cursor-reader": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "marked": "^18.0.6"
+    "marked": "^18.0.7"
   }
 }
