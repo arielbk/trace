@@ -6,6 +6,7 @@ import {
   createKeyWrapper,
   createTaskDocCrypto,
   generateTaskKey,
+  beginSyncRun,
   readSyncStatus,
 } from "@trace/core";
 import { runTraceCli } from "../trace.ts";
@@ -476,6 +477,49 @@ test("login records the signed-in identity and logout clears it for the board", 
 
     await runAuthCommand("logout", { HOME: home });
     expect(readSyncStatus(databasePath)).toEqual({ state: "logged-out" });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a fresh login does not inherit an abandoned sync run", async () => {
+  const home = tmp("trace-auth-home-");
+  const databasePath = join(home, ".trace", "trace.sqlite");
+
+  try {
+    // A sync process was killed mid-run before this login.
+    beginSyncRun(databasePath, {
+      id: "killed-run",
+      startedAt: new Date().toISOString(),
+    });
+    writeStoredDocCryptoKey({ HOME: home }, "aa".repeat(32));
+    await runAuthCommand(
+      "login",
+      { HOME: home, TRACE_SERVER_URL: "http://auth.test" },
+      {
+        fetch: async (url) => {
+          if (String(url).endsWith("/device/code")) {
+            return Response.json({
+              device_code: "device-code",
+              user_code: "ABCD-EFGH",
+              verification_uri: "https://auth.test/device",
+              interval: 0,
+            });
+          }
+          if (String(url).endsWith("/get-session")) {
+            return Response.json({ user: { name: "The Octocat" } });
+          }
+          return Response.json({ access_token: "bearer-token" });
+        },
+        openBrowser: () => {},
+        sleep: async () => undefined,
+      },
+    );
+
+    expect(readSyncStatus(databasePath)).toEqual({
+      state: "never-synced",
+      identity: "The Octocat",
+    });
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

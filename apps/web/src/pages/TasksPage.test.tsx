@@ -200,6 +200,31 @@ describe("TasksPage", () => {
     expect(screen.getByText("API work")).toBeInTheDocument();
   });
 
+  test("carries the global account control in its header", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) =>
+        Promise.resolve(
+          url === "/api/tasks"
+            ? new Response(JSON.stringify([]), { status: 200 })
+            : new Response(
+                JSON.stringify({
+                  state: "synced",
+                  lastSyncedAt: new Date().toISOString(),
+                  autoSync: true,
+                }),
+                { status: 200 },
+              ),
+        ),
+      ),
+    );
+    render(<TasksPage />, { wrapper: makeQueryWrapper() });
+
+    expect(
+      await screen.findByRole("button", { name: /account — last synced/i }),
+    ).toBeInTheDocument();
+  });
+
   test("filters by project slug from the URL without exposing the project ID", async () => {
     const tasks: TaskSummary[] = [
       summary({

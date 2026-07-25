@@ -1,6 +1,7 @@
 import type { Plugin } from "vite";
 import {
   handleTraceApiRequest,
+  resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
@@ -25,6 +26,7 @@ export function traceApiPlugin(): Plugin {
               syncServerConfigured: Boolean(
                 resolveConfiguredServerUrl(process.env),
               ),
+              autoSyncEnabled: resolveAutoSyncEnabled(process.env),
             },
           );
           if (!response) {

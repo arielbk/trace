@@ -657,6 +657,7 @@ test("GET /api/sync/status reports logged-out (server unconfigured) when no stat
     expect(JSON.parse(response!.body)).toEqual({
       state: "logged-out",
       serverConfigured: false,
+      autoSync: true,
     });
   } finally {
     cleanup();
@@ -677,6 +678,7 @@ test("GET /api/sync/status carries the host's server-configured flag on logged-o
     expect(JSON.parse(response!.body)).toEqual({
       state: "logged-out",
       serverConfigured: true,
+      autoSync: true,
     });
   } finally {
     cleanup();
@@ -698,6 +700,7 @@ test("GET /api/sync/status reports the identity and last-sync time when logged i
       state: "synced",
       identity: "octocat <octocat@github.com>",
       lastSyncedAt: "2026-07-10T16:00:00.000Z",
+      autoSync: true,
     });
   } finally {
     cleanup();
@@ -720,6 +723,57 @@ test("GET /api/sync/status reports the last-sync failure when one is recorded", 
       identity: "octocat",
       lastError: "server returned 500",
     });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the host's effective AutoSync mode", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, { loggedIn: true, identity: "octocat" });
+
+  try {
+    // The board reads the mode from the status API rather than reaching into
+    // config.json itself.
+    expect(
+      JSON.parse(
+        handleTraceApiRequest(databasePath, "GET", "/api/sync/status", undefined, {
+          autoSyncEnabled: false,
+        })!.body,
+      ),
+    ).toEqual({ state: "never-synced", identity: "octocat", autoSync: false });
+    // A host that reports no mode falls back to the effective default, on.
+    expect(
+      JSON.parse(
+        handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
+      ),
+    ).toMatchObject({ autoSync: true });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports a run in flight without leaking credential material", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat",
+    lastSyncedAt: "2026-07-10T15:00:00.000Z",
+    activeRun: { id: "run-1", startedAt: new Date().toISOString() },
+    // A field the status model does not know about must not be forwarded.
+    ...({ accessToken: "secret" } as object),
+  });
+
+  try {
+    const body: unknown = JSON.parse(
+      handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
+    );
+    expect(body).toMatchObject({
+      state: "syncing",
+      identity: "octocat",
+      lastSyncedAt: "2026-07-10T15:00:00.000Z",
+    });
+    expect(JSON.stringify(body)).not.toContain("secret");
   } finally {
     cleanup();
   }

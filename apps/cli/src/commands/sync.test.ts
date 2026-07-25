@@ -230,3 +230,44 @@ test("explicit sync still synchronizes while auto-sync is disabled", async () =>
   expect(result.stdout).toContain("Sync complete: 1 pushed");
   expect(readSyncStatus(databasePath).state).toBe("synced");
 });
+
+test("a sync in flight is visible to the board and cleared by its own outcome", async () => {
+  const home = loggedInHome("trace-sync-run-");
+  const databasePath = join(home, ".trace", "trace.db");
+  openTraceStore(databasePath).close();
+
+  const statesDuringSync: string[] = [];
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+    statesDuringSync.push(readSyncStatus(databasePath).state);
+    if (String(input).endsWith("/blobs/missing")) return Response.json([]);
+    if (String(input).endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
+    if (String(input).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
+    return String(input).endsWith("/sync/push")
+      ? Response.json({ accepted: 0 })
+      : Response.json({ tasks: [], sessions: [] });
+  });
+
+  const result = await runSyncCommand(
+    { HOME: home, TRACE_SERVER_URL: "https://sync.test" },
+    { fetch },
+  );
+
+  expect(result.exitCode).toBe(0);
+  // The board polls while the network work is happening, so every read taken
+  // mid-run must show a sync in progress.
+  expect(new Set(statesDuringSync)).toEqual(new Set(["syncing"]));
+  expect(readSyncStatus(databasePath).state).toBe("synced");
+});
+
+test("a failed sync clears its run so the board never spins forever", async () => {
+  const home = loggedInHome("trace-sync-run-failed-");
+  const databasePath = join(home, ".trace", "trace.db");
+  openTraceStore(databasePath).close();
+  const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+    Response.json({}, { status: 500 }),
+  );
+
+  await runSyncCommand({ HOME: home, TRACE_SERVER_URL: "https://sync.test" }, { fetch });
+
+  expect(readSyncStatus(databasePath)).toMatchObject({ state: "failed" });
+});

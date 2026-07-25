@@ -1,11 +1,12 @@
 import {
+  beginSyncRun,
   createKeyWrapper,
+  finalizeSyncRun,
   openTraceStore,
   resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   synchronize,
-  updateSyncStatusFile,
   type SyncPayload,
   type SyncBlob,
   type SyncDocManifest,
@@ -13,6 +14,7 @@ import {
   type SyncWrappedKey,
 } from "@trace/core";
 import { spawn as nodeSpawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 import { readStoredDocCryptoKey } from "./key.ts";
@@ -111,6 +113,13 @@ export async function runSyncCommand(
     };
   }
   const databasePath = resolveDatabasePath(env);
+  // Claim the run before the first network call so a board polling mid-sync
+  // sees a spinner rather than the previous outcome. The id is what lets a slow
+  // run recognise that a newer one has taken over, and refuse to finalize.
+  const runId = randomUUID();
+  recordSyncStatus(databasePath, (path) =>
+    beginSyncRun(path, { id: runId, startedAt: new Date().toISOString() }),
+  );
   const store = openTraceStore(databasePath);
   try {
     const result = await synchronize(
@@ -128,7 +137,12 @@ export async function runSyncCommand(
         },
       }),
     );
-    recordSyncStatus(databasePath, { loggedIn: true, lastSyncedAt: new Date().toISOString(), lastError: undefined });
+    recordSyncStatus(databasePath, (path) =>
+      finalizeSyncRun(path, runId, {
+        lastSyncedAt: new Date().toISOString(),
+        lastError: undefined,
+      }),
+    );
     const documentChanges =
       (result.pushedManifests ?? 0) +
       (result.pulledManifests ?? 0) +
@@ -146,7 +160,9 @@ export async function runSyncCommand(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    recordSyncStatus(databasePath, { loggedIn: true, lastError: message });
+    recordSyncStatus(databasePath, (path) =>
+      finalizeSyncRun(path, runId, { lastError: message }),
+    );
     return {
       exitCode: 1,
       stdout: "",
@@ -158,15 +174,16 @@ export async function runSyncCommand(
 }
 
 /**
- * Persist the outcome of a sync for the board's status header. Best-effort: a
- * write failure here must never change the command's own exit code or output.
+ * Persist part of a sync's lifecycle for the board's status header.
+ * Best-effort: a write failure here must never change the command's own exit
+ * code or output.
  */
 function recordSyncStatus(
   databasePath: string,
-  patch: Parameters<typeof updateSyncStatusFile>[1],
+  write: (databasePath: string) => void,
 ): void {
   try {
-    updateSyncStatusFile(databasePath, patch);
+    write(databasePath);
   } catch {
     // The header just won't reflect this sync; the sync itself still stands.
   }

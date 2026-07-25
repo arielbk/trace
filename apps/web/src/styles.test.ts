@@ -29,3 +29,10 @@ test("light and dark palettes are both defined as custom properties", () => {
     expect(darkBlock).toContain(`${token}:`);
   }
 });
+
+test("the account menu's sync spinner is silenced under reduced motion", () => {
+  const reducedMotionBlock = css.slice(
+    css.indexOf("@media (prefers-reduced-motion: reduce)"),
+  );
+  expect(reducedMotionBlock).toMatch(/\.t-sync-spinner\s*{[^}]*animation:\s*none/);
+});

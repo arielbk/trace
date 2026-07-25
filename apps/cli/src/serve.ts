@@ -9,6 +9,7 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   handleTraceApiRequest,
+  resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
@@ -146,6 +147,9 @@ export function createServeRequestListener(
   assetsDir?: string,
   syncServerConfigured?: boolean,
   syncHooks?: ServeSyncHooks,
+  /** Reads the effective AutoSync mode; called per request because the user may
+   * run `trace config set auto-sync` while the board is open. */
+  resolveAutoSync?: () => boolean,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
@@ -154,6 +158,7 @@ export function createServeRequestListener(
     const dispatch = (body?: string): void => {
       const response = handleTraceApiRequest(databasePath, method, url, body, {
         syncServerConfigured,
+        autoSyncEnabled: resolveAutoSync?.(),
         onMutation: syncHooks?.onMutation,
         requestSync: syncHooks?.requestSync,
       });
@@ -246,6 +251,7 @@ export function createTraceServeServer(
       assetsDir,
       Boolean(resolveConfiguredServerUrl(env)),
       syncHooks,
+      () => resolveAutoSyncEnabled(env),
     ),
   );
 }

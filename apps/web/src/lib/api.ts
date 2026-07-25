@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { SyncStatus, TaskSummary, TaskTimeline } from "@trace/core/browser";
+import type { SyncStatusResponse, TaskSummary, TaskTimeline } from "@trace/core/browser";
 
 export class HttpError extends Error {
   constructor(
@@ -41,10 +41,10 @@ export async function fetchDocContents(ref: string, docPath: string): Promise<Do
   return { contentType, body };
 }
 
-export async function fetchSyncStatus(): Promise<SyncStatus> {
+export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
   const res = await fetch("/api/sync/status");
   if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
-  return res.json() as Promise<SyncStatus>;
+  return res.json() as Promise<SyncStatusResponse>;
 }
 
 /** Ask the serving process to run a background sync now (fire-and-forget).
