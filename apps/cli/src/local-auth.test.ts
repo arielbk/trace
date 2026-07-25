@@ -236,6 +236,32 @@ test("the board starts a login and receives an attempt plus the hosted verificat
   });
 });
 
+test("a Google login is the same device workflow under a forwarded provider", async () => {
+  const hosted = hostedAuth();
+  const listener = makeListener(hosted);
+
+  const started = await startLogin(listener, "google");
+
+  // The provider is a hint the hosted approval page carries through social
+  // sign-in; nothing about the local sequence changes for it.
+  expect(hosted.requests[0]).toEqual({
+    url: "http://auth.test/api/auth/device/code",
+    body: { client_id: "trace-cli", provider: "google" },
+  });
+  expect(started.provider).toBe("google");
+
+  hosted.approve();
+  const approved = await waitForState(
+    listener,
+    started.attemptId,
+    "showing-generated-key",
+  );
+
+  // The provider survives to the settled attempt, so the board's retry keeps it.
+  expect(approved.provider).toBe("google");
+  expect(approved.generatedKey).toMatch(/^[0-9a-f]{64}$/);
+});
+
 test("an unapproved attempt keeps reporting that it waits for the browser", async () => {
   const hosted = hostedAuth();
   const listener = makeListener(hosted);

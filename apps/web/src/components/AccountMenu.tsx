@@ -4,6 +4,7 @@ import {
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,
   type LoginAttemptView,
+  type LoginProvider,
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
@@ -174,14 +175,17 @@ function AccountActions({ account }: { account: AccountDescription }) {
   if (account.canSignIn) {
     return (
       <div className="mt-3 border-t border-border-subtle pt-2">
-        <button
-          type="button"
-          className={ACTION_CLASS}
-          onClick={() => beginLogin.mutate("github")}
-          disabled={beginLogin.isPending}
-        >
-          Sign in with GitHub
-        </button>
+        {SIGN_IN_PROVIDERS.map(({ provider, label }, index) => (
+          <button
+            key={provider}
+            type="button"
+            className={index === 0 ? ACTION_CLASS : `${ACTION_CLASS} mt-1.5`}
+            onClick={() => beginLogin.mutate(provider)}
+            disabled={beginLogin.isPending}
+          >
+            {label}
+          </button>
+        ))}
         {beginLogin.isError ? (
           <p className="mt-1.5 mb-0 text-warning" data-testid="login-error">
             {beginLogin.error.message}
@@ -208,6 +212,18 @@ function AccountActions({ account }: { account: AccountDescription }) {
 
   return null;
 }
+
+/**
+ * The providers a board sign-in may go through. Both take the identical
+ * machine-local device workflow — the provider is only a hint the serving
+ * process forwards to the hosted approval page, which carries it through social
+ * sign-in. Nothing about a provider changes what the board does with the
+ * result, which is why this is a list and not two code paths.
+ */
+const SIGN_IN_PROVIDERS: { provider: LoginProvider; label: string }[] = [
+  { provider: "github", label: "Sign in with GitHub" },
+  { provider: "google", label: "Sign in with Google" },
+];
 
 const ACTION_CLASS =
   "w-full rounded-md border border-border bg-surface px-2 py-1.5 text-caption text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60";

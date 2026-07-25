@@ -296,6 +296,48 @@ test("a signed-out machine offers board login and carries no sync badge", async 
   ).toBeInTheDocument();
 });
 
+test("signing in with Google starts the same local flow under the Google provider", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    started: { ...WAITING, provider: "google" },
+  });
+  const { opened } = renderWithLocalAuth(server);
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /sign in with google/i }));
+
+  // Same machine-local device workflow as GitHub — only the provider differs.
+  expect(server.bodies).toContainEqual({ provider: "google" });
+  expect(opened).toEqual(["https://auth.test/device?user_code=ABCD-EFGH"]);
+  expect(await screen.findByTestId("login-progress")).toHaveTextContent(
+    /waiting for approval/i,
+  );
+});
+
+test("retrying a settled Google sign-in stays on Google", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    started: { ...WAITING, provider: "google" },
+    polled: { ...WAITING, provider: "google", state: "expired" },
+  });
+  renderWithLocalAuth(server);
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /sign in with google/i }));
+  await screen.findByTestId("login-outcome");
+
+  await user.click(screen.getByRole("button", { name: /try again/i }));
+
+  // The retry must not silently fall back to the default provider.
+  await waitFor(() =>
+    expect(
+      server.bodies.filter(
+        (body) => JSON.stringify(body) === JSON.stringify({ provider: "google" }),
+      ),
+    ).toHaveLength(2),
+  );
+});
+
 test("a machine with no sync server says Cloud Sync is unavailable rather than offering it", async () => {
   const user = userEvent.setup();
   renderMenu({ state: "logged-out", serverConfigured: false, autoSync: true });
