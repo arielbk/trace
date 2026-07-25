@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
+import { createClackPrompt } from "./commands/setup-clack-prompt.ts";
 import { interactiveSetupOperation } from "./commands/setup-interactive.ts";
 import type { SetupPrompt } from "./commands/setup-prompt.ts";
 import { updateOperation } from "./commands/update-operations.ts";
@@ -36,6 +37,22 @@ export type TraceCliOptions = {
  */
 function isBareSetup(argv: string[]): boolean {
   return argv.length === 1 && argv[0] === "setup";
+}
+
+/**
+ * Decides what the host process can offer the CLI. A picker needs a real
+ * terminal on *both* streams — a redirected stdin cannot answer it and a piped
+ * stdout must stay machine-readable — so anything less stays deterministic.
+ */
+export function traceCliOptionsFor(proc: {
+  stdin: { isTTY?: boolean };
+  stdout: { isTTY?: boolean };
+}): TraceCliOptions {
+  return {
+    onOutput: (output) => process.stdout.write(output),
+    interactive: proc.stdin.isTTY === true && proc.stdout.isTTY === true,
+    createPrompt: () => createClackPrompt(),
+  };
 }
 
 export function runTraceCli(
@@ -125,10 +142,13 @@ if (isDirectRun) {
       args[1] === "stop")
       ? readFileSync(0, "utf8")
       : "";
-  runTraceCliAsync(args, process.env, process.cwd(), stdin, {
-    onOutput: (output) => process.stdout.write(output),
-    interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
-  })
+  runTraceCliAsync(
+    args,
+    process.env,
+    process.cwd(),
+    stdin,
+    traceCliOptionsFor(process),
+  )
     .then((result) => {
       process.stdout.write(result.stdout);
       process.stderr.write(result.stderr);

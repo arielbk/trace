@@ -43,6 +43,7 @@ export default defineConfig({
     "drizzle-orm",
     "citty",
     "marked",
+    "@clack/prompts",
   ],
   onSuccess: copyWebAssets,
 });
