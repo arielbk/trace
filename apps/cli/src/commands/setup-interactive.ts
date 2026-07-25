@@ -1,6 +1,12 @@
 import { IntegrationRegistry } from "./integration-registry.ts";
-import { discoverTargetCandidates, type TargetCandidate } from "./setup-candidates.ts";
-import { reconcileSelectedTargets } from "./setup-operations.ts";
+import {
+  discoverTargetCandidates,
+  type TargetCandidate,
+} from "./setup-candidates.ts";
+import {
+  EMPTY_INVENTORY,
+  reconcileSelectedTargets,
+} from "./setup-operations.ts";
 import {
   buildTargetSelection,
   targetIdentity,
@@ -28,6 +34,10 @@ export async function interactiveSetupOperation(
   } catch (error) {
     return failure(error instanceof Error ? error.message : String(error));
   }
+
+  // An empty picker cannot be answered, so the deterministic path's failure
+  // stands in for it.
+  if (candidates.length === 0) return failure(EMPTY_INVENTORY);
 
   const selection = await prompt.selectTargets(
     buildTargetSelection(candidates, ctx.env),

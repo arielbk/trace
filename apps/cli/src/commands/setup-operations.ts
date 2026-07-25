@@ -24,6 +24,10 @@ import {
 } from "./setup-candidates.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
+/** Shown when neither detection nor the registry names a single target. */
+export const EMPTY_INVENTORY =
+  "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]";
+
 /** Canonical user-level skills installed into every supported host. */
 const TRACE_SKILLS = [
   "board",
@@ -694,9 +698,7 @@ export function setupOperation(
   const candidates = discoverTargetCandidates(ctx.env, registeredTargets);
 
   if (candidates.length === 0) {
-    return failure(
-      "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]",
-    );
+    return failure(EMPTY_INVENTORY);
   }
 
   const targets = candidates.map(({ tool, root }) => ({
