@@ -16,6 +16,12 @@ import {
   type TargetRecord,
   type ToolName,
 } from "./integration-registry.ts";
+import {
+  discoverTargetCandidates,
+  resolveClaudeConfigRoot,
+  resolveCodexConfigRoot,
+  resolveCursorConfigRoot,
+} from "./setup-candidates.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
 /** Canonical user-level skills installed into every supported host. */
@@ -289,81 +295,6 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
   }
 
   return { ok: true };
-}
-
-/**
- * Resolves the Claude config root for ordinary setup: an explicit
- * `CLAUDE_CONFIG_DIR` wins over the default `~/.claude` root. Callers layer an
- * explicit `--target` on top of this (explicit target > env > default).
- */
-function resolveClaudeConfigRoot(env: Env): string {
-  if (env.CLAUDE_CONFIG_DIR) return env.CLAUDE_CONFIG_DIR;
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Claude config root");
-  }
-  return join(home, ".claude");
-}
-
-/**
- * Resolves the Codex config root: `CODEX_HOME` wins over the default
- * `~/.codex`. Callers may layer an explicit `--target` on top.
- */
-function resolveCodexConfigRoot(env: Env): string {
-  if (env.CODEX_HOME) return env.CODEX_HOME;
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Codex config root");
-  }
-  return join(home, ".codex");
-}
-
-/** Resolves the Cursor config root (`~/.cursor`). */
-function resolveCursorConfigRoot(env: Env): string {
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Cursor config root");
-  }
-  return join(home, ".cursor");
-}
-
-/**
- * Returns the Claude config root if a Claude Code installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectClaudeInstall(env: Env): string | undefined {
-  try {
-    const root = resolveClaudeConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Returns the Codex config root if a Codex installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectCodexInstall(env: Env): string | undefined {
-  try {
-    const root = resolveCodexConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Returns the Cursor config root if a Cursor installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectCursorInstall(env: Env): string | undefined {
-  try {
-    const root = resolveCursorConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Absolute path to the persistent Trace CLI, used for hook commands. */
@@ -715,22 +646,20 @@ export function setupOperation(
     );
   }
 
-  // No explicit tool — detect installed hosts and run setup for each.
-  const claudeRoot = detectClaudeInstall(ctx.env);
-  const codexRoot = detectCodexInstall(ctx.env);
-  const cursorRoot = detectCursorInstall(ctx.env);
+  // No explicit tool — reconcile the complete known inventory: every detected
+  // active/default root plus every registered target, deduplicated.
+  const candidates = discoverTargetCandidates(ctx.env, registeredTargets);
 
-  if (!claudeRoot && !codexRoot && !cursorRoot) {
+  if (candidates.length === 0) {
     return failure(
       "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]",
     );
   }
 
-  const targets = [
-    ...(claudeRoot ? targetsForTool("claude", claudeRoot, registeredTargets) : []),
-    ...(codexRoot ? targetsForTool("codex", codexRoot, registeredTargets) : []),
-    ...(cursorRoot ? targetsForTool("cursor", cursorRoot, registeredTargets) : []),
-  ];
+  const targets = candidates.map(({ tool, root }) => ({
+    adapter: SETUP_ADAPTERS[tool],
+    root,
+  }));
   return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
 }
 
