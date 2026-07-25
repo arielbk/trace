@@ -120,13 +120,17 @@ describe("CLI distribution", () => {
         "packed install must include dist/skills templates",
       );
 
-      const setupEnv = {
+      const setupEnv: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: fakeHome,
         TRACE_REGISTRY_PATH: join(fakeHome, "integrations.json"),
         TRACE_CLI_PATH: traceModule,
         TRACE_SERVER_URL: "",
       };
+      // The Claude root resolves from CLAUDE_CONFIG_DIR before HOME, so an
+      // ambient value would aim this smoke test at the developer's real config
+      // instead of the fake home — and correctly trip the guardrails there.
+      delete setupEnv.CLAUDE_CONFIG_DIR;
 
       const setupResult = spawnSync(
         process.execPath,
