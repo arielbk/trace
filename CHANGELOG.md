@@ -1,7 +1,41 @@
 # Changelog
 
 Notable changes to `@arielbk/trace`. Older releases are documented in the
-[GitHub releases](https://github.com/arielbk/trace-v2/releases).
+[GitHub releases](https://github.com/arielbk/trace/releases).
+
+## 0.16.0
+
+Trace now ships as one globally installed CLI that owns its agent integrations.
+The npm package contains the board and the canonical skills, so installation,
+setup, and updates all follow one managed path.
+
+### Highlights
+
+- **One CLI-first install for every supported agent.** Install
+  `@arielbk/trace` globally, then run `trace setup` to wire Trace into Claude
+  Code, Codex, and Cursor. The published tarball now includes the README and all
+  six canonical skills alongside the CLI and board.
+- **Interactive setup discovers every target.** Bare `trace setup` inventories
+  installed and previously registered agent roots, presents a preselected
+  checklist grouped by tool, previews the exact plan, and confirms before
+  writing. Explicit `--tool`, `--target`, and `--yes` paths remain deterministic
+  for scripts and custom configurations.
+- **Managed updates keep integrations aligned.** `trace update` reinstalls the
+  latest package with the detected package manager and reconciles every
+  registered target. The CLI also warns when installed integrations are stale.
+- **Migration and removal are guarded.** Setup detects legacy plugin entries,
+  pinned hooks, collisions, unsupported paths, and ambiguous selections without
+  blocking healthy targets. Writes are atomic, and `trace setup --remove`
+  removes only Trace-owned artifacts and metadata.
+
+### Improvements
+
+- **Setup feedback is clearer.** Target labels, skipped-target summaries,
+  per-target remediation, and non-interactive behavior now make it explicit
+  which integrations will change and which need attention.
+- **The integration lifecycle is covered end to end.** New distribution,
+  inventory, prompt, guardrail, reconciliation, removal, update, and packed
+  tarball smoke tests exercise the same artifacts users install.
 
 ## 0.15.1
 
