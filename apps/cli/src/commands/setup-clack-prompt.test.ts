@@ -9,6 +9,7 @@ type Recorded = {
   groupCalls: unknown[];
   confirmCalls: unknown[];
   notes: [string | undefined, string | undefined][];
+  warnings: string[];
 };
 
 function fakeClack(
@@ -17,7 +18,12 @@ function fakeClack(
     confirm?: boolean | symbol;
   } = {},
 ): { clack: ClackApi; recorded: Recorded } {
-  const recorded: Recorded = { groupCalls: [], confirmCalls: [], notes: [] };
+  const recorded: Recorded = {
+    groupCalls: [],
+    confirmCalls: [],
+    notes: [],
+    warnings: [],
+  };
   const clack: ClackApi = {
     groupMultiselect: (options) => {
       recorded.groupCalls.push(options);
@@ -29,6 +35,9 @@ function fakeClack(
     },
     note: (message, title) => {
       recorded.notes.push([message, title]);
+    },
+    warn: (message) => {
+      recorded.warnings.push(message);
     },
     isCancel: (value) => value === CANCEL,
   };
@@ -130,6 +139,16 @@ describe("Clack setup prompt adapter", () => {
 
     assert.deepEqual(recorded.notes, [
       ["target root: ~/.claude", "Setup plan"],
+    ]);
+  });
+
+  it("renders setup warnings through Clack's colored warning level", () => {
+    const { clack, recorded } = fakeClack();
+
+    createClackPrompt(clack).warn("Setup incomplete: Cursor was skipped.");
+
+    assert.deepEqual(recorded.warnings, [
+      "Setup incomplete: Cursor was skipped.",
     ]);
   });
 });

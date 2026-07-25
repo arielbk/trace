@@ -23,6 +23,7 @@ export type ClackApi = {
   }): Promise<string[] | symbol>;
   confirm(options: { message: string }): Promise<boolean | symbol>;
   note(message?: string, title?: string): void;
+  warn(message: string): void;
   isCancel(value: unknown): boolean;
 };
 
@@ -31,6 +32,9 @@ const defaultClack: ClackApi = {
   confirm: (options) => clackPrompts.confirm(options),
   note: (message, title) => {
     clackPrompts.note(message, title);
+  },
+  warn: (message) => {
+    clackPrompts.log.warn(message);
   },
   isCancel: (value) => clackPrompts.isCancel(value),
 };
@@ -78,6 +82,10 @@ export function createClackPrompt(clack: ClackApi = defaultClack): SetupPrompt {
 
     note(message: string, title: string): void {
       clack.note(message, title);
+    },
+
+    warn(message: string): void {
+      clack.warn(message);
     },
   };
 }

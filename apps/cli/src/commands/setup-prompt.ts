@@ -43,6 +43,8 @@ export type SetupPrompt = {
   selectTargets(request: TargetSelectionRequest): Promise<PromptResult<string[]>>;
   confirmInstall(request: { message: string }): Promise<PromptResult<boolean>>;
   note(message: string, title: string): void;
+  /** Renders an attention-grabbing terminal warning without changing exit status. */
+  warn(message: string): void;
 };
 
 /**

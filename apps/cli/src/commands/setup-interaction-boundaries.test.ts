@@ -77,6 +77,7 @@ function fakePrompt(answers: {
     note(message) {
       prompt.notes.push(message);
     },
+    warn() {},
   };
   return prompt;
 }

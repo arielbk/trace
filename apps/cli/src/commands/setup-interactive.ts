@@ -64,6 +64,17 @@ export async function interactiveSetupOperation(
   });
   if (preview.exitCode !== 0) return preview;
   prompt.note(preview.stdout.trimEnd(), "Setup plan");
+  if (preview.skippedTargets && preview.skippedTargets.length > 0) {
+    const labels = preview.skippedTargets.map(({ label }) => label);
+    const skipped =
+      labels.length === 1
+        ? `${labels[0]} was`
+        : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)} were`;
+    prompt.warn(
+      `Setup incomplete: ${skipped} skipped.\n` +
+        "Fix the guardrail issue shown above, then run `trace setup` again.",
+    );
+  }
 
   const confirmed = await prompt.confirmInstall({
     message: "Install Trace into these targets?",

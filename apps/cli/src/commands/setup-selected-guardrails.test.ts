@@ -46,6 +46,7 @@ type FakePrompt = SetupPrompt & {
   selectRequests: TargetSelectionRequest[];
   confirmRequests: { message: string }[];
   notes: string[];
+  warnings: string[];
 };
 
 /** Records what setup asked the terminal for, and replays canned answers. */
@@ -59,6 +60,7 @@ function fakePrompt(
     selectRequests: [],
     confirmRequests: [],
     notes: [],
+    warnings: [],
     selectTargets(request) {
       prompt.selectRequests.push(request);
       return Promise.resolve(
@@ -76,6 +78,9 @@ function fakePrompt(
     },
     note(message) {
       prompt.notes.push(message);
+    },
+    warn(message: string) {
+      prompt.warnings.push(message);
     },
   };
   return prompt;
@@ -133,14 +138,25 @@ test("a blocked selection is listed with its remediation while healthy ones inst
     expect(prompt.notes).toHaveLength(1);
     expect(plannedRoots(reviewedPlan(prompt))).toEqual([claudeRoot]);
     expect(reviewedPlan(prompt)).toContain(
-      "Skipped (guardrail checks failed):",
+      "Skipped targets (guardrail checks failed):",
     );
     expect(reviewedPlan(prompt)).toContain(cursorRoot);
     expect(reviewedPlan(prompt).toLowerCase()).toContain("remediation");
+    expect(prompt.warnings).toEqual([
+      "Setup incomplete: Cursor was skipped.\nFix the guardrail issue shown above, then run `trace setup` again.",
+    ]);
 
     expect(result.exitCode).toBe(0);
     expect(installedRoots(result.stdout)).toEqual([claudeRoot]);
-    expect(result.stdout).toContain("Skipped (guardrail checks failed):");
+    expect(result.stdout).toContain("SETUP INCOMPLETE — ACTION REQUIRED");
+    expect(result.stdout).toContain("Skipped targets (guardrail checks failed):");
+    expect(result.stdout).toContain(
+      "Fix each skipped target, then run `trace setup` again.",
+    );
+    expect(result.stdout.trimEnd()).toMatch(
+      /Fix each skipped target, then run `trace setup` again\.$/,
+    );
+    expect(result.stdout).not.toContain("\u001B[");
     expect(existsSync(join(claudeRoot, "skills", "board", "SKILL.md"))).toBe(
       true,
     );

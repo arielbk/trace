@@ -470,6 +470,11 @@ function applyInstalledTarget(
 }
 
 type InstalledTarget = { adapter: SetupAdapter; root: string };
+type SkippedTarget = { root: string; label: string; reason: string };
+type ReconcileResult = CommandResult & {
+  /** Structured counterpart to the human-readable skipped-target section. */
+  skippedTargets?: readonly SkippedTarget[];
+};
 
 /**
  * How a reconciliation renders itself. The flag-driven paths keep the default
@@ -514,7 +519,7 @@ function reconcileInstalledTargets(
   registry: IntegrationRegistry,
   onGuardrailFailure: "abort" | "skip",
   format: ReconcileFormat = {},
-): CommandResult {
+): ReconcileResult {
   const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
   if (targets.length === 0) return success("Nothing to reconcile.\n");
 
@@ -538,7 +543,7 @@ function reconcileInstalledTargets(
   // Partition by pre-flight. Runs for every apply and for skip-mode preview, so
   // the plan a skip-mode preview shows matches what the apply would do.
   const installable: typeof installations = [];
-  const skipped: { root: string; label: string; reason: string }[] = [];
+  const skipped: SkippedTarget[] = [];
   for (const { adapter, options } of installations) {
     const check = checkInstalledTarget(options, adapter);
     if (check.ok) {
@@ -560,18 +565,40 @@ function reconcileInstalledTargets(
 
   // Nothing safe to install: surface every reason rather than a hollow success.
   if (installable.length === 0) {
-    return failure(`No targets could be reconciled.\n${skipLines}`);
+    return {
+      ...failure(`No targets could be reconciled.\n${skipLines}`),
+      skippedTargets: skipped,
+    };
   }
 
   const plan = installable
     .map(({ adapter, options }) => planInstalledTarget(options, adapter))
     .join("\n");
   const skippedSection =
-    skipped.length > 0 ? `Skipped (guardrail checks failed):\n${skipLines}\n` : "";
+    skipped.length > 0
+      ? [
+          "⚠ SETUP INCOMPLETE — ACTION REQUIRED",
+          `${skipped.length} selected ${
+            skipped.length === 1 ? "target was" : "targets were"
+          } skipped and ${
+            skipped.length === 1 ? "is" : "are"
+          } still not configured.`,
+          "Skipped targets (guardrail checks failed):",
+          skipLines,
+          "",
+          "Fix each skipped target, then run `trace setup` again.",
+          "",
+        ].join("\n")
+      : "";
   const skippedBlock = skippedSection ? `\n${skippedSection}` : "";
 
   if (!apply) {
-    return success(`${plan}${skippedBlock}${previewFooter}`);
+    // Keep the action-required warning last: a mixed result must not visually
+    // resolve on either the healthy plan or the generic apply footer.
+    return {
+      ...success(`${plan}${previewFooter}${skippedBlock}`),
+      skippedTargets: skipped,
+    };
   }
 
   try {
@@ -596,11 +623,15 @@ function reconcileInstalledTargets(
   const roots = installable.map(({ options }) => options.configRoot).join(", ");
   if (format.planInSummary === false) {
     // The caller already displayed this plan for review; only report the outcome.
-    return success(
-      `${skippedSection ? `${skippedSection}\n` : ""}Installed Trace into ${roots}.\n`,
-    );
+    return {
+      ...success(`Installed Trace into ${roots}.\n${skippedBlock}`),
+      skippedTargets: skipped,
+    };
   }
-  return success(`${plan}${skippedBlock}\nInstalled Trace into ${roots}.\n`);
+  return {
+    ...success(`${plan}\nInstalled Trace into ${roots}.\n${skippedBlock}`),
+    skippedTargets: skipped,
+  };
 }
 
 /**
@@ -617,7 +648,7 @@ export function reconcileSelectedTargets(
     registry: IntegrationRegistry;
     format?: ReconcileFormat;
   },
-): CommandResult {
+): ReconcileResult {
   return reconcileInstalledTargets(
     selection.map(({ tool, root }) => ({ adapter: SETUP_ADAPTERS[tool], root })),
     options.apply,
