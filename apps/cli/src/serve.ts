@@ -8,13 +8,16 @@ import {
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  handleLocalAuthRequest,
   handleTraceApiRequest,
   resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
+  type LocalAuthService,
 } from "@trace/core";
 import { requestAutomaticSync } from "./commands/sync.ts";
+import { createLocalAuthService } from "./local-auth.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -150,12 +153,27 @@ export function createServeRequestListener(
   /** Reads the effective AutoSync mode; called per request because the user may
    * run `trace config set auto-sync` while the board is open. */
   resolveAutoSync?: () => boolean,
+  /** Runs board-initiated login/logout. Absent means this host serves no
+   * `/api/local-auth` routes. */
+  localAuth?: LocalAuthService,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
     const dispatch = (body?: string): void => {
+      // Auth routes are asynchronous (they reach the hosted server), so they
+      // are routed ahead of the synchronous database API rather than through it.
+      const authResponse = localAuth
+        ? handleLocalAuthRequest(method, url, body, localAuth)
+        : null;
+      if (authResponse) {
+        void authResponse.then((response) =>
+          writeTraceApiResponse(res, response),
+        );
+        return;
+      }
+
       const response = handleTraceApiRequest(databasePath, method, url, body, {
         syncServerConfigured,
         autoSyncEnabled: resolveAutoSync?.(),
@@ -252,6 +270,7 @@ export function createTraceServeServer(
       Boolean(resolveConfiguredServerUrl(env)),
       syncHooks,
       () => resolveAutoSyncEnabled(env),
+      createLocalAuthService(env),
     ),
   );
 }

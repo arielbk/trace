@@ -1,8 +1,17 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import type { SyncStatusResponse } from "@trace/core/browser";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { LoginAttemptView, SyncStatusResponse } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
-import { useSyncStatus } from "../lib/api.ts";
+import {
+  acknowledgeGeneratedKey,
+  cancelLogin,
+  postLogout,
+  startLogin,
+  useLoginAttempt,
+  useSyncStatus,
+} from "../lib/api.ts";
 
 /**
  * The board's global account control: a user-circle button in the shared header
@@ -60,11 +69,233 @@ export function AccountMenu({ now }: { now?: Date }) {
               </dd>
             </dl>
           ) : null}
+          <AccountActions account={account} />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
   );
 }
+
+/**
+ * The account actions: signing this machine in, and signing it out.
+ *
+ * A login is a machine-local device authorization the serving process performs
+ * — the board only starts it, sends the user to the hosted approval page in a
+ * new tab, and watches it. The one secret that reaches the browser is a freshly
+ * generated document encryption key, held in component state (through the query
+ * cache) for exactly as long as it takes the user to save it. It is never
+ * written to storage, a URL, or a log.
+ */
+function AccountActions({ account }: { account: AccountDescription }) {
+  const queryClient = useQueryClient();
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const { data: attempt } = useLoginAttempt(attemptId);
+
+  const beginLogin = useMutation({
+    mutationFn: startLogin,
+    onSuccess: (started) => {
+      // Opened from the user's click so the popup is not blocked, and with
+      // `noopener` so the hosted page gets no handle on the board.
+      window.open(started.verificationUrl, "_blank", "noopener,noreferrer");
+      queryClient.setQueryData(["login-attempt", started.attemptId], started);
+      setAttemptId(started.attemptId);
+    },
+  });
+  const acknowledge = useMutation({
+    mutationFn: acknowledgeGeneratedKey,
+    onSuccess: (settled) => {
+      queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: cancelLogin,
+    onSuccess: (settled) => {
+      queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
+    },
+  });
+  const signOut = useMutation({
+    mutationFn: postLogout,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+
+  // A completed login is no longer an attempt worth showing: drop it and let
+  // the ordinary sync status describe the now signed-in machine.
+  useEffect(() => {
+    if (attempt?.state !== "complete") return;
+    setAttemptId(null);
+    void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+  }, [attempt?.state, queryClient]);
+
+  if (attempt && attempt.state !== "complete") {
+    return (
+      <LoginProgress
+        attempt={attempt}
+        onAcknowledge={() => acknowledge.mutate(attempt.attemptId)}
+        onCancel={() => cancel.mutate(attempt.attemptId)}
+        onDismiss={() => setAttemptId(null)}
+        onRetry={() => {
+          setAttemptId(null);
+          beginLogin.mutate(attempt.provider);
+        }}
+      />
+    );
+  }
+
+  if (account.canSignIn) {
+    return (
+      <div className="mt-3 border-t border-border-subtle pt-2">
+        <button
+          type="button"
+          className={ACTION_CLASS}
+          onClick={() => beginLogin.mutate("github")}
+          disabled={beginLogin.isPending}
+        >
+          Sign in with GitHub
+        </button>
+        {beginLogin.isError ? (
+          <p className="mt-1.5 mb-0 text-warning" data-testid="login-error">
+            {beginLogin.error.message}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (account.canSignOut) {
+    return (
+      <div className="mt-3 border-t border-border-subtle pt-2">
+        <button
+          type="button"
+          className={ACTION_CLASS}
+          onClick={() => signOut.mutate()}
+          disabled={signOut.isPending}
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+const ACTION_CLASS =
+  "w-full rounded-md border border-border bg-surface px-2 py-1.5 text-caption text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60";
+
+/** The stages of a login in flight, rendered inside the account popover. */
+function LoginProgress({
+  attempt,
+  onAcknowledge,
+  onCancel,
+  onDismiss,
+  onRetry,
+}: {
+  attempt: LoginAttemptView;
+  onAcknowledge: () => void;
+  onCancel: () => void;
+  onDismiss: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className="mt-3 border-t border-border-subtle pt-2"
+      data-testid="login-progress"
+      data-login-state={attempt.state}
+    >
+      {attempt.state === "waiting-for-approval" ? (
+        <>
+          <p className="m-0 text-text-muted">
+            Waiting for approval in your browser…
+          </p>
+          <p className="mt-1.5 mb-0 font-mono text-crumb">{attempt.userCode}</p>
+          <p className="mt-1.5 mb-0 text-text-muted">
+            <a
+              href={attempt.verificationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Reopen the approval page
+            </a>
+          </p>
+          {/* Closing the popover must not abandon a device approval the user is
+              still completing in the other tab — cancelling is deliberate. */}
+          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onCancel}>
+            Cancel sign-in
+          </button>
+        </>
+      ) : null}
+
+      {attempt.state === "showing-generated-key" ? (
+        <>
+          <p className="m-0 text-text-muted">
+            Save this document encryption key somewhere safe. It is shown only
+            once, and Trace cannot recover it for you.
+          </p>
+          <p
+            className="mt-1.5 mb-0 font-mono text-crumb break-all"
+            data-testid="generated-key"
+          >
+            {attempt.generatedKey}
+          </p>
+          <button
+            type="button"
+            className={`${ACTION_CLASS} mt-2`}
+            onClick={onAcknowledge}
+          >
+            I have saved it
+          </button>
+        </>
+      ) : null}
+
+      {attempt.state === "waiting-for-existing-key" ? (
+        <>
+          <p className="m-0 text-text-muted">
+            This account already has synced documents. Run trace login on this
+            machine to enter your document encryption key.
+          </p>
+          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onCancel}>
+            Cancel sign-in
+          </button>
+        </>
+      ) : null}
+
+      {SETTLED_LOGIN_STATES.includes(attempt.state) ? (
+        <>
+          <p className="m-0 text-warning" data-testid="login-outcome">
+            {attempt.error ?? SETTLED_LOGIN_MESSAGES[attempt.state]}
+          </p>
+          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onRetry}>
+            Try again
+          </button>
+          <button
+            type="button"
+            className={`${ACTION_CLASS} mt-1.5`}
+            onClick={onDismiss}
+          >
+            Dismiss
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Attempt states that are over, and the wording each gets when the service
+ * offered no message of its own. */
+const SETTLED_LOGIN_MESSAGES: Partial<
+  Record<LoginAttemptView["state"], string>
+> = {
+  failed: "Sign-in failed.",
+  expired: "The sign-in request expired.",
+  cancelled: "Sign-in cancelled.",
+};
+
+const SETTLED_LOGIN_STATES = Object.keys(
+  SETTLED_LOGIN_MESSAGES,
+) as LoginAttemptView["state"][];
 
 /**
  * The dot overlaid on the account icon. It is decorative — the trigger's
@@ -124,6 +355,10 @@ export interface AccountDescription {
   detail?: string;
   /** Rendered AutoSync mode, or undefined when there is no mode worth showing. */
   autoSyncLabel?: string;
+  /** Signed out with a sync server to sign in to. */
+  canSignIn: boolean;
+  /** Signed in, so this machine's token can be removed. */
+  canSignOut: boolean;
 }
 
 /**
@@ -138,9 +373,7 @@ export function describeAccount(
   status: SyncStatusResponse | undefined,
   now?: Date,
 ): AccountDescription {
-  if (!status || !("state" in status)) {
-    return { state: "unknown", triggerLabel: "Account", headline: "Loading…" };
-  }
+  if (!status || !("state" in status)) return loading();
 
   const identity = "identity" in status ? status.identity : undefined;
   const autoSyncLabel =
@@ -155,9 +388,8 @@ export function describeAccount(
       : undefined;
 
   const described = (
-    fields: Omit<AccountDescription, "state" | "triggerLabel"> & {
-      summary: string;
-    },
+    fields: Pick<AccountDescription, "headline"> &
+      Partial<Pick<AccountDescription, "detail">> & { summary: string },
   ): AccountDescription => {
     const { summary, ...rest } = fields;
     return {
@@ -165,6 +397,8 @@ export function describeAccount(
       triggerLabel: `Account — ${summary}`,
       identity,
       autoSyncLabel,
+      canSignIn: status.state === "logged-out" && Boolean(status.serverConfigured),
+      canSignOut: status.state !== "logged-out",
       ...rest,
     };
   };
@@ -174,7 +408,7 @@ export function describeAccount(
       return status.serverConfigured
         ? described({
             summary: "not signed in",
-            headline: "Run trace login to connect this machine.",
+            headline: "Sign in to sync this machine's tasks.",
           })
         : described({
             summary: "Cloud Sync not configured",
@@ -207,6 +441,17 @@ export function describeAccount(
         detail: [status.lastError, lastSynced].filter(Boolean).join(" · "),
       });
     default:
-      return { state: "unknown", triggerLabel: "Account", headline: "Loading…" };
+      return loading();
   }
+}
+
+/** Before the first status read there is nothing to say and nothing to act on. */
+function loading(): AccountDescription {
+  return {
+    state: "unknown",
+    triggerLabel: "Account",
+    headline: "Loading…",
+    canSignIn: false,
+    canSignOut: false,
+  };
 }
