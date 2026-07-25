@@ -298,6 +298,10 @@ test("surfaces reconcile error when new CLI setup fails", async () => {
     );
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toMatch(/setup failed/i);
+    // The install already succeeded — the message must not read as a failed
+    // upgrade, and must name the command that finishes the job.
+    expect(result.stderr).toMatch(/upgraded to v1\.2\.3/i);
+    expect(result.stderr).toMatch(/trace setup --yes/);
   } finally {
     cleanup();
   }

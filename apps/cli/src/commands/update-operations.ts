@@ -115,7 +115,17 @@ export async function updateOperation(
     const reconcileResult = deps.spawnReconcile(cliPath);
     if (reconcileResult.status !== 0) {
       const detail = reconcileResult.stderr.trim() || "non-zero exit";
-      return failure(`Reconcile failed: ${detail}`);
+      // The upgrade already landed — say so, so the failure does not read as a
+      // failed update, and point at the command that finishes the job. The
+      // nested detail carries its own remediation, so this frames it rather
+      // than adding a second competing "Remediation:" label.
+      const indented = detail.split("\n").map((line) => `  ${line}`).join("\n");
+      return failure(
+        `Trace was upgraded to v${latestVersion}, but reconciling integrations failed:\n` +
+          `${indented}\n` +
+          `Your integrations are still on the previous version. ` +
+          `Once the above is resolved, run \`trace setup --yes\` to finish.`,
+      );
     }
   }
 
