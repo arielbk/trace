@@ -51,13 +51,10 @@ bun install -g @arielbk/trace
 trace setup
 ```
 
-Running `trace setup` with no flags auto-detects installed Codex and Cursor
-roots and installs the six Trace skills into each. For Claude Code, pass
-`--tool claude`:
-
-```sh
-trace setup --tool claude
-```
+Running `trace setup` with no flags auto-detects installed Claude Code, Codex,
+and Cursor roots and installs the six Trace skills into each. A tool whose
+configuration needs attention first — a leftover plugin entry, say — is skipped
+with exact remediation guidance while the healthy ones still install.
 
 You can run `trace setup` at any time to add new tools or reconcile existing
 installs. It is idempotent: re-running it changes nothing when everything is
@@ -107,13 +104,17 @@ If you previously installed Trace via the Claude Code plugin marketplace or
 `codex plugin`, run:
 
 ```sh
-trace setup --tool claude    # or codex, cursor
+trace setup
 ```
 
-Trace will detect the legacy plugin entry or pinned `npx` hook and print exact
-remediation guidance before making any change. Follow the instructions (typically:
-remove the old plugin, then re-run setup with `--yes`) and your configuration will
-be on the CLI-first path.
+Trace previews every detected tool and, wherever it finds a legacy plugin entry
+or a pinned `npx` hook, prints exact remediation guidance in place of a plan.
+Follow the instructions (typically: remove the old plugin), then re-run with
+`--yes` and your configuration will be on the CLI-first path.
+
+Use the bare command while migrating. Targeting one tool explicitly
+(`trace setup --tool claude`) previews the plan it *intends* to apply and only
+reports a legacy config once you add `--yes`.
 
 ## How it works
 

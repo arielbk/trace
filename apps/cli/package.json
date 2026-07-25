@@ -16,6 +16,7 @@
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\"",
     "test:bundle": "vitest run src/bundle.test.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
