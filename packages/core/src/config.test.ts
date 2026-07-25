@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
   readConfigFile,
+  resolveAutoSyncEnabled,
   resolveConfigPath,
   resolveConfiguredServerUrl,
   updateConfigFile,
@@ -114,4 +115,60 @@ test("resolveConfiguredServerUrl is undefined with no env var and no config", ()
 
 test("resolveConfiguredServerUrl is undefined when no database path resolves", () => {
   expect(resolveConfiguredServerUrl({})).toBeUndefined();
+});
+
+test("resolveAutoSyncEnabled defaults to true when the key is absent", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    expect(resolveAutoSyncEnabled({ TRACE_DB: databasePath })).toBe(true);
+    writeConfigFile(databasePath, { serverUrl: "https://sync.test" });
+    expect(resolveAutoSyncEnabled({ TRACE_DB: databasePath })).toBe(true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("resolveAutoSyncEnabled is decided per database, not per machine", () => {
+  const manual = tempDatabasePath();
+  const automatic = tempDatabasePath();
+  try {
+    writeConfigFile(manual.databasePath, { autoSync: false });
+    expect(resolveAutoSyncEnabled({ TRACE_DB: manual.databasePath })).toBe(false);
+    expect(resolveAutoSyncEnabled({ TRACE_DB: automatic.databasePath })).toBe(
+      true,
+    );
+  } finally {
+    manual.cleanup();
+    automatic.cleanup();
+  }
+});
+
+test("resolveAutoSyncEnabled falls back to the default for a malformed value", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    writeFileSync(
+      resolveConfigPath(databasePath),
+      JSON.stringify({ autoSync: "false" }),
+    );
+    expect(readConfigFile(databasePath)).toBeNull();
+    expect(resolveAutoSyncEnabled({ TRACE_DB: databasePath })).toBe(true);
+  } finally {
+    cleanup();
+  }
+});
+
+test("resolveAutoSyncEnabled defaults to true when no database path resolves", () => {
+  expect(resolveAutoSyncEnabled({})).toBe(true);
+});
+
+test("resolveAutoSyncEnabled reports an explicitly stored boolean", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    writeConfigFile(databasePath, { autoSync: false });
+    expect(resolveAutoSyncEnabled({ TRACE_DB: databasePath })).toBe(false);
+    writeConfigFile(databasePath, { autoSync: true });
+    expect(resolveAutoSyncEnabled({ TRACE_DB: databasePath })).toBe(true);
+  } finally {
+    cleanup();
+  }
 });

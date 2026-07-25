@@ -1,5 +1,6 @@
 import {
   readConfigFile,
+  resolveAutoSyncEnabled,
   resolveDatabasePath,
   updateConfigFile,
 } from "@trace/core";
@@ -13,6 +14,7 @@ type ConfigCommandContext = { env: Env };
  */
 const CONFIG_KEYS = {
   "server-url": "serverUrl",
+  "auto-sync": "autoSync",
 } as const;
 
 type ConfigKey = keyof typeof CONFIG_KEYS;
@@ -45,6 +47,12 @@ export function configGetOperation(
   if (typeof key !== "string") return key;
   if (rawArgs.length !== 1) return failure(configUsage("get"));
 
+  // auto-sync always has an effective value (default on), so it reports that
+  // rather than the "not set" failure a missing server-url gets.
+  if (key === "auto-sync") {
+    return success(`${resolveAutoSyncEnabled(ctx.env)}\n`);
+  }
+
   const value = readConfigFile(resolveDatabasePath(ctx.env))?.[CONFIG_KEYS[key]];
   if (!value) return failure(`${key} is not set`, 1);
   return success(`${value}\n`);
@@ -59,10 +67,19 @@ export function configSetOperation(
   const value = rawArgs[1];
   if (!value || rawArgs.length !== 2) return failure(configUsage("set"));
 
-  if (key === "server-url") {
-    const invalid = validateServerUrl(value);
-    if (invalid) return invalid;
+  if (key === "auto-sync") {
+    // Stored as a JSON boolean, so nothing downstream has to interpret a
+    // string. Only the two canonical spellings are accepted — "off" or "1"
+    // would leave the user guessing which side of the policy they landed on.
+    if (value !== "true" && value !== "false") {
+      return failure("auto-sync must be true or false");
+    }
+    updateConfigFile(resolveDatabasePath(ctx.env), { autoSync: value === "true" });
+    return success(`${key} set\n`);
   }
+
+  const invalid = validateServerUrl(value);
+  if (invalid) return invalid;
 
   updateConfigFile(resolveDatabasePath(ctx.env), {
     [CONFIG_KEYS[key]]: value.replace(/\/+$/, ""),

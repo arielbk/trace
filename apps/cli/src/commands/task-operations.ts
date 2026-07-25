@@ -32,7 +32,7 @@ import {
   formatTaskDocSummary,
   formatTaskSummary,
 } from "./formatters.ts";
-import { triggerBackgroundSync } from "./sync.ts";
+import { requestAutomaticSync } from "./sync.ts";
 import {
   attempt,
   failure,
@@ -262,7 +262,7 @@ export function taskCaptureOperation(
       stderr: formatProjectResolution(resolution),
     };
   });
-  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  if (result.exitCode === 0) (ctx.triggerSync ?? requestAutomaticSync)(ctx.env);
   return result;
 }
 
@@ -331,7 +331,7 @@ export function taskAddDocOperation(
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });
-  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  if (result.exitCode === 0) (ctx.triggerSync ?? requestAutomaticSync)(ctx.env);
   return result;
 }
 
@@ -356,6 +356,6 @@ export function taskUpdateDocOperation(
     renderTaskDocManifest(store, databasePath, task);
     return success(formatTaskDocSummary(task.slug, doc));
   });
-  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  if (result.exitCode === 0) (ctx.triggerSync ?? requestAutomaticSync)(ctx.env);
   return result;
 }

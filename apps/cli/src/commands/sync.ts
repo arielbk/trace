@@ -1,6 +1,7 @@
 import {
   createKeyWrapper,
   openTraceStore,
+  resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   synchronize,
@@ -28,14 +29,34 @@ type BackgroundSpawn = (
   options: { detached: true; stdio: "ignore"; env: NodeJS.ProcessEnv },
 ) => BackgroundChild;
 
-/** Start an isolated sync process without adding latency to the calling command. */
-export function triggerBackgroundSync(
+/**
+ * Marks a `trace sync` process as one Trace started on the user's behalf rather
+ * than one the user typed. Set on the spawned child by
+ * {@link requestAutomaticSync}, read back by {@link runSyncCommand} as the
+ * execution half of the AutoSync policy: a job queued before the user turned
+ * AutoSync off must still refuse to touch the network when it finally runs. A
+ * separate process means an in-memory flag would not survive the handoff, so
+ * the marker travels in the child's environment.
+ */
+export const AUTOMATIC_SYNC_ENV_VAR = "TRACE_AUTOMATIC_SYNC";
+
+/**
+ * The one entry point for *implicit* task-data synchronization — task
+ * mutations, task binding, board startup/focus, and the periodic board timer
+ * all come through here. It starts an isolated sync process without adding
+ * latency to the calling command, and it is the scheduling half of the AutoSync
+ * policy: with `auto-sync` off, nothing is spawned at all. Explicit `trace
+ * sync` deliberately does not route through this function, so no caller can
+ * bypass the policy by reaching for a lower-level sync helper.
+ */
+export function requestAutomaticSync(
   env: Env,
   dependencies: {
     spawn?: BackgroundSpawn;
     executable?: string;
   } = {},
 ): void {
+  if (!resolveAutoSyncEnabled(env)) return;
   if (!readAuthToken(env)) return;
   const executable = dependencies.executable ?? process.argv[1];
   if (!executable) return;
@@ -44,7 +65,11 @@ export function triggerBackgroundSync(
     const child = (dependencies.spawn ?? nodeSpawn)(
       process.execPath,
       [executable, "sync"],
-      { detached: true, stdio: "ignore", env: { ...process.env, ...env } },
+      {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, ...env, [AUTOMATIC_SYNC_ENV_VAR]: "1" },
+      },
     );
     child.on("error", () => {});
     child.unref();
@@ -57,6 +82,15 @@ export async function runSyncCommand(
   env: Env,
   dependencies: { fetch?: typeof globalThis.fetch } = {},
 ): Promise<CommandResult> {
+  // The execution half of the AutoSync policy. This process was spawned on the
+  // user's behalf, possibly seconds before they turned AutoSync off — so the
+  // policy is re-read here, at the last moment before any network work. Silent
+  // and status-neutral: a refused run is not a sync outcome, so it must not
+  // overwrite what the board is showing.
+  if (env[AUTOMATIC_SYNC_ENV_VAR] === "1" && !resolveAutoSyncEnabled(env)) {
+    return { exitCode: 0, stdout: "", stderr: "" };
+  }
+
   const serverUrl = resolveConfiguredServerUrl(env);
   if (!serverUrl) {
     // Cloud sync is flagged off without a configured server — soft no-op so a

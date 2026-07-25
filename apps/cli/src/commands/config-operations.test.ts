@@ -75,6 +75,59 @@ test("config set rejects malformed and non-http URLs", () => {
   }
 });
 
+test("config set/get/unset round-trips auto-sync as a real boolean", () => {
+  const { home, cleanup } = tempHome();
+  const env = { HOME: home };
+  try {
+    // Absent means the default: get reports the effective value, not an error.
+    expect(configGetOperation(["auto-sync"], { env })).toEqual({
+      exitCode: 0,
+      stdout: "true\n",
+      stderr: "",
+    });
+
+    expect(configSetOperation(["auto-sync", "false"], { env })).toEqual({
+      exitCode: 0,
+      stdout: "auto-sync set\n",
+      stderr: "",
+    });
+    expect(
+      JSON.parse(readFileSync(join(home, ".trace", "config.json"), "utf8")),
+    ).toEqual({ autoSync: false });
+    expect(configGetOperation(["auto-sync"], { env }).stdout).toBe("false\n");
+
+    expect(configSetOperation(["auto-sync", "true"], { env }).exitCode).toBe(0);
+    expect(configGetOperation(["auto-sync"], { env }).stdout).toBe("true\n");
+
+    // Unsetting restores the default-on behavior.
+    expect(configSetOperation(["auto-sync", "false"], { env }).exitCode).toBe(0);
+    expect(configUnsetOperation(["auto-sync"], { env })).toEqual({
+      exitCode: 0,
+      stdout: "auto-sync unset\n",
+      stderr: "",
+    });
+    expect(configGetOperation(["auto-sync"], { env }).stdout).toBe("true\n");
+  } finally {
+    cleanup();
+  }
+});
+
+test("config set auto-sync accepts only explicit booleans", () => {
+  const { home, cleanup } = tempHome();
+  const env = { HOME: home };
+  try {
+    for (const value of ["yes", "1", "TRUE", "off", ""]) {
+      const result = configSetOperation(["auto-sync", value], { env });
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+    }
+    // Nothing was written, so the effective value is still the default.
+    expect(configGetOperation(["auto-sync"], { env }).stdout).toBe("true\n");
+  } finally {
+    cleanup();
+  }
+});
+
 test("config commands reject unknown keys and list the known ones", () => {
   const { home, cleanup } = tempHome();
   try {

@@ -13,7 +13,7 @@ import {
   resolveDatabasePath,
   writeTraceApiResponse,
 } from "@trace/core";
-import { triggerBackgroundSync } from "./commands/sync.ts";
+import { requestAutomaticSync } from "./commands/sync.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -261,7 +261,7 @@ export function startTraceServe(
 ): Promise<TraceServer> {
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
-  const triggerSync = options.triggerSync ?? triggerBackgroundSync;
+  const triggerSync = options.triggerSync ?? requestAutomaticSync;
   const server =
     options.server ??
     createTraceServeServer(env, undefined, createSyncHooks(() => triggerSync(env)));
