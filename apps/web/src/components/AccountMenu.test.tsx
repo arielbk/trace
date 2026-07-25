@@ -4,7 +4,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
-import type { LoginAttemptView, SyncStatusResponse } from "@trace/core/browser";
+import {
+  REPLACEMENT_KEY_CONFIRMATION,
+  type LoginAttemptView,
+  type SyncStatusResponse,
+} from "@trace/core/browser";
 import { AccountMenu } from "./AccountMenu.tsx";
 
 const NOW = new Date("2026-07-10T16:05:00.000Z");
@@ -47,6 +51,9 @@ function localAuthServer(options: {
   status?: SyncStatusResponse;
   started?: LoginAttemptView;
   polled?: LoginAttemptView;
+  /** The key this account's documents are encrypted under, for the
+   * `waiting-for-existing-key` path: anything else is refused. */
+  masterKey?: string;
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
@@ -63,6 +70,33 @@ function localAuthServer(options: {
     if (url === "/api/local-auth/logout") return jsonResponse({ ok: true });
     if (url.endsWith("/acknowledge-key")) {
       polled = { ...polled, state: "complete", generatedKey: undefined };
+      return jsonResponse(polled);
+    }
+    if (url.endsWith("/existing-key")) {
+      const { key } = JSON.parse(String(init?.body)) as { key: string };
+      polled =
+        key === options.masterKey
+          ? { ...polled, state: "complete", error: undefined }
+          : {
+              ...polled,
+              error:
+                "That document encryption key could not decrypt your synced documents.",
+            };
+      return jsonResponse(polled);
+    }
+    if (url.endsWith("/replacement-key")) {
+      const { confirmation } = JSON.parse(String(init?.body)) as {
+        confirmation: string;
+      };
+      polled =
+        confirmation === REPLACEMENT_KEY_CONFIRMATION
+          ? {
+              ...polled,
+              state: "showing-generated-key",
+              generatedKey: GENERATED_KEY,
+              error: undefined,
+            }
+          : { ...polled, error: `Type ${REPLACEMENT_KEY_CONFIRMATION} to confirm.` };
       return jsonResponse(polled);
     }
     if (url.endsWith("/cancel")) {
@@ -361,6 +395,98 @@ test("a newly generated key is shown once, kept out of storage, and acknowledged
   );
   expect(server.calls).toContain(
     "POST /api/local-auth/login/attempt-1/acknowledge-key",
+  );
+});
+
+const EXISTING_KEY = "cd".repeat(32);
+
+/** Start a login that lands on the existing-key prompt. */
+async function signInToKeyPrompt(server: LocalAuthFake): Promise<void> {
+  const user = userEvent.setup();
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /sign in with github/i }));
+  await screen.findByLabelText(/document encryption key/i);
+}
+
+const WAITING_FOR_KEY: LoginAttemptView = {
+  ...WAITING,
+  state: "waiting-for-existing-key",
+};
+
+test("an account with synced documents asks for its key and signs in once it validates", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.type(screen.getByLabelText(/document encryption key/i), EXISTING_KEY);
+  await user.click(screen.getByRole("button", { name: /^continue$/i }));
+
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/login/attempt-1/existing-key",
+    ),
+  );
+  expect(server.bodies).toContainEqual({ key: EXISTING_KEY });
+  // A completed login is no longer an attempt: the prompt goes away.
+  await waitFor(() =>
+    expect(
+      screen.queryByLabelText(/document encryption key/i),
+    ).not.toBeInTheDocument(),
+  );
+});
+
+test("a key that cannot decrypt the account is reported without losing the prompt", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.type(screen.getByLabelText(/document encryption key/i), "ef".repeat(32));
+  await user.click(screen.getByRole("button", { name: /^continue$/i }));
+
+  expect(await screen.findByTestId("existing-key-error")).toHaveTextContent(
+    /could not decrypt/i,
+  );
+  // Still on the prompt, so the user can try the right key.
+  expect(screen.getByLabelText(/document encryption key/i)).toBeInTheDocument();
+});
+
+test("a fresh key is offered only behind the same warning and confirmation the CLI demands", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.click(screen.getByRole("button", { name: /use a new key/i }));
+
+  const menu = screen.getByRole("dialog", { name: /account/i });
+  expect(menu).toHaveTextContent(/cannot decrypt your existing synced documents/i);
+  const generate = screen.getByRole("button", { name: /generate new key/i });
+  // The warning is not enough on its own: the phrase must be typed.
+  expect(generate).toBeDisabled();
+
+  await user.type(screen.getByLabelText(/confirm/i), REPLACEMENT_KEY_CONFIRMATION);
+  await user.click(generate);
+
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/login/attempt-1/replacement-key",
+    ),
+  );
+  expect(server.bodies).toContainEqual({
+    confirmation: REPLACEMENT_KEY_CONFIRMATION,
+  });
+  // The replacement is shown once, exactly as a new account's key is.
+  expect(await screen.findByTestId("generated-key")).toHaveTextContent(
+    GENERATED_KEY,
   );
 });
 

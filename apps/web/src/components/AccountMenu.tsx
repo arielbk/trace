@@ -1,14 +1,21 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { LoginAttemptView, SyncStatusResponse } from "@trace/core/browser";
+import {
+  REPLACEMENT_KEY_CONFIRMATION,
+  REPLACEMENT_KEY_WARNING,
+  type LoginAttemptView,
+  type SyncStatusResponse,
+} from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
   cancelLogin,
+  generateReplacementKey,
   postLogout,
   startLogin,
+  submitExistingKey,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
@@ -101,11 +108,27 @@ function AccountActions({ account }: { account: AccountDescription }) {
       setAttemptId(started.attemptId);
     },
   });
+  const recordAttempt = (settled: LoginAttemptView) => {
+    queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
+  };
   const acknowledge = useMutation({
     mutationFn: acknowledgeGeneratedKey,
-    onSuccess: (settled) => {
-      queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
-    },
+    onSuccess: recordAttempt,
+  });
+  const submitKey = useMutation({
+    mutationFn: ({ attemptId, key }: { attemptId: string; key: string }) =>
+      submitExistingKey(attemptId, key),
+    onSuccess: recordAttempt,
+  });
+  const replaceKey = useMutation({
+    mutationFn: ({
+      attemptId,
+      confirmation,
+    }: {
+      attemptId: string;
+      confirmation: string;
+    }) => generateReplacementKey(attemptId, confirmation),
+    onSuccess: recordAttempt,
   });
   const cancel = useMutation({
     mutationFn: cancelLogin,
@@ -132,7 +155,12 @@ function AccountActions({ account }: { account: AccountDescription }) {
     return (
       <LoginProgress
         attempt={attempt}
+        keyPending={submitKey.isPending || replaceKey.isPending}
         onAcknowledge={() => acknowledge.mutate(attempt.attemptId)}
+        onSubmitKey={(key) => submitKey.mutate({ attemptId: attempt.attemptId, key })}
+        onReplaceKey={(confirmation) =>
+          replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
+        }
         onCancel={() => cancel.mutate(attempt.attemptId)}
         onDismiss={() => setAttemptId(null)}
         onRetry={() => {
@@ -187,13 +215,19 @@ const ACTION_CLASS =
 /** The stages of a login in flight, rendered inside the account popover. */
 function LoginProgress({
   attempt,
+  keyPending,
   onAcknowledge,
+  onSubmitKey,
+  onReplaceKey,
   onCancel,
   onDismiss,
   onRetry,
 }: {
   attempt: LoginAttemptView;
+  keyPending: boolean;
   onAcknowledge: () => void;
+  onSubmitKey: (key: string) => void;
+  onReplaceKey: (confirmation: string) => void;
   onCancel: () => void;
   onDismiss: () => void;
   onRetry: () => void;
@@ -251,15 +285,13 @@ function LoginProgress({
       ) : null}
 
       {attempt.state === "waiting-for-existing-key" ? (
-        <>
-          <p className="m-0 text-text-muted">
-            This account already has synced documents. Run trace login on this
-            machine to enter your document encryption key.
-          </p>
-          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onCancel}>
-            Cancel sign-in
-          </button>
-        </>
+        <ExistingKeyStep
+          error={attempt.error}
+          pending={keyPending}
+          onSubmitKey={onSubmitKey}
+          onReplaceKey={onReplaceKey}
+          onCancel={onCancel}
+        />
       ) : null}
 
       {SETTLED_LOGIN_STATES.includes(attempt.state) ? (
@@ -282,6 +314,123 @@ function LoginProgress({
     </div>
   );
 }
+
+/**
+ * The key step of a login into an account that already holds synced documents.
+ *
+ * The board never judges the key: it hands what the user typed to the serving
+ * process, which proves it against the account's own wrapped keys. A refusal
+ * comes back on the attempt and leaves the user right here, on the prompt, with
+ * their next try one field away.
+ *
+ * Replacing the key instead is deliberately the harder path — the same warning
+ * and the same typed phrase `trace login` demands — because a fresh key makes
+ * every already-synced document unreadable, permanently.
+ */
+function ExistingKeyStep({
+  error,
+  pending,
+  onSubmitKey,
+  onReplaceKey,
+  onCancel,
+}: {
+  error?: string;
+  pending: boolean;
+  onSubmitKey: (key: string) => void;
+  onReplaceKey: (confirmation: string) => void;
+  onCancel: () => void;
+}) {
+  const keyFieldId = useId();
+  const confirmFieldId = useId();
+  const [key, setKey] = useState("");
+  const [replacing, setReplacing] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+
+  return (
+    <>
+      <p className="m-0 text-text-muted">
+        This account already has synced documents. Enter the document encryption
+        key you saved when you first signed in.
+      </p>
+      <form
+        className="mt-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmitKey(key.trim());
+        }}
+      >
+        <label className="block text-text-muted" htmlFor={keyFieldId}>
+          Document encryption key
+        </label>
+        <input
+          id={keyFieldId}
+          className={FIELD_CLASS}
+          value={key}
+          onChange={(event) => setKey(event.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <button
+          type="submit"
+          className={`${ACTION_CLASS} mt-2`}
+          disabled={pending || key.trim() === ""}
+        >
+          Continue
+        </button>
+      </form>
+      {error ? (
+        <p className="mt-1.5 mb-0 text-warning" data-testid="existing-key-error">
+          {error}
+        </p>
+      ) : null}
+
+      {replacing ? (
+        <form
+          className="mt-3 border-t border-border-subtle pt-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onReplaceKey(confirmation.trim());
+          }}
+        >
+          <p className="m-0 text-warning">{REPLACEMENT_KEY_WARNING}</p>
+          <label className="mt-1.5 block text-text-muted" htmlFor={confirmFieldId}>
+            Type {REPLACEMENT_KEY_CONFIRMATION} to confirm
+          </label>
+          <input
+            id={confirmFieldId}
+            className={FIELD_CLASS}
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="submit"
+            className={`${ACTION_CLASS} mt-2`}
+            disabled={pending || confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION}
+          >
+            Generate new key
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          className={`${ACTION_CLASS} mt-2`}
+          onClick={() => setReplacing(true)}
+        >
+          Use a new key instead
+        </button>
+      )}
+
+      <button type="button" className={`${ACTION_CLASS} mt-1.5`} onClick={onCancel}>
+        Cancel sign-in
+      </button>
+    </>
+  );
+}
+
+const FIELD_CLASS =
+  "mt-1 w-full rounded-md border border-border bg-bg px-2 py-1 font-mono text-crumb text-text";
 
 /** Attempt states that are over, and the wording each gets when the service
  * offered no message of its own. */

@@ -4,7 +4,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { readSyncStatus } from "@trace/core";
+import {
+  createKeyWrapper,
+  createTaskDocCrypto,
+  generateTaskKey,
+  readSyncStatus,
+  REPLACEMENT_KEY_CONFIRMATION,
+} from "@trace/core";
 import { createLocalAuthService } from "./local-auth.ts";
 import { readStoredDocCryptoKey } from "./commands/key.ts";
 import { createServeRequestListener } from "./serve.ts";
@@ -79,6 +85,28 @@ function hostedAuth(
     return Response.json({ error: "not_found" }, { status: 404 });
   }) as typeof globalThis.fetch;
   return { fetch, requests, approve: () => (approved = true) };
+}
+
+/**
+ * An account that already holds one synced task: a manifest sealed under a
+ * per-task DEK, plus that DEK wrapped by `masterKey`. The wrapped key is what
+ * gates a submitted key — unwrapping it is the only proof the board has that
+ * the user typed the right one.
+ */
+function existingAccount(masterKey: string): {
+  manifests: unknown[];
+  wrappedKeys: unknown[];
+} {
+  const taskId = "task-1";
+  const taskKey = generateTaskKey();
+  return {
+    manifests: [
+      { taskId, filesCiphertext: createTaskDocCrypto(taskKey).sealFilesList([]) },
+    ],
+    wrappedKeys: [
+      { taskId, wrappedKey: createKeyWrapper(masterKey).wrapTaskKey(taskKey) },
+    ],
+  };
 }
 
 type Listener = (req: IncomingMessage, res: ServerResponse) => void;
@@ -380,6 +408,150 @@ test("an account holding synced documents stops for its key instead of signing i
   // rather than half signed in.
   expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
   expect(readStoredDocCryptoKey(env)).toBeNull();
+});
+
+/** Drive an approved login on an existing account up to the key prompt. */
+async function loginToExistingKeyPrompt(
+  masterKey: string,
+): Promise<{ listener: Listener; attemptId: string }> {
+  const hosted = hostedAuth(existingAccount(masterKey));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+  hosted.approve();
+  await waitForState(listener, started.attemptId, "waiting-for-existing-key");
+  return { listener, attemptId: started.attemptId };
+}
+
+function submitExistingKey(
+  listener: Listener,
+  attemptId: string,
+  key: string,
+): Promise<CapturedResponse> {
+  return request(
+    listener,
+    "POST",
+    `/api/local-auth/login/${attemptId}/existing-key`,
+    JSON.stringify({ key }),
+  );
+}
+
+test("submitting the account's existing key finishes the login", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const response = await submitExistingKey(listener, attemptId, masterKey);
+
+  expect(response.status).toBe(200);
+  const attempt = JSON.parse(response.body) as AttemptView;
+  expect(attempt.state).toBe("complete");
+  expect(attempt.identity).toBe("The Octocat <octocat@github.com>");
+  // The key the user typed is never echoed back to the browser.
+  expect(response.body).not.toContain(masterKey);
+  expect(readStoredDocCryptoKey(env)).toBe(masterKey);
+  expect(
+    JSON.parse(readFileSync(join(home, ".trace", "auth.json"), "utf8")),
+  ).toEqual({ accessToken: "bearer-token" });
+});
+
+test.each([
+  ["a key belonging to another account", generateTaskKey()],
+  ["a malformed key", "not-a-key"],
+  ["an empty key", ""],
+])("%s is refused without storing credentials", async (_label, wrong) => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const response = await submitExistingKey(listener, attemptId, wrong);
+
+  expect(response.status).toBe(200);
+  const attempt = JSON.parse(response.body) as AttemptView;
+  // Still on the prompt, with the reason — a wrong key is a retry, not a
+  // failed login.
+  expect(attempt.state).toBe("waiting-for-existing-key");
+  expect(attempt.error).toMatch(/could not decrypt/i);
+  expect(readStoredDocCryptoKey(env)).toBeNull();
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+
+  // And the right key still works afterwards.
+  const retried = await submitExistingKey(listener, attemptId, masterKey);
+  const settled = JSON.parse(retried.body) as AttemptView;
+  expect(settled.state).toBe("complete");
+  expect(settled.error).toBeUndefined();
+  expect(readStoredDocCryptoKey(env)).toBe(masterKey);
+});
+
+function requestReplacementKey(
+  listener: Listener,
+  attemptId: string,
+  confirmation: string,
+): Promise<CapturedResponse> {
+  return request(
+    listener,
+    "POST",
+    `/api/local-auth/login/${attemptId}/replacement-key`,
+    JSON.stringify({ confirmation }),
+  );
+}
+
+test("a replacement key is refused until the warning is confirmed verbatim", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const response = await requestReplacementKey(listener, attemptId, "yes");
+
+  const attempt = JSON.parse(response.body) as AttemptView;
+  expect(attempt.state).toBe("waiting-for-existing-key");
+  expect(attempt.error).toContain(REPLACEMENT_KEY_CONFIRMATION);
+  expect(readStoredDocCryptoKey(env)).toBeNull();
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+});
+
+test("a confirmed replacement key abandons the old documents and signs in", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const response = await requestReplacementKey(
+    listener,
+    attemptId,
+    REPLACEMENT_KEY_CONFIRMATION,
+  );
+
+  const attempt = JSON.parse(response.body) as AttemptView;
+  // Same one-time showing as an empty account gets — the user must save this
+  // key too, and it is deliberately not the account's old one.
+  expect(attempt.state).toBe("showing-generated-key");
+  expect(attempt.generatedKey).toMatch(/^[0-9a-f]{64}$/);
+  expect(attempt.generatedKey).not.toBe(masterKey);
+  expect(readStoredDocCryptoKey(env)).toBe(attempt.generatedKey);
+  expect(
+    JSON.parse(readFileSync(join(home, ".trace", "auth.json"), "utf8")),
+  ).toEqual({ accessToken: "bearer-token" });
+
+  const acknowledged = await request(
+    listener,
+    "POST",
+    `/api/local-auth/login/${attemptId}/acknowledge-key`,
+  );
+  expect((JSON.parse(acknowledged.body) as AttemptView).state).toBe("complete");
+});
+
+test("cancelling at the key prompt gives up the approved login entirely", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const cancelled = await request(
+    listener,
+    "POST",
+    `/api/local-auth/login/${attemptId}/cancel`,
+  );
+
+  expect((JSON.parse(cancelled.body) as AttemptView).state).toBe("cancelled");
+  // The device approval already yielded a token; abandoning the key step must
+  // throw it away rather than leave a signable-in-later attempt behind.
+  const late = await submitExistingKey(listener, attemptId, masterKey);
+  expect((JSON.parse(late.body) as AttemptView).state).toBe("cancelled");
+  expect(readStoredDocCryptoKey(env)).toBeNull();
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
 });
 
 test("the endpoints refuse what they cannot serve", async () => {

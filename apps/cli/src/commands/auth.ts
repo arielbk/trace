@@ -1,5 +1,9 @@
 import { createInterface } from "node:readline/promises";
-import { createKeyWrapper, generateTaskKey } from "@trace/core";
+import {
+  generateTaskKey,
+  REPLACEMENT_KEY_CONFIRMATION,
+  REPLACEMENT_KEY_WARNING,
+} from "@trace/core";
 import {
   clearStoredCredentials,
   fetchDocManifests,
@@ -10,6 +14,7 @@ import {
   recordSignedIn,
   requestDeviceAuthorization,
   requireServerUrl,
+  validateDocumentKey,
   writeAuthToken,
   type AuthFetch,
 } from "../auth-service.ts";
@@ -128,19 +133,9 @@ async function ensureDocCryptoKey(
     return generateFreshKeyForExistingAccount(env, ask);
   }
 
-  // The master key is a KEK: it never opens a manifest directly. Validate the
-  // paste by unwrapping any one stored wrapped key — an AEAD tag failure (or a
-  // malformed key) means the wrong master key, caught before any persistence.
-  const [wrapped] = wrappedKeys;
-  try {
-    if (typeof wrapped?.wrappedKey !== "string") throw new Error("missing wrapped key");
-    createKeyWrapper(entered).unwrapTaskKey(wrapped.wrappedKey);
-  } catch {
-    throw new Error(
-      "That document encryption key could not decrypt your synced documents.",
-    );
-  }
-  writeStoredDocCryptoKey(env, entered.toLowerCase());
+  // Validated against the account's own wrapped key, by the same helper the
+  // board's login uses, so neither surface can be the lenient one.
+  writeStoredDocCryptoKey(env, validateDocumentKey(entered, wrappedKeys));
   return "Document encryption key saved.\n";
 }
 
@@ -149,9 +144,9 @@ async function generateFreshKeyForExistingAccount(
   ask: AuthDependencies["prompt"],
 ): Promise<string> {
   const confirmation = await ask(
-    "Warning: a fresh key cannot decrypt your existing synced documents. Type GENERATE NEW KEY to continue: ",
+    `Warning: ${REPLACEMENT_KEY_WARNING} Type ${REPLACEMENT_KEY_CONFIRMATION} to continue: `,
   );
-  if (confirmation.trim() !== "GENERATE NEW KEY") {
+  if (confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION) {
     throw new Error("Fresh document encryption key generation cancelled");
   }
   const masterKey = generateTaskKey();

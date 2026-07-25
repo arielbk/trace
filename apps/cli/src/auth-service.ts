@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  createKeyWrapper,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   updateSyncStatusFile,
@@ -170,6 +171,33 @@ export async function fetchDocManifests(
     throw new Error("Sync server returned an invalid document manifest response");
   }
   return { manifests: body.manifests, wrappedKeys: body.wrappedKeys };
+}
+
+export const INVALID_DOCUMENT_KEY_MESSAGE =
+  "That document encryption key could not decrypt your synced documents.";
+
+/**
+ * Prove a submitted master key against the account's own data, returning the
+ * key in its canonical form.
+ *
+ * The master key is a KEK: it never opens a manifest directly. So the check is
+ * to unwrap any one stored wrapped task key — an AEAD tag failure (or a
+ * malformed key) means the wrong master key. Both adapters validate *before*
+ * writing anything, so a wrong key leaves the machine exactly as it was.
+ */
+export function validateDocumentKey(
+  entered: string,
+  wrappedKeys: SyncWrappedKey[],
+): string {
+  const candidate = entered.trim();
+  const [wrapped] = wrappedKeys;
+  try {
+    if (typeof wrapped?.wrappedKey !== "string") throw new Error("missing wrapped key");
+    createKeyWrapper(candidate).unwrapTaskKey(wrapped.wrappedKey);
+  } catch {
+    throw new Error(INVALID_DOCUMENT_KEY_MESSAGE);
+  }
+  return candidate.toLowerCase();
 }
 
 export interface AuthToken {

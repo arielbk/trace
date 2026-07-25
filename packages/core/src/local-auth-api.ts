@@ -16,6 +16,16 @@ import type { TraceApiResponse } from "./api-handler.ts";
  * serves the board serves the same endpoints.
  */
 
+/**
+ * Replacing the document encryption key of an account that already holds synced
+ * documents makes those documents permanently unreadable, so both surfaces
+ * demand the same deliberate act: this warning, then this phrase typed exactly.
+ * Shared so the board and `trace login` cannot drift apart on how hard it is.
+ */
+export const REPLACEMENT_KEY_WARNING =
+  "A fresh key cannot decrypt your existing synced documents.";
+export const REPLACEMENT_KEY_CONFIRMATION = "GENERATE NEW KEY";
+
 /** Providers the hosted server can authenticate against. */
 export type LoginProvider = "github" | "google";
 
@@ -77,6 +87,17 @@ export interface LocalAuthService {
   /** Confirm the user has saved a one-time generated key, which drops it from
    * the attempt and finishes the login. */
   acknowledgeGeneratedKey(attemptId: string): LoginAttemptView | null;
+  /** Offer the account's existing document encryption key. A key that cannot
+   * decrypt the account's documents leaves the attempt waiting, with the reason
+   * on the view — no credentials are stored for a rejected key. */
+  submitExistingKey(attemptId: string, key: string): Promise<LoginAttemptView | null>;
+  /** Abandon the account's existing documents and set this machine up with a
+   * fresh key. Only proceeds when `confirmation` is exactly
+   * {@link REPLACEMENT_KEY_CONFIRMATION}. */
+  generateReplacementKey(
+    attemptId: string,
+    confirmation: string,
+  ): Promise<LoginAttemptView | null>;
   /** Abandon an attempt. Explicit — closing the popover must not silently give
    * up on a device approval the user is still completing in another tab. */
   cancelLogin(attemptId: string): LoginAttemptView | null;
@@ -115,6 +136,33 @@ export function handleLocalAuthRequest(
     return resolved(json({ ok: true }));
   }
 
+  const existingKeyMatch =
+    /^\/api\/local-auth\/login\/([^/]+)\/existing-key$/.exec(path);
+  if (existingKeyMatch?.[1]) {
+    if (method !== "POST") return resolved(methodNotAllowed());
+    const key = parseStringField(body, "key");
+    if (key === null) return resolved(badRequest("key must be a string"));
+    return settleAsync(
+      service.submitExistingKey(decodeURIComponent(existingKeyMatch[1]), key),
+    );
+  }
+
+  const replacementKeyMatch =
+    /^\/api\/local-auth\/login\/([^/]+)\/replacement-key$/.exec(path);
+  if (replacementKeyMatch?.[1]) {
+    if (method !== "POST") return resolved(methodNotAllowed());
+    const confirmation = parseStringField(body, "confirmation");
+    if (confirmation === null) {
+      return resolved(badRequest("confirmation must be a string"));
+    }
+    return settleAsync(
+      service.generateReplacementKey(
+        decodeURIComponent(replacementKeyMatch[1]),
+        confirmation,
+      ),
+    );
+  }
+
   const actionMatch =
     /^\/api\/local-auth\/login\/([^/]+)\/(acknowledge-key|cancel)$/.exec(path);
   if (actionMatch?.[1] && actionMatch[2]) {
@@ -146,6 +194,33 @@ async function start(
   } catch (error) {
     return badRequest(error instanceof Error ? error.message : String(error));
   }
+}
+
+/** Await a service call that may reach the network, mapping its outcomes the
+ * same way the synchronous actions do. */
+async function settleAsync(
+  pending: Promise<LoginAttemptView | null>,
+): Promise<TraceApiResponse> {
+  try {
+    const attempt = await pending;
+    return attempt ? json(attempt) : notFound();
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Read one required string field from a JSON request body. */
+function parseStringField(body: string | undefined, field: string): string | null {
+  if (!body) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const value = (parsed as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : null;
 }
 
 /** Read the requested provider from a request body, defaulting to GitHub. */

@@ -3,7 +3,9 @@ import {
   generateTaskKey,
   type LocalAuthService,
   type LoginAttemptView,
+  REPLACEMENT_KEY_CONFIRMATION,
   type LoginProvider,
+  type SyncWrappedKey,
 } from "@trace/core";
 import {
   clearStoredCredentials,
@@ -13,6 +15,7 @@ import {
   recordSignedIn,
   requestDeviceAuthorization,
   requireServerUrl,
+  validateDocumentKey,
   writeAuthToken,
   type AuthFetch,
   type DeviceAuthorization,
@@ -41,6 +44,18 @@ export interface LocalAuthDependencies {
 interface LoginAttempt {
   view: LoginAttemptView;
   cancelled: boolean;
+  /**
+   * What a `waiting-for-existing-key` attempt needs to finish once the user
+   * supplies their key: the approved bearer token, the server it came from, and
+   * the wrapped keys to validate against. Deliberately kept off the view — an
+   * approved-but-unfinished login already holds a token, and this is where it
+   * waits without ever crossing to the browser.
+   */
+  keySetup?: {
+    serverUrl: string;
+    accessToken: string;
+    wrappedKeys: SyncWrappedKey[];
+  };
 }
 
 export function createLocalAuthService(
@@ -94,6 +109,63 @@ export function createLocalAuthService(
       const shown = { ...attempt.view };
       delete shown.generatedKey;
       attempt.view = { ...shown, state: "complete" };
+      return attempt.view;
+    },
+
+    async submitExistingKey(
+      attemptId: string,
+      key: string,
+    ): Promise<LoginAttemptView | null> {
+      const attempt = attempts.get(attemptId);
+      if (!attempt) return null;
+      const setup = attempt.keySetup;
+      if (!setup || attempt.view.state !== "waiting-for-existing-key") {
+        return attempt.view;
+      }
+
+      let masterKey: string;
+      try {
+        masterKey = validateDocumentKey(key, setup.wrappedKeys);
+      } catch (error) {
+        // A wrong key is not a failed login: the user stays on the prompt with
+        // the reason, and nothing at all has been written.
+        attempt.view = {
+          ...attempt.view,
+          error: error instanceof Error ? error.message : String(error),
+        };
+        return attempt.view;
+      }
+
+      writeStoredDocCryptoKey(env, masterKey);
+      attempt.view = { ...attempt.view, error: undefined };
+      await finishKeySetup(env, fetch, attempt, "complete");
+      return attempt.view;
+    },
+
+    async generateReplacementKey(
+      attemptId: string,
+      confirmation: string,
+    ): Promise<LoginAttemptView | null> {
+      const attempt = attempts.get(attemptId);
+      if (!attempt) return null;
+      if (!attempt.keySetup || attempt.view.state !== "waiting-for-existing-key") {
+        return attempt.view;
+      }
+
+      if (confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION) {
+        attempt.view = {
+          ...attempt.view,
+          error: `Type ${REPLACEMENT_KEY_CONFIRMATION} to confirm replacing your document encryption key.`,
+        };
+        return attempt.view;
+      }
+
+      const masterKey = generateTaskKey();
+      writeStoredDocCryptoKey(env, masterKey);
+      attempt.view = { ...attempt.view, error: undefined };
+      // Shown once, exactly as a fresh account's key is: this key is now the
+      // only thing that can read anything this machine syncs from here on.
+      await finishKeySetup(env, fetch, attempt, "showing-generated-key", masterKey);
       return attempt.view;
     },
 
@@ -158,7 +230,13 @@ async function setUpDocumentKey(
     return;
   }
 
-  const { manifests } = await fetchDocManifests(serverUrl, fetch, accessToken);
+  const { manifests, wrappedKeys } = await fetchDocManifests(
+    serverUrl,
+    fetch,
+    accessToken,
+  );
+  attempt.keySetup = { serverUrl, accessToken, wrappedKeys };
+
   if (manifests.length > 0) {
     attempt.view = { ...attempt.view, state: "waiting-for-existing-key" };
     return;
@@ -166,11 +244,34 @@ async function setUpDocumentKey(
 
   const masterKey = generateTaskKey();
   writeStoredDocCryptoKey(env, masterKey);
-  const identity = await persistCredentials(env, serverUrl, fetch, accessToken);
   // The attempt goes straight to `showing-generated-key` — never through
   // `complete` — so a poll cannot land between the two and rob the user of the
   // one showing of their key. Acknowledging it is what completes the login.
-  settle(attempt, "showing-generated-key", identity, masterKey);
+  await finishKeySetup(env, fetch, attempt, "showing-generated-key", masterKey);
+}
+
+/**
+ * Store the credentials this machine has now earned a document key for, and
+ * move the attempt to its post-key state. Persisting the bearer token here, and
+ * only here, is what makes "no key, no credentials" true of every path.
+ */
+async function finishKeySetup(
+  env: Env,
+  fetch: AuthFetch,
+  attempt: LoginAttempt,
+  state: LoginAttemptView["state"],
+  generatedKey?: string,
+): Promise<void> {
+  const setup = attempt.keySetup;
+  if (!setup) return;
+  const identity = await persistCredentials(
+    env,
+    setup.serverUrl,
+    fetch,
+    setup.accessToken,
+  );
+  delete attempt.keySetup;
+  settle(attempt, state, identity, generatedKey);
 }
 
 /** Store the bearer token and record the signed-in identity, returning it. */

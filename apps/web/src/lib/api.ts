@@ -111,6 +111,41 @@ export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttempt
   );
 }
 
+/**
+ * Offer the account's existing document encryption key. The key is sent to the
+ * serving process, which validates it against the account's wrapped keys — the
+ * board never decides whether a key is right, and a rejected key comes back as
+ * an ordinary attempt view carrying the reason.
+ */
+export function submitExistingKey(
+  attemptId: string,
+  key: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/existing-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    },
+  );
+}
+
+/** Abandon the account's existing documents in favour of a fresh key. */
+export function generateReplacementKey(
+  attemptId: string,
+  confirmation: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/replacement-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    },
+  );
+}
+
 export function cancelLogin(attemptId: string): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/cancel`,
