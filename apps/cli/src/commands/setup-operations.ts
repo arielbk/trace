@@ -16,7 +16,17 @@ import {
   type TargetRecord,
   type ToolName,
 } from "./integration-registry.ts";
+import {
+  discoverTargetCandidates,
+  resolveClaudeConfigRoot,
+  resolveCodexConfigRoot,
+  resolveCursorConfigRoot,
+} from "./setup-candidates.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
+
+/** Shown when neither detection nor the registry names a single target. */
+export const EMPTY_INVENTORY =
+  "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]";
 
 /** Canonical user-level skills installed into every supported host. */
 const TRACE_SKILLS = [
@@ -291,81 +301,6 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
   return { ok: true };
 }
 
-/**
- * Resolves the Claude config root for ordinary setup: an explicit
- * `CLAUDE_CONFIG_DIR` wins over the default `~/.claude` root. Callers layer an
- * explicit `--target` on top of this (explicit target > env > default).
- */
-function resolveClaudeConfigRoot(env: Env): string {
-  if (env.CLAUDE_CONFIG_DIR) return env.CLAUDE_CONFIG_DIR;
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Claude config root");
-  }
-  return join(home, ".claude");
-}
-
-/**
- * Resolves the Codex config root: `CODEX_HOME` wins over the default
- * `~/.codex`. Callers may layer an explicit `--target` on top.
- */
-function resolveCodexConfigRoot(env: Env): string {
-  if (env.CODEX_HOME) return env.CODEX_HOME;
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Codex config root");
-  }
-  return join(home, ".codex");
-}
-
-/** Resolves the Cursor config root (`~/.cursor`). */
-function resolveCursorConfigRoot(env: Env): string {
-  const home = env.HOME || env.USERPROFILE;
-  if (!home) {
-    throw new Error("HOME/USERPROFILE must be set to resolve the Cursor config root");
-  }
-  return join(home, ".cursor");
-}
-
-/**
- * Returns the Claude config root if a Claude Code installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectClaudeInstall(env: Env): string | undefined {
-  try {
-    const root = resolveClaudeConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Returns the Codex config root if a Codex installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectCodexInstall(env: Env): string | undefined {
-  try {
-    const root = resolveCodexConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Returns the Cursor config root if a Cursor installation is detected
- * (i.e. the root directory already exists), otherwise `undefined`.
- */
-function detectCursorInstall(env: Env): string | undefined {
-  try {
-    const root = resolveCursorConfigRoot(env);
-    return existsSync(root) ? root : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Absolute path to the persistent Trace CLI, used for hook commands. */
 function resolveTraceCliPath(env: Env): string {
   if (env.TRACE_CLI_PATH) return env.TRACE_CLI_PATH;
@@ -535,6 +470,22 @@ function applyInstalledTarget(
 }
 
 type InstalledTarget = { adapter: SetupAdapter; root: string };
+type SkippedTarget = { root: string; label: string; reason: string };
+type ReconcileResult = CommandResult & {
+  /** Structured counterpart to the human-readable skipped-target section. */
+  skippedTargets?: readonly SkippedTarget[];
+};
+
+/**
+ * How a reconciliation renders itself. The flag-driven paths keep the default
+ * "re-run with --yes" footer; the interactive flow reviews its plan in the
+ * terminal and supplies its own.
+ */
+type ReconcileFormat = {
+  previewFooter?: string;
+  /** Whether an apply summary re-renders the plan it already previewed. */
+  planInSummary?: boolean;
+};
 
 function sharedSetupOptions(
   env: Env,
@@ -567,7 +518,9 @@ function reconcileInstalledTargets(
   env: Env,
   registry: IntegrationRegistry,
   onGuardrailFailure: "abort" | "skip",
-): CommandResult {
+  format: ReconcileFormat = {},
+): ReconcileResult {
+  const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
   if (targets.length === 0) return success("Nothing to reconcile.\n");
 
   const shared = sharedSetupOptions(env, registry);
@@ -584,13 +537,13 @@ function reconcileInstalledTargets(
     const plan = installations
       .map(({ adapter, options }) => planInstalledTarget(options, adapter))
       .join("\n");
-    return success(`${plan}\nRe-run with --yes to apply.\n`);
+    return success(`${plan}${previewFooter}`);
   }
 
   // Partition by pre-flight. Runs for every apply and for skip-mode preview, so
   // the plan a skip-mode preview shows matches what the apply would do.
   const installable: typeof installations = [];
-  const skipped: { root: string; label: string; reason: string }[] = [];
+  const skipped: SkippedTarget[] = [];
   for (const { adapter, options } of installations) {
     const check = checkInstalledTarget(options, adapter);
     if (check.ok) {
@@ -612,19 +565,40 @@ function reconcileInstalledTargets(
 
   // Nothing safe to install: surface every reason rather than a hollow success.
   if (installable.length === 0) {
-    return failure(`No targets could be reconciled.\n${skipLines}`);
+    return {
+      ...failure(`No targets could be reconciled.\n${skipLines}`),
+      skippedTargets: skipped,
+    };
   }
 
   const plan = installable
     .map(({ adapter, options }) => planInstalledTarget(options, adapter))
     .join("\n");
-  const skippedBlock =
+  const skippedSection =
     skipped.length > 0
-      ? `\nSkipped (guardrail checks failed):\n${skipLines}\n`
+      ? [
+          "⚠ SETUP INCOMPLETE — ACTION REQUIRED",
+          `${skipped.length} selected ${
+            skipped.length === 1 ? "target was" : "targets were"
+          } skipped and ${
+            skipped.length === 1 ? "is" : "are"
+          } still not configured.`,
+          "Skipped targets (guardrail checks failed):",
+          skipLines,
+          "",
+          "Fix each skipped target, then run `trace setup` again.",
+          "",
+        ].join("\n")
       : "";
+  const skippedBlock = skippedSection ? `\n${skippedSection}` : "";
 
   if (!apply) {
-    return success(`${plan}${skippedBlock}\nRe-run with --yes to apply.\n`);
+    // Keep the action-required warning last: a mixed result must not visually
+    // resolve on either the healthy plan or the generic apply footer.
+    return {
+      ...success(`${plan}${previewFooter}${skippedBlock}`),
+      skippedTargets: skipped,
+    };
   }
 
   try {
@@ -647,7 +621,42 @@ function reconcileInstalledTargets(
   }
 
   const roots = installable.map(({ options }) => options.configRoot).join(", ");
-  return success(`${plan}${skippedBlock}\nInstalled Trace into ${roots}.\n`);
+  if (format.planInSummary === false) {
+    // The caller already displayed this plan for review; only report the outcome.
+    return {
+      ...success(`Installed Trace into ${roots}.\n${skippedBlock}`),
+      skippedTargets: skipped,
+    };
+  }
+  return {
+    ...success(`${plan}\nInstalled Trace into ${roots}.\n${skippedBlock}`),
+    skippedTargets: skipped,
+  };
+}
+
+/**
+ * Reconciles exactly the Integration Targets a caller names, using the
+ * auto-discovered batch's skip-and-warn guardrail mode. This is the seam the
+ * interactive picker installs through: the selection it previews is the
+ * selection it applies, and nothing is added in between.
+ */
+export function reconcileSelectedTargets(
+  selection: readonly { tool: ToolName; root: string }[],
+  options: {
+    apply: boolean;
+    env: Env;
+    registry: IntegrationRegistry;
+    format?: ReconcileFormat;
+  },
+): ReconcileResult {
+  return reconcileInstalledTargets(
+    selection.map(({ tool, root }) => ({ adapter: SETUP_ADAPTERS[tool], root })),
+    options.apply,
+    options.env,
+    options.registry,
+    "skip",
+    options.format,
+  );
 }
 
 function targetsForTool(
@@ -715,22 +724,18 @@ export function setupOperation(
     );
   }
 
-  // No explicit tool — detect installed hosts and run setup for each.
-  const claudeRoot = detectClaudeInstall(ctx.env);
-  const codexRoot = detectCodexInstall(ctx.env);
-  const cursorRoot = detectCursorInstall(ctx.env);
+  // No explicit tool — reconcile the complete known inventory: every detected
+  // active/default root plus every registered target, deduplicated.
+  const candidates = discoverTargetCandidates(ctx.env, registeredTargets);
 
-  if (!claudeRoot && !codexRoot && !cursorRoot) {
-    return failure(
-      "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]",
-    );
+  if (candidates.length === 0) {
+    return failure(EMPTY_INVENTORY);
   }
 
-  const targets = [
-    ...(claudeRoot ? targetsForTool("claude", claudeRoot, registeredTargets) : []),
-    ...(codexRoot ? targetsForTool("codex", codexRoot, registeredTargets) : []),
-    ...(cursorRoot ? targetsForTool("cursor", cursorRoot, registeredTargets) : []),
-  ];
+  const targets = candidates.map(({ tool, root }) => ({
+    adapter: SETUP_ADAPTERS[tool],
+    root,
+  }));
   return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
 }
 

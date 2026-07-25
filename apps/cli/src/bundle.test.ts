@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -82,6 +83,54 @@ describe("CLI bundle", () => {
         true,
         `dist/skills/${skill}/SKILL.md must exist after build`,
       );
+    }
+  });
+
+  it("build inlines the interactive prompt dependency into the bundle", () => {
+    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    const source = readFileSync(traceBundle, "utf8");
+    // tsup leaves the source path in a comment banner, so only a real
+    // import/require of the bare specifier means the dependency escaped.
+    assert.doesNotMatch(
+      source,
+      /(?:from|import|require\()\s*["']@clack\/prompts["']/,
+      "@clack/prompts must be inlined, not left as a runtime import",
+    );
+    assert.equal(source.includes("Select the targets to set up"), true);
+  });
+
+  it("bundled CLI runs bare setup outside the source tree without prompting", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "trace-bundle-setup-home-"));
+    const outsideDir = mkdtempSync(join(tmpdir(), "trace-bundle-setup-out-"));
+    const outsideTraceBundle = join(outsideDir, "trace.js");
+    copyFileSync(traceBundle, outsideTraceBundle);
+    mkdirSync(join(fakeHome, ".claude"), { recursive: true });
+
+    try {
+      const output = execFileSync(process.execPath, [outsideTraceBundle, "setup"], {
+        cwd: outsideDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: fakeHome,
+          USERPROFILE: fakeHome,
+          TRACE_DB: join(fakeHome, "trace.sqlite"),
+          // The runner's own agent roots must not leak into the fake home.
+          CLAUDE_CONFIG_DIR: undefined,
+          CODEX_HOME: undefined,
+        },
+      });
+
+      assert.equal(output.includes("target root:"), true);
+      assert.equal(output.includes("Re-run with --yes to apply."), true);
+      assert.equal(existsSync(join(fakeHome, ".claude", "skills")), false);
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
     }
   });
 

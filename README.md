@@ -52,9 +52,25 @@ trace setup
 ```
 
 Running `trace setup` with no flags auto-detects installed Claude Code, Codex,
-and Cursor roots and installs the six Trace skills into each. A tool whose
-configuration needs attention first — a leftover plugin entry, say — is skipped
-with exact remediation guidance while the healthy ones still install.
+and Cursor roots — plus anything already in the Trace registry — and opens an
+interactive checklist grouped by tool. Every target is **preselected**, so
+pressing enter sets up everything Trace found. Space toggles a target, enter
+submits, and escape cancels without writing anything.
+
+Trace then prints the plan for exactly what you selected and asks you to
+confirm before touching a single file. A tool whose configuration needs
+attention first — a leftover plugin entry, say — is listed with exact
+remediation guidance while the healthy ones still install.
+
+Outside a terminal (a pipe, a CI job, a script) there is nobody to answer the
+picker, so bare `trace setup` prints the plan and exits without writing.
+
+```sh
+trace setup --yes
+```
+
+Applies to every detected and registered target without prompting — the
+scriptable equivalent of accepting the whole checklist.
 
 You can run `trace setup` at any time to add new tools or reconcile existing
 installs. It is idempotent: re-running it changes nothing when everything is
@@ -80,6 +96,10 @@ trace update
 
 Resolves the latest published version, reinstalls via your package manager, then
 runs `trace setup` for each registered agent to reconcile skills and hooks.
+Update is not selective and never opens the picker: it reconciles every target
+in `~/.trace/integrations.json`, so an install you chose once stays current
+without you re-choosing it. Use `trace setup` when you want to change *which*
+targets Trace manages.
 
 ### Target a specific tool or path
 
@@ -89,6 +109,9 @@ trace setup --tool cursor
 trace setup --tool claude --target claude=/path/to/custom/config
 ```
 
+Naming targets explicitly skips the picker — you have already made the choice
+it would ask for.
+
 ### Remove
 
 ```sh
@@ -96,7 +119,8 @@ trace setup --remove
 ```
 
 Removes only Trace-owned skills, hooks, and metadata. Unrelated agent
-configuration is never touched.
+configuration is never touched. Like the other flags, `--remove` skips the
+picker and runs deterministically.
 
 ### Migrating from the old plugin install
 
@@ -107,10 +131,10 @@ If you previously installed Trace via the Claude Code plugin marketplace or
 trace setup
 ```
 
-Trace previews every detected tool and, wherever it finds a legacy plugin entry
-or a pinned `npx` hook, prints exact remediation guidance in place of a plan.
-Follow the instructions (typically: remove the old plugin), then re-run with
-`--yes` and your configuration will be on the CLI-first path.
+Trace lists every detected tool in the picker and, wherever it finds a legacy
+plugin entry or a pinned `npx` hook, prints exact remediation guidance in place
+of a plan for that target. Follow the instructions (typically: remove the old
+plugin), then re-run setup and your configuration will be on the CLI-first path.
 
 Use the bare command while migrating. Targeting one tool explicitly
 (`trace setup --tool claude`) previews the plan it *intends* to apply and only

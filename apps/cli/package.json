@@ -23,6 +23,7 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@clack/prompts": "^1.7.0",
     "citty": "^0.2.2"
   },
   "devDependencies": {
