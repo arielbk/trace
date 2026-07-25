@@ -408,6 +408,7 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
   }
 
   if (projectsRoot) return projectsRoot;
+  if (env.CLAUDE_CONFIG_DIR) return join(env.CLAUDE_CONFIG_DIR, "projects");
   const home = env.HOME || env.USERPROFILE;
   if (!home)
     throw new Error(

@@ -18,6 +18,7 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const packageJsonPath = join(appRoot, "package.json");
 const traceBundle = join(appRoot, "dist", "trace.js");
 const distWebAssetsDir = join(appRoot, "dist", "web");
+const distSkillsDir = join(appRoot, "dist", "skills");
 
 describe("CLI bundle", () => {
   it("build emits a tsup-generated self-contained CLI bundle", () => {
@@ -59,6 +60,29 @@ describe("CLI bundle", () => {
       readFileSync(indexPath, "utf8").includes("<!doctype html"),
       true,
     );
+  });
+
+  it("build copies all six canonical skills into dist/skills/ for tarball distribution", () => {
+    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    const expectedSkills = [
+      "board",
+      "doc-placement",
+      "recall",
+      "reenter",
+      "state",
+      "trace",
+    ];
+    for (const skill of expectedSkills) {
+      assert.equal(
+        existsSync(join(distSkillsDir, skill, "SKILL.md")),
+        true,
+        `dist/skills/${skill}/SKILL.md must exist after build`,
+      );
+    }
   });
 
   it("bundled CLI runs outside the source tree and applies migrations", () => {

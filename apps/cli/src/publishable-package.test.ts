@@ -27,6 +27,7 @@ describe("publishable CLI package", () => {
     assert.deepEqual(packageJson.files, [
       "dist/trace.js",
       "dist/web/**",
+      "dist/skills/**",
     ]);
     assert.equal(packageJson.dependencies?.["@trace/core"], undefined);
   });

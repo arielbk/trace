@@ -1,98 +1,24 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageName = "@arielbk/trace";
-export const pinnedCommandPattern =
-  /npx @arielbk\/trace@([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)/g;
 
 const sourcePath = fileURLToPath(import.meta.url);
 const appRoot = resolve(dirname(sourcePath), "..");
 const defaultRepoRoot = resolve(appRoot, "../..");
 
-export type ReleaseCommand = {
+type ReleaseCommand = {
   command: string;
   args: string[];
   cwd: string;
 };
 
-export type StampReleaseVersionOptions = {
-  repoRoot: string;
-  nextVersion: string;
-  templatePaths?: string[];
-  versionedManifestPaths?: string[];
-};
+type RunCommand = (releaseCommand: ReleaseCommand) => void;
 
-export type StampReleaseVersionResult = {
-  packageJsonPath: string;
-  updatedTemplatePaths: string[];
-};
-
-/** Walk `dir` recursively, calling `visit` for every regular file. */
-function walkFiles(dir: string, visit: (absolutePath: string) => void): void {
-  if (!existsSync(dir)) return;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const abs = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walkFiles(abs, visit);
-    } else if (entry.isFile()) {
-      visit(abs);
-    }
-  }
-}
-
-/**
- * Discover every committed file that carries a pinned `npx @arielbk/trace@x.y.z`
- * command by scanning the single skills tree (`plugin/skills/**`) and `hooks/`.
- * Scanning — rather than a hand-maintained list — means a newly added skill or
- * skill resource is stamped automatically, and files without a pin (e.g. a
- * host resource that issues no CLI command) are simply never selected, so the
- * "every template has a pin" invariant holds by construction.
- */
-export function defaultTemplatePaths(repoRoot: string): string[] {
-  return discoverTemplatePaths(repoRoot, pinnedCommandPattern);
-}
-
-/**
- * Discover template files matching an arbitrary command pattern across the
- * same trees the release stamp covers (`plugin/skills/**` + `hooks/`). The
- * dev-stamp flow uses this with its stamped-command pattern, which the npx
- * scan above can no longer see.
- */
-export function discoverTemplatePaths(
-  repoRoot: string,
-  pattern: RegExp,
-): string[] {
-  const found: string[] = [];
-  const collect = (abs: string) => {
-    pattern.lastIndex = 0;
-    if (pattern.test(readFileSync(abs, "utf8"))) {
-      found.push(abs);
-    }
-    pattern.lastIndex = 0;
-  };
-
-  walkFiles(resolve(repoRoot, "plugin/skills"), collect);
-  walkFiles(resolve(repoRoot, "hooks"), collect);
-
-  return found.sort();
-}
-
-export function defaultVersionedManifestPaths(repoRoot: string): string[] {
-  return ["plugin/.codex-plugin/plugin.json"].map((path) =>
-    resolve(repoRoot, path),
-  );
-}
-
-export function bumpVersion(
+function bumpVersion(
   version: string,
   release: "major" | "minor" | "patch",
 ): string {
@@ -114,15 +40,16 @@ export function bumpVersion(
   return `${major}.${minor}.${patch + 1}`;
 }
 
-export function assertValidVersion(version: string): void {
+function assertValidVersion(version: string): void {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
     throw new Error(`Expected an exact semver version, received: ${version}`);
   }
 }
 
-export function stampReleaseVersion(
-  options: StampReleaseVersionOptions,
-): StampReleaseVersionResult {
+function stampPackageVersion(options: {
+  repoRoot: string;
+  nextVersion: string;
+}): void {
   assertValidVersion(options.nextVersion);
 
   const packageJsonPath = resolve(options.repoRoot, "apps/cli/package.json");
@@ -137,158 +64,77 @@ export function stampReleaseVersion(
 
   packageJson.version = options.nextVersion;
   writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+}
 
-  const templatePaths =
-    options.templatePaths ?? defaultTemplatePaths(options.repoRoot);
-  const versionedManifestPaths =
-    options.versionedManifestPaths ??
-    defaultVersionedManifestPaths(options.repoRoot);
-  const updatedTemplatePaths: string[] = [];
-
-  for (const templatePath of templatePaths) {
-    const absolutePath = resolve(templatePath);
-    const source = readFileSync(absolutePath, "utf8");
-    const pins = [...source.matchAll(pinnedCommandPattern)];
-    if (pins.length === 0) {
-      throw new Error(
-        `No pinned ${packageName} command found in ${absolutePath}`,
-      );
-    }
-
-    const nextSource = source.replace(
-      pinnedCommandPattern,
-      `npx ${packageName}@${options.nextVersion}`,
-    );
-
-    if (nextSource !== source) {
-      writeFileSync(absolutePath, nextSource);
-    }
-    updatedTemplatePaths.push(absolutePath);
-  }
-
-  for (const manifestPath of versionedManifestPaths) {
-    const absolutePath = resolve(manifestPath);
-    const manifest = JSON.parse(readFileSync(absolutePath, "utf8")) as {
-      version?: string;
-    };
-    manifest.version = options.nextVersion;
-    writeFileSync(absolutePath, `${JSON.stringify(manifest, null, 2)}\n`);
-  }
-
-  verifyPinnedTemplates({
-    expectedVersion: options.nextVersion,
-    templatePaths,
+function executeReleaseCommand(releaseCommand: ReleaseCommand): void {
+  execFileSync(releaseCommand.command, releaseCommand.args, {
+    cwd: releaseCommand.cwd,
+    env: {
+      ...process.env,
+      npm_config_cache: resolve(tmpdir(), "trace-release-npm-cache"),
+    },
+    stdio: "inherit",
   });
-
-  return { packageJsonPath, updatedTemplatePaths };
-}
-
-export function verifyPinnedTemplates(options: {
-  expectedVersion: string;
-  templatePaths: string[];
-}): void {
-  for (const templatePath of options.templatePaths) {
-    const source = readFileSync(resolve(templatePath), "utf8");
-    const versions = [...source.matchAll(pinnedCommandPattern)].map(
-      (match) => match[1],
-    );
-
-    if (versions.length === 0) {
-      throw new Error(
-        `No pinned ${packageName} command found in ${templatePath}`,
-      );
-    }
-
-    const mismatched = versions.filter(
-      (version) => version !== options.expectedVersion,
-    );
-    if (mismatched.length > 0) {
-      throw new Error(
-        `${templatePath} contains ${packageName} pins that do not match ${options.expectedVersion}: ${mismatched.join(", ")}`,
-      );
-    }
-  }
-}
-
-export function createReleaseCommands(options: {
-  repoRoot: string;
-  dryRun: boolean;
-  tarballDirectory: string;
-}): ReleaseCommand[] {
-  const cliRoot = resolve(options.repoRoot, "apps/cli");
-  const commands: ReleaseCommand[] = [
-    {
-      command: "pnpm",
-      args: ["--filter", "@trace/web", "build"],
-      cwd: options.repoRoot,
-    },
-    {
-      command: "pnpm",
-      args: ["--filter", packageName, "build"],
-      cwd: options.repoRoot,
-    },
-    {
-      command: "npm",
-      args: ["pack", "--pack-destination", options.tarballDirectory],
-      cwd: cliRoot,
-    },
-  ];
-
-  commands.push(
-    options.dryRun
-      ? {
-          command: "npm",
-          args: ["publish", "--dry-run", "--access", "public"],
-          cwd: cliRoot,
-        }
-      : {
-          command: "npm",
-          args: ["publish", "--access", "public"],
-          cwd: cliRoot,
-        },
-  );
-
-  return commands;
 }
 
 export function runRelease(options: {
   repoRoot: string;
   nextVersion: string;
   dryRun: boolean;
+  runCommand?: RunCommand;
 }): void {
-  const templatePaths = defaultTemplatePaths(options.repoRoot);
+  const cliRoot = resolve(options.repoRoot, "apps/cli");
   const tarballDirectory = resolve(options.repoRoot, "dist/releases");
+  const packageJsonPath = resolve(cliRoot, "package.json");
+  const originalPackageJson = options.dryRun
+    ? readFileSync(packageJsonPath, "utf8")
+    : undefined;
 
-  stampReleaseVersion({
-    repoRoot: options.repoRoot,
-    nextVersion: options.nextVersion,
-    templatePaths,
-  });
-
-  mkdirSync(tarballDirectory, { recursive: true });
-
-  for (const releaseCommand of createReleaseCommands({
-    repoRoot: options.repoRoot,
-    dryRun: options.dryRun,
-    tarballDirectory,
-  })) {
-    execFileSync(releaseCommand.command, releaseCommand.args, {
-      cwd: releaseCommand.cwd,
-      env: {
-        ...process.env,
-        npm_config_cache: resolve(tmpdir(), "trace-release-npm-cache"),
-      },
-      stdio: "inherit",
+  try {
+    stampPackageVersion({
+      repoRoot: options.repoRoot,
+      nextVersion: options.nextVersion,
     });
-  }
 
-  verifyPinnedTemplates({
-    expectedVersion: options.nextVersion,
-    templatePaths,
-  });
+    mkdirSync(tarballDirectory, { recursive: true });
+
+    const commands: ReleaseCommand[] = [
+      {
+        command: "pnpm",
+        args: ["--filter", "@trace/web", "build"],
+        cwd: options.repoRoot,
+      },
+      {
+        command: "pnpm",
+        args: ["--filter", packageName, "build"],
+        cwd: options.repoRoot,
+      },
+      {
+        command: "npm",
+        args: ["pack", "--pack-destination", tarballDirectory],
+        cwd: cliRoot,
+      },
+      {
+        command: "npm",
+        args: options.dryRun
+          ? ["publish", "--dry-run", "--access", "public"]
+          : ["publish", "--access", "public"],
+        cwd: cliRoot,
+      },
+    ];
+
+    const runCommand = options.runCommand ?? executeReleaseCommand;
+    for (const command of commands) {
+      runCommand(command);
+    }
+  } finally {
+    if (originalPackageJson !== undefined) {
+      writeFileSync(packageJsonPath, originalPackageJson);
+    }
+  }
 }
 
-export function readCurrentVersion(repoRoot: string): string {
+function readCurrentVersion(repoRoot: string): string {
   const packageJson = JSON.parse(
     readFileSync(resolve(repoRoot, "apps/cli/package.json"), "utf8"),
   ) as { version?: string };

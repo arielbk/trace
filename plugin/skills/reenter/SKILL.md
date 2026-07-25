@@ -27,7 +27,7 @@ case-insensitive) also resolves — then bind the current session and print the
 manifest:
 
 ```sh
-npx @arielbk/trace@0.15.1 skill re-enter "break-stop-and-stale-expiry"
+trace skill re-enter "break-stop-and-stale-expiry"
 ```
 
 This **one command both fetches the re-entry manifest and binds the current
@@ -93,7 +93,7 @@ captures — **offer** to update it, with the new text you'd write, and apply it
 only if the user agrees. Never silently rewrite it.
 
 ```sh
-npx @arielbk/trace@0.15.1 task update "X" --description "new one-line summary"
+trace task update "X" --description "new one-line summary"
 ```
 
 Most re-entries need no such update — only offer when the drift is obvious, not

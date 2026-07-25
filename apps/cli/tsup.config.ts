@@ -7,6 +7,8 @@ const appRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(appRoot, "../..");
 const webDistDir = resolve(repoRoot, "apps/web/dist");
 const bundledWebDir = resolve(appRoot, "dist/web");
+const skillsSourceDir = resolve(repoRoot, "plugin/skills");
+const bundledSkillsDir = resolve(appRoot, "dist/skills");
 
 function copyWebAssets(): void {
   if (!existsSync(resolve(webDistDir, "index.html"))) {
@@ -17,6 +19,9 @@ function copyWebAssets(): void {
 
   rmSync(bundledWebDir, { recursive: true, force: true });
   cpSync(webDistDir, bundledWebDir, { recursive: true });
+
+  rmSync(bundledSkillsDir, { recursive: true, force: true });
+  cpSync(skillsSourceDir, bundledSkillsDir, { recursive: true });
 
   chmodSync(resolve(appRoot, "dist", "trace.js"), 0o755);
 }
