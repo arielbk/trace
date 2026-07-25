@@ -467,6 +467,17 @@ function applyInstalledTarget(
 
 type InstalledTarget = { adapter: SetupAdapter; root: string };
 
+/**
+ * How a reconciliation renders itself. The flag-driven paths keep the default
+ * "re-run with --yes" footer; the interactive flow reviews its plan in the
+ * terminal and supplies its own.
+ */
+type ReconcileFormat = {
+  previewFooter?: string;
+  /** Whether an apply summary re-renders the plan it already previewed. */
+  planInSummary?: boolean;
+};
+
 function sharedSetupOptions(
   env: Env,
   registry: IntegrationRegistry,
@@ -498,7 +509,9 @@ function reconcileInstalledTargets(
   env: Env,
   registry: IntegrationRegistry,
   onGuardrailFailure: "abort" | "skip",
+  format: ReconcileFormat = {},
 ): CommandResult {
+  const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
   if (targets.length === 0) return success("Nothing to reconcile.\n");
 
   const shared = sharedSetupOptions(env, registry);
@@ -515,7 +528,7 @@ function reconcileInstalledTargets(
     const plan = installations
       .map(({ adapter, options }) => planInstalledTarget(options, adapter))
       .join("\n");
-    return success(`${plan}\nRe-run with --yes to apply.\n`);
+    return success(`${plan}${previewFooter}`);
   }
 
   // Partition by pre-flight. Runs for every apply and for skip-mode preview, so
@@ -549,13 +562,12 @@ function reconcileInstalledTargets(
   const plan = installable
     .map(({ adapter, options }) => planInstalledTarget(options, adapter))
     .join("\n");
-  const skippedBlock =
-    skipped.length > 0
-      ? `\nSkipped (guardrail checks failed):\n${skipLines}\n`
-      : "";
+  const skippedSection =
+    skipped.length > 0 ? `Skipped (guardrail checks failed):\n${skipLines}\n` : "";
+  const skippedBlock = skippedSection ? `\n${skippedSection}` : "";
 
   if (!apply) {
-    return success(`${plan}${skippedBlock}\nRe-run with --yes to apply.\n`);
+    return success(`${plan}${skippedBlock}${previewFooter}`);
   }
 
   try {
@@ -578,7 +590,38 @@ function reconcileInstalledTargets(
   }
 
   const roots = installable.map(({ options }) => options.configRoot).join(", ");
+  if (format.planInSummary === false) {
+    // The caller already displayed this plan for review; only report the outcome.
+    return success(
+      `${skippedSection ? `${skippedSection}\n` : ""}Installed Trace into ${roots}.\n`,
+    );
+  }
   return success(`${plan}${skippedBlock}\nInstalled Trace into ${roots}.\n`);
+}
+
+/**
+ * Reconciles exactly the Integration Targets a caller names, using the
+ * auto-discovered batch's skip-and-warn guardrail mode. This is the seam the
+ * interactive picker installs through: the selection it previews is the
+ * selection it applies, and nothing is added in between.
+ */
+export function reconcileSelectedTargets(
+  selection: readonly { tool: ToolName; root: string }[],
+  options: {
+    apply: boolean;
+    env: Env;
+    registry: IntegrationRegistry;
+    format?: ReconcileFormat;
+  },
+): CommandResult {
+  return reconcileInstalledTargets(
+    selection.map(({ tool, root }) => ({ adapter: SETUP_ADAPTERS[tool], root })),
+    options.apply,
+    options.env,
+    options.registry,
+    "skip",
+    options.format,
+  );
 }
 
 function targetsForTool(

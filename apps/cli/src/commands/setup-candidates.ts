@@ -30,6 +30,13 @@ export type TargetCandidate = {
 /** Tool order used everywhere candidates are grouped or listed. */
 export const CANDIDATE_TOOL_ORDER: readonly ToolName[] = ["claude", "codex", "cursor"];
 
+/** Human-readable host names, used for plan lines and picker group headings. */
+export const TOOL_LABELS: Record<ToolName, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  cursor: "Cursor",
+};
+
 function homeDir(env: Env, tool: ToolName): string {
   const home = env.HOME || env.USERPROFILE;
   if (!home) {
