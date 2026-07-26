@@ -31,6 +31,7 @@ export {
 export type { SyncStatus, SyncStatusFile } from "./sync-status.ts";
 export {
   readConfigFile,
+  resolveAutoSyncEnabled,
   resolveConfigPath,
   resolveConfiguredServerUrl,
   updateConfigFile,

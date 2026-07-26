@@ -11,6 +11,13 @@ import { resolveDatabasePath } from "./db-path.ts";
 export interface TraceConfigFile {
   /** Base URL of the cloud sync server, e.g. `https://trace.example.com`. */
   serverUrl?: string;
+  /**
+   * Whether Trace may synchronize task data without being asked. Absent means
+   * the default, `true` — see {@link resolveAutoSyncEnabled}. Machine-local
+   * like the rest of this file: each database decides for itself, and the
+   * choice is never synced.
+   */
+  autoSync?: boolean;
 }
 
 /** Location of the config file: `config.json` beside the database. */
@@ -27,6 +34,9 @@ export function readConfigFile(databasePath: string): TraceConfigFile | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const config = parsed as TraceConfigFile;
     if (config.serverUrl !== undefined && typeof config.serverUrl !== "string") {
+      return null;
+    }
+    if (config.autoSync !== undefined && typeof config.autoSync !== "boolean") {
       return null;
     }
     return config;
@@ -78,6 +88,24 @@ export function resolveConfiguredServerUrl(
     return configured ? normalizeServerUrl(configured) : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Whether automatic (implicit) task-data synchronization is permitted for the
+ * database this env resolves to. The effective value is `true` whenever the
+ * `autoSync` key is absent — or the config file is missing or malformed — so
+ * ordinary machines keep syncing without configuration and a broken file never
+ * silently strands task data. `trace config set auto-sync false` is the only
+ * way to turn it off; explicit `trace sync` ignores this entirely.
+ */
+export function resolveAutoSyncEnabled(
+  env: Record<string, string | undefined>,
+): boolean {
+  try {
+    return readConfigFile(resolveDatabasePath(env))?.autoSync !== false;
+  } catch {
+    return true;
   }
 }
 

@@ -5,7 +5,7 @@ import {
   type TaskStore,
 } from "@trace/core";
 import { inferCliSessionIdentity } from "./identity.ts";
-import { triggerBackgroundSync } from "./sync.ts";
+import { requestAutomaticSync } from "./sync.ts";
 import {
   parseRecallCandidatesArgs,
   parseSkillDocsDirArgs,
@@ -88,7 +88,7 @@ export function skillWorkOnTaskOperation(
       `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
     );
   });
-  if (result.exitCode === 0) (ctx.triggerSync ?? triggerBackgroundSync)(ctx.env);
+  if (result.exitCode === 0) (ctx.triggerSync ?? requestAutomaticSync)(ctx.env);
   return result;
 }
 
