@@ -285,6 +285,9 @@ async function recordSignedIn(
       loggedIn: true,
       ...(identity ? { identity } : {}),
       lastError: undefined,
+      // A run left behind by an earlier session belongs to that session, not to
+      // this one: signing in must not open on a spinner.
+      activeRun: undefined,
     });
   } catch {
     // No usable database path — the board simply won't show a header yet.

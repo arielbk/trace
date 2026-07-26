@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { AccountMenu } from "./AccountMenu.tsx";
 import { ThemeToggle } from "./ThemeToggle.tsx";
 
 export function AppHeader({
@@ -64,6 +65,9 @@ export function AppHeader({
       </nav>
       <div className="flex items-center gap-3 min-w-0">
         {aside}
+        {/* Account and sync state are machine-global, so they live in the
+            shared header rather than being passed in per page. */}
+        <AccountMenu />
         <ThemeToggle />
       </div>
     </header>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   useArchiveTask,
   usePinTask,
@@ -8,8 +8,6 @@ import {
 } from "../lib/api.ts";
 import { useSearchParams } from "react-router-dom";
 import type { TaskSummary } from "@trace/core/browser";
-import * as PopoverPrimitive from "@radix-ui/react-popover";
-import * as SwitchPrimitive from "@radix-ui/react-switch";
 import {
   Command,
   CommandEmpty,
@@ -18,13 +16,18 @@ import {
   CommandList,
 } from "cmdk";
 import { AppHeader } from "../components/AppHeader.tsx";
-import { SyncStatusBadge } from "../components/SyncStatusBadge.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
 import {
   SkeletonReveal,
   useSkeletonReveal,
 } from "../components/SkeletonReveal.tsx";
+import {
+  Dropdown,
+  DropdownContent,
+  DropdownTrigger,
+} from "../components/ui/Dropdown.tsx";
+import { Switch } from "../components/ui/Switch.tsx";
 import { cn } from "../lib/utils.ts";
 import {
   buildSubtitle,
@@ -92,7 +95,7 @@ export function TasksPage() {
 
   return (
     <main className="max-w-app mx-auto px-5 pb-16">
-      <AppHeader project={crumb} bordered={false} aside={<SyncStatusBadge />} />
+      <AppHeader project={crumb} bordered={false} />
       <div className="pt-7 pb-header-y">
         <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>
         {reveal.showContent ? (
@@ -285,59 +288,12 @@ export function FilterBar({
   onShowArchivedChange: (show: boolean) => void;
   triggerCount?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const closeTimer = useRef<number | null>(null);
   const selectedLabel = selectedProjectSlug ?? "All projects";
-
-  useEffect(() => {
-    return () => {
-      if (closeTimer.current !== null) {
-        window.clearTimeout(closeTimer.current);
-      }
-    };
-  }, []);
-
-  function clearCloseTimer() {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }
-
-  // Opening needs no orchestration: the content mounts straight into the
-  // t-dropdown open state and the CSS @starting-style block animates it in.
-  // Closing swaps to .is-closing and keeps the content mounted until the
-  // close transition has run.
-  function handleOpenChange(nextOpen: boolean) {
-    if (nextOpen) {
-      clearCloseTimer();
-      setIsClosing(false);
-      setOpen(true);
-      return;
-    }
-
-    if (!open) return;
-
-    const closeMs =
-      parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--dropdown-close-dur",
-        ),
-      ) || 150;
-
-    setIsClosing(true);
-    closeTimer.current = window.setTimeout(() => {
-      closeTimer.current = null;
-      setIsClosing(false);
-      setOpen(false);
-    }, closeMs);
-  }
 
   return (
     <div className="flex items-center gap-3 flex-wrap pb-3">
-      <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
-        <PopoverPrimitive.Trigger
+      <Dropdown>
+        <DropdownTrigger
           className="filter-bar-project-trigger inline-flex items-center gap-2 pl-3 pr-control-x py-filter-y rounded-control border border-border bg-surface text-text text-caption font-semibold cursor-pointer hover:bg-chip-bg"
           aria-label={`Project filter: ${selectedLabel}`}
         >
@@ -349,92 +305,79 @@ export function FilterBar({
             </span>
           )}
           <ChevronDownIcon />
-        </PopoverPrimitive.Trigger>
-        {(open || isClosing) && (
-          <PopoverPrimitive.Portal forceMount>
-            <PopoverPrimitive.Content
-              forceMount
-              className={cn(
-                "filter-bar-project-popover t-dropdown z-50 w-56 rounded-md border border-border-subtle bg-surface shadow-md p-1",
-                isClosing && "is-closing",
-              )}
-              data-origin="top-left"
-              align="start"
-              sideOffset={4}
-            >
-              <Command>
-                <CommandInput
-                  className="w-full h-8 px-2 text-sm bg-transparent border-none outline-none placeholder:text-text-muted"
-                  placeholder="Search projects..."
-                />
-                <CommandList className="max-h-48 overflow-y-auto">
-                  <CommandEmpty className="py-2 text-sm text-center text-text-muted">
-                    No projects found.
-                  </CommandEmpty>
+        </DropdownTrigger>
+        <DropdownContent className="filter-bar-project-popover w-56 p-1">
+          {({ close }) => (
+            <Command>
+              <CommandInput
+                className="w-full h-8 px-2 text-sm bg-transparent border-none outline-none placeholder:text-text-muted"
+                placeholder="Search projects..."
+              />
+              <CommandList className="max-h-48 overflow-y-auto">
+                <CommandEmpty className="py-2 text-sm text-center text-text-muted">
+                  No projects found.
+                </CommandEmpty>
+                <CommandItem
+                  value="__all__"
+                  className={cn(
+                    "filter-bar-all-projects flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
+                    selectedProjectSlug === null &&
+                      "bg-accent-soft text-accent",
+                  )}
+                  onSelect={() => {
+                    onProjectChange(null);
+                    close();
+                  }}
+                >
+                  <span className="flex-1">All projects</span>
+                  {selectedProjectSlug === null && <CheckIcon />}
+                </CommandItem>
+                {projects.map((project) => (
                   <CommandItem
-                    value="__all__"
+                    key={project.projectId}
+                    value={project.projectSlug}
                     className={cn(
-                      "filter-bar-all-projects flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
-                      selectedProjectSlug === null &&
+                      "filter-bar-project-item flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
+                      selectedProjectSlug === project.projectSlug &&
                         "bg-accent-soft text-accent",
                     )}
                     onSelect={() => {
-                      onProjectChange(null);
-                      handleOpenChange(false);
+                      onProjectChange(project.projectSlug);
+                      close();
                     }}
                   >
-                    <span className="flex-1">All projects</span>
-                    {selectedProjectSlug === null && <CheckIcon />}
-                  </CommandItem>
-                  {projects.map((project) => (
-                    <CommandItem
-                      key={project.projectId}
-                      value={project.projectSlug}
+                    <span className="flex-1">{project.projectSlug}</span>
+                    <span
                       className={cn(
-                        "filter-bar-project-item flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm cursor-pointer aria-selected:bg-chip-bg",
-                        selectedProjectSlug === project.projectSlug &&
-                          "bg-accent-soft text-accent",
+                        "tabular-nums",
+                        selectedProjectSlug === project.projectSlug
+                          ? "text-accent"
+                          : "text-text-muted",
                       )}
-                      onSelect={() => {
-                        onProjectChange(project.projectSlug);
-                        handleOpenChange(false);
-                      }}
                     >
-                      <span className="flex-1">{project.projectSlug}</span>
-                      <span
-                        className={cn(
-                          "tabular-nums",
-                          selectedProjectSlug === project.projectSlug
-                            ? "text-accent"
-                            : "text-text-muted",
-                        )}
-                      >
-                        {project.count}
-                      </span>
-                      {selectedProjectSlug === project.projectSlug && (
-                        <CheckIcon />
-                      )}
-                    </CommandItem>
-                  ))}
-                </CommandList>
-              </Command>
-            </PopoverPrimitive.Content>
-          </PopoverPrimitive.Portal>
-        )}
-      </PopoverPrimitive.Root>
+                      {project.count}
+                    </span>
+                    {selectedProjectSlug === project.projectSlug && (
+                      <CheckIcon />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandList>
+            </Command>
+          )}
+        </DropdownContent>
+      </Dropdown>
 
       <label
         htmlFor="show-archived-switch"
         className="ml-auto inline-flex items-center gap-chip-gap text-text-muted text-crumb font-medium cursor-pointer select-none"
       >
-        <SwitchPrimitive.Root
+        <Switch
           id="show-archived-switch"
           checked={showArchived}
           onCheckedChange={onShowArchivedChange}
-          className="filter-bar-archived-switch relative inline-flex h-5 w-switch shrink-0 items-center rounded-full border border-border bg-chip-bg px-0.5 data-[state=checked]:border-transparent data-[state=checked]:bg-accent"
-        >
-          <SwitchPrimitive.Thumb className="pointer-events-none block h-3.5 w-3.5 rounded-full bg-text-muted transition-transform data-[state=checked]:translate-x-4 data-[state=checked]:bg-white data-[state=unchecked]:translate-x-0" />
-        </SwitchPrimitive.Root>
+          className="filter-bar-archived-switch"
+        />
         Show archived
       </label>
     </div>

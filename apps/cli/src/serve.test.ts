@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, updateConfigFile } from "@trace/core";
 import {
   createServeRequestListener,
   createSyncHooks,
+  createTraceServeServer,
   DEFAULT_SERVE_PORT,
   MUTATION_SYNC_DELAY_MS,
   PERIODIC_SYNC_INTERVAL_MS,
@@ -334,4 +335,29 @@ test("openBrowser launches the platform opener with the url", () => {
     { command: "open", args: ["http://127.0.0.1:4317/"] },
     { command: "xdg-open", args: ["http://127.0.0.1:4317/"] },
   ]);
+});
+
+test("the board's sync status reports the machine's AutoSync mode as it changes", () => {
+  const env = { HOME: dir, TRACE_DB: databasePath };
+  const server = createTraceServeServer(env, undefined);
+  const readAutoSync = (): unknown => {
+    const captured: { body: string } = { body: "" };
+    server.emit(
+      "request",
+      { method: "GET", url: "/api/sync/status" } as IncomingMessage,
+      {
+        statusCode: 200,
+        setHeader: () => {},
+        end: (chunk?: string) => (captured.body = chunk ?? ""),
+      } as unknown as ServerResponse,
+    );
+    return (JSON.parse(captured.body) as { autoSync: unknown }).autoSync;
+  };
+
+  expect(readAutoSync()).toBe(true);
+
+  // Opting out while the board is open must be visible on the next poll, not
+  // only after a restart.
+  updateConfigFile(databasePath, { autoSync: false });
+  expect(readAutoSync()).toBe(false);
 });

@@ -21,14 +21,21 @@ export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
 export {
+  beginSyncRun,
   deriveSyncStatus,
+  finalizeSyncRun,
   readSyncStatus,
   readSyncStatusFile,
   resolveSyncStatusPath,
+  STALE_SYNC_RUN_MS,
   updateSyncStatusFile,
   writeSyncStatusFile,
 } from "./sync-status.ts";
-export type { SyncStatus, SyncStatusFile } from "./sync-status.ts";
+export type {
+  SyncStatus,
+  SyncStatusFile,
+  SyncStatusResponse,
+} from "./sync-status.ts";
 export {
   readConfigFile,
   resolveAutoSyncEnabled,

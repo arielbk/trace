@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import {
+  beginSyncRun,
   deriveSyncStatus,
+  finalizeSyncRun,
   readSyncStatus,
   resolveSyncStatusPath,
   updateSyncStatusFile,
@@ -90,6 +92,49 @@ test("a logged-in status stays logged-in even when identity was never recorded",
   expect(deriveSyncStatus({ loggedIn: false })).toEqual({ state: "logged-out" });
 });
 
+test("a status with an active run reports syncing and keeps the last successful time", () => {
+  expect(
+    deriveSyncStatus(
+      {
+        loggedIn: true,
+        identity: "octocat",
+        lastSyncedAt: "2026-07-10T15:00:00.000Z",
+        activeRun: { id: "run-1", startedAt: "2026-07-10T16:00:00.000Z" },
+      },
+      new Date("2026-07-10T16:00:05.000Z"),
+    ),
+  ).toEqual({
+    state: "syncing",
+    identity: "octocat",
+    startedAt: "2026-07-10T16:00:00.000Z",
+    lastSyncedAt: "2026-07-10T15:00:00.000Z",
+  });
+});
+
+test("an abandoned run stops rendering as syncing without losing the last outcome", () => {
+  const file = {
+    loggedIn: true,
+    identity: "octocat",
+    lastSyncedAt: "2026-07-10T15:00:00.000Z",
+    activeRun: { id: "run-1", startedAt: "2026-07-10T16:00:00.000Z" },
+  };
+  // A killed sync process never clears its own run; an hour later the board
+  // must show the last real sync rather than an indefinite spinner.
+  expect(deriveSyncStatus(file, new Date("2026-07-10T17:00:00.000Z"))).toEqual({
+    state: "synced",
+    identity: "octocat",
+    lastSyncedAt: "2026-07-10T15:00:00.000Z",
+  });
+  // A run whose timestamp cannot be read can never age out, so it is not
+  // trusted at all.
+  expect(
+    deriveSyncStatus(
+      { ...file, activeRun: { id: "run-1", startedAt: "not a date" } },
+      new Date("2026-07-10T16:00:05.000Z"),
+    ),
+  ).toMatchObject({ state: "synced" });
+});
+
 test("updateSyncStatusFile merges into an existing file and can clear the last error", () => {
   const { databasePath, cleanup } = tempDatabasePath();
   try {
@@ -109,6 +154,73 @@ test("updateSyncStatusFile merges into an existing file and can clear the last e
       state: "synced",
       identity: "octocat",
       lastSyncedAt: "2026-07-10T16:00:00.000Z",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("a started run reports syncing until its own finalizer records the outcome", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    writeSyncStatusFile(databasePath, { loggedIn: true, identity: "octocat" });
+
+    beginSyncRun(databasePath, {
+      id: "run-1",
+      startedAt: "2026-07-10T16:00:00.000Z",
+    });
+    expect(readSyncStatus(databasePath, new Date("2026-07-10T16:00:01.000Z"))).toEqual({
+      state: "syncing",
+      identity: "octocat",
+      startedAt: "2026-07-10T16:00:00.000Z",
+    });
+
+    expect(
+      finalizeSyncRun(databasePath, "run-1", {
+        lastSyncedAt: "2026-07-10T16:00:02.000Z",
+        lastError: undefined,
+      }),
+    ).toBe(true);
+    expect(readSyncStatus(databasePath, new Date("2026-07-10T16:00:03.000Z"))).toEqual({
+      state: "synced",
+      identity: "octocat",
+      lastSyncedAt: "2026-07-10T16:00:02.000Z",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("a late finalizer cannot overwrite the run that replaced it", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    writeSyncStatusFile(databasePath, { loggedIn: true });
+    beginSyncRun(databasePath, {
+      id: "slow-run",
+      startedAt: "2026-07-10T16:00:00.000Z",
+    });
+    beginSyncRun(databasePath, {
+      id: "newer-run",
+      startedAt: "2026-07-10T16:00:10.000Z",
+    });
+
+    // The slow run finally fails, long after a newer run took ownership.
+    expect(
+      finalizeSyncRun(databasePath, "slow-run", { lastError: "server returned 500" }),
+    ).toBe(false);
+    expect(readSyncStatus(databasePath, new Date("2026-07-10T16:00:11.000Z"))).toEqual({
+      state: "syncing",
+      startedAt: "2026-07-10T16:00:10.000Z",
+    });
+
+    expect(
+      finalizeSyncRun(databasePath, "newer-run", {
+        lastSyncedAt: "2026-07-10T16:00:12.000Z",
+      }),
+    ).toBe(true);
+    expect(readSyncStatus(databasePath, new Date("2026-07-10T16:00:13.000Z"))).toEqual({
+      state: "synced",
+      lastSyncedAt: "2026-07-10T16:00:12.000Z",
     });
   } finally {
     cleanup();

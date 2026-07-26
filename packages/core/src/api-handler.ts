@@ -33,6 +33,12 @@ const JSON_CONTENT_TYPE = "application/json";
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;
+  /** The effective `auto-sync` policy for the serving process
+   * (`resolveAutoSyncEnabled`), reported with the sync status so the board can
+   * show the mode without reading `config.json` itself. Resolved per request,
+   * since the user may flip the setting while the board is open. Absent means
+   * the effective default, on. */
+  autoSyncEnabled?: boolean;
   /** Called after any successful mutating request (archive/unarchive, pin/unpin,
    * checkbox toggle) so the host can schedule a background sync that pushes the
    * change promptly instead of waiting for the next unrelated sync. */
@@ -66,11 +72,13 @@ export function handleTraceApiRequest(
   if (path === "/api/sync/status") {
     if (method !== "GET") return methodNotAllowed();
     const status = readSyncStatus(databasePath);
-    return json(
-      status.state === "logged-out"
-        ? { ...status, serverConfigured: options?.syncServerConfigured ?? false }
-        : status,
-    );
+    return json({
+      ...status,
+      ...(status.state === "logged-out"
+        ? { serverConfigured: options?.syncServerConfigured ?? false }
+        : {}),
+      autoSync: options?.autoSyncEnabled ?? true,
+    });
   }
 
   if (path === "/api/sync" || path === "/api/sync/") {

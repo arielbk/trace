@@ -19,6 +19,15 @@ export interface SyncStatusFile {
   lastSyncedAt?: string;
   /** Message from the last sync that failed, cleared once a sync succeeds. */
   lastError?: string;
+  /**
+   * The sync run currently believed to be in flight. Written when a run starts
+   * and cleared by that same run's finalizer — see {@link beginSyncRun} and
+   * {@link finalizeSyncRun}. The `id` is what makes a late finalizer harmless:
+   * only the owner of the recorded run may write its outcome. A run left behind
+   * by a killed process is recovered by age, not by cleanup — see
+   * {@link STALE_SYNC_RUN_MS}.
+   */
+  activeRun?: { id: string; startedAt: string };
 }
 
 /**
@@ -38,6 +47,12 @@ export interface SyncStatusFile {
 export type SyncStatus =
   | { state: "logged-out"; serverConfigured?: boolean }
   | { state: "never-synced"; identity?: string }
+  | {
+      state: "syncing";
+      identity?: string;
+      startedAt: string;
+      lastSyncedAt?: string;
+    }
   | { state: "synced"; identity?: string; lastSyncedAt: string }
   | {
       state: "failed";
@@ -45,6 +60,14 @@ export type SyncStatus =
       lastError: string;
       lastSyncedAt?: string;
     };
+
+/**
+ * What `GET /api/sync/status` actually returns: the derived status plus the
+ * serving process's effective AutoSync mode. The mode rides along with status
+ * so the board can say "AutoSync is off" without reading `config.json` from the
+ * browser.
+ */
+export type SyncStatusResponse = SyncStatus & { autoSync?: boolean };
 
 /** Location of the status file: `sync-status.json` beside the database. */
 export function resolveSyncStatusPath(databasePath: string): string {
@@ -96,12 +119,58 @@ export function updateSyncStatusFile(
   writeSyncStatusFile(databasePath, { ...current, ...patch });
 }
 
+/**
+ * Record the start of a sync run, taking ownership of the status file's active
+ * run. A run started while another is recorded simply replaces it: the older
+ * run's finalizer is then locked out by {@link finalizeSyncRun}, so the newest
+ * run is always the one whose outcome the board will see.
+ */
+export function beginSyncRun(
+  databasePath: string,
+  run: { id: string; startedAt: string },
+): void {
+  updateSyncStatusFile(databasePath, { loggedIn: true, activeRun: run });
+}
+
+/**
+ * Record the outcome of `runId` and clear the active run — but only if `runId`
+ * still owns it. Returns whether the write happened, so a caller can tell a
+ * finalized run from one that a newer run has already superseded. This is what
+ * stops a slow sync that finishes after a newer one from replacing the newer
+ * result with its own stale outcome.
+ */
+export function finalizeSyncRun(
+  databasePath: string,
+  runId: string,
+  outcome: Pick<SyncStatusFile, "lastSyncedAt" | "lastError">,
+): boolean {
+  const current = readSyncStatusFile(databasePath);
+  if (current?.activeRun?.id !== runId) return false;
+  writeSyncStatusFile(databasePath, {
+    ...current,
+    ...outcome,
+    activeRun: undefined,
+  });
+  return true;
+}
+
 /** Collapse a raw status file into the discriminated status the board renders. */
-export function deriveSyncStatus(file: SyncStatusFile | null): SyncStatus {
+export function deriveSyncStatus(
+  file: SyncStatusFile | null,
+  now: Date = new Date(),
+): SyncStatus {
   if (!file || !file.loggedIn) {
     return { state: "logged-out" };
   }
   const identity = file.identity ? { identity: file.identity } : {};
+  if (isRunningNow(file.activeRun, now)) {
+    return {
+      state: "syncing",
+      ...identity,
+      startedAt: file.activeRun.startedAt,
+      ...(file.lastSyncedAt ? { lastSyncedAt: file.lastSyncedAt } : {}),
+    };
+  }
   if (file.lastError) {
     return {
       state: "failed",
@@ -121,6 +190,31 @@ export function deriveSyncStatus(file: SyncStatusFile | null): SyncStatus {
 }
 
 /** Read and derive the board-facing sync status for a database. */
-export function readSyncStatus(databasePath: string): SyncStatus {
-  return deriveSyncStatus(readSyncStatusFile(databasePath));
+export function readSyncStatus(
+  databasePath: string,
+  now: Date = new Date(),
+): SyncStatus {
+  return deriveSyncStatus(readSyncStatusFile(databasePath), now);
+}
+
+/**
+ * How long a recorded run may stay unfinalized before the board stops calling
+ * it active. A sync process that is killed (or crashes) never clears its own
+ * `activeRun`, and an indefinite spinner is worse than a slightly stale
+ * timestamp — past this age the status falls back to the last real outcome,
+ * which is still on file. Comfortably longer than any healthy sync and shorter
+ * than the periodic board interval's own retry rhythm feels forever.
+ */
+export const STALE_SYNC_RUN_MS = 10 * 60_000;
+
+/** Whether a recorded run should still render as in flight at `now`. */
+function isRunningNow(
+  run: SyncStatusFile["activeRun"],
+  now: Date,
+): run is { id: string; startedAt: string } {
+  if (!run) return false;
+  const startedAt = Date.parse(run.startedAt);
+  // An unparsable timestamp cannot be aged out, so it is never trusted.
+  if (Number.isNaN(startedAt)) return false;
+  return now.getTime() - startedAt < STALE_SYNC_RUN_MS;
 }
