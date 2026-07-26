@@ -256,6 +256,18 @@ function AccountBody({ account }: { account: AccountDescription }) {
           >
             Sign out
           </button>
+          {/* A refused sign-out has to say so. Nothing else on the popover
+              changes when it fails — the machine stays signed in and the button
+              stays where it was — so without this line the click reads as a
+              dead control. */}
+          {signOut.isError ? (
+            <p
+              className="mt-1.5 mb-0 text-meta text-warning wrap-anywhere"
+              data-testid="logout-error"
+            >
+              {signOut.error.message}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </>

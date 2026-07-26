@@ -60,6 +60,8 @@ function localAuthServer(options: {
   /** The key this account's documents are encrypted under, for the
    * `waiting-for-existing-key` path: anything else is refused. */
   masterKey?: string;
+  /** How `POST /logout` refuses, for hosts that serve no auth routes at all. */
+  logoutFailure?: { status: number; body: string };
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
@@ -75,7 +77,12 @@ function localAuthServer(options: {
         return jsonResponse(options.status ?? SIGNED_OUT);
       }
       if (url === "/api/local-auth/login") return jsonResponse(started);
-      if (url === "/api/local-auth/logout") return jsonResponse({ ok: true });
+      if (url === "/api/local-auth/logout") {
+        const { logoutFailure } = options;
+        return logoutFailure
+          ? new Response(logoutFailure.body, { status: logoutFailure.status })
+          : jsonResponse({ ok: true });
+      }
       if (url.endsWith("/acknowledge-key")) {
         polled = { ...polled, state: "complete", generatedKey: undefined };
         return jsonResponse(polled);
@@ -648,4 +655,28 @@ test("a signed-in machine can be signed out from the menu", async () => {
   expect(
     screen.queryByRole("button", { name: /sign in with/i }),
   ).not.toBeInTheDocument();
+});
+
+// A host that serves the board without the `/api/local-auth` routes — the Vite
+// dev server — answers the logout with a 404, and the machine stays signed in.
+// The menu has to report that rather than swallow it, or the button looks dead.
+test("a refused sign-out is reported instead of silently doing nothing", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    status: {
+      state: "synced",
+      identity: "The Octocat",
+      lastSyncedAt: "2026-07-10T16:03:00.000Z",
+      autoSync: true,
+    },
+    logoutFailure: { status: 404, body: "" },
+  });
+  renderWithLocalAuth(server);
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /sign out/i }));
+
+  expect(await screen.findByTestId("logout-error")).toHaveTextContent(/404/);
+  // Still offered, so the user can try again once the host can serve it.
+  expect(screen.getByRole("button", { name: /sign out/i })).toBeEnabled();
 });
