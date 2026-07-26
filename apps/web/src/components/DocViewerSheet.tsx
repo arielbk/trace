@@ -1,18 +1,20 @@
-import * as DialogPrimitive from "@radix-ui/react-dialog";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { motion, useReducedMotion } from "motion/react";
 import type { MouseEvent, RefObject } from "react";
 import { truncatePath } from "../format.ts";
-import { HttpError, type DocContents, useDocContents, useToggleCheckbox } from "../lib/api.ts";
+import {
+  HttpError,
+  type DocContents,
+  useDocContents,
+  useToggleCheckbox,
+} from "../lib/api.ts";
 import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
 import { CopyChip } from "./CopyChip.tsx";
-
-const docViewerEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+import { Sheet } from "./ui/Sheet.tsx";
 
 /**
- * Right-side Sheet showing the rendered contents of a task doc. Mounted only
- * while a doc is selected. AnimatePresence in the parent keeps it mounted long
- * enough for Motion to play the exit animation after close.
+ * The rendered contents of a task doc, in the board's right-side Sheet. Mounted
+ * only while a doc is selected. AnimatePresence in the parent keeps it mounted
+ * long enough for Motion to play the exit animation after close.
  */
 export function DocViewerSheet({
   taskRef,
@@ -31,88 +33,42 @@ export function DocViewerSheet({
 }) {
   const query = useDocContents(taskRef, docPath);
   const toggleCheckbox = useToggleCheckbox();
-  const shouldReduceMotion = useReducedMotion();
-  const transition = shouldReduceMotion
-    ? { duration: 0 }
-    : { duration: 0.35, ease: docViewerEase };
-  const overlayTransition = shouldReduceMotion
-    ? { duration: 0 }
-    : { duration: 0.4, ease: docViewerEase };
 
   return (
-    <DialogPrimitive.Root open onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal forceMount>
-        <DialogPrimitive.Overlay asChild forceMount>
-          <motion.div
-            className="fixed inset-0 z-50 bg-black/50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={overlayTransition}
-          />
-        </DialogPrimitive.Overlay>
-        <DialogPrimitive.Content
-          asChild
-          forceMount
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            triggerRef.current?.focus();
-          }}
-        >
-          <motion.div
-            className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg shadow-lg sm:max-w-2xl"
-            initial={{ opacity: 0, x: 24, filter: "blur(2px)" }}
-            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, x: 24, filter: "blur(2px)" }}
-            transition={transition}
-          >
-            <header className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
-              <DialogPrimitive.Title className="m-0 min-w-0 text-row-title font-bold tracking-tight">
-                <CopyChip value={docPath} display={truncatePath(docPath)} />
-              </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="sr-only">
-                Read-only contents of {docPath}
-              </DialogPrimitive.Description>
-              <DialogPrimitive.Close
-                aria-label="Close"
-                className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-chip-border bg-surface text-text-muted hover:border-border-strong hover:text-text"
-              >
-                <CloseIcon />
-              </DialogPrimitive.Close>
-            </header>
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <DocViewerBody
-                query={query}
-                onClick={(event) => {
-                  const checkbox = checkboxToggleFromClick(event);
-                  if (checkbox) {
-                    const { input, index, checked } = checkbox;
-                    // The native click already flipped the input optimistically;
-                    // persist that state and revert the input if the write fails.
-                    toggleCheckbox.mutate(
-                      { ref: taskRef, path: docPath, index, checked },
-                      { onError: () => (input.checked = !checked) },
-                    );
-                    return;
-                  }
+    <Sheet
+      onOpenChange={onOpenChange}
+      title={<CopyChip value={docPath} display={truncatePath(docPath)} />}
+      description={`Read-only contents of ${docPath}`}
+      returnFocusTo={triggerRef}
+    >
+      <DocViewerBody
+        query={query}
+        onClick={(event) => {
+          const checkbox = checkboxToggleFromClick(event);
+          if (checkbox) {
+            const { input, index, checked } = checkbox;
+            // The native click already flipped the input optimistically;
+            // persist that state and revert the input if the write fails.
+            toggleCheckbox.mutate(
+              { ref: taskRef, path: docPath, index, checked },
+              { onError: () => (input.checked = !checked) },
+            );
+            return;
+          }
 
-                  if (!onNavigateDocRoute) return;
-                  const route = docLinkRouteFromClick(event, {
-                    taskRef,
-                    docPath,
-                    knownDocPaths,
-                  });
-                  if (!route) return;
+          if (!onNavigateDocRoute) return;
+          const route = docLinkRouteFromClick(event, {
+            taskRef,
+            docPath,
+            knownDocPaths,
+          });
+          if (!route) return;
 
-                  event.preventDefault();
-                  onNavigateDocRoute(route);
-                }}
-              />
-            </div>
-          </motion.div>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+          event.preventDefault();
+          onNavigateDocRoute(route);
+        }}
+      />
+    </Sheet>
   );
 }
 
@@ -208,7 +164,9 @@ function checkboxToggleFromClick(
   // Click elsewhere on the task-list line toggles the line's box, like a native
   // <label>. Anchors keep their own navigation behaviour.
   if (target.closest("a[href]")) return null;
-  const input = target.closest("li")?.querySelector(":scope > input[type='checkbox']");
+  const input = target
+    .closest("li")
+    ?.querySelector(":scope > input[type='checkbox']");
   if (!(input instanceof HTMLInputElement)) return null;
   // No native flip happened here, so toggle the input ourselves to keep the
   // optimistic UI in sync before persisting.
@@ -237,23 +195,4 @@ function docErrorMessage(error: Error): string {
     return error.message || "This document could not be read.";
   }
   return "This document could not be read.";
-}
-
-function CloseIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6 6 18" />
-      <path d="M6 6l12 12" />
-    </svg>
-  );
 }

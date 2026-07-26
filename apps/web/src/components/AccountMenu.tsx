@@ -1,10 +1,9 @@
-import * as PopoverPrimitive from "@radix-ui/react-popover";
 import type { SyncStatusResponse } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
 import { formatRelativeTime } from "../format.ts";
 import { useSyncStatus } from "../lib/api.ts";
 import { cn } from "../lib/utils.ts";
-import { useDropdownTransition } from "./useDropdownTransition.ts";
+import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
 
 /**
  * The board's global account control: a user-circle button in the shared header
@@ -21,83 +20,72 @@ import { useDropdownTransition } from "./useDropdownTransition.ts";
 export function AccountMenu({ now }: { now?: Date }) {
   const { data } = useSyncStatus();
   const account = describeAccount(data, now);
-  const { open, isClosing, onOpenChange, mounted } = useDropdownTransition();
 
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <PopoverPrimitive.Trigger
+    <Dropdown>
+      <DropdownTrigger
         className="relative inline-flex items-center justify-center size-8 rounded-full border border-border bg-surface text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer"
         aria-label={account.triggerLabel}
         data-sync-state={account.state}
       >
         <CircleUser size={16} aria-hidden="true" />
         <SyncIndicator state={account.state} />
-      </PopoverPrimitive.Trigger>
-      {mounted && (
-        <PopoverPrimitive.Portal forceMount>
-          <PopoverPrimitive.Content
-            forceMount
-            aria-label="Account"
-            align="end"
-            sideOffset={8}
-            data-origin="top-right"
-            className={cn(
-              "account-menu t-dropdown z-50 w-64 rounded-md border border-border-subtle bg-surface text-caption text-text shadow-md",
-              isClosing && "is-closing",
-            )}
-          >
-            {/* Identity block: the name leads, the address is supporting
+      </DropdownTrigger>
+      <DropdownContent
+        aria-label="Account"
+        origin="top-right"
+        align="end"
+        sideOffset={8}
+        className="w-64 text-caption text-text"
+      >
+        {/* Identity block: the name leads, the address is supporting
                 detail, and each gets its own line so neither wraps. */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5">
-              <span className="inline-flex items-center justify-center size-7 shrink-0 rounded-full bg-chip-bg text-text-muted">
-                <CircleUser size={15} aria-hidden="true" />
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <span className="inline-flex items-center justify-center size-7 shrink-0 rounded-full bg-chip-bg text-text-muted">
+            <CircleUser size={15} aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex flex-col">
+            <span className="truncate font-semibold text-text">
+              {account.name ?? "Not signed in"}
+            </span>
+            {account.email ? (
+              <span className="truncate font-mono text-meta text-text-muted">
+                {account.email}
               </span>
-              <span className="min-w-0 flex flex-col">
-                <span className="truncate font-semibold text-text">
-                  {account.name ?? "Not signed in"}
-                </span>
-                {account.email ? (
-                  <span className="truncate font-mono text-meta text-text-muted">
-                    {account.email}
-                  </span>
-                ) : null}
-              </span>
-            </div>
-
-            {/* Sync block: the state's own dot leads the line, so the popover
-                reads the same way the trigger badge does. */}
-            <div className="border-t border-border-subtle px-3 py-2.5 flex flex-col gap-1">
-              <span className="flex items-start gap-2">
-                <StateDot state={account.state} />
-                <span className="min-w-0 text-text-muted">
-                  {account.headline}
-                </span>
-              </span>
-              {account.detail ? (
-                <span
-                  className="pl-4 text-meta text-text-muted wrap-anywhere"
-                  data-testid="account-sync-detail"
-                >
-                  {account.detail}
-                </span>
-              ) : null}
-            </div>
-
-            {account.autoSyncLabel ? (
-              <dl className="m-0 border-t border-border-subtle px-3 py-2 flex items-baseline justify-between gap-3">
-                <dt className="m-0 text-meta text-text-muted">AutoSync</dt>
-                <dd
-                  className="m-0 font-mono text-meta text-text"
-                  data-testid="account-auto-sync"
-                >
-                  {account.autoSyncLabel}
-                </dd>
-              </dl>
             ) : null}
-          </PopoverPrimitive.Content>
-        </PopoverPrimitive.Portal>
-      )}
-    </PopoverPrimitive.Root>
+          </span>
+        </div>
+
+        {/* Sync block: the state's own dot leads the line, so the popover
+                reads the same way the trigger badge does. */}
+        <div className="border-t border-border-subtle px-3 py-2.5 flex flex-col gap-1">
+          <span className="flex items-start gap-2">
+            <StateDot state={account.state} />
+            <span className="min-w-0 text-text-muted">{account.headline}</span>
+          </span>
+          {account.detail ? (
+            <span
+              className="pl-4 text-meta text-text-muted wrap-anywhere"
+              data-testid="account-sync-detail"
+            >
+              {account.detail}
+            </span>
+          ) : null}
+        </div>
+
+        {account.autoSyncLabel ? (
+          <dl className="m-0 border-t border-border-subtle px-3 py-2 flex items-baseline justify-between gap-3">
+            <dt className="m-0 text-meta text-text-muted">AutoSync</dt>
+            <dd
+              className="m-0 font-mono text-meta text-text"
+              data-testid="account-auto-sync"
+            >
+              {account.autoSyncLabel}
+            </dd>
+          </dl>
+        ) : null}
+      </DropdownContent>
+    </Dropdown>
   );
 }
 
