@@ -1,4 +1,3 @@
-import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   REPLACEMENT_KEY_CONFIRMATION,
@@ -20,72 +19,92 @@ import {
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
+import { cn } from "../lib/utils.ts";
+import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
 
 /**
  * The board's global account control: a user-circle button in the shared header
  * with a sync-state indicator, opening a popover that reports the machine's
- * Cloud Sync state. It replaces the long status sentence the task list used to
- * carry, so the same information is one click away from every board page.
+ * Cloud Sync state and signs it in or out. It replaces the long status sentence
+ * the task list used to carry, so the same information is one click away from
+ * every board page.
  *
- * Everything it shows comes from the local `GET /api/sync/status` endpoint —
- * the board never contacts the hosted sync service to render account state.
- * The menu is deliberately read-only about synchronization: there is no
- * AutoSync toggle and no "Sync now", because AutoSync is a machine-local CLI
- * setting and an on-demand sync belongs to `trace sync`.
+ * The state it reports comes from the local `GET /api/sync/status` endpoint —
+ * the board never contacts the hosted sync service to render account state, and
+ * a login is performed by the serving process rather than here.
+ *
+ * The menu stays read-only about synchronization: there is no AutoSync toggle
+ * and no "Sync now", because AutoSync is a machine-local CLI setting and an
+ * on-demand sync belongs to `trace sync`. Signing in and out are the
+ * exceptions, because a terminal was previously the only way to do either.
  */
 export function AccountMenu({ now }: { now?: Date }) {
   const { data } = useSyncStatus();
   const account = describeAccount(data, now);
 
   return (
-    <PopoverPrimitive.Root>
-      <PopoverPrimitive.Trigger
+    <Dropdown>
+      <DropdownTrigger
         className="relative inline-flex items-center justify-center size-8 rounded-full border border-border bg-surface text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer"
         aria-label={account.triggerLabel}
         data-sync-state={account.state}
       >
         <CircleUser size={16} aria-hidden="true" />
         <SyncIndicator state={account.state} />
-      </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          aria-label="Account"
-          align="end"
-          sideOffset={8}
-          className="z-50 w-72 rounded-md border border-border bg-surface p-3 text-caption text-text shadow-lg"
-        >
-          <p className="m-0 font-mono text-crumb font-bold break-words">
-            {account.identity ?? "Not signed in"}
-          </p>
-          <p className="mt-1.5 mb-0 text-text-muted">{account.headline}</p>
-          {account.detail ? (
-            <p
-              className="mt-1.5 mb-0 font-mono text-crumb text-text-muted break-words"
-              data-testid="account-sync-detail"
-            >
-              {account.detail}
-            </p>
-          ) : null}
-          {account.autoSyncLabel ? (
-            <dl className="mt-3 mb-0 flex items-baseline justify-between gap-3 border-t border-border-subtle pt-2">
-              <dt className="m-0 text-text-muted">AutoSync</dt>
-              <dd
-                className="m-0 font-mono text-crumb"
-                data-testid="account-auto-sync"
-              >
-                {account.autoSyncLabel}
-              </dd>
-            </dl>
-          ) : null}
-          <AccountActions account={account} />
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+      </DropdownTrigger>
+      <DropdownContent
+        aria-label="Account"
+        origin="top-right"
+        align="end"
+        sideOffset={8}
+        className="w-64 text-caption text-text"
+      >
+        {/* Identity block: the name leads, the address is supporting
+            detail, and each gets its own line so neither wraps. */}
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
+          <span className="inline-flex items-center justify-center size-7 shrink-0 rounded-full bg-chip-bg text-text-muted">
+            <CircleUser size={15} aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex flex-col">
+            <span className="truncate font-semibold text-text">
+              {account.name ?? "Not signed in"}
+            </span>
+            {account.email ? (
+              <span className="truncate font-mono text-meta text-text-muted">
+                {account.email}
+              </span>
+            ) : null}
+          </span>
+        </div>
+
+        <AccountBody account={account} />
+      </DropdownContent>
+    </Dropdown>
   );
 }
 
+/** Every block under the identity: the section rule plus its own padding. */
+const SECTION = "border-t border-border-subtle px-3 py-2.5";
+
 /**
- * The account actions: signing this machine in, and signing it out.
+ * The popover's controls, in the weights the rest of the board already uses: an
+ * accent-soft primary for the step that carries a flow forward, the neutral
+ * bordered control beside it, and plain text for quiet actions — cancelling,
+ * dismissing, taking the destructive path. A block never offers three equally
+ * loud buttons.
+ */
+const PRIMARY_ACTION =
+  "w-full rounded-control border border-transparent bg-accent-soft px-2 py-1.5 text-caption font-semibold text-accent transition-colors cursor-pointer hover:border-accent disabled:cursor-default disabled:opacity-60";
+
+const SECONDARY_ACTION =
+  "w-full inline-flex items-center justify-center rounded-control border border-border bg-surface px-2 py-1.5 text-caption font-semibold text-text no-underline transition-colors cursor-pointer hover:text-accent hover:border-border-strong disabled:cursor-default disabled:opacity-60";
+
+const QUIET_ACTION =
+  "border-0 bg-transparent p-0 text-meta text-text-muted underline transition-colors cursor-pointer hover:text-accent disabled:cursor-default disabled:opacity-60";
+
+/**
+ * Everything below the identity, which is either a login in flight or the
+ * machine's ordinary sync state and the one action available on it.
  *
  * A login is a machine-local device authorization the serving process performs
  * — the board only starts it, sends the user to the hosted approval page in a
@@ -93,8 +112,12 @@ export function AccountMenu({ now }: { now?: Date }) {
  * generated document encryption key, held in component state (through the query
  * cache) for exactly as long as it takes the user to save it. It is never
  * written to storage, a URL, or a log.
+ *
+ * While an attempt is in flight the sync blocks step aside: "Sign in to sync
+ * this machine's tasks" is not worth saying to someone already halfway through
+ * signing in, and the popover stays short enough to take in at a glance.
  */
-function AccountActions({ account }: { account: AccountDescription }) {
+function AccountBody({ account }: { account: AccountDescription }) {
   const queryClient = useQueryClient();
   const [attemptId, setAttemptId] = useState<string | null>(null);
   const { data: attempt } = useLoginAttempt(attemptId);
@@ -133,9 +156,7 @@ function AccountActions({ account }: { account: AccountDescription }) {
   });
   const cancel = useMutation({
     mutationFn: cancelLogin,
-    onSuccess: (settled) => {
-      queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
-    },
+    onSuccess: recordAttempt,
   });
   const signOut = useMutation({
     mutationFn: postLogout,
@@ -158,7 +179,9 @@ function AccountActions({ account }: { account: AccountDescription }) {
         attempt={attempt}
         keyPending={submitKey.isPending || replaceKey.isPending}
         onAcknowledge={() => acknowledge.mutate(attempt.attemptId)}
-        onSubmitKey={(key) => submitKey.mutate({ attemptId: attempt.attemptId, key })}
+        onSubmitKey={(key) =>
+          submitKey.mutate({ attemptId: attempt.attemptId, key })
+        }
         onReplaceKey={(confirmation) =>
           replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
         }
@@ -172,45 +195,91 @@ function AccountActions({ account }: { account: AccountDescription }) {
     );
   }
 
-  if (account.canSignIn) {
-    return (
-      <div className="mt-3 border-t border-border-subtle pt-2">
-        {SIGN_IN_PROVIDERS.map(({ provider, label }, index) => (
-          <button
-            key={provider}
-            type="button"
-            className={index === 0 ? ACTION_CLASS : `${ACTION_CLASS} mt-1.5`}
-            onClick={() => beginLogin.mutate(provider)}
-            disabled={beginLogin.isPending}
+  return (
+    <>
+      {/* Sync block: the state's own dot leads the line, so the popover
+          reads the same way the trigger badge does. */}
+      <div className={cn(SECTION, "flex flex-col gap-1")}>
+        <span className="flex items-start gap-2">
+          <StateDot state={account.state} />
+          <span className="min-w-0 text-text-muted">{account.headline}</span>
+        </span>
+        {account.detail ? (
+          <span
+            className="pl-4 text-meta text-text-muted wrap-anywhere"
+            data-testid="account-sync-detail"
           >
-            {label}
-          </button>
-        ))}
-        {beginLogin.isError ? (
-          <p className="mt-1.5 mb-0 text-warning" data-testid="login-error">
-            {beginLogin.error.message}
-          </p>
+            {account.detail}
+          </span>
         ) : null}
       </div>
-    );
-  }
 
-  if (account.canSignOut) {
-    return (
-      <div className="mt-3 border-t border-border-subtle pt-2">
-        <button
-          type="button"
-          className={ACTION_CLASS}
-          onClick={() => signOut.mutate()}
-          disabled={signOut.isPending}
-        >
-          Sign out
-        </button>
-      </div>
-    );
-  }
+      {account.autoSyncLabel ? (
+        <dl className="m-0 border-t border-border-subtle px-3 py-2 flex items-baseline justify-between gap-3">
+          <dt className="m-0 text-meta text-text-muted">AutoSync</dt>
+          <dd
+            className="m-0 font-mono text-meta text-text"
+            data-testid="account-auto-sync"
+          >
+            {account.autoSyncLabel}
+          </dd>
+        </dl>
+      ) : null}
 
-  return null;
+      {account.canSignIn ? (
+        <div className={cn(SECTION, "flex flex-col gap-1.5")}>
+          {/* GitHub leads on the accent control and the rest follow on the
+              neutral one — not because a provider is better, but because the
+              block needs one obvious way in. It is also the provider the
+              serving process falls back to when none is named. */}
+          {SIGN_IN_PROVIDERS.map(({ provider, label }, index) => (
+            <button
+              key={provider}
+              type="button"
+              className={index === 0 ? PRIMARY_ACTION : SECONDARY_ACTION}
+              onClick={() => beginLogin.mutate(provider)}
+              disabled={beginLogin.isPending}
+            >
+              {label}
+            </button>
+          ))}
+          {beginLogin.isError ? (
+            <p
+              className="m-0 text-meta text-warning wrap-anywhere"
+              data-testid="login-error"
+            >
+              {beginLogin.error.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {account.canSignOut ? (
+        <div className={SECTION}>
+          <button
+            type="button"
+            className={SECONDARY_ACTION}
+            onClick={() => signOut.mutate()}
+            disabled={signOut.isPending}
+          >
+            Sign out
+          </button>
+          {/* A refused sign-out has to say so. Nothing else on the popover
+              changes when it fails — the machine stays signed in and the button
+              stays where it was — so without this line the click reads as a
+              dead control. */}
+          {signOut.isError ? (
+            <p
+              className="mt-1.5 mb-0 text-meta text-warning wrap-anywhere"
+              data-testid="logout-error"
+            >
+              {signOut.error.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -224,9 +293,6 @@ const SIGN_IN_PROVIDERS: { provider: LoginProvider; label: string }[] = [
   { provider: "github", label: "Sign in with GitHub" },
   { provider: "google", label: "Sign in with Google" },
 ];
-
-const ACTION_CLASS =
-  "w-full rounded-md border border-border bg-surface px-2 py-1.5 text-caption text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60";
 
 /** The stages of a login in flight, rendered inside the account popover. */
 function LoginProgress({
@@ -250,29 +316,38 @@ function LoginProgress({
 }) {
   return (
     <div
-      className="mt-3 border-t border-border-subtle pt-2"
+      className={cn(SECTION, "flex flex-col gap-2")}
       data-testid="login-progress"
       data-login-state={attempt.state}
     >
       {attempt.state === "waiting-for-approval" ? (
         <>
-          <p className="m-0 text-text-muted">
-            Waiting for approval in your browser…
-          </p>
-          <p className="mt-1.5 mb-0 font-mono text-crumb">{attempt.userCode}</p>
-          <p className="mt-1.5 mb-0 text-text-muted">
-            <a
-              href={attempt.verificationUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              Reopen the approval page
-            </a>
-          </p>
+          {/* Led by the same spinner the syncing state uses, so a wait looks
+              like a wait wherever the popover shows one. */}
+          <span className="flex items-start gap-2">
+            <Loader2
+              size={10}
+              className="t-sync-spinner animate-spin mt-1 shrink-0 text-text-muted"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-text-muted">
+              Waiting for approval in your browser…
+            </span>
+          </span>
+          <span className="block rounded-sm bg-chip-bg px-2 py-1 text-center font-mono text-crumb tracking-widest text-text">
+            {attempt.userCode}
+          </span>
+          <a
+            href={attempt.verificationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={SECONDARY_ACTION}
+          >
+            Reopen the approval page
+          </a>
           {/* Closing the popover must not abandon a device approval the user is
               still completing in the other tab — cancelling is deliberate. */}
-          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onCancel}>
+          <button type="button" className={QUIET_ACTION} onClick={onCancel}>
             Cancel sign-in
           </button>
         </>
@@ -284,15 +359,15 @@ function LoginProgress({
             Save this document encryption key somewhere safe. It is shown only
             once, and Trace cannot recover it for you.
           </p>
-          <p
-            className="mt-1.5 mb-0 font-mono text-crumb break-all"
+          <code
+            className="block rounded-sm bg-chip-bg px-2 py-1.5 font-mono text-meta break-all text-text"
             data-testid="generated-key"
           >
             {attempt.generatedKey}
-          </p>
+          </code>
           <button
             type="button"
-            className={`${ACTION_CLASS} mt-2`}
+            className={PRIMARY_ACTION}
             onClick={onAcknowledge}
           >
             I have saved it
@@ -312,17 +387,23 @@ function LoginProgress({
 
       {SETTLED_LOGIN_STATES.includes(attempt.state) ? (
         <>
-          <p className="m-0 text-warning" data-testid="login-outcome">
-            {attempt.error ?? SETTLED_LOGIN_MESSAGES[attempt.state]}
-          </p>
-          <button type="button" className={`${ACTION_CLASS} mt-2`} onClick={onRetry}>
+          <span className="flex items-start gap-2">
+            <TriangleAlert
+              size={10}
+              className="mt-1 shrink-0 text-warning"
+              aria-hidden="true"
+            />
+            <span
+              className="min-w-0 text-text-muted wrap-anywhere"
+              data-testid="login-outcome"
+            >
+              {attempt.error ?? SETTLED_LOGIN_MESSAGES[attempt.state]}
+            </span>
+          </span>
+          <button type="button" className={PRIMARY_ACTION} onClick={onRetry}>
             Try again
           </button>
-          <button
-            type="button"
-            className={`${ACTION_CLASS} mt-1.5`}
-            onClick={onDismiss}
-          >
+          <button type="button" className={QUIET_ACTION} onClick={onDismiss}>
             Dismiss
           </button>
         </>
@@ -341,7 +422,9 @@ function LoginProgress({
  *
  * Replacing the key instead is deliberately the harder path — the same warning
  * and the same typed phrase `trace login` demands — because a fresh key makes
- * every already-synced document unreadable, permanently.
+ * every already-synced document unreadable, permanently. It stays a quiet text
+ * action until it is chosen, so the loud control in this block is always the
+ * one that keeps those documents readable.
  */
 function ExistingKeyStep({
   error,
@@ -369,13 +452,13 @@ function ExistingKeyStep({
         key you saved when you first signed in.
       </p>
       <form
-        className="mt-2"
+        className="flex flex-col gap-1.5"
         onSubmit={(event) => {
           event.preventDefault();
           onSubmitKey(key.trim());
         }}
       >
-        <label className="block text-text-muted" htmlFor={keyFieldId}>
+        <label className="text-meta text-text-muted" htmlFor={keyFieldId}>
           Document encryption key
         </label>
         <input
@@ -386,30 +469,44 @@ function ExistingKeyStep({
           autoComplete="off"
           spellCheck={false}
         />
+        {/* The refusal sits with the field it refused, above the button that
+            sends the next attempt. */}
+        {error ? (
+          <p
+            className="m-0 text-meta text-warning wrap-anywhere"
+            data-testid="existing-key-error"
+          >
+            {error}
+          </p>
+        ) : null}
         <button
           type="submit"
-          className={`${ACTION_CLASS} mt-2`}
+          className={PRIMARY_ACTION}
           disabled={pending || key.trim() === ""}
         >
           Continue
         </button>
       </form>
-      {error ? (
-        <p className="mt-1.5 mb-0 text-warning" data-testid="existing-key-error">
-          {error}
-        </p>
-      ) : null}
 
       {replacing ? (
         <form
-          className="mt-3 border-t border-border-subtle pt-2"
+          className="flex flex-col gap-1.5 border-t border-border-subtle pt-2"
           onSubmit={(event) => {
             event.preventDefault();
             onReplaceKey(confirmation.trim());
           }}
         >
-          <p className="m-0 text-warning">{REPLACEMENT_KEY_WARNING}</p>
-          <label className="mt-1.5 block text-text-muted" htmlFor={confirmFieldId}>
+          <span className="flex items-start gap-2">
+            <TriangleAlert
+              size={10}
+              className="mt-1 shrink-0 text-warning"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-meta text-warning">
+              {REPLACEMENT_KEY_WARNING}
+            </span>
+          </span>
+          <label className="text-meta text-text-muted" htmlFor={confirmFieldId}>
             Type {REPLACEMENT_KEY_CONFIRMATION} to confirm
           </label>
           <input
@@ -420,33 +517,45 @@ function ExistingKeyStep({
             autoComplete="off"
             spellCheck={false}
           />
+          {/* Never the accent control: generating a replacement is the path
+              that loses documents, so it does not get the inviting one. */}
           <button
             type="submit"
-            className={`${ACTION_CLASS} mt-2`}
-            disabled={pending || confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION}
+            className={SECONDARY_ACTION}
+            disabled={
+              pending || confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION
+            }
           >
             Generate new key
           </button>
         </form>
-      ) : (
-        <button
-          type="button"
-          className={`${ACTION_CLASS} mt-2`}
-          onClick={() => setReplacing(true)}
-        >
-          Use a new key instead
-        </button>
-      )}
+      ) : null}
 
-      <button type="button" className={`${ACTION_CLASS} mt-1.5`} onClick={onCancel}>
-        Cancel sign-in
-      </button>
+      <span className="flex items-center gap-2">
+        {replacing ? null : (
+          <>
+            <button
+              type="button"
+              className={QUIET_ACTION}
+              onClick={() => setReplacing(true)}
+            >
+              Use a new key instead
+            </button>
+            <span className="text-meta text-text-muted" aria-hidden="true">
+              ·
+            </span>
+          </>
+        )}
+        <button type="button" className={QUIET_ACTION} onClick={onCancel}>
+          Cancel sign-in
+        </button>
+      </span>
     </>
   );
 }
 
 const FIELD_CLASS =
-  "mt-1 w-full rounded-md border border-border bg-bg px-2 py-1 font-mono text-crumb text-text";
+  "w-full rounded-control border border-border bg-bg px-2 py-1.5 font-mono text-crumb text-text outline-none transition-colors focus:border-border-strong";
 
 /** Attempt states that are over, and the wording each gets when the service
  * offered no message of its own. */
@@ -506,6 +615,43 @@ function SyncIndicator({ state }: { state: AccountState }) {
   );
 }
 
+/**
+ * The same state, restated inside the popover so the headline is anchored to a
+ * colour rather than floating as a bare sentence. Decorative for the same
+ * reason the trigger badge is: the wording beside it already says it.
+ */
+function StateDot({ state }: { state: AccountState }) {
+  if (state === "syncing") {
+    return (
+      <Loader2
+        size={10}
+        className="t-sync-spinner animate-spin mt-1 shrink-0 text-text-muted"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (state === "failed") {
+    return (
+      <TriangleAlert
+        size={10}
+        className="mt-1 shrink-0 text-warning"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "mt-1.5 size-2 shrink-0 rounded-full",
+        state === "synced" ? "bg-accent" : "bg-border-strong",
+      )}
+      aria-hidden="true"
+    />
+  );
+}
+
 /** The account states the menu renders, plus `unknown` before the first read. */
 type AccountState = SyncStatusResponse["state"] | "unknown";
 
@@ -513,7 +659,10 @@ export interface AccountDescription {
   state: AccountState;
   /** Accessible name of the trigger: account plus its sync state in words. */
   triggerLabel: string;
-  identity?: string;
+  /** Display name, or the address when that is all the identity we have. */
+  name?: string;
+  /** The address, only when it is not already serving as the name. */
+  email?: string;
   /** The popover's primary sync line. */
   headline: string;
   /** Secondary line: a failure message, or the retained last-success time. */
@@ -524,6 +673,23 @@ export interface AccountDescription {
   canSignIn: boolean;
   /** Signed in, so this machine's token can be removed. */
   canSignOut: boolean;
+}
+
+/**
+ * Split the recorded identity into its display parts. Login stores whatever it
+ * could resolve — `name <email>`, a bare name, a bare address, or an id — so a
+ * missing angle-bracket pair is normal, not malformed: the whole string then
+ * leads on its own and there is no second line.
+ */
+function splitIdentity(identity: string | undefined): {
+  name?: string;
+  email?: string;
+} {
+  if (!identity) return {};
+  const match = /^(.*?)\s*<([^>]+)>$/.exec(identity.trim());
+  if (!match) return { name: identity };
+  const [, name, email] = match;
+  return name ? { name, email } : { name: email };
 }
 
 /**
@@ -540,7 +706,9 @@ export function describeAccount(
 ): AccountDescription {
   if (!status || !("state" in status)) return loading();
 
-  const identity = "identity" in status ? status.identity : undefined;
+  const identity = splitIdentity(
+    "identity" in status ? status.identity : undefined,
+  );
   const autoSyncLabel =
     status.state === "logged-out" || status.autoSync === undefined
       ? undefined
@@ -553,16 +721,21 @@ export function describeAccount(
       : undefined;
 
   const described = (
-    fields: Pick<AccountDescription, "headline"> &
-      Partial<Pick<AccountDescription, "detail">> & { summary: string },
+    fields: Omit<
+      AccountDescription,
+      "state" | "triggerLabel" | "name" | "email" | "canSignIn" | "canSignOut"
+    > & {
+      summary: string;
+    },
   ): AccountDescription => {
     const { summary, ...rest } = fields;
     return {
       state: status.state,
       triggerLabel: `Account — ${summary}`,
-      identity,
+      ...identity,
       autoSyncLabel,
-      canSignIn: status.state === "logged-out" && Boolean(status.serverConfigured),
+      canSignIn:
+        status.state === "logged-out" && Boolean(status.serverConfigured),
       canSignOut: status.state !== "logged-out",
       ...rest,
     };
