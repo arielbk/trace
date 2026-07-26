@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitForElementToBeRemoved,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
@@ -97,6 +102,41 @@ test("the popover shows the identity, AutoSync mode, and last sync time", async 
   expect(menu).not.toHaveTextContent(/up to date/i);
 });
 
+test("a name-and-address identity is split so neither line has to wrap", async () => {
+  const user = userEvent.setup();
+  renderMenu({
+    state: "synced",
+    identity: "The Octocat <octocat@github.com>",
+    lastSyncedAt: "2026-07-10T16:03:00.000Z",
+    autoSync: true,
+  });
+
+  await user.click(await findTrigger());
+
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  // The recorded identity is `name <email>`; the popover leads on the name and
+  // demotes the address rather than rendering the bracketed string verbatim.
+  expect(menu).toHaveTextContent("The Octocat");
+  expect(menu).toHaveTextContent("octocat@github.com");
+  expect(menu).not.toHaveTextContent("<octocat@github.com>");
+});
+
+test("an identity that is only an address still leads the popover", async () => {
+  const user = userEvent.setup();
+  renderMenu({
+    state: "synced",
+    identity: "<octocat@github.com>",
+    lastSyncedAt: "2026-07-10T16:03:00.000Z",
+    autoSync: true,
+  });
+
+  await user.click(await findTrigger());
+
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  expect(menu).toHaveTextContent("octocat@github.com");
+  expect(menu).not.toHaveTextContent("Not signed in");
+});
+
 test("a run in flight shows a spinner and keeps the last successful sync visible", async () => {
   const user = userEvent.setup();
   renderMenu({
@@ -107,7 +147,9 @@ test("a run in flight shows a spinner and keeps the last successful sync visible
     autoSync: true,
   });
 
-  const trigger = await screen.findByRole("button", { name: "Account — syncing" });
+  const trigger = await screen.findByRole("button", {
+    name: "Account — syncing",
+  });
   expect(trigger.querySelector("[data-sync-indicator='syncing']")).toBeTruthy();
 
   await user.click(trigger);
@@ -126,7 +168,9 @@ test("a failure warns on the trigger and explains itself with the last success",
     autoSync: true,
   });
 
-  const trigger = await screen.findByRole("button", { name: "Account — sync failed" });
+  const trigger = await screen.findByRole("button", {
+    name: "Account — sync failed",
+  });
   expect(trigger.querySelector("[data-sync-indicator='failed']")).toBeTruthy();
 
   await user.click(trigger);
@@ -145,12 +189,16 @@ test("manual mode is reported as read-only state, with no way to sync or switch"
     autoSync: false,
   });
 
-  await user.click(await screen.findByRole("button", { name: "Account — not synced yet" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Account — not synced yet" }),
+  );
 
   const menu = await screen.findByRole("dialog", { name: /account/i });
   expect(menu).toHaveTextContent("Off — manual sync only");
   // AutoSync is a machine-local CLI setting, and on-demand sync is `trace sync`.
-  expect(menu.querySelectorAll("button, input, [role='switch']")).toHaveLength(0);
+  expect(menu.querySelectorAll("button, input, [role='switch']")).toHaveLength(
+    0,
+  );
   expect(menu).not.toHaveTextContent(/sync now/i);
 });
 
@@ -158,7 +206,9 @@ test("a signed-out machine offers login through the CLI and carries no sync badg
   const user = userEvent.setup();
   renderMenu({ state: "logged-out", serverConfigured: true, autoSync: true });
 
-  const trigger = await screen.findByRole("button", { name: "Account — not signed in" });
+  const trigger = await screen.findByRole("button", {
+    name: "Account — not signed in",
+  });
   expect(trigger.querySelector("[data-sync-indicator]")).toBeNull();
 
   await user.click(trigger);
@@ -172,11 +222,15 @@ test("a machine with no sync server says Cloud Sync is unavailable rather than o
   renderMenu({ state: "logged-out", serverConfigured: false, autoSync: true });
 
   await user.click(
-    await screen.findByRole("button", { name: "Account — Cloud Sync not configured" }),
+    await screen.findByRole("button", {
+      name: "Account — Cloud Sync not configured",
+    }),
   );
 
   const menu = await screen.findByRole("dialog", { name: /account/i });
-  expect(menu).toHaveTextContent("Cloud Sync is not configured on this machine.");
+  expect(menu).toHaveTextContent(
+    "Cloud Sync is not configured on this machine.",
+  );
   expect(menu).not.toHaveTextContent("trace login");
 });
 
@@ -197,7 +251,14 @@ test("the menu opens from the keyboard and Escape returns focus to the trigger",
   expect(menu).toBeInTheDocument();
 
   await user.keyboard("{Escape}");
-  expect(screen.queryByRole("dialog", { name: /account/i })).not.toBeInTheDocument();
+  // The popover animates out like the board's other dropdowns, so it stays
+  // mounted in its closing state until the exit transition has run.
+  expect(await screen.findByRole("dialog", { name: /account/i })).toHaveClass(
+    "is-closing",
+  );
+  await waitForElementToBeRemoved(() =>
+    screen.queryByRole("dialog", { name: /account/i }),
+  );
   expect(trigger).toHaveFocus();
 });
 
@@ -208,7 +269,9 @@ test("the spinner is animated by a class the stylesheet silences under reduced m
     autoSync: true,
   });
 
-  const trigger = await screen.findByRole("button", { name: "Account — syncing" });
+  const trigger = await screen.findByRole("button", {
+    name: "Account — syncing",
+  });
   const spinner = trigger.querySelector("[data-sync-indicator='syncing'] svg");
   // The board opts out of motion in CSS rather than per component; the
   // stylesheet silences this class (see styles.test.ts).

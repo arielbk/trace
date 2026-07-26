@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   useArchiveTask,
   usePinTask,
@@ -24,6 +24,7 @@ import {
   SkeletonReveal,
   useSkeletonReveal,
 } from "../components/SkeletonReveal.tsx";
+import { useDropdownTransition } from "../components/useDropdownTransition.ts";
 import { cn } from "../lib/utils.ts";
 import {
   buildSubtitle,
@@ -284,54 +285,13 @@ export function FilterBar({
   onShowArchivedChange: (show: boolean) => void;
   triggerCount?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const closeTimer = useRef<number | null>(null);
   const selectedLabel = selectedProjectSlug ?? "All projects";
-
-  useEffect(() => {
-    return () => {
-      if (closeTimer.current !== null) {
-        window.clearTimeout(closeTimer.current);
-      }
-    };
-  }, []);
-
-  function clearCloseTimer() {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  }
-
-  // Opening needs no orchestration: the content mounts straight into the
-  // t-dropdown open state and the CSS @starting-style block animates it in.
-  // Closing swaps to .is-closing and keeps the content mounted until the
-  // close transition has run.
-  function handleOpenChange(nextOpen: boolean) {
-    if (nextOpen) {
-      clearCloseTimer();
-      setIsClosing(false);
-      setOpen(true);
-      return;
-    }
-
-    if (!open) return;
-
-    const closeMs =
-      parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--dropdown-close-dur",
-        ),
-      ) || 150;
-
-    setIsClosing(true);
-    closeTimer.current = window.setTimeout(() => {
-      closeTimer.current = null;
-      setIsClosing(false);
-      setOpen(false);
-    }, closeMs);
-  }
+  const {
+    open,
+    isClosing,
+    onOpenChange: handleOpenChange,
+    mounted,
+  } = useDropdownTransition();
 
   return (
     <div className="flex items-center gap-3 flex-wrap pb-3">
@@ -349,7 +309,7 @@ export function FilterBar({
           )}
           <ChevronDownIcon />
         </PopoverPrimitive.Trigger>
-        {(open || isClosing) && (
+        {mounted && (
           <PopoverPrimitive.Portal forceMount>
             <PopoverPrimitive.Content
               forceMount

@@ -3,6 +3,8 @@ import type { SyncStatusResponse } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
 import { formatRelativeTime } from "../format.ts";
 import { useSyncStatus } from "../lib/api.ts";
+import { cn } from "../lib/utils.ts";
+import { useDropdownTransition } from "./useDropdownTransition.ts";
 
 /**
  * The board's global account control: a user-circle button in the shared header
@@ -19,9 +21,10 @@ import { useSyncStatus } from "../lib/api.ts";
 export function AccountMenu({ now }: { now?: Date }) {
   const { data } = useSyncStatus();
   const account = describeAccount(data, now);
+  const { open, isClosing, onOpenChange, mounted } = useDropdownTransition();
 
   return (
-    <PopoverPrimitive.Root>
+    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <PopoverPrimitive.Trigger
         className="relative inline-flex items-center justify-center size-8 rounded-full border border-border bg-surface text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer"
         aria-label={account.triggerLabel}
@@ -30,38 +33,70 @@ export function AccountMenu({ now }: { now?: Date }) {
         <CircleUser size={16} aria-hidden="true" />
         <SyncIndicator state={account.state} />
       </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          aria-label="Account"
-          align="end"
-          sideOffset={8}
-          className="z-50 w-72 rounded-md border border-border bg-surface p-3 text-caption text-text shadow-lg"
-        >
-          <p className="m-0 font-mono text-crumb font-bold break-words">
-            {account.identity ?? "Not signed in"}
-          </p>
-          <p className="mt-1.5 mb-0 text-text-muted">{account.headline}</p>
-          {account.detail ? (
-            <p
-              className="mt-1.5 mb-0 font-mono text-crumb text-text-muted break-words"
-              data-testid="account-sync-detail"
-            >
-              {account.detail}
-            </p>
-          ) : null}
-          {account.autoSyncLabel ? (
-            <dl className="mt-3 mb-0 flex items-baseline justify-between gap-3 border-t border-border-subtle pt-2">
-              <dt className="m-0 text-text-muted">AutoSync</dt>
-              <dd
-                className="m-0 font-mono text-crumb"
-                data-testid="account-auto-sync"
-              >
-                {account.autoSyncLabel}
-              </dd>
-            </dl>
-          ) : null}
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
+      {mounted && (
+        <PopoverPrimitive.Portal forceMount>
+          <PopoverPrimitive.Content
+            forceMount
+            aria-label="Account"
+            align="end"
+            sideOffset={8}
+            data-origin="top-right"
+            className={cn(
+              "account-menu t-dropdown z-50 w-64 rounded-md border border-border-subtle bg-surface text-caption text-text shadow-md",
+              isClosing && "is-closing",
+            )}
+          >
+            {/* Identity block: the name leads, the address is supporting
+                detail, and each gets its own line so neither wraps. */}
+            <div className="flex items-center gap-2.5 px-3 py-2.5">
+              <span className="inline-flex items-center justify-center size-7 shrink-0 rounded-full bg-chip-bg text-text-muted">
+                <CircleUser size={15} aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex flex-col">
+                <span className="truncate font-semibold text-text">
+                  {account.name ?? "Not signed in"}
+                </span>
+                {account.email ? (
+                  <span className="truncate font-mono text-meta text-text-muted">
+                    {account.email}
+                  </span>
+                ) : null}
+              </span>
+            </div>
+
+            {/* Sync block: the state's own dot leads the line, so the popover
+                reads the same way the trigger badge does. */}
+            <div className="border-t border-border-subtle px-3 py-2.5 flex flex-col gap-1">
+              <span className="flex items-start gap-2">
+                <StateDot state={account.state} />
+                <span className="min-w-0 text-text-muted">
+                  {account.headline}
+                </span>
+              </span>
+              {account.detail ? (
+                <span
+                  className="pl-4 text-meta text-text-muted wrap-anywhere"
+                  data-testid="account-sync-detail"
+                >
+                  {account.detail}
+                </span>
+              ) : null}
+            </div>
+
+            {account.autoSyncLabel ? (
+              <dl className="m-0 border-t border-border-subtle px-3 py-2 flex items-baseline justify-between gap-3">
+                <dt className="m-0 text-meta text-text-muted">AutoSync</dt>
+                <dd
+                  className="m-0 font-mono text-meta text-text"
+                  data-testid="account-auto-sync"
+                >
+                  {account.autoSyncLabel}
+                </dd>
+              </dl>
+            ) : null}
+          </PopoverPrimitive.Content>
+        </PopoverPrimitive.Portal>
+      )}
     </PopoverPrimitive.Root>
   );
 }
@@ -110,6 +145,43 @@ function SyncIndicator({ state }: { state: AccountState }) {
   );
 }
 
+/**
+ * The same state, restated inside the popover so the headline is anchored to a
+ * colour rather than floating as a bare sentence. Decorative for the same
+ * reason the trigger badge is: the wording beside it already says it.
+ */
+function StateDot({ state }: { state: AccountState }) {
+  if (state === "syncing") {
+    return (
+      <Loader2
+        size={10}
+        className="t-sync-spinner animate-spin mt-1 shrink-0 text-text-muted"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (state === "failed") {
+    return (
+      <TriangleAlert
+        size={10}
+        className="mt-1 shrink-0 text-warning"
+        aria-hidden="true"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "mt-1.5 size-2 shrink-0 rounded-full",
+        state === "synced" ? "bg-accent" : "bg-border-strong",
+      )}
+      aria-hidden="true"
+    />
+  );
+}
+
 /** The account states the menu renders, plus `unknown` before the first read. */
 type AccountState = SyncStatusResponse["state"] | "unknown";
 
@@ -117,13 +189,33 @@ export interface AccountDescription {
   state: AccountState;
   /** Accessible name of the trigger: account plus its sync state in words. */
   triggerLabel: string;
-  identity?: string;
+  /** Display name, or the address when that is all the identity we have. */
+  name?: string;
+  /** The address, only when it is not already serving as the name. */
+  email?: string;
   /** The popover's primary sync line. */
   headline: string;
   /** Secondary line: a failure message, or the retained last-success time. */
   detail?: string;
   /** Rendered AutoSync mode, or undefined when there is no mode worth showing. */
   autoSyncLabel?: string;
+}
+
+/**
+ * Split the recorded identity into its display parts. Login stores whatever it
+ * could resolve — `name <email>`, a bare name, a bare address, or an id — so a
+ * missing angle-bracket pair is normal, not malformed: the whole string then
+ * leads on its own and there is no second line.
+ */
+function splitIdentity(identity: string | undefined): {
+  name?: string;
+  email?: string;
+} {
+  if (!identity) return {};
+  const match = /^(.*?)\s*<([^>]+)>$/.exec(identity.trim());
+  if (!match) return { name: identity };
+  const [, name, email] = match;
+  return name ? { name, email } : { name: email };
 }
 
 /**
@@ -142,7 +234,9 @@ export function describeAccount(
     return { state: "unknown", triggerLabel: "Account", headline: "Loading…" };
   }
 
-  const identity = "identity" in status ? status.identity : undefined;
+  const identity = splitIdentity(
+    "identity" in status ? status.identity : undefined,
+  );
   const autoSyncLabel =
     status.state === "logged-out" || status.autoSync === undefined
       ? undefined
@@ -155,7 +249,10 @@ export function describeAccount(
       : undefined;
 
   const described = (
-    fields: Omit<AccountDescription, "state" | "triggerLabel"> & {
+    fields: Omit<
+      AccountDescription,
+      "state" | "triggerLabel" | "name" | "email"
+    > & {
       summary: string;
     },
   ): AccountDescription => {
@@ -163,7 +260,7 @@ export function describeAccount(
     return {
       state: status.state,
       triggerLabel: `Account — ${summary}`,
-      identity,
+      ...identity,
       autoSyncLabel,
       ...rest,
     };
@@ -207,6 +304,10 @@ export function describeAccount(
         detail: [status.lastError, lastSynced].filter(Boolean).join(" · "),
       });
     default:
-      return { state: "unknown", triggerLabel: "Account", headline: "Loading…" };
+      return {
+        state: "unknown",
+        triggerLabel: "Account",
+        headline: "Loading…",
+      };
   }
 }
