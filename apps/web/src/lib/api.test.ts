@@ -13,6 +13,7 @@ import {
   postToggleCheckbox,
   useArchiveTask,
   useDocContents,
+  useServerSyncOnFocus,
   useTasks,
   useTaskTimeline,
   usePinTask,
@@ -734,5 +735,35 @@ describe("useUnpinTask", () => {
     await waitFor(() => expect(result.current.unpin.isSuccess).toBe(true));
 
     await waitFor(() => expect(callCount).toBeGreaterThan(initialCallCount));
+  });
+});
+
+// ─── useServerSyncOnFocus ────────────────────────────────────────────────────
+
+describe("useServerSyncOnFocus", () => {
+  test("posts /api/sync on mount and again when the window regains focus", () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = renderHook(() => useServerSyncOnFocus());
+    expect(fetchMock).toHaveBeenCalledWith("/api/sync", { method: "POST" });
+
+    fetchMock.mockClear();
+    window.dispatchEvent(new Event("focus"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sync", { method: "POST" });
+
+    unmount();
+    fetchMock.mockClear();
+    window.dispatchEvent(new Event("focus"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("a rejected sync request never surfaces", () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    expect(() => {
+      renderHook(() => useServerSyncOnFocus());
+    }).not.toThrow();
   });
 });

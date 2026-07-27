@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { TaskSummary, TaskTimeline } from "@trace/core/browser";
+import { useEffect } from "react";
+import type {
+  LoginAttemptView,
+  LoginProvider,
+  SyncStatusResponse,
+  TaskSummary,
+  TaskTimeline,
+} from "@trace/core/browser";
 
 export class HttpError extends Error {
   constructor(
@@ -38,6 +45,144 @@ export async function fetchDocContents(ref: string, docPath: string): Promise<Do
     throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
   }
   return { contentType, body };
+}
+
+export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
+  const res = await fetch("/api/sync/status");
+  if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
+  return res.json() as Promise<SyncStatusResponse>;
+}
+
+/** Ask the serving process to run a background sync now (fire-and-forget).
+ * The server throttles repeat requests, so callers can fire freely; failures
+ * (a dev server with no sync trigger, a network hiccup) never surface. */
+export function requestServerSync(): void {
+  void fetch("/api/sync", { method: "POST" }).catch(() => {});
+}
+
+/**
+ * Request a server-side sync on mount and whenever the board window regains
+ * focus. The polling queries only read the local database; this asks the
+ * server to converge that database with other machines first, so acting on a
+ * just-focused board (pin, archive) starts from fresh rows instead of stale
+ * ones — shrinking the cross-machine last-write-wins clobber window.
+ */
+export function useServerSyncOnFocus(): void {
+  useEffect(() => {
+    requestServerSync();
+    window.addEventListener("focus", requestServerSync);
+    return () => window.removeEventListener("focus", requestServerSync);
+  }, []);
+}
+
+/**
+ * The machine-local authentication endpoints. The board only ever starts,
+ * watches, and settles a login attempt — the serving process holds the bearer
+ * token, and no response here carries it.
+ */
+async function localAuth<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(`/api/local-auth${path}`, init);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new HttpError(res.status, detail || `local-auth ${path} failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>("/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+}
+
+export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(`/login/${encodeURIComponent(attemptId)}`);
+}
+
+export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/acknowledge-key`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * Offer the account's existing document encryption key. The key is sent to the
+ * serving process, which validates it against the account's wrapped keys — the
+ * board never decides whether a key is right, and a rejected key comes back as
+ * an ordinary attempt view carrying the reason.
+ */
+export function submitExistingKey(
+  attemptId: string,
+  key: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/existing-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    },
+  );
+}
+
+/** Abandon the account's existing documents in favour of a fresh key. */
+export function generateReplacementKey(
+  attemptId: string,
+  confirmation: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/replacement-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    },
+  );
+}
+
+export function cancelLogin(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function postLogout(): Promise<{ ok: true }> {
+  return localAuth<{ ok: true }>("/logout", { method: "POST" });
+}
+
+/** Login attempt states the board stops polling on. */
+const SETTLED_LOGIN_STATES: ReadonlySet<LoginAttemptView["state"]> = new Set([
+  "complete",
+  "failed",
+  "expired",
+  "cancelled",
+]);
+
+/**
+ * How often the board asks how a login is going. Faster than the board's
+ * background {@link LIVE_REFRESH} rhythm because a login is a foreground
+ * interaction the user is standing in front of — and it stops entirely as soon
+ * as the attempt settles, so it is never a second always-on polling loop.
+ */
+const LOGIN_POLL_MS = 2000;
+
+export function useLoginAttempt(attemptId: string | null) {
+  return useQuery({
+    queryKey: ["login-attempt", attemptId],
+    queryFn: () => fetchLoginAttempt(attemptId as string),
+    enabled: attemptId !== null,
+    refetchInterval: (query) =>
+      query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
+        ? false
+        : LOGIN_POLL_MS,
+  });
 }
 
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
@@ -91,6 +236,14 @@ const LIVE_REFRESH = {
 
 export function useTasks() {
   return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...LIVE_REFRESH });
+}
+
+export function useSyncStatus() {
+  return useQuery({
+    queryKey: ["sync-status"],
+    queryFn: fetchSyncStatus,
+    ...LIVE_REFRESH,
+  });
 }
 
 export function useTaskTimeline(id: string) {

@@ -1,7 +1,8 @@
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
-import { openBrowser, startTraceServe } from "./serve.ts";
+import { openBrowser } from "./open-browser.ts";
+import { startTraceServe } from "./serve.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
@@ -45,9 +46,16 @@ import {
 } from "./commands/skill-operations.ts";
 import { projectMergeOperation } from "./commands/project-operations.ts";
 import {
+  configGetOperation,
+  configSetOperation,
+  configUnsetOperation,
+} from "./commands/config-operations.ts";
+import {
   stateCheckOperation,
   stateReflectOperation,
 } from "./commands/state-operations.ts";
+import { keyShowOperation } from "./commands/key.ts";
+import { setupOperation } from "./commands/setup-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -64,6 +72,13 @@ export function buildTraceCittyRoot(
         meta: { description: "Install Trace into Claude Code" },
         run(): CommandResult {
           return success(runInit(env, cwd));
+        },
+      }),
+
+      setup: defineCommand({
+        meta: { description: "Install Trace integrations into an agent config root" },
+        run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+          return setupOperation(args, { env, cwd, stdin });
         },
       }),
 
@@ -84,6 +99,18 @@ export function buildTraceCittyRoot(
               process.exitCode = 1;
             });
           return success("");
+        },
+      }),
+
+      key: defineCommand({
+        meta: { description: "Manage the document encryption key" },
+        subCommands: {
+          show: defineCommand({
+            meta: { description: "Print the document encryption key" },
+            run(): CommandResult {
+              return keyShowOperation(env);
+            },
+          }),
         },
       }),
 
@@ -173,6 +200,32 @@ export function buildTraceCittyRoot(
             meta: { description: "Update a registered doc's title or description" },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return taskUpdateDocOperation(args, { env, cwd, stdin });
+            },
+          }),
+        },
+      }),
+
+      config: defineCommand({
+        meta: { description: "Read and write machine-local client settings" },
+        subCommands: {
+          get: defineCommand({
+            meta: { description: "Print a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configGetOperation(args, { env });
+            },
+          }),
+
+          set: defineCommand({
+            meta: { description: "Set a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configSetOperation(args, { env });
+            },
+          }),
+
+          unset: defineCommand({
+            meta: { description: "Remove a config value" },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return configUnsetOperation(args, { env });
             },
           }),
         },

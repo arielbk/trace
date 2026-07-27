@@ -1,4 +1,3 @@
-import { spawn as nodeSpawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import {
   createServer,
@@ -9,10 +8,16 @@ import {
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  handleLocalAuthRequest,
   handleTraceApiRequest,
+  resolveAutoSyncEnabled,
+  resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
+  type LocalAuthService,
 } from "@trace/core";
+import { requestAutomaticSync } from "./commands/sync.ts";
+import { createLocalAuthService } from "./local-auth.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -28,10 +33,59 @@ export type StartTraceServeOptions = {
   host?: string;
   /** Injectable server, used by tests (the unit env cannot bind sockets). */
   server?: Server;
+  /** Injectable background-sync trigger; defaults to the real fire-and-forget
+   * spawn. Overridden by tests. */
+  triggerSync?: (env: Record<string, string | undefined>) => void;
 };
 
 /** How many consecutive ports to try when the preferred one is taken. */
 const PORT_FALLBACK_ATTEMPTS = 10;
+
+/** Debounce between a board mutation and the follow-up background sync, so a
+ * burst of pins/archives coalesces into one sync shortly after it ends. */
+export const MUTATION_SYNC_DELAY_MS = 5_000;
+
+/** Minimum gap between focus-requested syncs (`POST /api/sync`). */
+export const REQUEST_SYNC_MIN_INTERVAL_MS = 15_000;
+
+/** How often the long-running serve process syncs in the background, keeping
+ * an idle-but-open board's database converging with other machines. */
+export const PERIODIC_SYNC_INTERVAL_MS = 5 * 60_000;
+
+export type ServeSyncHooks = {
+  onMutation: () => void;
+  requestSync: () => void;
+};
+
+/**
+ * Sync scheduling for the serve process: board mutations debounce into one
+ * background sync shortly after the burst ends; explicit requests (the board
+ * client on window focus) run immediately but at most once per
+ * {@link REQUEST_SYNC_MIN_INTERVAL_MS}. The trigger itself no-ops when logged
+ * out, so neither path needs an auth check here.
+ */
+export function createSyncHooks(
+  trigger: () => void,
+  now: () => number = Date.now,
+): ServeSyncHooks {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastRequestedAt = -Infinity;
+  return {
+    onMutation: () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        trigger();
+      }, MUTATION_SYNC_DELAY_MS);
+      timer.unref?.();
+    },
+    requestSync: () => {
+      if (now() - lastRequestedAt < REQUEST_SYNC_MIN_INTERVAL_MS) return;
+      lastRequestedAt = now();
+      trigger();
+    },
+  };
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -94,13 +148,38 @@ function serveFile(res: ServerResponse, filePath: string): void {
 export function createServeRequestListener(
   databasePath: string,
   assetsDir?: string,
+  syncServerConfigured?: boolean,
+  syncHooks?: ServeSyncHooks,
+  /** Reads the effective AutoSync mode; called per request because the user may
+   * run `trace config set auto-sync` while the board is open. */
+  resolveAutoSync?: () => boolean,
+  /** Runs board-initiated login/logout. Absent means this host serves no
+   * `/api/local-auth` routes. */
+  localAuth?: LocalAuthService,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
     const dispatch = (body?: string): void => {
-      const response = handleTraceApiRequest(databasePath, method, url, body);
+      // Auth routes are asynchronous (they reach the hosted server), so they
+      // are routed ahead of the synchronous database API rather than through it.
+      const authResponse = localAuth
+        ? handleLocalAuthRequest(method, url, body, localAuth)
+        : null;
+      if (authResponse) {
+        void authResponse.then((response) =>
+          writeTraceApiResponse(res, response),
+        );
+        return;
+      }
+
+      const response = handleTraceApiRequest(databasePath, method, url, body, {
+        syncServerConfigured,
+        autoSyncEnabled: resolveAutoSync?.(),
+        onMutation: syncHooks?.onMutation,
+        requestSync: syncHooks?.requestSync,
+      });
 
       if (response) {
         writeTraceApiResponse(res, response);
@@ -157,38 +236,6 @@ function serveOrFallback(
   res.end();
 }
 
-type BrowserSpawn = (
-  command: string,
-  args: string[],
-) => { unref: () => void; on: (event: string, handler: () => void) => void };
-
-const defaultBrowserSpawn: BrowserSpawn = (command, args) =>
-  nodeSpawn(command, args, { detached: true, stdio: "ignore" });
-
-/**
- * Open `url` in the user's default browser. Best-effort: failures are ignored —
- * the URL is printed to the terminal either way.
- */
-export function openBrowser(
-  url: string,
-  platform: NodeJS.Platform = process.platform,
-  spawn: BrowserSpawn = defaultBrowserSpawn,
-): void {
-  const [command, args] =
-    platform === "darwin"
-      ? ["open", [url] as string[]]
-      : platform === "win32"
-        ? ["cmd", ["/c", "start", "", url] as string[]]
-        : ["xdg-open", [url] as string[]];
-  try {
-    const child = spawn(command as string, args as string[]);
-    child.on("error", () => {});
-    child.unref();
-  } catch {
-    // Browser launch is a convenience; never fail serve over it.
-  }
-}
-
 /**
  * Locate the built web SPA relative to this module: `apps/web/dist` when
  * running from the repo (`src/` or `dist/`). Returns undefined when no build
@@ -214,9 +261,17 @@ export function resolveWebAssetsDir(
 export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
+  syncHooks?: ServeSyncHooks,
 ): Server {
   return createServer(
-    createServeRequestListener(resolveDatabasePath(env), assetsDir),
+    createServeRequestListener(
+      resolveDatabasePath(env),
+      assetsDir,
+      Boolean(resolveConfiguredServerUrl(env)),
+      syncHooks,
+      () => resolveAutoSyncEnabled(env),
+      createLocalAuthService(env),
+    ),
   );
 }
 
@@ -231,7 +286,22 @@ export function startTraceServe(
 ): Promise<TraceServer> {
   const host = options.host ?? "127.0.0.1";
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
-  const server = options.server ?? createTraceServeServer(env);
+  const triggerSync = options.triggerSync ?? requestAutomaticSync;
+  const server =
+    options.server ??
+    createTraceServeServer(env, undefined, createSyncHooks(() => triggerSync(env)));
+
+  // Fire-and-forget a sync as the board starts, so a freshly opened board
+  // reflects other machines. No-ops instantly when logged out or offline.
+  triggerSync(env);
+
+  // Between mutations, keep an idle-but-open board converging with other
+  // machines. unref'd so the timer never holds the process alive on its own.
+  const periodicSync = setInterval(
+    () => triggerSync(env),
+    PERIODIC_SYNC_INTERVAL_MS,
+  );
+  periodicSync.unref?.();
 
   return new Promise((resolve, reject) => {
     const listenOn = (port: number, attemptsLeft: number): void => {
@@ -253,6 +323,7 @@ export function startTraceServe(
           port: boundPort,
           close: () =>
             new Promise<void>((resolveClose, rejectClose) => {
+              clearInterval(periodicSync);
               server.close((error) =>
                 error ? rejectClose(error) : resolveClose(),
               );

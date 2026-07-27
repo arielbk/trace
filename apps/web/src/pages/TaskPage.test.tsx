@@ -3,17 +3,51 @@ import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as renderIntoDocument,
   screen,
   waitFor,
 } from "@testing-library/react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LeftOffPanel, TaskPage, TaskTimelineView } from "./TaskPage.tsx";
+
+// The board mounts everything under one query client — the shared header's
+// account menu reads local sync status — so these renders provide one too.
+function withQueryClient(ui: ReactNode) {
+  return (
+    <QueryClientProvider client={makeQueryClient()}>{ui}</QueryClientProvider>
+  );
+}
+
+function render(ui: ReactNode) {
+  return renderIntoDocument(withQueryClient(ui));
+}
+
+function renderToStaticMarkup(ui: ReactNode) {
+  return renderMarkup(withQueryClient(ui));
+}
+
+// The shared header polls `/api/sync/status` alongside whatever a page fetches,
+// so tests route responses by URL rather than by call order.
+function routedFetch(
+  routes: Array<[(url: string) => boolean, () => unknown]>,
+): ReturnType<typeof vi.fn> {
+  return vi.fn().mockImplementation(async (input: unknown) => {
+    const url = String(input);
+    const match = routes.find(([test]) => test(url));
+    return match
+      ? match[1]()
+      : new Response("{}", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+  });
+}
 
 beforeAll(() => {
   Object.defineProperty(navigator, "clipboard", {
@@ -1831,7 +1865,7 @@ function renderTimelineWithProvider(timeline: TaskTimeline) {
 test("clicking a doc opens the Sheet and rendered content appears", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
+    vi.fn().mockImplementation(async () =>
       new Response("<h1>Plan</h1>", {
         status: 200,
         headers: { "content-type": "text/html" },
@@ -1854,7 +1888,7 @@ test("clicking a doc opens the Sheet and rendered content appears", async () => 
 test("clicking a non-markdown doc shows a contained raw-text fallback in the Sheet", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
+    vi.fn().mockImplementation(async () =>
       new Response('{"a":1}', {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1873,7 +1907,7 @@ test("clicking a non-markdown doc shows a contained raw-text fallback in the She
 test("copying a doc's path does not open the Sheet", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
+    vi.fn().mockImplementation(async () =>
       new Response("<h1>Plan</h1>", {
         status: 200,
         headers: { "content-type": "text/html" },
@@ -1898,7 +1932,7 @@ test("copying a doc's path does not open the Sheet", async () => {
 test("closing the doc Sheet returns focus to the timeline row", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
+    vi.fn().mockImplementation(async () =>
       new Response("<h1>Plan</h1>", {
         status: 200,
         headers: { "content-type": "text/html" },
@@ -2038,6 +2072,37 @@ describe("TaskPage", () => {
     });
   });
 
+  test("carries the same global account control as the task list", async () => {
+    const timeline = makeTimeline("my-task");
+    vi.stubGlobal(
+      "fetch",
+      routedFetch([
+        [
+          (url) => url.includes("/timeline"),
+          () => ({ ok: true, status: 200, json: () => Promise.resolve(timeline) }),
+        ],
+        [
+          (url) => url.includes("/api/sync/status"),
+          () =>
+            new Response(
+              JSON.stringify({
+                state: "failed",
+                lastError: "server returned 500",
+                autoSync: true,
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+        ],
+      ]),
+    );
+
+    renderTaskPage("my-task", makeQueryClient());
+
+    expect(
+      await screen.findByRole("button", { name: "Account — sync failed" }),
+    ).toBeInTheDocument();
+  });
+
   test("renders the timeline title when fetch succeeds", async () => {
     const timeline = makeTimeline("my-task");
     vi.stubGlobal(
@@ -2070,19 +2135,20 @@ describe("TaskPage", () => {
         },
       ],
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(timeline),
-      })
-      .mockResolvedValueOnce(
-        new Response("<h1>Plan</h1>", {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        }),
-      );
+    const fetchMock = routedFetch([
+      [
+        (url) => url.includes("/timeline"),
+        () => ({ ok: true, status: 200, json: () => Promise.resolve(timeline) }),
+      ],
+      [
+        (url) => url.includes("/docs?"),
+        () =>
+          new Response("<h1>Plan</h1>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ],
+    ]);
     vi.stubGlobal("fetch", fetchMock);
 
     renderRoutedTaskPage(
@@ -2125,7 +2191,7 @@ describe("TaskPage", () => {
           status: 200,
           json: () => Promise.resolve(timeline),
         })
-        .mockResolvedValue(
+        .mockImplementation(async () =>
           new Response("<h1>Plan</h1>", {
             status: 200,
             headers: { "content-type": "text/html" },
@@ -2188,25 +2254,28 @@ describe("TaskPage", () => {
         },
       ],
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(timeline),
-      })
-      .mockResolvedValueOnce(
-        new Response('<p><a href="notes/next.md">Next doc</a></p>', {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response("<h1>Next</h1>", {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        }),
-      );
+    const fetchMock = routedFetch([
+      [
+        (url) => url.includes("/timeline"),
+        () => ({ ok: true, status: 200, json: () => Promise.resolve(timeline) }),
+      ],
+      [
+        (url) => url.includes(encodeURIComponent(nextPath)),
+        () =>
+          new Response("<h1>Next</h1>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ],
+      [
+        (url) => url.includes("/docs?"),
+        () =>
+          new Response('<p><a href="notes/next.md">Next doc</a></p>', {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ],
+    ]);
     vi.stubGlobal("fetch", fetchMock);
 
     renderRoutedTaskPage(`/task/my-task/docs/${encodeURIComponent(planPath)}`);
@@ -2249,19 +2318,20 @@ describe("TaskPage", () => {
         },
       ],
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(timeline),
-      })
-      .mockResolvedValueOnce(
-        new Response("<h1>Plan</h1>", {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        }),
-      );
+    const fetchMock = routedFetch([
+      [
+        (url) => url.includes("/timeline"),
+        () => ({ ok: true, status: 200, json: () => Promise.resolve(timeline) }),
+      ],
+      [
+        (url) => url.includes("/docs?"),
+        () =>
+          new Response("<h1>Plan</h1>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      ],
+    ]);
     vi.stubGlobal("fetch", fetchMock);
 
     renderRoutedTaskPage("/task/my-task");
@@ -2311,11 +2381,12 @@ describe("TaskPage", () => {
         },
       ],
     };
-    const fetchMock = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(timeline),
-    });
+    const fetchMock = routedFetch([
+      [
+        (url) => url.includes("/timeline"),
+        () => ({ ok: true, status: 200, json: () => Promise.resolve(timeline) }),
+      ],
+    ]);
     vi.stubGlobal("fetch", fetchMock);
 
     renderRoutedTaskPage("/task/my-task");
@@ -2329,7 +2400,10 @@ describe("TaskPage", () => {
       "/task/my-task",
     );
     expect(screen.queryByText("Task not found.")).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // None of those links may fetch a doc.
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes("/docs?")),
+    ).toHaveLength(0);
   });
 
   test("renders not-found state on 404", async () => {

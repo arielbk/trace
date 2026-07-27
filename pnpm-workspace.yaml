@@ -10,3 +10,9 @@ packages:
 # depend on, so it is allowed here.
 allowBuilds:
   esbuild: true
+
+# pnpm 11's default (`install`) reacts to any manifest edit — e.g. the release
+# version stamp — by silently running `pnpm install` before every script, which
+# fails in sandboxed/offline environments and can prompt to purge node_modules.
+# `warn` keeps the drift notice without the implicit install.
+verifyDepsBeforeRun: warn

@@ -4,9 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
-const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const cliPackageJson = join(appRoot, "package.json");
 const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
 const codexPluginManifest = join(
   repoRoot,
@@ -44,12 +42,9 @@ const copilotPluginRoot = join(repoRoot, "plugin");
 const copilotPluginManifest = join(copilotPluginRoot, "plugin.json");
 const copilotHooksConfig = join(copilotPluginRoot, "hooks", "hooks.json");
 
-function pinnedTraceCommand(): string {
-  const packageJson = JSON.parse(readFileSync(cliPackageJson, "utf8")) as {
-    name?: string;
-    version?: string;
-  };
-  return `npx ${packageJson.name}@${packageJson.version}`;
+/** Persistent global CLI invocation used by skills and hooks after cutover. */
+function bareTraceCommand(): string {
+  return "trace";
 }
 
 describe("plugin scaffold", () => {
@@ -73,8 +68,8 @@ describe("plugin scaffold", () => {
     assert.deepEqual(hooks.hooks?.sessionStart, [
       {
         type: "command",
-        bash: `${pinnedTraceCommand()} hook session-start`,
-        powershell: `${pinnedTraceCommand()} hook session-start`,
+        bash: `${bareTraceCommand()} hook session-start`,
+        powershell: `${bareTraceCommand()} hook session-start`,
       },
       {
         type: "prompt",
@@ -85,24 +80,23 @@ describe("plugin scaffold", () => {
     assert.deepEqual(hooks.hooks?.agentStop, [
       {
         type: "command",
-        bash: `${pinnedTraceCommand()} hook stop`,
-        powershell: `${pinnedTraceCommand()} hook stop`,
+        bash: `${bareTraceCommand()} hook stop`,
+        powershell: `${bareTraceCommand()} hook stop`,
       },
     ]);
     assert.deepEqual(hooks.hooks?.subagentStop, [
       {
         type: "command",
-        bash: `${pinnedTraceCommand()} hook subagent-stop`,
-        powershell: `${pinnedTraceCommand()} hook subagent-stop`,
+        bash: `${bareTraceCommand()} hook subagent-stop`,
+        powershell: `${bareTraceCommand()} hook subagent-stop`,
       },
     ]);
 
     const skill = readFileSync(traceSkill, "utf8");
     assert.match(skill, /^---\nname:\s*trace\s*$/m);
-    assert.equal(skill.includes(pinnedTraceCommand()), true);
   });
 
-  it("ships a Claude Code plugin manifest, hook, and skills pinned to the npm CLI", () => {
+  it("ships a Claude Code plugin manifest, hooks, and skills that invoke the bare CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
     };
@@ -142,7 +136,7 @@ describe("plugin scaffold", () => {
         hooks: [
           {
             type: "command",
-            command: `${pinnedTraceCommand()} hook session-start`,
+            command: `${bareTraceCommand()} hook session-start`,
           },
         ],
       },
@@ -152,7 +146,7 @@ describe("plugin scaffold", () => {
         hooks: [
           {
             type: "command",
-            command: `${pinnedTraceCommand()} hook subagent-stop`,
+            command: `${bareTraceCommand()} hook subagent-stop`,
           },
         ],
       },
@@ -167,21 +161,23 @@ describe("plugin scaffold", () => {
       stateSkill,
     ]) {
       const skillSource = readFileSync(skill, "utf8");
-      assert.equal(skillSource.includes(pinnedTraceCommand()), true);
+      assert.equal(skillSource.includes(bareTraceCommand()), true);
       assert.equal(
         skillSource.includes("${CLAUDE_PLUGIN_ROOT}/bin/trace.js"),
         false,
       );
       assert.equal(skillSource.includes("pnpm link --global"), false);
+      assert.equal(
+        /npx @arielbk\/trace@[0-9]/.test(skillSource),
+        false,
+        `${skill} must not contain a pinned npx @arielbk/trace command`,
+      );
     }
 
     assert.equal(existsSync(pluginBinDir), false);
   });
 
-  it("pins every trace command in the skills tree to the current CLI version", () => {
-    // Guard against a stale pin surviving a release bump in ONE spot (the
-    // `includes(pinnedTraceCommand())` checks above can't see an extra,
-    // older pin sitting elsewhere in the same file).
+  it("contains no versioned npx @arielbk/trace pins in the skills tree", () => {
     const markdownFiles = readdirSync(skillsRoot, {
       recursive: true,
       withFileTypes: true,
@@ -192,14 +188,8 @@ describe("plugin scaffold", () => {
 
     for (const file of markdownFiles) {
       const source = readFileSync(file, "utf8");
-      for (const pin of source.match(/@arielbk\/trace@[0-9][0-9a-z.-]*/g) ??
-        []) {
-        assert.equal(
-          `npx ${pin}`,
-          pinnedTraceCommand(),
-          `stale trace pin in ${file}: ${pin}`,
-        );
-      }
+      const pins = source.match(/@arielbk\/trace@[0-9][0-9a-z.-]*/g) ?? [];
+      assert.deepEqual(pins, [], `unexpected versioned pin in ${file}`);
     }
   });
 
@@ -329,8 +319,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^name:\s*trace-recall\s*$/m);
     assert.match(meta as string, /^description:\s*.+$/m);
 
-    // It fetches the candidate pool from the pinned npm CLI, never invents matches.
-    assert.equal(source.includes(pinnedTraceCommand()), true);
+    // It fetches the candidate pool from the persistent CLI, never invents matches.
+    assert.equal(source.includes(bareTraceCommand()), true);
     assert.equal(source.includes("skill recall-candidates"), true);
 
     // Confident match delegates to the trace-reenter skill via skill re-enter,
@@ -362,8 +352,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^description:\s*.+$/m);
     assert.match(meta as string, /slug|title/i);
 
-    // It re-enters via the pinned npm CLI's skill re-enter verb.
-    assert.equal(source.includes(pinnedTraceCommand()), true);
+    // It re-enters via the persistent CLI's skill re-enter verb.
+    assert.equal(source.includes(bareTraceCommand()), true);
     assert.equal(source.includes("skill re-enter"), true);
 
     // The slug is the canonical ref (exact title also resolves).
@@ -410,8 +400,8 @@ describe("plugin scaffold", () => {
     assert.match(meta as string, /^description:\s*.+$/m);
     assert.match(meta as string, /board/i);
 
-    // It starts the web UI via the pinned npm CLI's serve verb.
-    assert.equal(source.includes(pinnedTraceCommand()), true);
+    // It starts the web UI via the persistent CLI's serve verb.
+    assert.equal(source.includes(bareTraceCommand()), true);
     assert.match(source, /\bserve\b/);
 
     // The agent opens the board itself rather than instructing the user: it

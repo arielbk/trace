@@ -70,6 +70,22 @@ test("tokenTotalsFromUsage reads snake_case keys and derives total from parts", 
   });
 });
 
+test("tokenTotalsFromUsage splits OpenAI cached input from input tokens", () => {
+  expect(
+    tokenTotalsFromUsage({
+      input_tokens: 17,
+      output_tokens: 29,
+      cached_input_tokens: 11,
+    }),
+  ).toEqual({
+    inputTokens: 6,
+    outputTokens: 29,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 11,
+    totalTokens: 46,
+  });
+});
+
 test("tokenTotalsFromUsage reads camelCase keys", () => {
   expect(
     tokenTotalsFromUsage({

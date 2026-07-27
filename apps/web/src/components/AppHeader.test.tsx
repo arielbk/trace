@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
+import type { ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
 
@@ -22,11 +24,18 @@ beforeAll(() => {
   });
 });
 
-function renderHeader(props: { project?: string; context?: string } = {}) {
+function renderHeader(
+  props: { project?: string; context?: string; aside?: ReactNode } = {},
+) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter>
-      <AppHeader {...props} />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <AppHeader {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -60,6 +69,23 @@ describe("AppHeader", () => {
   test("renders the context crumb when both project and context are provided", () => {
     renderHeader({ project: "trace-v2", context: "My Task" });
     expect(screen.getByText("My Task")).toBeInTheDocument();
+  });
+
+  test("renders the aside slot content when provided", () => {
+    renderHeader({ aside: <span>synced 2m ago</span> });
+    expect(screen.getByText("synced 2m ago")).toBeInTheDocument();
+  });
+
+  test("carries the account control just before the theme toggle", () => {
+    renderHeader();
+    // Global machine state belongs to the shared header, so every page that
+    // uses it gets the account menu without opting in.
+    const account = screen.getByRole("button", { name: /account/i });
+    const theme = screen.getByRole("button", { name: /toggle color theme/i });
+    expect(
+      account.compareDocumentPosition(theme) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   test("renders the accessible theme toggle button", () => {

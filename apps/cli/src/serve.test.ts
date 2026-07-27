@@ -4,15 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
-import { afterEach, beforeEach, expect, test } from "vitest";
-import { openTraceStore } from "@trace/core";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { openTraceStore, updateConfigFile } from "@trace/core";
 import {
   createServeRequestListener,
+  createSyncHooks,
+  createTraceServeServer,
   DEFAULT_SERVE_PORT,
-  openBrowser,
+  MUTATION_SYNC_DELAY_MS,
+  PERIODIC_SYNC_INTERVAL_MS,
+  REQUEST_SYNC_MIN_INTERVAL_MS,
   resolveWebAssetsDir,
   startTraceServe,
+  type ServeSyncHooks,
 } from "./serve.ts";
+import { openBrowser } from "./open-browser.ts";
 
 let dir: string;
 let databasePath: string;
@@ -58,6 +64,7 @@ function dispatch(
   method: string,
   url: string,
   assetsDir?: string,
+  syncHooks?: ServeSyncHooks,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -81,7 +88,7 @@ function dispatch(
     },
   } as unknown as ServerResponse;
 
-  createServeRequestListener(databasePath, assetsDir)(
+  createServeRequestListener(databasePath, assetsDir, undefined, syncHooks)(
     { method, url } as IncomingMessage,
     res,
   );
@@ -182,11 +189,99 @@ function fakeServerWithTakenPorts(takenPorts: Set<number>): Server {
 test("trace serve falls back to the next port when the default is taken", async () => {
   const server = fakeServerWithTakenPorts(new Set([DEFAULT_SERVE_PORT]));
 
-  const running = await startTraceServe({}, { server });
+  const running = await startTraceServe({}, { server, triggerSync: () => {} });
 
   expect(running.port).toBe(DEFAULT_SERVE_PORT + 1);
   expect(running.url).toBe(`http://127.0.0.1:${DEFAULT_SERVE_PORT + 1}/`);
   await running.close();
+});
+
+test("trace serve fires a background sync on start", async () => {
+  const server = fakeServerWithTakenPorts(new Set());
+  const triggerSync = vi.fn();
+
+  const running = await startTraceServe({}, { server, triggerSync });
+
+  expect(triggerSync).toHaveBeenCalledOnce();
+  await running.close();
+});
+
+test("board mutations and POST /api/sync reach the sync hooks through the serve listener", () => {
+  const syncHooks = { onMutation: vi.fn(), requestSync: vi.fn() };
+
+  dispatch("POST", `/api/tasks/${taskId}/pin`, undefined, syncHooks);
+  expect(syncHooks.onMutation).toHaveBeenCalledOnce();
+  expect(syncHooks.requestSync).not.toHaveBeenCalled();
+
+  dispatch("POST", "/api/sync", undefined, syncHooks);
+  expect(syncHooks.requestSync).toHaveBeenCalledOnce();
+
+  // Reads never schedule a sync.
+  dispatch("GET", "/api/tasks", undefined, syncHooks);
+  expect(syncHooks.onMutation).toHaveBeenCalledOnce();
+});
+
+test("createSyncHooks debounces a burst of mutations into one sync", () => {
+  vi.useFakeTimers();
+  try {
+    const trigger = vi.fn();
+    const hooks = createSyncHooks(trigger);
+
+    hooks.onMutation();
+    hooks.onMutation();
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS - 1);
+    hooks.onMutation();
+    expect(trigger).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS);
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // A later mutation schedules a fresh sync.
+    hooks.onMutation();
+    vi.advanceTimersByTime(MUTATION_SYNC_DELAY_MS);
+    expect(trigger).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("createSyncHooks runs a requested sync immediately but throttles repeats", () => {
+  let now = 1_000_000;
+  const trigger = vi.fn();
+  const hooks = createSyncHooks(trigger, () => now);
+
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledOnce();
+
+  now += REQUEST_SYNC_MIN_INTERVAL_MS - 1;
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledOnce();
+
+  now += 1;
+  hooks.requestSync();
+  expect(trigger).toHaveBeenCalledTimes(2);
+});
+
+test("trace serve syncs periodically while running, and stops on close", async () => {
+  vi.useFakeTimers();
+  try {
+    const server = fakeServerWithTakenPorts(new Set());
+    const triggerSync = vi.fn();
+
+    const running = await startTraceServe({}, { server, triggerSync });
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS);
+    expect(triggerSync).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+
+    await running.close();
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS * 2);
+    expect(triggerSync).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("resolveWebAssetsDir finds the built web app relative to the cli module", () => {
@@ -240,4 +335,29 @@ test("openBrowser launches the platform opener with the url", () => {
     { command: "open", args: ["http://127.0.0.1:4317/"] },
     { command: "xdg-open", args: ["http://127.0.0.1:4317/"] },
   ]);
+});
+
+test("the board's sync status reports the machine's AutoSync mode as it changes", () => {
+  const env = { HOME: dir, TRACE_DB: databasePath };
+  const server = createTraceServeServer(env, undefined);
+  const readAutoSync = (): unknown => {
+    const captured: { body: string } = { body: "" };
+    server.emit(
+      "request",
+      { method: "GET", url: "/api/sync/status" } as IncomingMessage,
+      {
+        statusCode: 200,
+        setHeader: () => {},
+        end: (chunk?: string) => (captured.body = chunk ?? ""),
+      } as unknown as ServerResponse,
+    );
+    return (JSON.parse(captured.body) as { autoSync: unknown }).autoSync;
+  };
+
+  expect(readAutoSync()).toBe(true);
+
+  // Opting out while the board is open must be visible on the next poll, not
+  // only after a restart.
+  updateConfigFile(databasePath, { autoSync: false });
+  expect(readAutoSync()).toBe(false);
 });

@@ -10,14 +10,18 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openTraceStore, resolveProjectRoot } from "@trace/core";
 import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
+// The project slug the CLI declares derives from this checkout's directory
+// name, which differs across clones and worktrees.
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const projectSlug = basename(repoRoot).toLowerCase();
 
-test("init reports plugin setup without writing Claude settings", () => {
+test("init reports CLI-first setup without writing Claude settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-init-"));
   const env = {
     ...process.env,
@@ -31,12 +35,11 @@ test("init reports plugin setup without writing Claude settings", () => {
       env,
     });
 
-    expect(output).toContain(
-      "trace is now installed through the Claude Code plugin",
-    );
-    expect(output).toContain("/plugin marketplace add arielbk/trace");
-    expect(output).toContain("/plugin install trace@trace");
-    expect(output).toContain("trace skill: found");
+    expect(output).toContain("npm install -g @arielbk/trace");
+    expect(output).toContain("trace setup");
+    expect(output).toContain("trace update");
+    expect(output).toContain("trace setup --remove");
+    expect(output).not.toContain("plugin marketplace");
     expect(output).not.toContain("pnpm link --global");
     expect(output).not.toContain("SessionStart hook");
     expect(existsSync(join(dir, ".claude", "settings.json"))).toBe(false);
@@ -79,9 +82,8 @@ test("init preserves existing Claude settings without adding SessionStart hooks"
       env,
     });
 
-    expect(secondOutput).toContain(
-      "trace is now installed through the Claude Code plugin",
-    );
+    expect(secondOutput).toContain("npm install -g @arielbk/trace");
+    expect(secondOutput).toContain("trace setup");
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       permissions?: { allow?: string[] };
@@ -992,7 +994,7 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
     );
     expect(bound).toBe(
       [
-        `linked to existing project path-independent-project-identity`,
+        `linked to existing project ${projectSlug}`,
         `codex-session-1\tcodex\t/tmp/codex-session-1.jsonl`,
         `taskDocsDir: ${join(dir, "tasks", slug, "docs")}`,
         "",
@@ -1145,7 +1147,7 @@ test("skill work-on-task infers the live Claude session from CLAUDE_CODE_SESSION
     );
     expect(bound).toBe(
       [
-        `linked to existing project path-independent-project-identity`,
+        `linked to existing project ${projectSlug}`,
         `live-claude-session\tclaude\tclaude:live-claude-session`,
         `taskDocsDir: ${join(dir, "tasks", taskId, "docs")}`,
         "",
@@ -1178,7 +1180,12 @@ test("skill work-on-task with a blank session id fails without creating the task
       execFileSync(
         process.execPath,
         [traceBin, "skill", "work-on-task", "checkout"],
-        { encoding: "utf8", env },
+        // Run from the scratch directory, not the repo the suite lives in:
+        // with no id in the environment, identity falls back to locating a
+        // Cursor session for the current repo, and the developer machine
+        // running the suite may well have one. The blank-id rejection has
+        // nothing to do with Cursor, so the test must not depend on it.
+        { encoding: "utf8", env, cwd: dir },
       );
     } catch (error) {
       const e = error as { status: number | null; stderr: string };

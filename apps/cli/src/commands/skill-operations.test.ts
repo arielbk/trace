@@ -170,6 +170,28 @@ test("skill work-on-task creates a task and binds the session", () => {
   });
 });
 
+test("skill work-on-task triggers sync after binding without awaiting it", () => {
+  withTempContext((ctx) => {
+    const triggerSync = vi.fn();
+
+    const result = skillWorkOnTaskOperation(
+      [
+        "Background sync",
+        "--id",
+        "codex-session-sync",
+        "--transcript",
+        join(ctx.cwd, "codex-session-sync.jsonl"),
+        "--tool",
+        "codex",
+      ],
+      { ...ctx, triggerSync },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(triggerSync).toHaveBeenCalledOnce();
+  });
+});
+
 test("skill re-enter returns a manifest and binds the current session", () => {
   withTempContext((ctx) => {
     skillWorkOnTaskOperation(

@@ -1,5 +1,6 @@
 import type { ParsedStateMd } from "./state-parser.ts";
 import type { ProjectFingerprints } from "./project-fingerprint.ts";
+import type { SyncPayload } from "./sync.ts";
 
 export type Project = {
   id: string;
@@ -78,8 +79,8 @@ export type Session = {
   agentId: string | null;
   createdAt: string;
   tokenTotals: TokenTotals;
-  // Live context-window occupancy when the tool exposes it (Cursor). Not
-  // persisted — recomputed from the transcript on read. Absent for claude/codex.
+  // Live context-window occupancy when the tool exposes it (Cursor/Codex).
+  // Refreshed from the source transcript when the session is read.
   contextTokens?: ContextTokens | null;
 };
 
@@ -121,8 +122,8 @@ export type TokenTotals = {
 };
 
 // Current context-window occupancy for a session — a live snapshot, not
-// cumulative spend. Only Cursor exposes this today (claude/codex track spend
-// instead), so it's optional everywhere and absent for those tools.
+// cumulative spend. Cursor and Codex expose it, so it remains optional for
+// tools and transcript formats that do not.
 export type ContextTokens = {
   used: number;
   limit: number;
@@ -250,5 +251,7 @@ export type TaskStore = {
   ): TaskDoc;
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
+  syncSnapshot(): SyncPayload;
+  mergeSyncPayload(payload: SyncPayload): { pulled: number };
   close(): void;
 };

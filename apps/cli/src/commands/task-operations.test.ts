@@ -2,12 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTraceStore } from "@trace/core";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
+  taskAddDocOperation,
   taskCaptureOperation,
   taskCreateOperation,
   taskListOperation,
   taskShowOperation,
+  taskUpdateDocOperation,
   taskUpdateOperation,
 } from "./task-operations.ts";
 import type { Env } from "./seam.ts";
@@ -110,6 +112,70 @@ test("task capture defaults the doc title to the task title", () => {
     } finally {
       store.close();
     }
+  });
+});
+
+test("task capture triggers sync after writing its document", () => {
+  withTempContext((ctx) => {
+    const triggerSync = vi.fn();
+    const docPath = join(ctx.cwd, "notes.md");
+    writeFileSync(docPath, "captured body\n");
+
+    const result = taskCaptureOperation(
+      ["Captured task", "--doc", docPath],
+      { ...ctx, triggerSync },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(triggerSync).toHaveBeenCalledOnce();
+  });
+});
+
+test("task add-doc triggers sync after registering a document (handoff path)", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Handoff task"], ctx).stdout.trim();
+    const docPath = join(ctx.cwd, "state.md");
+    writeFileSync(docPath, "# state\n");
+    const triggerSync = vi.fn();
+
+    const result = taskAddDocOperation([slug, docPath], { ...ctx, triggerSync });
+
+    expect(result.exitCode).toBe(0);
+    expect(triggerSync).toHaveBeenCalledOnce();
+  });
+});
+
+test("task add-doc does not trigger sync when the task is not found", () => {
+  withTempContext((ctx) => {
+    const docPath = join(ctx.cwd, "state.md");
+    writeFileSync(docPath, "# state\n");
+    const triggerSync = vi.fn();
+
+    const result = taskAddDocOperation(["no-such-task", docPath], {
+      ...ctx,
+      triggerSync,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(triggerSync).not.toHaveBeenCalled();
+  });
+});
+
+test("task update-doc triggers sync after updating a document (handoff path)", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Handoff task"], ctx).stdout.trim();
+    const docPath = join(ctx.cwd, "state.md");
+    writeFileSync(docPath, "# state\n");
+    taskAddDocOperation([slug, docPath], ctx);
+    const triggerSync = vi.fn();
+
+    const result = taskUpdateDocOperation(
+      [slug, docPath, "--description", "Handoff state"],
+      { ...ctx, triggerSync },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(triggerSync).toHaveBeenCalledOnce();
   });
 });
 

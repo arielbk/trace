@@ -96,7 +96,15 @@ function writeCodexHome(codexHome: string): {
 test("scan --codex attributes subagent rollouts to their parent session", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-codex-scan-subagents-"));
   const codexHome = join(dir, "codex-home");
-  const env = { ...process.env, TRACE_DB: join(dir, "trace.sqlite") };
+  // HOME anchors auth.json/key.json (TRACE_DB only isolates the store), so
+  // point it at the temp dir too — otherwise a spawned trace reads the real
+  // ~/.trace credentials and background-syncs these fixtures to a live server.
+  const env = {
+    ...process.env,
+    HOME: dir,
+    USERPROFILE: dir,
+    TRACE_DB: join(dir, "trace.sqlite"),
+  };
   const taskSlug = "codex-fan-out";
 
   try {
@@ -140,6 +148,8 @@ test("re-entering a task sweeps up Codex subagents without a scan", () => {
   const codexHome = join(dir, "codex-home");
   const env = {
     ...process.env,
+    HOME: dir,
+    USERPROFILE: dir,
     TRACE_DB: join(dir, "trace.sqlite"),
     CODEX_HOME: codexHome,
   };
@@ -183,7 +193,12 @@ test("re-entering a task sweeps up Codex subagents without a scan", () => {
 
 test("discover-subagents recovers Cursor subagents via the parent's Task prompts", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cursor-discover-"));
-  const env = { ...process.env, TRACE_DB: join(dir, "trace.sqlite") };
+  const env = {
+    ...process.env,
+    HOME: dir,
+    USERPROFILE: dir,
+    TRACE_DB: join(dir, "trace.sqlite"),
+  };
   const chatDir = join(
     dir,
     "projects",

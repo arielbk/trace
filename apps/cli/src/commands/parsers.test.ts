@@ -213,3 +213,18 @@ test("parseClaudeScanArgs prefers HOME over USERPROFILE when both are set", () =
 test("parseClaudeScanArgs throws without --projects-root when no home variable is set", () => {
   expect(() => parseClaudeScanArgs([], {})).toThrow();
 });
+
+test("parseClaudeScanArgs honors CLAUDE_CONFIG_DIR over the default home root", () => {
+  expect(
+    parseClaudeScanArgs([], { HOME: "/home/user", CLAUDE_CONFIG_DIR: "/custom/claude" }),
+  ).toBe(join("/custom/claude", "projects"));
+});
+
+test("parseClaudeScanArgs prefers an explicit --projects-root over CLAUDE_CONFIG_DIR", () => {
+  expect(
+    parseClaudeScanArgs(["--projects-root", "/explicit"], {
+      HOME: "/home/user",
+      CLAUDE_CONFIG_DIR: "/custom/claude",
+    }),
+  ).toBe("/explicit");
+});

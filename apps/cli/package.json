@@ -1,6 +1,6 @@
 {
   "name": "@arielbk/trace",
-  "version": "0.13.0",
+  "version": "0.16.0",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -8,20 +8,23 @@
   },
   "files": [
     "dist/trace.js",
-    "dist/web/**"
+    "dist/web/**",
+    "dist/skills/**"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\"",
     "test:bundle": "vitest run src/bundle.test.ts",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "citty": "^0.1.6"
+    "@clack/prompts": "^1.7.0",
+    "citty": "^0.2.2"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
@@ -29,10 +32,10 @@
     "@trace/core": "workspace:*",
     "@trace/cursor-reader": "workspace:*",
     "@trace/web": "workspace:*",
-    "@types/node": "^22.15.3",
-    "eslint": "^9.39.1",
+    "@types/node": "^22.20.1",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "^9.39.5",
     "tsup": "^8.5.1",
-    "typescript": "5.9.2",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.10"
   }
 }

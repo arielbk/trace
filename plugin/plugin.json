@@ -1,5 +1,5 @@
 {
   "name": "trace",
-  "version": "0.13.0",
+  "version": "0.16.0",
   "description": "Bind GitHub Copilot CLI sessions to Trace tasks and re-enter prior task context."
 }

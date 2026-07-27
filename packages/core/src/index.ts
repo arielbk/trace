@@ -1,7 +1,61 @@
 export { openTraceStore, resolveTaskDocsDir } from "./store.ts";
+export { compareSyncRows, synchronize } from "./sync.ts";
+export {
+  createKeyWrapper,
+  createTaskDocCrypto,
+  generateTaskKey,
+} from "./doc-crypto.ts";
+export type { DocCrypto, DocCryptoFile, KeyWrapper } from "./doc-crypto.ts";
+export type {
+  SyncPayload,
+  SyncBlob,
+  SyncDocManifest,
+  SyncDocumentStore,
+  SyncSessionRow,
+  SyncStore,
+  SyncTaskRow,
+  SyncTransport,
+  SyncWrappedKey,
+} from "./sync.ts";
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
+export {
+  handleLocalAuthRequest,
+  REPLACEMENT_KEY_CONFIRMATION,
+  REPLACEMENT_KEY_WARNING,
+} from "./local-auth-api.ts";
+export type {
+  LocalAuthService,
+  LoginAttemptState,
+  LoginAttemptView,
+  LoginProvider,
+} from "./local-auth-api.ts";
+export {
+  beginSyncRun,
+  deriveSyncStatus,
+  finalizeSyncRun,
+  readSyncStatus,
+  readSyncStatusFile,
+  resolveSyncStatusPath,
+  STALE_SYNC_RUN_MS,
+  updateSyncStatusFile,
+  writeSyncStatusFile,
+} from "./sync-status.ts";
+export type {
+  SyncStatus,
+  SyncStatusFile,
+  SyncStatusResponse,
+} from "./sync-status.ts";
+export {
+  readConfigFile,
+  resolveAutoSyncEnabled,
+  resolveConfigPath,
+  resolveConfiguredServerUrl,
+  updateConfigFile,
+  writeConfigFile,
+} from "./config.ts";
+export type { TraceConfigFile } from "./config.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { readProjectFingerprints } from "./project-fingerprint.ts";
 export type { ProjectFingerprints } from "./project-fingerprint.ts";

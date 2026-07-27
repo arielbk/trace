@@ -67,6 +67,7 @@ import type {
   TokenTotals,
   UpdateTaskDocOptions,
 } from "./types.ts";
+import { compareSyncRows, type SyncPayload } from "./sync.ts";
 
 // Filesystem roots read-time subagent discovery resolves against; both default
 // to the tools' real homes and exist as options so tests can point the store at
@@ -115,6 +116,8 @@ class NodeSqliteTaskStore implements TaskStore {
   readonly #databasePath: string;
   readonly #codexHome: string | undefined;
   readonly #cursorProjectsRoot: string | undefined;
+  readonly #machineId: string;
+  #lastUpdatedAt = "";
 
   constructor(databasePath: string, options?: TraceStoreOptions) {
     const resolvedPath = resolve(databasePath);
@@ -126,6 +129,17 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite.exec("PRAGMA journal_mode = WAL");
     this.#sqlite.exec("PRAGMA foreign_keys = ON");
     applyMigrations(this.#sqlite);
+    const machineRow = this.#sqlite
+      .prepare("SELECT value FROM sync_meta WHERE key = 'machine_id'")
+      .get() as { value: string } | undefined;
+    this.#machineId = machineRow?.value ?? randomUUID();
+    if (!machineRow) {
+      this.#sqlite
+        .prepare("INSERT INTO sync_meta (key, value) VALUES ('machine_id', ?)")
+        .run(this.#machineId);
+    }
+    this.#sqlite.prepare("UPDATE tasks SET machine_id = ? WHERE machine_id = ''").run(this.#machineId);
+    this.#sqlite.prepare("UPDATE sessions SET machine_id = ? WHERE machine_id = ''").run(this.#machineId);
     this.#backfillSlugs();
     this.#backfillProjects();
   }
@@ -158,8 +172,8 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#sqlite
       .prepare(
         `
-          INSERT INTO tasks (id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO tasks (id, title, slug, created_at, project_root, project_id, archived_at, description, pinned_at, updated_at, machine_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -172,6 +186,8 @@ class NodeSqliteTaskStore implements TaskStore {
         task.archivedAt,
         task.description ?? null,
         task.pinnedAt,
+        task.createdAt,
+        this.#machineId,
       );
 
     return task;
@@ -438,8 +454,8 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const normalizedDescription = description.trim() || undefined;
     this.#sqlite
-      .prepare("UPDATE tasks SET description = ? WHERE id = ?")
-      .run(normalizedDescription ?? null, task.id);
+      .prepare("UPDATE tasks SET description = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(normalizedDescription ?? null, this.#updatedNow(), this.#machineId, task.id);
 
     const updated: Task = { ...task };
     if (normalizedDescription) updated.description = normalizedDescription;
@@ -463,8 +479,8 @@ class NodeSqliteTaskStore implements TaskStore {
       : trimmedTitle;
 
     this.#sqlite
-      .prepare("UPDATE tasks SET title = ? WHERE id = ?")
-      .run(normalizedTitle, task.id);
+      .prepare("UPDATE tasks SET title = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(normalizedTitle, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, title: normalizedTitle };
   }
@@ -478,9 +494,9 @@ class NodeSqliteTaskStore implements TaskStore {
     const archivedAt = new Date().toISOString();
     this.#sqlite
       .prepare(
-        "UPDATE tasks SET archived_at = ?, pinned_at = NULL WHERE id = ?",
+        "UPDATE tasks SET archived_at = ?, pinned_at = NULL, updated_at = ?, machine_id = ? WHERE id = ?",
       )
-      .run(archivedAt, task.id);
+      .run(archivedAt, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, archivedAt, pinnedAt: null };
   }
@@ -490,8 +506,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!task) throw new Error(`Task not found: ${ref}`);
 
     this.#sqlite
-      .prepare("UPDATE tasks SET archived_at = NULL WHERE id = ?")
-      .run(task.id);
+      .prepare("UPDATE tasks SET archived_at = NULL, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, archivedAt: null };
   }
@@ -500,10 +516,12 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(ref);
     if (!task) throw new Error(`Task not found: ${ref}`);
 
+    // Bumping updated_at/machine_id puts the pin on the last-write-wins
+    // clock; without it a pin-only change never beats the stored sync row.
     const pinnedAt = new Date().toISOString();
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = ? WHERE id = ?")
-      .run(pinnedAt, task.id);
+      .prepare("UPDATE tasks SET pinned_at = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(pinnedAt, this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt };
   }
@@ -513,8 +531,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!task) throw new Error(`Task not found: ${ref}`);
 
     this.#sqlite
-      .prepare("UPDATE tasks SET pinned_at = NULL WHERE id = ?")
-      .run(task.id);
+      .prepare("UPDATE tasks SET pinned_at = NULL, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(this.#updatedNow(), this.#machineId, task.id);
 
     return { ...task, pinnedAt: null };
   }
@@ -595,7 +613,9 @@ class NodeSqliteTaskStore implements TaskStore {
               output_tokens = ?,
               cache_creation_input_tokens = ?,
               cache_read_input_tokens = ?,
-              total_tokens = ?
+              total_tokens = ?,
+              updated_at = ?,
+              machine_id = ?
             WHERE id = ?
           `,
         )
@@ -612,6 +632,8 @@ class NodeSqliteTaskStore implements TaskStore {
           next.tokenTotals.cacheCreationInputTokens,
           next.tokenTotals.cacheReadInputTokens,
           next.tokenTotals.totalTokens,
+          this.#updatedNow(),
+          this.#machineId,
           id,
         );
 
@@ -654,9 +676,11 @@ class NodeSqliteTaskStore implements TaskStore {
             output_tokens,
             cache_creation_input_tokens,
             cache_read_input_tokens,
-            total_tokens
+            total_tokens,
+            updated_at,
+            machine_id
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
@@ -676,6 +700,8 @@ class NodeSqliteTaskStore implements TaskStore {
         totals.cacheCreationInputTokens,
         totals.cacheReadInputTokens,
         totals.totalTokens,
+        session.createdAt,
+        this.#machineId,
       );
 
     return session;
@@ -720,9 +746,9 @@ class NodeSqliteTaskStore implements TaskStore {
     const subagentType = input.subagentType ?? existing.subagentType;
     this.#sqlite
       .prepare(
-        "UPDATE sessions SET parent_session_id = ?, origin = ?, subagent_type = ? WHERE id = ?",
+        "UPDATE sessions SET parent_session_id = ?, origin = ?, subagent_type = ?, updated_at = ?, machine_id = ? WHERE id = ?",
       )
-      .run(parentSessionId, origin, subagentType, id);
+      .run(parentSessionId, origin, subagentType, this.#updatedNow(), this.#machineId, id);
 
     if (parentTaskId === null) {
       return { ...existing, parentSessionId, origin, subagentType };
@@ -746,8 +772,8 @@ class NodeSqliteTaskStore implements TaskStore {
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
     this.#sqlite
-      .prepare("UPDATE sessions SET task_id = ? WHERE id = ?")
-      .run(task.id, session.id);
+      .prepare("UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?")
+      .run(task.id, this.#updatedNow(), this.#machineId, session.id);
 
     // A re-bind moves the parent's whole fan: descendants still on the
     // parent's previous task follow it rather than stranding there.
@@ -772,7 +798,7 @@ class NodeSqliteTaskStore implements TaskStore {
       "SELECT id, task_id FROM sessions WHERE parent_session_id = ?",
     );
     const claim = this.#sqlite.prepare(
-      "UPDATE sessions SET task_id = ? WHERE id = ?",
+      "UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?",
     );
 
     const visited = new Set<string>([parentId]);
@@ -790,7 +816,7 @@ class NodeSqliteTaskStore implements TaskStore {
           child.task_id === null ||
           (followedTaskId !== null && child.task_id === followedTaskId)
         ) {
-          claim.run(taskId, child.id);
+          claim.run(taskId, this.#updatedNow(), this.#machineId, child.id);
         }
         queue.push(child.id);
       }
@@ -1123,6 +1149,193 @@ class NodeSqliteTaskStore implements TaskStore {
       .run(taskId, path.trim());
   }
 
+  syncSnapshot(): SyncPayload {
+    const tasks = this.#sqlite
+      .prepare(
+        `SELECT t.id, t.title, t.slug, t.created_at AS createdAt,
+                t.project_root AS projectRoot,
+                p.remote_url AS projectRemoteUrl,
+                p.root_commit AS projectRootCommit,
+                t.archived_at AS archivedAt,
+                t.description, t.pinned_at AS pinnedAt,
+                t.updated_at AS updatedAt, t.machine_id AS machineId
+         FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+         ORDER BY t.id`,
+      )
+      .all() as SyncPayload["tasks"];
+    const sessions = this.#sqlite
+      .prepare(
+        `SELECT id, transcript_path AS transcriptPath, tool, model, title,
+                task_id AS taskId, parent_session_id AS parentSessionId,
+                origin, subagent_type AS subagentType, agent_id AS agentId,
+                created_at AS createdAt, input_tokens AS inputTokens,
+                output_tokens AS outputTokens,
+                cache_creation_input_tokens AS cacheCreationInputTokens,
+                cache_read_input_tokens AS cacheReadInputTokens,
+                total_tokens AS totalTokens, updated_at AS updatedAt,
+                machine_id AS machineId
+         FROM sessions ORDER BY id`,
+      )
+      .all() as SyncPayload["sessions"];
+    return { tasks, sessions };
+  }
+
+  mergeSyncPayload(payload: SyncPayload): { pulled: number } {
+    const local = this.syncSnapshot();
+    const localTasks = new Map(local.tasks.map((row) => [row.id, row]));
+    const localSessions = new Map(local.sessions.map((row) => [row.id, row]));
+    const tasks = payload.tasks.filter((row) => {
+      const existing = localTasks.get(row.id);
+      return !existing || compareSyncRows(row, existing) > 0;
+    });
+    const sessions = payload.sessions.filter((row) => {
+      const existing = localSessions.get(row.id);
+      return !existing || compareSyncRows(row, existing) > 0;
+    });
+
+    this.#sqlite.exec("BEGIN");
+    try {
+      // Slugs are machine-local stable addresses (docs dirs and refs key on
+      // them), so the ON CONFLICT update leaves them alone: a task this
+      // machine already knows keeps whatever slug it has here, even when the
+      // remote row wins last-write-wins on everything else. A genuinely new
+      // pulled task whose slug is already taken locally — independent stores
+      // can mint the same slug — lands under an iterator-suffixed one instead
+      // of aborting the merge on the tasks_slug_unique index.
+      const upsertTask = this.#sqlite.prepare(
+        `INSERT INTO tasks
+           (id, title, slug, created_at, project_root, archived_at, description, pinned_at, updated_at, machine_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title=excluded.title, created_at=excluded.created_at,
+           project_root=excluded.project_root, archived_at=excluded.archived_at,
+           description=excluded.description, pinned_at=excluded.pinned_at,
+           updated_at=excluded.updated_at,
+           machine_id=excluded.machine_id,
+           project_id=CASE
+             WHEN excluded.project_root = tasks.project_root THEN tasks.project_id
+             ELSE NULL
+           END`,
+      );
+      for (const row of tasks) {
+        const existing = localTasks.get(row.id);
+        upsertTask.run(
+          row.id,
+          row.title,
+          existing ? existing.slug : this.#allocateSlug(row.slug, row.id),
+          row.createdAt,
+          row.projectRoot,
+          row.archivedAt,
+          row.description,
+          row.pinnedAt ?? null,
+          row.updatedAt,
+          row.machineId,
+        );
+      }
+      // Project identity is machine-local, so pulled rows land without a
+      // project_id (or lose it when their root moved). Rows carrying git
+      // fingerprints resolve against existing projects by identity first —
+      // a root path from another machine must not mint a duplicate project.
+      // Rows without fingerprints (older clients, non-git roots) fall
+      // through to the same path-based backfill startup uses.
+      const needsProject = this.#sqlite.prepare(
+        "SELECT 1 FROM tasks WHERE id = ? AND project_id IS NULL",
+      );
+      const stampProject = this.#sqlite.prepare(
+        "UPDATE tasks SET project_id = ? WHERE id = ?",
+      );
+      const registerRoot = this.#sqlite.prepare(
+        `INSERT INTO project_roots (root_path, project_id, created_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(root_path) DO UPDATE SET project_id = excluded.project_id`,
+      );
+      for (const row of tasks) {
+        const fingerprints: ProjectFingerprints = {
+          ...(row.projectRemoteUrl ? { remoteUrl: row.projectRemoteUrl } : {}),
+          ...(row.projectRootCommit
+            ? { rootCommit: row.projectRootCommit }
+            : {}),
+        };
+        if (!fingerprints.remoteUrl && !fingerprints.rootCommit) continue;
+        if (!needsProject.get(row.id)) continue;
+        const project =
+          this.getProjectByFingerprint(fingerprints) ??
+          this.#createProject(row.projectRoot, fingerprints);
+        if (row.projectRoot) {
+          registerRoot.run(
+            row.projectRoot,
+            project.id,
+            new Date().toISOString(),
+          );
+        }
+        stampProject.run(project.id, row.id);
+      }
+      this.#backfillProjects();
+
+      const upsertSession = this.#sqlite.prepare(
+        `INSERT INTO sessions
+           (id, transcript_path, tool, model, title, task_id, parent_session_id,
+            origin, subagent_type, agent_id, created_at, input_tokens, output_tokens,
+            cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
+            updated_at, machine_id)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           transcript_path=excluded.transcript_path, tool=excluded.tool,
+           model=excluded.model, title=excluded.title, task_id=excluded.task_id,
+           parent_session_id=NULL, origin=excluded.origin,
+           subagent_type=excluded.subagent_type, agent_id=excluded.agent_id,
+           created_at=excluded.created_at, input_tokens=excluded.input_tokens,
+           output_tokens=excluded.output_tokens,
+           cache_creation_input_tokens=excluded.cache_creation_input_tokens,
+           cache_read_input_tokens=excluded.cache_read_input_tokens,
+           total_tokens=excluded.total_tokens, updated_at=excluded.updated_at,
+           machine_id=excluded.machine_id`,
+      );
+      for (const row of sessions) {
+        upsertSession.run(
+          row.id,
+          row.transcriptPath,
+          row.tool,
+          row.model,
+          row.title,
+          row.taskId,
+          row.origin,
+          row.subagentType,
+          row.agentId,
+          row.createdAt,
+          row.inputTokens,
+          row.outputTokens,
+          row.cacheCreationInputTokens,
+          row.cacheReadInputTokens,
+          row.totalTokens,
+          row.updatedAt,
+          row.machineId,
+        );
+      }
+      const setParent = this.#sqlite.prepare(
+        "UPDATE sessions SET parent_session_id = ? WHERE id = ?",
+      );
+      for (const row of sessions) setParent.run(row.parentSessionId, row.id);
+      this.#sqlite.exec("COMMIT");
+    } catch (error) {
+      this.#sqlite.exec("ROLLBACK");
+      throw error;
+    }
+    return { pulled: tasks.length + sessions.length };
+  }
+
+  #updatedNow(): string {
+    const now = new Date().toISOString();
+    if (now > this.#lastUpdatedAt) {
+      this.#lastUpdatedAt = now;
+    } else {
+      this.#lastUpdatedAt = new Date(
+        new Date(this.#lastUpdatedAt).getTime() + 1,
+      ).toISOString();
+    }
+    return this.#lastUpdatedAt;
+  }
+
   close(): void {
     this.#sqlite.close();
   }
@@ -1237,7 +1450,9 @@ class NodeSqliteTaskStore implements TaskStore {
               cache_read_input_tokens = ?,
               total_tokens = ?,
               context_tokens_used = ?,
-              context_tokens_limit = ?
+              context_tokens_limit = ?,
+              updated_at = ?,
+              machine_id = ?
             WHERE id = ?
           `,
         )
@@ -1252,6 +1467,8 @@ class NodeSqliteTaskStore implements TaskStore {
           totals.totalTokens,
           contextTokens?.used ?? null,
           contextTokens?.limit ?? null,
+          this.#updatedNow(),
+          this.#machineId,
           session.id,
         );
     }

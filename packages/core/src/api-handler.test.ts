@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { expect, test } from "vitest";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { handleTraceApiRequest } from "./api-handler.ts";
+import { writeSyncStatusFile } from "./sync-status.ts";
 
 function withSeededDatabase(
   seed: (store: ReturnType<typeof openTraceStore>) => void,
@@ -641,6 +642,231 @@ test("POST /api/tasks/:ref/docs/checkbox rejects non-POST methods, unknown tasks
       JSON.stringify({ path: docPath }),
     );
     expect(missingFields!.status).toBe(400);
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports logged-out (server unconfigured) when no status file exists", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/json");
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "logged-out",
+      serverConfigured: false,
+      autoSync: true,
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status carries the host's server-configured flag on logged-out", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/sync/status",
+      undefined,
+      { syncServerConfigured: true },
+    );
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "logged-out",
+      serverConfigured: true,
+      autoSync: true,
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the identity and last-sync time when logged in", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat <octocat@github.com>",
+    lastSyncedAt: "2026-07-10T16:00:00.000Z",
+  });
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({
+      state: "synced",
+      identity: "octocat <octocat@github.com>",
+      lastSyncedAt: "2026-07-10T16:00:00.000Z",
+      autoSync: true,
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the last-sync failure when one is recorded", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat",
+    lastError: "server returned 500",
+  });
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toMatchObject({
+      state: "failed",
+      identity: "octocat",
+      lastError: "server returned 500",
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports the host's effective AutoSync mode", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, { loggedIn: true, identity: "octocat" });
+
+  try {
+    // The board reads the mode from the status API rather than reaching into
+    // config.json itself.
+    expect(
+      JSON.parse(
+        handleTraceApiRequest(databasePath, "GET", "/api/sync/status", undefined, {
+          autoSyncEnabled: false,
+        })!.body,
+      ),
+    ).toEqual({ state: "never-synced", identity: "octocat", autoSync: false });
+    // A host that reports no mode falls back to the effective default, on.
+    expect(
+      JSON.parse(
+        handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
+      ),
+    ).toMatchObject({ autoSync: true });
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/sync/status reports a run in flight without leaking credential material", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  writeSyncStatusFile(databasePath, {
+    loggedIn: true,
+    identity: "octocat",
+    lastSyncedAt: "2026-07-10T15:00:00.000Z",
+    activeRun: { id: "run-1", startedAt: new Date().toISOString() },
+    // A field the status model does not know about must not be forwarded.
+    ...({ accessToken: "secret" } as object),
+  });
+
+  try {
+    const body: unknown = JSON.parse(
+      handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
+    );
+    expect(body).toMatchObject({
+      state: "syncing",
+      identity: "octocat",
+      lastSyncedAt: "2026-07-10T15:00:00.000Z",
+    });
+    expect(JSON.stringify(body)).not.toContain("secret");
+  } finally {
+    cleanup();
+  }
+});
+
+test("non-GET /api/sync/status is rejected with 405", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync/status");
+    expect(response!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("successful mutations invoke the host onMutation hook", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  const docPath = join(docsDir, "todo.md");
+  writeFileSync(docPath, "- [ ] first\n");
+  let mutations = 0;
+  const options = { onMutation: () => mutations++ };
+
+  try {
+    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/pin`, undefined, options);
+    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/archive`, undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      JSON.stringify({ path: docPath, index: 0, checked: true }),
+      options,
+    );
+    expect(mutations).toBe(3);
+  } finally {
+    cleanup();
+  }
+});
+
+test("reads and failed mutations never invoke onMutation", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  let mutations = 0;
+  const options = { onMutation: () => mutations++ };
+
+  try {
+    handleTraceApiRequest(databasePath, "GET", "/api/tasks", undefined, options);
+    handleTraceApiRequest(databasePath, "POST", "/api/tasks/no-such-task/pin", undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/docs/checkbox`,
+      "not json",
+      options,
+    );
+    expect(mutations).toBe(0);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/sync invokes the host requestSync hook", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+  let requests = 0;
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync", undefined, {
+      requestSync: () => requests++,
+    });
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({ requested: true });
+    expect(requests).toBe(1);
+  } finally {
+    cleanup();
+  }
+});
+
+test("POST /api/sync without a host hook reports requested: false, non-POST is 405", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync");
+    expect(response!.status).toBe(200);
+    expect(JSON.parse(response!.body)).toEqual({ requested: false });
+
+    expect(handleTraceApiRequest(databasePath, "GET", "/api/sync")!.status).toBe(405);
   } finally {
     cleanup();
   }

@@ -4,8 +4,8 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "npx @arielbk/trace@0.13.0 hook session-start",
-        "powershell": "npx @arielbk/trace@0.13.0 hook session-start"
+        "bash": "trace hook session-start",
+        "powershell": "trace hook session-start"
       },
       {
         "type": "prompt",
@@ -15,15 +15,15 @@
     "agentStop": [
       {
         "type": "command",
-        "bash": "npx @arielbk/trace@0.13.0 hook stop",
-        "powershell": "npx @arielbk/trace@0.13.0 hook stop"
+        "bash": "trace hook stop",
+        "powershell": "trace hook stop"
       }
     ],
     "subagentStop": [
       {
         "type": "command",
-        "bash": "npx @arielbk/trace@0.13.0 hook subagent-stop",
-        "powershell": "npx @arielbk/trace@0.13.0 hook subagent-stop"
+        "bash": "trace hook subagent-stop",
+        "powershell": "trace hook subagent-stop"
       }
     ]
   }
