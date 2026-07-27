@@ -21,6 +21,17 @@ export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
 export {
+  handleLocalAuthRequest,
+  REPLACEMENT_KEY_CONFIRMATION,
+  REPLACEMENT_KEY_WARNING,
+} from "./local-auth-api.ts";
+export type {
+  LocalAuthService,
+  LoginAttemptState,
+  LoginAttemptView,
+  LoginProvider,
+} from "./local-auth-api.ts";
+export {
   beginSyncRun,
   deriveSyncStatus,
   finalizeSyncRun,

@@ -31,6 +31,15 @@ export type {
   TokenTotals,
 } from "./types.ts";
 export type { SyncStatus, SyncStatusResponse } from "./sync-status.ts";
+export type {
+  LoginAttemptState,
+  LoginAttemptView,
+  LoginProvider,
+} from "./local-auth-api.ts";
+export {
+  REPLACEMENT_KEY_CONFIRMATION,
+  REPLACEMENT_KEY_WARNING,
+} from "./local-auth-api.ts";
 export { resumeCommand } from "./resume-command.ts";
 export {
   composerIdFromLocator,

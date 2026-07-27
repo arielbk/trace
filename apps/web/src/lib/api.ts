@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { SyncStatusResponse, TaskSummary, TaskTimeline } from "@trace/core/browser";
+import type {
+  LoginAttemptView,
+  LoginProvider,
+  SyncStatusResponse,
+  TaskSummary,
+  TaskTimeline,
+} from "@trace/core/browser";
 
 export class HttpError extends Error {
   constructor(
@@ -67,6 +73,116 @@ export function useServerSyncOnFocus(): void {
     window.addEventListener("focus", requestServerSync);
     return () => window.removeEventListener("focus", requestServerSync);
   }, []);
+}
+
+/**
+ * The machine-local authentication endpoints. The board only ever starts,
+ * watches, and settles a login attempt — the serving process holds the bearer
+ * token, and no response here carries it.
+ */
+async function localAuth<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetch(`/api/local-auth${path}`, init);
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new HttpError(res.status, detail || `local-auth ${path} failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>("/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+}
+
+export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(`/login/${encodeURIComponent(attemptId)}`);
+}
+
+export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/acknowledge-key`,
+    { method: "POST" },
+  );
+}
+
+/**
+ * Offer the account's existing document encryption key. The key is sent to the
+ * serving process, which validates it against the account's wrapped keys — the
+ * board never decides whether a key is right, and a rejected key comes back as
+ * an ordinary attempt view carrying the reason.
+ */
+export function submitExistingKey(
+  attemptId: string,
+  key: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/existing-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key }),
+    },
+  );
+}
+
+/** Abandon the account's existing documents in favour of a fresh key. */
+export function generateReplacementKey(
+  attemptId: string,
+  confirmation: string,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/replacement-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmation }),
+    },
+  );
+}
+
+export function cancelLogin(attemptId: string): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function postLogout(): Promise<{ ok: true }> {
+  return localAuth<{ ok: true }>("/logout", { method: "POST" });
+}
+
+/** Login attempt states the board stops polling on. */
+const SETTLED_LOGIN_STATES: ReadonlySet<LoginAttemptView["state"]> = new Set([
+  "complete",
+  "failed",
+  "expired",
+  "cancelled",
+]);
+
+/**
+ * How often the board asks how a login is going. Faster than the board's
+ * background {@link LIVE_REFRESH} rhythm because a login is a foreground
+ * interaction the user is standing in front of — and it stops entirely as soon
+ * as the attempt settles, so it is never a second always-on polling loop.
+ */
+const LOGIN_POLL_MS = 2000;
+
+export function useLoginAttempt(attemptId: string | null) {
+  return useQuery({
+    queryKey: ["login-attempt", attemptId],
+    queryFn: () => fetchLoginAttempt(attemptId as string),
+    enabled: attemptId !== null,
+    refetchInterval: (query) =>
+      query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
+        ? false
+        : LOGIN_POLL_MS,
+  });
 }
 
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
