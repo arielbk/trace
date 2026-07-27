@@ -3,6 +3,7 @@ import {
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,
   type LoginAttemptView,
+  type LoginProvider,
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
@@ -226,18 +227,25 @@ function AccountBody({ account }: { account: AccountDescription }) {
       ) : null}
 
       {account.canSignIn ? (
-        <div className={SECTION}>
-          <button
-            type="button"
-            className={PRIMARY_ACTION}
-            onClick={() => beginLogin.mutate("github")}
-            disabled={beginLogin.isPending}
-          >
-            Sign in with GitHub
-          </button>
+        <div className={cn(SECTION, "flex flex-col gap-1.5")}>
+          {/* GitHub leads on the accent control and the rest follow on the
+              neutral one — not because a provider is better, but because the
+              block needs one obvious way in. It is also the provider the
+              serving process falls back to when none is named. */}
+          {SIGN_IN_PROVIDERS.map(({ provider, label }, index) => (
+            <button
+              key={provider}
+              type="button"
+              className={index === 0 ? PRIMARY_ACTION : SECONDARY_ACTION}
+              onClick={() => beginLogin.mutate(provider)}
+              disabled={beginLogin.isPending}
+            >
+              {label}
+            </button>
+          ))}
           {beginLogin.isError ? (
             <p
-              className="mt-1.5 mb-0 text-meta text-warning wrap-anywhere"
+              className="m-0 text-meta text-warning wrap-anywhere"
               data-testid="login-error"
             >
               {beginLogin.error.message}
@@ -273,6 +281,18 @@ function AccountBody({ account }: { account: AccountDescription }) {
     </>
   );
 }
+
+/**
+ * The providers a board sign-in may go through. Both take the identical
+ * machine-local device workflow — the provider is only a hint the serving
+ * process forwards to the hosted approval page, which carries it through social
+ * sign-in. Nothing about a provider changes what the board does with the
+ * result, which is why this is a list and not two code paths.
+ */
+const SIGN_IN_PROVIDERS: { provider: LoginProvider; label: string }[] = [
+  { provider: "github", label: "Sign in with GitHub" },
+  { provider: "google", label: "Sign in with Google" },
+];
 
 /** The stages of a login in flight, rendered inside the account popover. */
 function LoginProgress({
