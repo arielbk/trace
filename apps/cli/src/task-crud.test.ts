@@ -1180,7 +1180,12 @@ test("skill work-on-task with a blank session id fails without creating the task
       execFileSync(
         process.execPath,
         [traceBin, "skill", "work-on-task", "checkout"],
-        { encoding: "utf8", env },
+        // Run from the scratch directory, not the repo the suite lives in:
+        // with no id in the environment, identity falls back to locating a
+        // Cursor session for the current repo, and the developer machine
+        // running the suite may well have one. The blank-id rejection has
+        // nothing to do with Cursor, so the test must not depend on it.
+        { encoding: "utf8", env, cwd: dir },
       );
     } catch (error) {
       const e = error as { status: number | null; stderr: string };
