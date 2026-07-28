@@ -107,6 +107,7 @@ targets Trace manages.
 ```sh
 trace setup --tool codex
 trace setup --tool cursor
+trace setup --tool copilot
 trace setup --tool claude --target claude=/path/to/custom/config
 ```
 
@@ -143,22 +144,22 @@ reports a legacy config once you add `--yes`.
 
 ### Copilot CLI
 
-Install the Copilot plugin directly from GitHub:
+Copilot installs through the same path as every other host — the picker lists it
+whenever `~/.copilot` exists, or name it directly:
 
 ```sh
-copilot plugin install arielbk/trace:plugin
+trace setup --tool copilot
 ```
-
-To develop the plugin from a local Trace checkout instead, run
-`copilot plugin install ./plugin` from the repository root.
 
 <details>
 <summary>What this does</summary>
 
-The plugin registers a Copilot session at `sessionStart`, prompts the agent to
-consult Trace and bind or re-enter work, and checks the bound task's `state.md`
-at `agentStop`. Trace identifies the live session through Copilot's lock files,
-so run Trace commands from within the Copilot session.
+Alongside the skills, setup writes a Trace-owned hooks file to
+`~/.copilot/hooks/trace.json` (honoring `COPILOT_HOME`). It registers the
+session at `sessionStart`, prompts the agent to consult Trace and bind or
+re-enter work, and checks the bound task's `state.md` at `agentStop`. Trace
+identifies the live session through Copilot's lock files, so run Trace commands
+from within the Copilot session.
 
 > Copilot records an **output-only token** total in its transcript. The board
 > does not show Copilot input or cache-token totals.

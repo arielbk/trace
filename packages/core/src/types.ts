@@ -64,6 +64,14 @@ export function isSessionTool(value: string): value is SessionTool {
   return (SESSION_TOOLS as readonly string[]).includes(value);
 }
 
+/** `claude|codex|…`, for usage strings that offer the tool as a flag value. */
+export const SESSION_TOOL_CHOICES = SESSION_TOOLS.join("|");
+
+/** The one rejection message for an unrecognized tool, in every layer. */
+export const INVALID_SESSION_TOOL = `Session tool must be ${
+  SESSION_TOOLS.slice(0, -1).join(", ")
+}, or ${SESSION_TOOLS.at(-1)}`;
+
 export type SessionOrigin = "root" | "subagent" | "spawned";
 
 export type Session = {

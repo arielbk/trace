@@ -43,7 +43,7 @@ import {
   getTranscriptAdapter,
   type ParsedTranscript,
 } from "./transcript-adapter.ts";
-import { isSessionTool } from "./types.ts";
+import { INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
@@ -554,7 +554,7 @@ class NodeSqliteTaskStore implements TaskStore {
       throw new Error("Session transcript path is required");
     }
     if (!isSessionTool(input.tool)) {
-      throw new Error("Session tool must be claude, codex, or cursor");
+      throw new Error(INVALID_SESSION_TOOL);
     }
     if (!isSessionOrigin(origin)) {
       throw new Error("Session origin must be root, subagent, or spawned");

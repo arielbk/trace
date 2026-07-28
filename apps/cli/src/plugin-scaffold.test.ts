@@ -31,16 +31,12 @@ const traceCopilotResource = join(
   "resources",
   "copilot.md",
 );
-const readme = join(repoRoot, "README.md");
 const recallSkill = join(skillsRoot, "recall", "SKILL.md");
 const reenterSkill = join(skillsRoot, "reenter", "SKILL.md");
 const boardSkill = join(skillsRoot, "board", "SKILL.md");
 const docPlacementSkill = join(skillsRoot, "doc-placement", "SKILL.md");
 const stateSkill = join(skillsRoot, "state", "SKILL.md");
 const pluginBinDir = join(repoRoot, "bin");
-const copilotPluginRoot = join(repoRoot, "plugin");
-const copilotPluginManifest = join(copilotPluginRoot, "plugin.json");
-const copilotHooksConfig = join(copilotPluginRoot, "hooks", "hooks.json");
 
 /** Persistent global CLI invocation used by skills and hooks after cutover. */
 function bareTraceCommand(): string {
@@ -48,54 +44,6 @@ function bareTraceCommand(): string {
 }
 
 describe("plugin scaffold", () => {
-  it("ships a Copilot CLI plugin with lifecycle hooks and a binding nudge", () => {
-    const manifest = JSON.parse(
-      readFileSync(copilotPluginManifest, "utf8"),
-    ) as {
-      name?: string;
-      version?: string;
-      description?: string;
-    };
-    assert.equal(manifest.name, "trace");
-    assert.equal(typeof manifest.version, "string");
-    assert.equal(typeof manifest.description, "string");
-
-    const hooks = JSON.parse(readFileSync(copilotHooksConfig, "utf8")) as {
-      version?: number;
-      hooks?: Record<string, Array<Record<string, string>>>;
-    };
-    assert.equal(hooks.version, 1);
-    assert.deepEqual(hooks.hooks?.sessionStart, [
-      {
-        type: "command",
-        bash: `${bareTraceCommand()} hook session-start`,
-        powershell: `${bareTraceCommand()} hook session-start`,
-      },
-      {
-        type: "prompt",
-        prompt:
-          "Consult the installed Trace skill before beginning work. If this session is not bound, use Trace to bind or re-enter the task.",
-      },
-    ]);
-    assert.deepEqual(hooks.hooks?.agentStop, [
-      {
-        type: "command",
-        bash: `${bareTraceCommand()} hook stop`,
-        powershell: `${bareTraceCommand()} hook stop`,
-      },
-    ]);
-    assert.deepEqual(hooks.hooks?.subagentStop, [
-      {
-        type: "command",
-        bash: `${bareTraceCommand()} hook subagent-stop`,
-        powershell: `${bareTraceCommand()} hook subagent-stop`,
-      },
-    ]);
-
-    const skill = readFileSync(traceSkill, "utf8");
-    assert.match(skill, /^---\nname:\s*trace\s*$/m);
-  });
-
   it("ships a Claude Code plugin manifest, hooks, and skills that invoke the bare CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
@@ -300,9 +248,9 @@ describe("plugin scaffold", () => {
   });
 
   it("documents Copilot CLI installation and its output-only token total", () => {
-    const source = readFileSync(readme, "utf8");
+    const source = readFileSync(join(repoRoot, "README.md"), "utf8");
     assert.match(source, /### Copilot CLI/);
-    assert.match(source, /copilot plugin install .*plugin/);
+    assert.match(source, /trace setup --tool copilot/);
     assert.match(source, /output-only token/i);
   });
 

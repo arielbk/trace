@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { TargetRecord, ToolName } from "./integration-registry.ts";
+import { TOOL_NAMES, type TargetRecord, type ToolName } from "./integration-registry.ts";
 import type { Env } from "./seam.ts";
 
 /**
@@ -28,13 +28,14 @@ export type TargetCandidate = {
 };
 
 /** Tool order used everywhere candidates are grouped or listed. */
-export const CANDIDATE_TOOL_ORDER: readonly ToolName[] = ["claude", "codex", "cursor"];
+export const CANDIDATE_TOOL_ORDER: readonly ToolName[] = TOOL_NAMES;
 
 /** Human-readable host names, used for plan lines and picker group headings. */
 export const TOOL_LABELS: Record<ToolName, string> = {
   claude: "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
+  copilot: "GitHub Copilot CLI",
 };
 
 function homeDir(env: Env, tool: ToolName): string {
@@ -71,6 +72,16 @@ export function resolveCursorConfigRoot(env: Env): string {
   return join(homeDir(env, "cursor"), ".cursor");
 }
 
+/**
+ * Resolves the Copilot config root: `COPILOT_HOME` wins over the default
+ * `~/.copilot`. This is the same root the transcript adapter and the session
+ * locator read, so setup and capture always agree on which Copilot they mean.
+ */
+export function resolveCopilotConfigRoot(env: Env): string {
+  if (env.COPILOT_HOME) return env.COPILOT_HOME;
+  return join(homeDir(env, "copilot"), ".copilot");
+}
+
 type Detector = {
   resolveRoot: (env: Env) => string;
   /** The environment variable that overrides the conventional root, if any. */
@@ -81,6 +92,7 @@ const DETECTORS: Record<ToolName, Detector> = {
   claude: { resolveRoot: resolveClaudeConfigRoot, override: "CLAUDE_CONFIG_DIR" },
   codex: { resolveRoot: resolveCodexConfigRoot, override: "CODEX_HOME" },
   cursor: { resolveRoot: resolveCursorConfigRoot },
+  copilot: { resolveRoot: resolveCopilotConfigRoot, override: "COPILOT_HOME" },
 };
 
 /**
