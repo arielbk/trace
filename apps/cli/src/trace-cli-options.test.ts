@@ -8,6 +8,7 @@ test("a terminal on both streams gets an interactive session with a prompt adapt
   });
 
   expect(options.interactive).toBe(true);
+  expect(options.humanReadable).toBe(true);
   expect(options.createPrompt).toBeTypeOf("function");
 
   const prompt = options.createPrompt?.();
@@ -24,5 +25,13 @@ test("a redirected stream keeps the session non-interactive", () => {
   expect(
     traceCliOptionsFor({ stdin: { isTTY: true }, stdout: { isTTY: undefined } })
       .interactive,
+  ).toBe(false);
+  expect(
+    traceCliOptionsFor({ stdin: { isTTY: false }, stdout: { isTTY: true } })
+      .humanReadable,
+  ).toBe(true);
+  expect(
+    traceCliOptionsFor({ stdin: { isTTY: true }, stdout: { isTTY: undefined } })
+      .humanReadable,
   ).toBe(false);
 });
