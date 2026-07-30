@@ -3,6 +3,27 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.18.0
+
+Trace now supports GitHub Copilot CLI as a first-class session host alongside
+Claude Code, Codex, and Cursor.
+
+### Highlights
+
+- **Copilot sessions appear on the board.** Trace discovers live Copilot
+  sessions from their lock files, reads `events.jsonl` transcripts, records
+  model and message summaries, and reports the output-token totals exposed by
+  Copilot.
+- **Setup manages the complete Copilot integration.** `trace setup` installs
+  the Trace skill and Copilot lifecycle hooks, and setup, update, removal, and
+  stale-integration warnings treat Copilot like the other supported hosts.
+- **Copilot task workflows use the shared Trace protocol.** Session start and
+  stop hooks bind work to tasks, check task state freshness, and preserve the
+  same re-entry and document-placement behavior used by the existing agents.
+- **Future integration records remain forward-compatible.** Registry reads and
+  mutations preserve structurally valid targets introduced by newer Trace
+  versions while exposing all four hosts supported by this release.
+
 ## 0.17.1
 
 ### Fixes
