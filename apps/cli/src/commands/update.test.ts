@@ -74,6 +74,58 @@ test("fails explicitly when the integrations registry is corrupt", async () => {
   }
 });
 
+test("accepts a registry containing a target from a newer CLI", async () => {
+  const { dir, cleanup } = tempDir("trace-update-");
+  try {
+    const registryPath = makeRegistry(dir, {
+      packageManager: "pnpm",
+      targets: [
+        {
+          tool: "copilot",
+          root: join(dir, ".copilot"),
+          cliPath: "/usr/bin/trace",
+          version: "1.2.3",
+          skills: [],
+          hooks: [],
+        },
+      ],
+    });
+
+    const installs: string[] = [];
+    const reconciliations: string[] = [];
+    const result = await updateOperation(
+      ["--yes"],
+      {
+        env: {
+          HOME: dir,
+          TRACE_REGISTRY_PATH: registryPath,
+          TRACE_CURRENT_VERSION: "1.2.2",
+        },
+        cwd: dir,
+        stdin: "",
+      },
+      makeDeps({
+        fetchLatestVersion: async () => "1.2.3",
+        spawnInstall: (_packageManager, version) => {
+          installs.push(version);
+          return { status: 0, stderr: "" };
+        },
+        spawnReconcile: (cliPath) => {
+          reconciliations.push(cliPath);
+          return { status: 0, stderr: "" };
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/updated to v1\.2\.3/i);
+    expect(installs).toEqual(["1.2.3"]);
+    expect(reconciliations).toEqual(["/usr/bin/trace"]);
+  } finally {
+    cleanup();
+  }
+});
+
 test("fails when registry version fetch throws", async () => {
   const { dir, cleanup } = tempDir("trace-update-");
   try {

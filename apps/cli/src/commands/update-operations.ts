@@ -65,7 +65,7 @@ export async function updateOperation(
 
   let registry;
   try {
-    registry = IntegrationRegistry.fromEnv(ctx.env).read();
+    registry = IntegrationRegistry.fromEnv(ctx.env).readForUpdate();
   } catch (err) {
     return failure(err instanceof Error ? err.message : String(err));
   }
@@ -75,7 +75,7 @@ export async function updateOperation(
     );
   }
 
-  const { packageManager, targets } = registry;
+  const { packageManager, cliPath } = registry;
 
   // Fetch latest version.
   let latestVersion: string;
@@ -110,7 +110,6 @@ export async function updateOperation(
 
   // Reconcile the complete registry in one invocation so the new CLI can
   // preflight every target before mutating any of them.
-  const cliPath = targets[0]?.cliPath;
   if (cliPath) {
     const reconcileResult = deps.spawnReconcile(cliPath);
     if (reconcileResult.status !== 0) {
