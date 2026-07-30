@@ -3,6 +3,17 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.17.1
+
+### Fixes
+
+- **Setup no longer fails on targets registered by a newer CLI.** The
+  Integration Registry now validates and preserves structurally valid records
+  for unsupported tool names while exposing only `claude`, `codex`, and
+  `cursor` to the current setup/removal code. Older CLIs can reconcile the
+  integrations they understand without deleting future-tool metadata or
+  declaring the complete registry corrupt.
+
 ## 0.17.0
 
 Trace Cloud Sync is now manageable from the board, with browser-based sign-in,
