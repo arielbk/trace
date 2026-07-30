@@ -3,6 +3,50 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.17.0
+
+Trace Cloud Sync is now manageable from the board, with browser-based sign-in,
+clear sync status, and a machine-local automatic-sync policy. The CLI also gains
+standard version output and human-oriented terminal help.
+
+### Highlights
+
+- **Sign in and out from the board.** The account menu now supports GitHub and
+  Google device-flow login without leaving the board. New accounts receive their
+  document key once; existing accounts can validate or deliberately replace a
+  missing local key before credentials are stored.
+- **Sync status has one consistent home.** A shared account control appears on
+  task-list and task-detail pages and reports whether Cloud Sync is configured,
+  whether automatic sync is enabled, the latest run state, last success, and
+  failure details.
+- **Automatic sync can be disabled without disabling Cloud Sync.**
+  `trace config set auto-sync false` suppresses implicit sync triggers while
+  keeping explicit `trace sync` available. Unsetting the key restores the
+  default-on policy.
+
+### CLI improvements
+
+- **Version discovery is standard.** `trace --version`, `trace -v`, and
+  `trace version` report the installed CLI version.
+- **Terminal help is designed for humans.** Bare `trace` and `trace --help`
+  show an indented, workflow-oriented view with subtle TTY-only color. Piped
+  output remains exhaustive and plain, and `NO_COLOR`/`TERM=dumb` are honored.
+- **Older CLIs can update through newer registries.** `trace update` reads only
+  the stable registry envelope needed to upgrade, so a target type introduced
+  by a newer CLI cannot block the update path. Setup and registry mutations
+  retain strict validation.
+
+### Reliability
+
+- **The complete Cloud Sync flow is covered end to end.** Acceptance tests prove
+  every implicit trigger reaches the transport under the default policy, manual
+  mode stays silent until `trace sync`, and a task can move between two machine
+  stores through push and pull.
+- **Browser and terminal authentication share one service.** GitHub and Google
+  browser login, existing-key validation, replacement-key confirmation, logout,
+  and the terminal `login`/`logout`/`whoami` commands now exercise the same
+  underlying authentication flow.
+
 ## 0.16.0
 
 Trace now ships as one globally installed CLI that owns its agent integrations.
