@@ -50,6 +50,24 @@ test("terminal help leads with human workflows instead of the exhaustive command
   expect(result.stdout).toContain("trace task list");
   expect(result.stdout).toContain("trace <command> --help");
   expect(result.stdout).not.toContain("trace init | trace setup");
+  expect(result.stdout).toContain("\u001B[");
+});
+
+test.each([
+  ["NO_COLOR", { NO_COLOR: "1" }],
+  ["a dumb terminal", { TERM: "dumb" }],
+])("%s disables terminal help colors", async (_label, terminalEnv) => {
+  const result = await runTraceCliAsync(
+    ["--help"],
+    { TRACE_CURRENT_VERSION: "1.2.3", ...terminalEnv },
+    process.cwd(),
+    "",
+    { humanReadable: true },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).not.toContain("\u001B[");
+  expect(result.stdout).toContain("Trace v1.2.3");
 });
 
 test("bare terminal invocation shows human help successfully", async () => {

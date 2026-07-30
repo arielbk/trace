@@ -107,7 +107,7 @@ export async function runTraceCliAsync(
     humanReadable === true &&
     (argv.length === 0 || isHelpInvocation(argv))
   ) {
-    return humanHelp(currentVersion(env));
+    return humanHelp(currentVersion(env), helpColorsEnabled(env));
   }
   if (isHelpInvocation(argv)) return compactHelp();
   const command = argv[0];
@@ -153,34 +153,57 @@ function compactHelp(): CommandResult {
   return { exitCode: 0, stdout: `${COMPACT_USAGE}\n`, stderr: "" };
 }
 
-function humanHelp(version: string): CommandResult {
+function helpColorsEnabled(env: Record<string, string | undefined>): boolean {
+  return !Object.hasOwn(env, "NO_COLOR") && env.TERM !== "dumb";
+}
+
+function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
+  const style = {
+    title: ansiStyle("1;36", colorsEnabled),
+    heading: ansiStyle("1", colorsEnabled),
+    command: ansiStyle("36", colorsEnabled),
+    dim: ansiStyle("2", colorsEnabled),
+  };
+  const row = (command: string, description: string): string =>
+    `  ${style.command(command.padEnd(28))}${description}\n`;
+
   return {
     exitCode: 0,
     stdout:
-      `Trace v${version} — keep agent work organized across sessions\n\n` +
-      `Usage: trace <command> [options]\n\n` +
-      `Get started\n` +
-      `  trace setup                 Configure Trace for your agent tools\n` +
-      `  trace serve                 Open the local task board\n` +
-      `  trace task list             See your tasks\n` +
-      `  trace task create "Title"   Create a task\n\n` +
-      `Keep Trace current\n` +
-      `  trace update                Check for an update\n` +
-      `  trace update --yes          Install it and refresh integrations\n\n` +
-      `Cloud\n` +
-      `  trace login                 Connect your Trace account\n` +
-      `  trace sync                  Sync local work\n` +
-      `  trace whoami                Show the signed-in account\n\n` +
-      `More\n` +
-      `  task, session, state        Work and session history\n` +
-      `  config, key, project        Local configuration\n` +
-      `  skill, hook                 Agent integration commands\n\n` +
-      `Run trace <command> --help for command details.\n\n` +
-      `Options\n` +
-      `  -h, --help                  Show help\n` +
-      `  -v, --version               Show the installed version\n`,
+      `${style.title(`Trace v${version}`)}` +
+      `${style.dim(" — keep agent work organized across sessions")}\n\n` +
+      `Usage: ${style.command("trace <command> [options]")}\n\n` +
+      `${style.heading("Get started")}\n` +
+      row("trace setup", "Configure Trace for your agent tools") +
+      row("trace serve", "Open the local task board") +
+      row("trace task list", "See your tasks") +
+      row('trace task create "Title"', "Create a task") +
+      `\n${style.heading("Keep Trace current")}\n` +
+      row("trace update", "Check for an update") +
+      row("trace update --yes", "Install it and refresh integrations") +
+      `\n${style.heading("Cloud")}\n` +
+      row("trace login", "Connect your Trace account") +
+      row("trace sync", "Sync local work") +
+      row("trace whoami", "Show the signed-in account") +
+      `\n${style.heading("More")}\n` +
+      row("task, session, state", "Work and session history") +
+      row("config, key, project", "Local configuration") +
+      row("skill, hook", "Agent integration commands") +
+      `\nRun ${style.command("trace <command> --help")} for command details.\n\n` +
+      `${style.heading("Options")}\n` +
+      row("-h, --help", "Show help") +
+      row("-v, --version", "Show the installed version"),
     stderr: "",
   };
+}
+
+function ansiStyle(
+  code: string,
+  enabled: boolean,
+): (value: string) => string {
+  return enabled
+    ? (value) => `\u001B[${code}m${value}\u001B[0m`
+    : (value) => value;
 }
 
 // `process.argv[1]` is the invoked path, which `pnpm link --global` exposes as
