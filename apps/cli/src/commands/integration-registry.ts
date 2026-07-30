@@ -26,6 +26,11 @@ export type Registry = {
   targets: TargetRecord[];
 };
 
+export type UpdateRegistryMetadata = {
+  packageManager: PackageManager;
+  cliPath?: string;
+};
+
 export class CorruptIntegrationRegistryError extends Error {
   constructor(path: string, reason: string, options?: ErrorOptions) {
     super(`Trace integration registry at ${path} is corrupt: ${reason}`, options);
@@ -70,7 +75,10 @@ function targetIdentity(target: Pick<TargetRecord, "tool" | "root">): string {
   return `${target.tool}\0${target.root}`;
 }
 
-function parseRegistry(path: string, contents: string): Registry {
+function parseRegistryObject(
+  path: string,
+  contents: string,
+): Record<string, unknown> {
   let value: unknown;
   try {
     value = JSON.parse(contents);
@@ -81,16 +89,29 @@ function parseRegistry(path: string, contents: string): Registry {
   if (!isRecord(value)) {
     throw new CorruptIntegrationRegistryError(path, "expected an object");
   }
+  return value;
+}
+
+function parsePackageManager(
+  path: string,
+  value: unknown,
+): PackageManager {
   if (
-    value.packageManager !== "npm" &&
-    value.packageManager !== "pnpm" &&
-    value.packageManager !== "bun"
+    value !== "npm" &&
+    value !== "pnpm" &&
+    value !== "bun"
   ) {
     throw new CorruptIntegrationRegistryError(
       path,
       'packageManager must be "npm", "pnpm", or "bun"',
     );
   }
+  return value;
+}
+
+function parseRegistry(path: string, contents: string): Registry {
+  const value = parseRegistryObject(path, contents);
+  const packageManager = parsePackageManager(path, value.packageManager);
   if (!Array.isArray(value.targets) || !value.targets.every(isTargetRecord)) {
     throw new CorruptIntegrationRegistryError(path, "targets must be valid target records");
   }
@@ -101,7 +122,33 @@ function parseRegistry(path: string, contents: string): Registry {
       "targets must have unique tool-root identities",
     );
   }
-  return { packageManager: value.packageManager, targets: value.targets };
+  return { packageManager, targets: value.targets };
+}
+
+/**
+ * Reads only the stable registry envelope needed to update the CLI.
+ *
+ * Target schemas can grow when a newer CLI adds a host. An older CLI must
+ * still be able to update itself, so this path intentionally does not validate
+ * target-specific fields. All setup and mutation paths continue to use the
+ * strict parser above.
+ */
+function parseUpdateRegistryMetadata(
+  path: string,
+  contents: string,
+): UpdateRegistryMetadata {
+  const value = parseRegistryObject(path, contents);
+  const packageManager = parsePackageManager(path, value.packageManager);
+  if (!Array.isArray(value.targets)) {
+    throw new CorruptIntegrationRegistryError(path, "targets must be an array");
+  }
+  const cliPath = value.targets.find(
+    (target) => isRecord(target) && typeof target.cliPath === "string",
+  )?.cliPath;
+  return {
+    packageManager,
+    ...(typeof cliPath === "string" ? { cliPath } : {}),
+  };
 }
 
 /** Owns persistence and queries for registered Trace integration targets. */
@@ -128,6 +175,14 @@ export class IntegrationRegistry {
   read(): Registry | undefined {
     if (!existsSync(this.path)) return undefined;
     return parseRegistry(this.path, readFileSync(this.path, "utf8"));
+  }
+
+  readForUpdate(): UpdateRegistryMetadata | undefined {
+    if (!existsSync(this.path)) return undefined;
+    return parseUpdateRegistryMetadata(
+      this.path,
+      readFileSync(this.path, "utf8"),
+    );
   }
 
   targets(tool?: ToolName): TargetRecord[] {

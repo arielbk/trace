@@ -117,6 +117,34 @@ test("reads and queries a valid integration registry", () => {
   expect(registry.staleTools("2.0.0")).toEqual(["claude"]);
 });
 
+test("update metadata stays readable when a newer CLI adds a target type", () => {
+  const path = registryPath();
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      packageManager: "pnpm",
+      targets: [
+        {
+          tool: "copilot",
+          root: "/home/alex/.copilot",
+          cliPath: "/usr/local/bin/trace",
+          version: "2.0.0",
+          skills: ["trace"],
+          hooks: [],
+        },
+      ],
+    }),
+  );
+  const registry = new IntegrationRegistry(path);
+
+  expect(registry.readForUpdate()).toEqual({
+    packageManager: "pnpm",
+    cliPath: "/usr/local/bin/trace",
+  });
+  expect(() => registry.read()).toThrow(CorruptIntegrationRegistryError);
+});
+
 test.each([
   ["malformed JSON", "not JSON"],
   ["an invalid package manager", JSON.stringify({ packageManager: "yarn", targets: [] })],
