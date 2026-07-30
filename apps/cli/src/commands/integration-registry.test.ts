@@ -117,32 +117,38 @@ test("reads and queries a valid integration registry", () => {
   expect(registry.staleTools("2.0.0")).toEqual(["claude"]);
 });
 
-test("update metadata stays readable when a newer CLI adds a target type", () => {
+test("a newer target type is preserved but hidden from supported-target queries", () => {
   const path = registryPath();
   mkdirSync(join(path, ".."), { recursive: true });
+  const futureTarget = {
+    tool: "copilot",
+    root: "/home/alex/.copilot",
+    cliPath: "/usr/local/bin/trace",
+    version: "2.0.0",
+    skills: ["trace"],
+    hooks: [],
+  };
   writeFileSync(
     path,
     JSON.stringify({
       packageManager: "pnpm",
-      targets: [
-        {
-          tool: "copilot",
-          root: "/home/alex/.copilot",
-          cliPath: "/usr/local/bin/trace",
-          version: "2.0.0",
-          skills: ["trace"],
-          hooks: [],
-        },
-      ],
+      targets: [futureTarget],
     }),
   );
   const registry = new IntegrationRegistry(path);
 
+  expect(registry.read()?.targets).toEqual([futureTarget]);
+  expect(registry.targets()).toEqual([]);
   expect(registry.readForUpdate()).toEqual({
     packageManager: "pnpm",
     cliPath: "/usr/local/bin/trace",
   });
-  expect(() => registry.read()).toThrow(CorruptIntegrationRegistryError);
+
+  registry.upsert("pnpm", target("codex", "/home/alex/.codex"));
+  expect(registry.read()?.targets).toEqual([
+    futureTarget,
+    target("codex", "/home/alex/.codex"),
+  ]);
 });
 
 test.each([

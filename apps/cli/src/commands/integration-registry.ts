@@ -12,8 +12,8 @@ import type { Env } from "./seam.ts";
 export type PackageManager = "npm" | "pnpm" | "bun";
 export type ToolName = "claude" | "codex" | "cursor";
 
-export type TargetRecord = {
-  tool: ToolName;
+export type StoredTargetRecord = {
+  tool: string;
   root: string;
   cliPath: string;
   version: string;
@@ -21,9 +21,13 @@ export type TargetRecord = {
   hooks: string[];
 };
 
+export type TargetRecord = StoredTargetRecord & {
+  tool: ToolName;
+};
+
 export type Registry = {
   packageManager: PackageManager;
-  targets: TargetRecord[];
+  targets: StoredTargetRecord[];
 };
 
 export type UpdateRegistryMetadata = {
@@ -57,10 +61,12 @@ function isSafeArtifactName(value: string): boolean {
   );
 }
 
-function isTargetRecord(value: unknown): value is TargetRecord {
+function isStoredTargetRecord(value: unknown): value is StoredTargetRecord {
   if (!isRecord(value)) return false;
   return (
-    (value.tool === "claude" || value.tool === "codex" || value.tool === "cursor") &&
+    typeof value.tool === "string" &&
+    value.tool.length > 0 &&
+    !value.tool.includes("\0") &&
     typeof value.root === "string" &&
     typeof value.cliPath === "string" &&
     typeof value.version === "string" &&
@@ -71,7 +77,19 @@ function isTargetRecord(value: unknown): value is TargetRecord {
   );
 }
 
-function targetIdentity(target: Pick<TargetRecord, "tool" | "root">): string {
+function isTargetRecord(
+  value: StoredTargetRecord,
+): value is TargetRecord {
+  return (
+    value.tool === "claude" ||
+    value.tool === "codex" ||
+    value.tool === "cursor"
+  );
+}
+
+function targetIdentity(
+  target: Pick<StoredTargetRecord, "tool" | "root">,
+): string {
   return `${target.tool}\0${target.root}`;
 }
 
@@ -112,7 +130,7 @@ function parsePackageManager(
 function parseRegistry(path: string, contents: string): Registry {
   const value = parseRegistryObject(path, contents);
   const packageManager = parsePackageManager(path, value.packageManager);
-  if (!Array.isArray(value.targets) || !value.targets.every(isTargetRecord)) {
+  if (!Array.isArray(value.targets) || !value.targets.every(isStoredTargetRecord)) {
     throw new CorruptIntegrationRegistryError(path, "targets must be valid target records");
   }
   const identities = new Set(value.targets.map(targetIdentity));
@@ -129,9 +147,9 @@ function parseRegistry(path: string, contents: string): Registry {
  * Reads only the stable registry envelope needed to update the CLI.
  *
  * Target schemas can grow when a newer CLI adds a host. An older CLI must
- * still be able to update itself, so this path intentionally does not validate
- * target-specific fields. All setup and mutation paths continue to use the
- * strict parser above.
+ * still be able to update itself, so this path intentionally validates only
+ * the envelope. Setup and mutation paths validate the complete shared target
+ * structure while preserving records for tools this CLI does not support.
  */
 function parseUpdateRegistryMetadata(
   path: string,
@@ -186,7 +204,7 @@ export class IntegrationRegistry {
   }
 
   targets(tool?: ToolName): TargetRecord[] {
-    const targets = this.read()?.targets ?? [];
+    const targets = (this.read()?.targets ?? []).filter(isTargetRecord);
     return tool === undefined
       ? targets
       : targets.filter((target) => target.tool === tool);

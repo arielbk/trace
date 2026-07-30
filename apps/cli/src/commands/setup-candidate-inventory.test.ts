@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -103,6 +110,59 @@ test("bare --yes reconciles detected and registered roots exactly once each", ()
     expect(result.stdout.split(`target root: ${workClaude}\n`)).toHaveLength(2);
     expect(registeredIdentities(dir)).toEqual(
       [`claude=${defaultClaude}`, `claude=${workClaude}`].sort(),
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("bare --yes reconciles supported targets while preserving a newer target type", () => {
+  const { dir, cleanup } = tempDir("trace-inventory-future-tool-");
+  try {
+    const registryDir = join(dir, ".trace");
+    const registryPath = join(registryDir, "integrations.json");
+    const codexRoot = join(dir, ".codex");
+    const futureTarget = {
+      tool: "copilot",
+      root: join(dir, ".copilot"),
+      cliPath: "/future/bin/trace",
+      version: "9.0.0",
+      skills: ["trace"],
+      hooks: ["sessionStart"],
+    };
+    mkdirSync(registryDir, { recursive: true });
+    writeFileSync(
+      registryPath,
+      JSON.stringify({
+        packageManager: "npm",
+        targets: [
+          {
+            tool: "codex",
+            root: codexRoot,
+            cliPath: CLI_PATH,
+            version: "0.16.0",
+            skills: [],
+            hooks: [],
+          },
+          futureTarget,
+        ],
+      }),
+    );
+
+    const result = setupOperation(["--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: CLI_PATH },
+      cwd: dir,
+      stdin: "",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(existsSync(join(codexRoot, "skills", "trace", "SKILL.md"))).toBe(true);
+    const stored = JSON.parse(readFileSync(registryPath, "utf8")) as {
+      targets: Array<{ tool: string }>;
+    };
+    expect(stored.targets.find(({ tool }) => tool === "copilot")).toEqual(
+      futureTarget,
     );
   } finally {
     cleanup();
