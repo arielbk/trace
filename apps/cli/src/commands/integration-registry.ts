@@ -10,7 +10,15 @@ import { dirname, join } from "node:path";
 import type { Env } from "./seam.ts";
 
 export type PackageManager = "npm" | "pnpm" | "bun";
-export type ToolName = "claude" | "codex" | "cursor";
+
+/** Every host Trace can install into, in the order flags and plans list them. */
+export const TOOL_NAMES = ["claude", "codex", "cursor", "copilot"] as const;
+
+export type ToolName = (typeof TOOL_NAMES)[number];
+
+export function isToolName(value: unknown): value is ToolName {
+  return TOOL_NAMES.includes(value as ToolName);
+}
 
 export type StoredTargetRecord = {
   tool: string;
@@ -80,11 +88,7 @@ function isStoredTargetRecord(value: unknown): value is StoredTargetRecord {
 function isTargetRecord(
   value: StoredTargetRecord,
 ): value is TargetRecord {
-  return (
-    value.tool === "claude" ||
-    value.tool === "codex" ||
-    value.tool === "cursor"
-  );
+  return isToolName(value.tool);
 }
 
 function targetIdentity(

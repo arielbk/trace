@@ -12,6 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   IntegrationRegistry,
+  isToolName,
+  TOOL_NAMES,
   type PackageManager,
   type TargetRecord,
   type ToolName,
@@ -20,13 +22,22 @@ import {
   discoverTargetCandidates,
   resolveClaudeConfigRoot,
   resolveCodexConfigRoot,
+  resolveCopilotConfigRoot,
   resolveCursorConfigRoot,
+  TOOL_LABELS,
 } from "./setup-candidates.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
+/** The `<claude|codex|...>` fragment used in usage strings and flag errors. */
+const TOOL_CHOICES = TOOL_NAMES.join("|");
+
 /** Shown when neither detection nor the registry names a single target. */
 export const EMPTY_INVENTORY =
-  "No installed hosts detected. Use --tool <claude|codex|cursor> or --target <tool>=<path> [--yes]";
+  `No installed hosts detected. Use --tool <${TOOL_CHOICES}> or --target <tool>=<path> [--yes]`;
+
+function unsupportedTool(tool: string): string {
+  return `Unsupported tool "${tool}" (supported: ${TOOL_NAMES.join(", ")})`;
+}
 
 /** Canonical user-level skills installed into every supported host. */
 const TRACE_SKILLS = [
@@ -44,6 +55,29 @@ const TRACE_CLAUDE_HOOKS = [
   { event: "SubagentStop", command: "hook subagent-stop" },
   { event: "Stop", command: "hook stop" },
 ] as const;
+
+/** The Copilot CLI hook events Trace registers. */
+const TRACE_COPILOT_HOOKS = [
+  { event: "sessionStart", command: "hook session-start" },
+  { event: "agentStop", command: "hook stop" },
+  { event: "subagentStop", command: "hook subagent-stop" },
+] as const;
+
+/**
+ * Copilot ignores command-hook stdout at `sessionStart`, so the binding nudge
+ * rides a prompt-type hook (auto-submitted text) instead of the command's
+ * output the way Claude's does.
+ */
+const COPILOT_BINDING_NUDGE =
+  "Consult the installed Trace skill before beginning work. " +
+  "If this session is not bound, use Trace to bind or re-enter the task.";
+
+/**
+ * The single Copilot hooks file Trace owns end to end. Copilot reads every
+ * `.json` under `<root>/hooks/`, so Trace writes its own file rather than
+ * merging into a shared one — removal is then a whole-file delete.
+ */
+const COPILOT_HOOKS_FILE = "trace.json";
 
 type GuardrailsResult = { ok: true } | { ok: false; error: string };
 
@@ -110,6 +144,15 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+/**
+ * Quotes a command path for PowerShell. A quoted path is not executable on its
+ * own there, so anything needing quotes is invoked through the call operator.
+ */
+function powershellQuote(value: string): string {
+  if (/^[A-Za-z0-9_/:.\\@%+=-]+$/.test(value)) return value;
+  return `& '${value.replaceAll("'", "''")}'`;
+}
+
 /** Builds the Trace-owned hook entries keyed by Claude hook event. */
 function traceHookEntries(cliPath: string): Record<string, HookEntry[]> {
   const entries: Record<string, HookEntry[]> = {};
@@ -134,6 +177,71 @@ function installHooks(options: AgentSetupOptions): void {
   settings.hooks = { ...hooks, ...traceHookEntries(options.cliPath) };
 
   writeFileIfChanged(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
+function copilotHooksPath(configRoot: string): string {
+  return join(configRoot, "hooks", COPILOT_HOOKS_FILE);
+}
+
+/**
+ * Builds Trace's Copilot hooks file. Every command hook carries both a `bash`
+ * and a `powershell` invocation of the same absolute CLI path, which is how
+ * Copilot dispatches per platform.
+ */
+function copilotHooksConfig(cliPath: string): string {
+  const bash = shellQuote(cliPath);
+  const powershell = powershellQuote(cliPath);
+
+  const hooks: Record<string, unknown[]> = {};
+  for (const hook of TRACE_COPILOT_HOOKS) {
+    const entries: unknown[] = [
+      {
+        type: "command",
+        bash: `${bash} ${hook.command}`,
+        powershell: `${powershell} ${hook.command}`,
+      },
+    ];
+    if (hook.event === "sessionStart") {
+      entries.push({ type: "prompt", prompt: COPILOT_BINDING_NUDGE });
+    }
+    hooks[hook.event] = entries;
+  }
+
+  return `${JSON.stringify({ version: 1, hooks }, null, 2)}\n`;
+}
+
+function installCopilotHooks(options: AgentSetupOptions): void {
+  writeFileIfChanged(
+    copilotHooksPath(options.configRoot),
+    copilotHooksConfig(options.cliPath),
+  );
+}
+
+/** Refuses a Copilot setup that would clobber a hooks file Trace does not own. */
+function checkCopilotConfig(options: AgentSetupOptions): GuardrailsResult {
+  const hooksPath = copilotHooksPath(options.configRoot);
+  const owned = options.registry
+    .target("copilot", options.configRoot)
+    ?.hooks.length;
+  if (existsSync(hooksPath) && !owned) {
+    return {
+      ok: false,
+      error:
+        `Unowned Copilot hooks file at ${hooksPath}.\n` +
+        `  Trace cannot overwrite a hooks file it did not install.\n` +
+        `  Remediation: remove or back up ${COPILOT_HOOKS_FILE}, then re-run trace setup.`,
+    };
+  }
+
+  return { ok: true };
+}
+
+function uninstallCopilotConfig(
+  options: RemovalOptions,
+  target: TargetRecord,
+): void {
+  if (target.hooks.length === 0) return;
+  rmSync(copilotHooksPath(options.configRoot), { force: true });
 }
 
 function installSkills(
@@ -417,6 +525,15 @@ const SETUP_ADAPTERS: Record<ToolName, SetupAdapter> = {
     label: "Cursor",
     resolveRoot: resolveCursorConfigRoot,
     hooks: [],
+  },
+  copilot: {
+    tool: "copilot",
+    label: TOOL_LABELS.copilot,
+    resolveRoot: resolveCopilotConfigRoot,
+    hooks: TRACE_COPILOT_HOOKS,
+    preflightConfig: checkCopilotConfig,
+    installConfig: installCopilotHooks,
+    uninstallConfig: uninstallCopilotConfig,
   },
 };
 
@@ -708,10 +825,8 @@ export function setupOperation(
 
   // When a tool is explicitly specified, route to that tool's setup.
   if (toolArg !== undefined) {
-    if (toolArg !== "claude" && toolArg !== "codex" && toolArg !== "cursor") {
-      return failure(
-        `Unsupported tool "${toolArg}" (supported: claude, codex, cursor)`,
-      );
+    if (!isToolName(toolArg)) {
+      return failure(unsupportedTool(toolArg));
     }
     const adapter = SETUP_ADAPTERS[toolArg];
     const root = explicitTarget?.root ?? adapter.resolveRoot(ctx.env);
@@ -830,17 +945,17 @@ function removeOperation(
   let targetsToRemove: TargetRecord[];
 
   if (explicitTarget) {
-    const tool = explicitTarget.tool as ToolName;
-    if (tool !== "claude" && tool !== "codex" && tool !== "cursor") {
-      return failure(`Unsupported tool "${tool}" (supported: claude, codex, cursor)`);
+    const tool = explicitTarget.tool;
+    if (!isToolName(tool)) {
+      return failure(unsupportedTool(tool));
     }
     const found = registeredTargets.find(
       (t) => t.tool === tool && t.root === explicitTarget!.root,
     );
     targetsToRemove = found ? [found] : [];
   } else if (toolArg !== undefined) {
-    if (toolArg !== "claude" && toolArg !== "codex" && toolArg !== "cursor") {
-      return failure(`Unsupported tool "${toolArg}" (supported: claude, codex, cursor)`);
+    if (!isToolName(toolArg)) {
+      return failure(unsupportedTool(toolArg));
     }
     targetsToRemove = registeredTargets.filter((t) => t.tool === toolArg);
   } else {

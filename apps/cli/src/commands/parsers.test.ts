@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { INVALID_SESSION_TOOL } from "@trace/core";
 import { expect, test } from "vitest";
 import {
   parseClaudeScanArgs,
@@ -179,7 +180,7 @@ test("parseSessionSetParentArgs rejects an invalid --tool value", () => {
       "--tool",
       "gemini",
     ]),
-  ).toThrow("Session tool must be claude, codex, or cursor");
+  ).toThrow(INVALID_SESSION_TOOL);
 });
 
 test("parseCodexScanArgs falls back to USERPROFILE when HOME is unset (native Windows)", () => {

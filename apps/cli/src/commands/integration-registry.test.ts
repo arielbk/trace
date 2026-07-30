@@ -121,8 +121,8 @@ test("a newer target type is preserved but hidden from supported-target queries"
   const path = registryPath();
   mkdirSync(join(path, ".."), { recursive: true });
   const futureTarget = {
-    tool: "copilot",
-    root: "/home/alex/.copilot",
+    tool: "gemini",
+    root: "/home/alex/.gemini",
     cliPath: "/usr/local/bin/trace",
     version: "2.0.0",
     skills: ["trace"],

@@ -28,6 +28,11 @@ export type SessionIdentityOverrides = {
   resolveCursorSessionById?: (
     id: string,
   ) => { id: string; transcriptPath: string | null } | null;
+  // Resolves the live Copilot CLI session from its host-specific lock files.
+  // Injected so core remains filesystem- and process-free.
+  resolveCopilotSession?: () =>
+    | { id: string; transcriptPath: string | null }
+    | null;
 };
 
 export type SessionIdentity = {
@@ -55,6 +60,7 @@ export function inferSessionIdentity(
     cwd: overrides.cwd,
     resolveCursorSession: overrides.resolveCursorSession,
     resolveCursorSessionById: overrides.resolveCursorSessionById,
+    resolveCopilotSession: overrides.resolveCopilotSession,
   };
   const location = locateSession(ctx, overrides.tool);
   const tool = overrides.tool ?? location?.tool ?? "claude";
@@ -100,13 +106,16 @@ function nativeTranscriptPathForExplicitId(
         ? { ...ctx.env, CLAUDE_CODE_SESSION_ID: id }
         : tool === "cursor"
           ? { ...ctx.env, CURSOR_CONVERSATION_ID: id }
+          : tool === "copilot"
+            ? ctx.env
           : undefined;
 
   if (!env) {
     return undefined;
   }
 
-  return getSessionLocator(tool).locate({ ...ctx, env })?.nativeTranscriptPath;
+  const location = getSessionLocator(tool).locate({ ...ctx, env });
+  return location?.id === id ? location.nativeTranscriptPath : undefined;
 }
 
 // Trims a candidate value and collapses blank to undefined, so `??` chains

@@ -9,6 +9,38 @@ const claudeFixture = fileURLToPath(
 const codexFixture = fileURLToPath(
   new URL("./fixtures/codex-thread-1.jsonl", import.meta.url),
 );
+const copilotFixture = fileURLToPath(
+  new URL("./fixtures/copilot-session-1.events.jsonl", import.meta.url),
+);
+
+test("copilot adapter answers identity, model, output-only tokens, head, and tail", () => {
+  const adapter = getTranscriptAdapter("copilot");
+  const transcript = readFileSync(copilotFixture, "utf8");
+
+  expect(adapter.tool).toBe("copilot");
+  expect(adapter.parse({ transcript, transcriptPath: copilotFixture })).toEqual({
+    id: "copilot-session-1",
+    transcriptPath: copilotFixture,
+    tool: "copilot",
+    model: "gpt-5-mini",
+    title: null,
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 37,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 37,
+    },
+  });
+  expect(adapter.head({ transcript, limit: 8 })).toEqual([
+    { role: "user", text: "Inspect the failing test" },
+    { role: "user", text: "Run the focused suite" },
+  ]);
+  expect(adapter.tail({ transcript, limit: 2 })).toEqual([
+    { role: "user", text: "Run the focused suite" },
+    { role: "assistant", text: "The focused suite passes." },
+  ]);
+});
 
 test("claude adapter answers identity, model, tokens, and message tail", () => {
   const adapter = getTranscriptAdapter("claude");

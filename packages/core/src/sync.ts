@@ -1,3 +1,5 @@
+import type { SessionTool } from "./types.ts";
+
 export type SyncTaskRow = {
   id: string;
   title: string;
@@ -22,7 +24,7 @@ export type SyncTaskRow = {
 export type SyncSessionRow = {
   id: string;
   transcriptPath: string;
-  tool: "claude" | "codex" | "cursor";
+  tool: SessionTool;
   model: string | null;
   title: string | null;
   taskId: string | null;

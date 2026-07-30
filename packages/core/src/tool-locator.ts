@@ -15,6 +15,12 @@ export type LocateContext = {
   resolveCursorSessionById?: (
     id: string,
   ) => { id: string; transcriptPath: string | null } | null;
+  // Copilot CLI does not expose its session id in the environment. Its host
+  // composition root resolves the live session from lock files and process
+  // ancestry, keeping this package free of filesystem and process access.
+  resolveCopilotSession?: () =>
+    | { id: string; transcriptPath: string | null }
+    | null;
 };
 
 export type SessionLocation = {
@@ -63,6 +69,23 @@ const claudeSessionLocator: ToolSessionLocator = {
   },
 };
 
+const copilotSessionLocator: ToolSessionLocator = {
+  tool: "copilot",
+  locate(ctx) {
+    const resolved = ctx.resolveCopilotSession?.() ?? null;
+    const id = present(resolved?.id);
+    if (!resolved || !id) {
+      return null;
+    }
+
+    return {
+      tool: "copilot",
+      id,
+      nativeTranscriptPath: present(resolved.transcriptPath ?? undefined),
+    };
+  },
+};
+
 const cursorSessionLocator: ToolSessionLocator = {
   tool: "cursor",
   locate(ctx) {
@@ -103,6 +126,7 @@ const cursorSessionLocator: ToolSessionLocator = {
 export const sessionLocatorsByPrecedence = [
   codexSessionLocator,
   claudeSessionLocator,
+  copilotSessionLocator,
   cursorSessionLocator,
 ] as const satisfies readonly ToolSessionLocator[];
 
@@ -113,6 +137,7 @@ export const sessionLocatorsByPrecedence = [
 const locatorsByTool: Partial<Record<SessionTool, ToolSessionLocator>> = {
   codex: codexSessionLocator,
   claude: claudeSessionLocator,
+  copilot: copilotSessionLocator,
   cursor: cursorSessionLocator,
 };
 

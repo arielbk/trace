@@ -12,6 +12,12 @@ import {
   tailCodexTranscript,
   type CodexSubagentSpawn,
 } from "./codex-adapter.ts";
+import {
+  headCopilotTranscript,
+  parseCopilotTranscript,
+  parseCopilotTranscriptFile,
+  tailCopilotTranscript,
+} from "./copilot-adapter.ts";
 import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
 import type { ContextTokens, SessionTool, TokenTotals } from "./types.ts";
@@ -126,6 +132,28 @@ const codexTranscriptAdapter: TranscriptAdapter = {
   },
 };
 
+const copilotTranscriptAdapter: TranscriptAdapter = {
+  tool: "copilot",
+  parse(input) {
+    return parseCopilotTranscript(input);
+  },
+  parseFile(transcriptPath) {
+    return parseCopilotTranscriptFile(transcriptPath);
+  },
+  head(input) {
+    return headCopilotTranscript(input);
+  },
+  readHead(input) {
+    return readFromFile(input, headCopilotTranscript);
+  },
+  tail(input) {
+    return tailCopilotTranscript(input);
+  },
+  readTail(input) {
+    return readFromFile(input, tailCopilotTranscript);
+  },
+};
+
 // Partial because the tool axis (`SessionTool`) can carry tools whose adapter
 // has not landed yet. `getTranscriptAdapter` throws for an unregistered tool
 // rather than returning undefined, preserving the non-null contract callers
@@ -133,6 +161,7 @@ const codexTranscriptAdapter: TranscriptAdapter = {
 const adaptersByTool: Partial<Record<SessionTool, TranscriptAdapter>> = {
   claude: claudeTranscriptAdapter,
   codex: codexTranscriptAdapter,
+  copilot: copilotTranscriptAdapter,
   cursor: cursorTranscriptAdapter,
 };
 

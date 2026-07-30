@@ -1,6 +1,8 @@
 import { join } from "node:path";
 import {
+  INVALID_SESSION_TOOL,
   isSessionTool,
+  SESSION_TOOL_CHOICES,
   type SessionOrigin,
   type SessionTool,
   type SetSessionParentInput,
@@ -266,7 +268,7 @@ export function parseSessionRegisterArgs(args: string[]): {
 
   if (!id || !transcriptPath || !tool) throw new Error(sessionRegisterUsage());
   if (!isSessionTool(tool)) {
-    throw new Error("Session tool must be claude, codex, or cursor");
+    throw new Error(INVALID_SESSION_TOOL);
   }
   if (origin !== undefined && !isSessionOrigin(origin)) {
     throw new Error("Session origin must be root, subagent, or spawned");
@@ -316,7 +318,7 @@ export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput
     throw new Error("Session origin must be root, subagent, or spawned");
   }
   if (tool !== undefined && !isSessionTool(tool)) {
-    throw new Error("Session tool must be claude, codex, or cursor");
+    throw new Error(INVALID_SESSION_TOOL);
   }
 
   return {
@@ -418,7 +420,7 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
 }
 
 export function skillWorkOnTaskUsage(): string {
-  return "Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <claude|codex|cursor>] [--model <name>] [--description <text>] [--project <slug|dir>]";
+  return `Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <${SESSION_TOOL_CHOICES}>] [--model <name>] [--description <text>] [--project <slug|dir>]`;
 }
 
 export function skillReEnterUsage(): string {
@@ -478,7 +480,7 @@ export function parseSkillWorkOnTaskArgs(
   } else if (isSessionTool(tool)) {
     toolOverride = tool;
   } else {
-    throw new Error("Session tool must be claude, codex, or cursor");
+    throw new Error(INVALID_SESSION_TOOL);
   }
 
   const identity = inferCliSessionIdentity(env, cwd, {

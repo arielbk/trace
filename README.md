@@ -8,6 +8,7 @@
   <img alt="Claude Code" src="https://img.shields.io/badge/Claude_Code-D97757?logo=anthropic&logoColor=white">
   <img alt="Codex" src="https://img.shields.io/badge/Codex-000000">
   <img alt="Cursor" src="https://img.shields.io/badge/Cursor-000000?logo=cursor&logoColor=white">
+  <img alt="GitHub Copilot CLI" src="https://img.shields.io/badge/GitHub_Copilot_CLI-000000?logo=github&logoColor=white">
 </p>
 
 You work something out with an agent, build up a head full of context, and the
@@ -106,6 +107,7 @@ targets Trace manages.
 ```sh
 trace setup --tool codex
 trace setup --tool cursor
+trace setup --tool copilot
 trace setup --tool claude --target claude=/path/to/custom/config
 ```
 
@@ -139,6 +141,30 @@ plugin), then re-run setup and your configuration will be on the CLI-first path.
 Use the bare command while migrating. Targeting one tool explicitly
 (`trace setup --tool claude`) previews the plan it *intends* to apply and only
 reports a legacy config once you add `--yes`.
+
+### Copilot CLI
+
+Copilot installs through the same path as every other host — the picker lists it
+whenever `~/.copilot` exists, or name it directly:
+
+```sh
+trace setup --tool copilot
+```
+
+<details>
+<summary>What this does</summary>
+
+Alongside the skills, setup writes a Trace-owned hooks file to
+`~/.copilot/hooks/trace.json` (honoring `COPILOT_HOME`). It registers the
+session at `sessionStart`, prompts the agent to consult Trace and bind or
+re-enter work, and checks the bound task's `state.md` at `agentStop`. Trace
+identifies the live session through Copilot's lock files, so run Trace commands
+from within the Copilot session.
+
+> Copilot records an **output-only token** total in its transcript. The board
+> does not show Copilot input or cache-token totals.
+
+</details>
 
 ## How it works
 
@@ -184,9 +210,9 @@ a blank prompt.
 
 ![A task detail view leading with a "Where you left off" panel above the task's token totals](docs/screenshots/task-context.png)
 
-Below it sits one timeline that doesn't care which tool did the work. Claude
-sessions, Codex sessions, and the sub-agents they spin off all nest the same way,
-interleaved with the docs written along the way.
+Below it sits one timeline that doesn't care which tool did the work. Claude,
+Codex, Cursor, and Copilot sessions all appear alongside the docs written along
+the way.
 
 ![The same task's activity timeline: a Claude session with a nested code-reviewer sub-agent, a Codex session, and docs on one spine](docs/screenshots/task-detail.png)
 
@@ -212,9 +238,10 @@ yours to keep or replace.
 Same-tool re-entry (work in an agent, clear, re-enter, keep going) is the core
 loop and works today. Cross-tool re-entry rides the shared manifest: a task
 worked in one agent can be re-entered from another. The agents supported right
-now are **Claude Code**, **Codex**, and **Cursor** (both the GUI and the
-`cursor-agent` CLI; macOS, pull-time capture, no live hook yet). More are a matter
-of adding adapters.
+now are **Claude Code**, **Codex**, **Cursor** (both the GUI and the
+`cursor-agent` CLI; macOS, pull-time capture, no live hook yet), and **GitHub
+Copilot CLI** (macOS, Linux, and Windows; live hooks; output-only token totals).
+More are a matter of adding adapters.
 
 <details>
 <summary>Why "meta-harness"?</summary>

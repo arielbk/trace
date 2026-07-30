@@ -72,7 +72,7 @@ export {
   updateStateManifest,
 } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
-export { SESSION_TOOLS, isSessionTool } from "./types.ts";
+export { SESSION_TOOLS, SESSION_TOOL_CHOICES, INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 export {
   composerIdFromLocator,
   cursorLocatorFlavor,
@@ -127,6 +127,11 @@ export {
   resolveCodexTranscriptPathById,
   scanCodexSessions,
 } from "./codex-adapter.ts";
+export {
+  parseCopilotTranscript,
+  parseCopilotTranscriptFile,
+} from "./copilot-adapter.ts";
+export type { ParsedCopilotSession } from "./copilot-adapter.ts";
 export type {
   CodexSubagentSource,
   CodexSubagentSpawn,

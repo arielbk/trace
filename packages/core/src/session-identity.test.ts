@@ -11,6 +11,16 @@ test("infers a live Codex session from CODEX_THREAD_ID", () => {
   });
 });
 
+test("infers a Copilot session from the injected live-session resolver", () => {
+  const transcriptPath = "/home/u/.copilot/session-state/copilot-1/events.jsonl";
+
+  expect(
+    inferSessionIdentity({}, {
+      resolveCopilotSession: () => ({ id: "copilot-1", transcriptPath }),
+    }),
+  ).toEqual({ tool: "copilot", id: "copilot-1", transcriptPath });
+});
+
 test("prefers codex over claude over cursor when detecting the live session", () => {
   let resolverCalls = 0;
   const identity = inferSessionIdentity(

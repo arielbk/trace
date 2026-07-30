@@ -57,12 +57,20 @@ export type ActiveTask =
 // The single source of the tool axis: the schema enum, runtime validation, and
 // CLI flag parsing all derive from this list, so adding a tool is a one-line
 // change here plus a Drizzle migration.
-export const SESSION_TOOLS = ["claude", "codex", "cursor"] as const;
+export const SESSION_TOOLS = ["claude", "codex", "cursor", "copilot"] as const;
 export type SessionTool = (typeof SESSION_TOOLS)[number];
 
 export function isSessionTool(value: string): value is SessionTool {
   return (SESSION_TOOLS as readonly string[]).includes(value);
 }
+
+/** `claude|codex|…`, for usage strings that offer the tool as a flag value. */
+export const SESSION_TOOL_CHOICES = SESSION_TOOLS.join("|");
+
+/** The one rejection message for an unrecognized tool, in every layer. */
+export const INVALID_SESSION_TOOL = `Session tool must be ${
+  SESSION_TOOLS.slice(0, -1).join(", ")
+}, or ${SESSION_TOOLS.at(-1)}`;
 
 export type SessionOrigin = "root" | "subagent" | "spawned";
 

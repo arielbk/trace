@@ -10,12 +10,29 @@ test("looks up registered locators by tool and preserves precedence", () => {
   expect(sessionLocatorsByPrecedence.map((locator) => locator.tool)).toEqual([
     "codex",
     "claude",
+    "copilot",
     "cursor",
   ]);
 
   expect(getSessionLocator("codex").tool).toBe("codex");
   expect(getSessionLocator("claude").tool).toBe("claude");
   expect(getSessionLocator("cursor").tool).toBe("cursor");
+  expect(getSessionLocator("copilot").tool).toBe("copilot");
+});
+
+test("copilot locator delegates live-session discovery to its injected resolver", () => {
+  const transcriptPath = "/home/u/.copilot/session-state/copilot-1/events.jsonl";
+
+  expect(
+    getSessionLocator("copilot").locate({
+      env: {},
+      resolveCopilotSession: () => ({ id: " copilot-1 ", transcriptPath }),
+    }),
+  ).toEqual({
+    tool: "copilot",
+    id: "copilot-1",
+    nativeTranscriptPath: transcriptPath,
+  });
 });
 
 test("throws when no locator is registered for a tool", () => {

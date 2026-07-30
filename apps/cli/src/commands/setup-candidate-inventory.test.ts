@@ -123,8 +123,8 @@ test("bare --yes reconciles supported targets while preserving a newer target ty
     const registryPath = join(registryDir, "integrations.json");
     const codexRoot = join(dir, ".codex");
     const futureTarget = {
-      tool: "copilot",
-      root: join(dir, ".copilot"),
+      tool: "gemini",
+      root: join(dir, ".gemini"),
       cliPath: "/future/bin/trace",
       version: "9.0.0",
       skills: ["trace"],
@@ -161,7 +161,7 @@ test("bare --yes reconciles supported targets while preserving a newer target ty
     const stored = JSON.parse(readFileSync(registryPath, "utf8")) as {
       targets: Array<{ tool: string }>;
     };
-    expect(stored.targets.find(({ tool }) => tool === "copilot")).toEqual(
+    expect(stored.targets.find(({ tool }) => tool === "gemini")).toEqual(
       futureTarget,
     );
   } finally {
