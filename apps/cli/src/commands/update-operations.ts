@@ -32,29 +32,51 @@ function installArgs(pm: PackageManager, version: string): { cmd: string; args: 
   }
 }
 
-const defaultDeps: UpdateDeps = {
-  async fetchLatestVersion(packageName) {
-    const res = await fetch(`https://registry.npmjs.org/${packageName}/latest`);
-    if (!res.ok) throw new Error(`npm registry returned ${res.status}`);
-    const json = (await res.json()) as { version: string };
-    return json.version;
-  },
-  spawnInstall(pm, version) {
-    const { cmd, args } = installArgs(pm, version);
-    const result = nodeSpawnSync(cmd, args, { encoding: "utf8" });
+/** The `spawnSync` surface these deps rely on, narrowed for injection. */
+export type SpawnSync = (
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; shell: boolean },
+) => { status: number | null; stderr: string };
+
+export function createDefaultDeps(
+  host: { platform?: NodeJS.Platform; spawnSync?: SpawnSync } = {},
+): UpdateDeps {
+  const platform = host.platform ?? process.platform;
+  const spawnSync = host.spawnSync ?? (nodeSpawnSync as unknown as SpawnSync);
+
+  // On Windows both the package managers (`npm.cmd`, `pnpm.cmd`) and the Trace
+  // CLI are batch shims, and Node has refused to spawn `.cmd`/`.bat` without a
+  // shell since the CVE-2024-27980 fix — it throws EINVAL. Elsewhere a shell
+  // only adds a parsing layer, so it stays off.
+  const shell = platform === "win32";
+
+  const run = (command: string, args: string[]): SpawnResult => {
+    const result = spawnSync(command, args, { encoding: "utf8", shell });
     return {
       status: result.status,
       stderr: typeof result.stderr === "string" ? result.stderr : "",
     };
-  },
-  spawnReconcile(cliPath) {
-    const result = nodeSpawnSync(cliPath, ["setup", "--registered", "--yes"], { encoding: "utf8" });
-    return {
-      status: result.status,
-      stderr: typeof result.stderr === "string" ? result.stderr : "",
-    };
-  },
-};
+  };
+
+  return {
+    async fetchLatestVersion(packageName) {
+      const res = await fetch(`https://registry.npmjs.org/${packageName}/latest`);
+      if (!res.ok) throw new Error(`npm registry returned ${res.status}`);
+      const json = (await res.json()) as { version: string };
+      return json.version;
+    },
+    spawnInstall(pm, version) {
+      const { cmd, args } = installArgs(pm, version);
+      return run(cmd, args);
+    },
+    spawnReconcile(cliPath) {
+      return run(cliPath, ["setup", "--registered", "--yes"]);
+    },
+  };
+}
+
+const defaultDeps: UpdateDeps = createDefaultDeps();
 
 export async function updateOperation(
   rawArgs: string[],

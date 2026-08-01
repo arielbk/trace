@@ -7,7 +7,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { updateOperation, type UpdateDeps } from "./update-operations.ts";
+import {
+  createDefaultDeps,
+  updateOperation,
+  type UpdateDeps,
+} from "./update-operations.ts";
 
 function tempDir(prefix: string): { dir: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -383,4 +387,39 @@ test("uses cliPath from registry for reconciliation, not process.argv[1]", async
   } finally {
     cleanup();
   }
+});
+
+test("on Windows the package manager and the CLI are spawned through a shell", () => {
+  // `npm.cmd` and `trace.cmd` are batch shims, and Node refuses to spawn
+  // `.cmd`/`.bat` without a shell since the CVE-2024-27980 fix — it throws
+  // EINVAL. Without this, `trace update` cannot run on Windows at all.
+  const calls: { command: string; shell: boolean | undefined }[] = [];
+  const deps = createDefaultDeps({
+    platform: "win32",
+    spawnSync: (command, _args, options) => {
+      calls.push({ command, shell: options.shell });
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  deps.spawnInstall("npm", "0.19.0");
+  deps.spawnReconcile("C:\\Users\\dev\\AppData\\Roaming\\npm\\trace.cmd");
+
+  expect(calls.map(({ shell }) => shell)).toEqual([true, true]);
+});
+
+test("on POSIX spawning does not go through a shell", () => {
+  const calls: { shell: boolean | undefined }[] = [];
+  const deps = createDefaultDeps({
+    platform: "darwin",
+    spawnSync: (_command, _args, options) => {
+      calls.push({ shell: options.shell });
+      return { status: 0, stdout: "", stderr: "" };
+    },
+  });
+
+  deps.spawnInstall("pnpm", "0.19.0");
+  deps.spawnReconcile("/opt/global/bin/trace");
+
+  expect(calls.map(({ shell }) => shell)).toEqual([false, false]);
 });

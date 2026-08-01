@@ -95,6 +95,8 @@ type AgentSetupOptions = {
   version: string;
   /** The package manager that owns the CLI install. */
   packageManager: PackageManager;
+  /** The host platform whose shell conventions the hook commands must satisfy. */
+  platform: NodeJS.Platform;
 };
 
 /**
@@ -144,19 +146,60 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/**
- * Quotes a command path for PowerShell. A quoted path is not executable on its
- * own there, so anything needing quotes is invoked through the call operator.
- */
+/** Quotes a single PowerShell argument, without deciding how it is invoked. */
 function powershellQuote(value: string): string {
   if (/^[A-Za-z0-9_/:.\\@%+=-]+$/.test(value)) return value;
-  return `& '${value.replaceAll("'", "''")}'`;
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Joins tokens into a PowerShell command. A quoted leading token is not
+ * executable on its own there, so it is invoked through the call operator.
+ */
+function powershellCommand(tokens: readonly string[]): string {
+  const quoted = tokens.map(powershellQuote);
+  const prefix = quoted[0]?.startsWith("'") ? "& " : "";
+  return `${prefix}${quoted.join(" ")}`;
+}
+
+/** Joins tokens into a POSIX shell command. */
+function bashCommand(tokens: readonly string[]): string {
+  return tokens.map(shellQuote).join(" ");
+}
+
+/**
+ * Joins tokens for a Windows shell. `cmd.exe` does not treat single quotes as
+ * quoting — it would pass them through as literal characters — so tokens are
+ * double-quoted, which both `cmd.exe` and PowerShell accept.
+ */
+function windowsCommand(tokens: readonly string[]): string {
+  return tokens.map((token) => (/\s/.test(token) ? `"${token}"` : token)).join(" ");
+}
+
+/**
+ * The tokens that invoke the Trace CLI, ahead of any subcommand.
+ *
+ * On Windows a `.js` path is not executable: PowerShell hands it to Windows
+ * Script Host, which parses the `#!/usr/bin/env node` shebang as JScript and
+ * fails with `800A03F6`. Such a path is invoked through the running Node binary
+ * instead. Elsewhere the shebang does the work, so the path stands alone.
+ */
+function cliInvocation(cliPath: string, platform: NodeJS.Platform): string[] {
+  if (platform === "win32" && cliPath.toLowerCase().endsWith(".js")) {
+    return [process.execPath, cliPath];
+  }
+  return [cliPath];
 }
 
 /** Builds the Trace-owned hook entries keyed by Claude hook event. */
-function traceHookEntries(cliPath: string): Record<string, HookEntry[]> {
+function traceHookEntries(
+  cliPath: string,
+  platform: NodeJS.Platform,
+): Record<string, HookEntry[]> {
   const entries: Record<string, HookEntry[]> = {};
-  const commandPath = shellQuote(cliPath);
+  const invocation = cliInvocation(cliPath, platform);
+  const commandPath =
+    platform === "win32" ? windowsCommand(invocation) : bashCommand(invocation);
   for (const hook of TRACE_CLAUDE_HOOKS) {
     const entry: HookEntry = {
       hooks: [{ type: "command", command: `${commandPath} ${hook.command}` }],
@@ -174,7 +217,10 @@ function installHooks(options: AgentSetupOptions): void {
     : {};
 
   const hooks = (settings.hooks as Record<string, unknown>) ?? {};
-  settings.hooks = { ...hooks, ...traceHookEntries(options.cliPath) };
+  settings.hooks = {
+    ...hooks,
+    ...traceHookEntries(options.cliPath, options.platform),
+  };
 
   writeFileIfChanged(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
@@ -188,9 +234,10 @@ function copilotHooksPath(configRoot: string): string {
  * and a `powershell` invocation of the same absolute CLI path, which is how
  * Copilot dispatches per platform.
  */
-function copilotHooksConfig(cliPath: string): string {
-  const bash = shellQuote(cliPath);
-  const powershell = powershellQuote(cliPath);
+function copilotHooksConfig(cliPath: string, platform: NodeJS.Platform): string {
+  const invocation = cliInvocation(cliPath, platform);
+  const bash = bashCommand(invocation);
+  const powershell = powershellCommand(invocation);
 
   const hooks: Record<string, unknown[]> = {};
   for (const hook of TRACE_COPILOT_HOOKS) {
@@ -213,7 +260,7 @@ function copilotHooksConfig(cliPath: string): string {
 function installCopilotHooks(options: AgentSetupOptions): void {
   writeFileIfChanged(
     copilotHooksPath(options.configRoot),
-    copilotHooksConfig(options.cliPath),
+    copilotHooksConfig(options.cliPath, options.platform),
   );
 }
 
@@ -409,9 +456,38 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
   return { ok: true };
 }
 
+/** Shim extensions npm, pnpm and bun generate on Windows, in preference order. */
+const WINDOWS_SHIM_EXTENSIONS = [".cmd", ".exe", ".bat"];
+
+/**
+ * Finds the `trace` shim on `PATH`.
+ *
+ * On Windows `argv[1]` is the raw script — the `.cmd` shim invoked `node` with
+ * it and dropped out of the picture. The shim is the durable identity: it is
+ * what the user types, and it resolves Node itself, so it survives a Node
+ * version switch that a recorded `execPath` would not.
+ */
+function findWindowsShim(env: Env): string | undefined {
+  const pathValue = env.PATH ?? env.Path ?? env.path;
+  if (!pathValue) return undefined;
+
+  for (const dir of pathValue.split(";")) {
+    if (!dir) continue;
+    for (const extension of WINDOWS_SHIM_EXTENSIONS) {
+      const candidate = join(dir, `trace${extension}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
 /** Absolute path to the persistent Trace CLI, used for hook commands. */
-function resolveTraceCliPath(env: Env): string {
+function resolveTraceCliPath(env: Env, platform: NodeJS.Platform): string {
   if (env.TRACE_CLI_PATH) return env.TRACE_CLI_PATH;
+  if (platform === "win32") {
+    const shim = findWindowsShim(env);
+    if (shim) return shim;
+  }
   const invoked = process.argv[1];
   if (invoked) {
     try {
@@ -607,14 +683,16 @@ type ReconcileFormat = {
 function sharedSetupOptions(
   env: Env,
   registry: IntegrationRegistry,
+  platform: NodeJS.Platform,
 ): Omit<AgentSetupOptions, "configRoot"> {
-  const cliPath = resolveTraceCliPath(env);
+  const cliPath = resolveTraceCliPath(env, platform);
   return {
     registry,
     skillsSourceDir: resolvePackagedSkillsDir(),
     cliPath,
     version: resolvePackagedVersion(),
     packageManager: detectPackageManager(env, cliPath),
+    platform,
   };
 }
 
@@ -636,11 +714,12 @@ function reconcileInstalledTargets(
   registry: IntegrationRegistry,
   onGuardrailFailure: "abort" | "skip",
   format: ReconcileFormat = {},
+  platform: NodeJS.Platform = process.platform,
 ): ReconcileResult {
   const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
   if (targets.length === 0) return success("Nothing to reconcile.\n");
 
-  const shared = sharedSetupOptions(env, registry);
+  const shared = sharedSetupOptions(env, registry, platform);
   const cliCheck = checkManagedCliPath(shared.cliPath);
   if (!cliCheck.ok) return failure(cliCheck.error);
   const installations = targets.map(({ adapter, root }) => ({
@@ -790,8 +869,9 @@ function targetsForTool(
 
 export function setupOperation(
   rawArgs: string[],
-  ctx: { env: Env; cwd: string; stdin: string },
+  ctx: { env: Env; cwd: string; stdin: string; platform?: NodeJS.Platform },
 ): CommandResult {
+  const platform = ctx.platform ?? process.platform;
   if (rawArgs.includes("--remove")) {
     return removeOperation(rawArgs, ctx);
   }
@@ -820,7 +900,15 @@ export function setupOperation(
       adapter: SETUP_ADAPTERS[target.tool],
       root: target.root,
     }));
-    return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
+    return reconcileInstalledTargets(
+      targets,
+      apply,
+      ctx.env,
+      registry,
+      "skip",
+      {},
+      platform,
+    );
   }
 
   // When a tool is explicitly specified, route to that tool's setup.
@@ -836,6 +924,8 @@ export function setupOperation(
       ctx.env,
       registry,
       "abort",
+      {},
+      platform,
     );
   }
 
@@ -851,7 +941,15 @@ export function setupOperation(
     adapter: SETUP_ADAPTERS[tool],
     root,
   }));
-  return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip");
+  return reconcileInstalledTargets(
+    targets,
+    apply,
+    ctx.env,
+    registry,
+    "skip",
+    {},
+    platform,
+  );
 }
 
 function flagValue(args: string[], flag: string): string | undefined {

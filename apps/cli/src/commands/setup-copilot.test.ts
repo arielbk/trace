@@ -107,6 +107,52 @@ test("a CLI path needing quotes is quoted per shell", () => {
   }
 });
 
+test("on Windows a .js CLI path is invoked through Node, never handed to the shell bare", () => {
+  const { dir, cleanup } = tempDir("trace-setup-copilot-win-js-");
+  try {
+    // What npm-global actually leaves in argv[1] on Windows: the raw script,
+    // not the trace.cmd shim. Handed to PowerShell bare, it reaches Windows
+    // Script Host, which parses the `#!` shebang as JScript (800A03F6).
+    const cliPath =
+      "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\@arielbk\\trace\\dist\\trace.js";
+    setupOperation(["--tool", "copilot", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+      platform: "win32",
+    });
+
+    const powershell = hooksFile(join(dir, ".copilot")).hooks?.agentStop?.[0]
+      ?.powershell;
+    expect(powershell).toBe(`${process.execPath} ${cliPath} hook stop`);
+    // The script must never be the command token — that is the WSH failure.
+    expect(powershell?.startsWith(cliPath)).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("on Windows a script path containing spaces is quoted as an argument", () => {
+  const { dir, cleanup } = tempDir("trace-setup-copilot-win-spaces-");
+  try {
+    // `C:\Program Files\...` is the common Windows shape. Once the script is an
+    // argument to Node rather than the command itself, it still needs quoting.
+    const cliPath = "C:\\Program Files\\trace\\dist\\trace.js";
+    setupOperation(["--tool", "copilot", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+      platform: "win32",
+    });
+
+    const powershell = hooksFile(join(dir, ".copilot")).hooks?.agentStop?.[0]
+      ?.powershell;
+    expect(powershell).toBe(`${process.execPath} '${cliPath}' hook stop`);
+  } finally {
+    cleanup();
+  }
+});
+
 test("Copilot is detected by bare setup and reconciled idempotently", () => {
   const { dir, cleanup } = tempDir("trace-setup-copilot-detect-");
   try {
@@ -171,6 +217,32 @@ test("removal deletes the Copilot hooks file and deregisters the target", () => 
     expect(existsSync(join(root, "hooks", "other.json"))).toBe(true);
     expect(existsSync(join(root, "skills", "trace"))).toBe(false);
     expect(targets(dir)).toEqual([]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("on Windows the trace.cmd shim on PATH is preferred over the raw script", () => {
+  const { dir, cleanup } = tempDir("trace-setup-copilot-win-shim-");
+  try {
+    // npm-global leaves argv[1] pointing at the script, but the shim is what
+    // the user actually invokes and it resolves Node itself — so it survives a
+    // Node version switch, which a baked-in execPath would not.
+    const binDir = join(dir, "npm-bin");
+    mkdirSync(binDir);
+    const shim = join(binDir, "trace.cmd");
+    writeFileSync(shim, "@echo off\n");
+
+    setupOperation(["--tool", "copilot", "--yes"], {
+      env: { HOME: dir, PATH: `${join(dir, "empty")};${binDir}` },
+      cwd: dir,
+      stdin: "",
+      platform: "win32",
+    });
+
+    const powershell = hooksFile(join(dir, ".copilot")).hooks?.agentStop?.[0]
+      ?.powershell;
+    expect(powershell).toBe(`${shim} hook stop`);
   } finally {
     cleanup();
   }

@@ -171,3 +171,26 @@ test("Claude hooks quote an absolute CLI path containing spaces", () => {
     cleanup();
   }
 });
+
+test("on Windows Claude hook commands invoke the script through Node", () => {
+  const { dir, cleanup } = tempDir("trace-setup-claude-win-js-");
+  try {
+    const cliPath =
+      "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\@arielbk\\trace\\dist\\trace.js";
+    setupOperation(["--tool", "claude", "--yes"], {
+      env: { HOME: dir, TRACE_CLI_PATH: cliPath },
+      cwd: dir,
+      stdin: "",
+      platform: "win32",
+    });
+
+    const settings = JSON.parse(
+      readFileSync(join(dir, ".claude", "settings.json"), "utf8"),
+    );
+    const command = settings.hooks.Stop[0].hooks[0].command;
+    expect(command).toBe(`${process.execPath} ${cliPath} hook stop`);
+    expect(command.startsWith(cliPath)).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
