@@ -10,7 +10,7 @@ import {
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import { FilterBar, TaskList, TasksPage } from "./TasksPage.tsx";

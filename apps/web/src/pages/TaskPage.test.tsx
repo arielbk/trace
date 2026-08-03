@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
