@@ -11,6 +11,14 @@ packages:
 allowBuilds:
   esbuild: true
 
+# tsup 8.5.1 pins `esbuild: ^0.27.0`, which holds the resolution at 0.27.7 and
+# leaves GHSA-g7r4-m6w7-qqqr (arbitrary file read via esbuild's dev server on
+# Windows) unpatched. vite already accepts `^0.27.0 || ^0.28.0`, so this pushes
+# only tsup's copy forward to the patched line. Scoped to the `^0.27.0` range so
+# drizzle-kit's ancient 0.18 loader is left alone. Drop once tsup ships 0.28.
+overrides:
+  "esbuild@^0.27.0": "^0.28.1"
+
 # pnpm 11's default (`install`) reacts to any manifest edit — e.g. the release
 # version stamp — by silently running `pnpm install` before every script, which
 # fails in sandboxed/offline environments and can prompt to purge node_modules.
