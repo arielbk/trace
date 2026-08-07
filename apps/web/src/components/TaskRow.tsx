@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { freshTokenTotal, type TaskSummary } from "@trace/core/browser";
 import type { SessionTool } from "@trace/core/browser";
 import { ReEnterButton } from "./ReEnterButton.tsx";

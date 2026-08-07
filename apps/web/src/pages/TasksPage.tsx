@@ -6,7 +6,7 @@ import {
   useUnarchiveTask,
   useUnpinTask,
 } from "../lib/api.ts";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 import type { TaskSummary } from "@trace/core/browser";
 import {
   Command,

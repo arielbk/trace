@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router";
 import { TasksPage } from "./pages/TasksPage.tsx";
 import { TaskPage } from "./pages/TaskPage.tsx";
 import { queryClient } from "./lib/query-client.ts";
