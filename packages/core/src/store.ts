@@ -1100,7 +1100,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     // Insert-on-update: no row exists yet (e.g. a filesystem-discovered native
     // doc that was never registered), so create one carrying the metadata.
-    const createdAt = new Date().toISOString();
+    const createdAt = options.createdAt ?? new Date().toISOString();
     this.#sqlite
       .prepare(
         `

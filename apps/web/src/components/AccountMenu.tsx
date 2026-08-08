@@ -7,7 +7,7 @@ import {
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
@@ -16,10 +16,12 @@ import {
   postLogout,
   startLogin,
   submitExistingKey,
+  useCurrentLogin,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
 import { cn } from "../lib/utils.ts";
+import { SuccessCheckIcon } from "./icons.tsx";
 import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
 
 /**
@@ -120,7 +122,40 @@ const QUIET_ACTION =
 function AccountBody({ account }: { account: AccountDescription }) {
   const queryClient = useQueryClient();
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  // Whether this popover has settled on which attempt it watches. It is a
+  // one-way latch: once the popover has adopted an attempt, or deliberately let
+  // one go, the outstanding-login answer must not pull it back.
+  const [claimed, setClaimed] = useState(false);
+  const { data: outstanding, isPending: findingOutstanding } = useCurrentLogin();
   const { data: attempt } = useLoginAttempt(attemptId);
+  const unlocked = useUnlockBeat();
+
+  /** Take up an attempt, wherever it came from, and watch it from here. */
+  const watchAttempt = useCallback(
+    (view: LoginAttemptView) => {
+      queryClient.setQueryData(["login-attempt", view.attemptId], view);
+      queryClient.setQueryData(["current-login"], view);
+      setAttemptId(view.attemptId);
+      setClaimed(true);
+    },
+    [queryClient],
+  );
+
+  /** Let go of an attempt that is over — nothing is outstanding after this. */
+  const forgetAttempt = useCallback(() => {
+    queryClient.setQueryData(["current-login"], null);
+    setAttemptId(null);
+    setClaimed(true);
+  }, [queryClient]);
+
+  // A popover opens knowing nothing, so it asks. Adopting the attempt at
+  // whatever state it has reached is what makes closing the popover mid-login
+  // survivable: the serving process, not this component, is where an attempt
+  // lives.
+  useEffect(() => {
+    if (claimed || !outstanding) return;
+    watchAttempt(outstanding);
+  }, [claimed, outstanding, watchAttempt]);
 
   const beginLogin = useMutation({
     mutationFn: startLogin,
@@ -128,8 +163,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
       // Opened from the user's click so the popup is not blocked, and with
       // `noopener` so the hosted page gets no handle on the board.
       window.open(started.verificationUrl, "_blank", "noopener,noreferrer");
-      queryClient.setQueryData(["login-attempt", started.attemptId], started);
-      setAttemptId(started.attemptId);
+      watchAttempt(started);
     },
   });
   const recordAttempt = (settled: LoginAttemptView) => {
@@ -142,7 +176,13 @@ function AccountBody({ account }: { account: AccountDescription }) {
   const submitKey = useMutation({
     mutationFn: ({ attemptId, key }: { attemptId: string; key: string }) =>
       submitExistingKey(attemptId, key),
-    onSuccess: recordAttempt,
+    onSuccess: (settled) => {
+      recordAttempt(settled);
+      // Only this path unlocks anything: a key the service accepted is a key
+      // that decrypted the account's documents. A refusal comes back on the
+      // same attempt still waiting for a key, and says so where it was typed.
+      if (settled.state === "complete") unlocked.flash();
+    },
   });
   const replaceKey = useMutation({
     mutationFn: ({
@@ -169,9 +209,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
   // the ordinary sync status describe the now signed-in machine.
   useEffect(() => {
     if (attempt?.state !== "complete") return;
-    setAttemptId(null);
+    forgetAttempt();
     void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
-  }, [attempt?.state, queryClient]);
+  }, [attempt?.state, forgetAttempt, queryClient]);
 
   if (attempt && attempt.state !== "complete") {
     return (
@@ -186,9 +226,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
           replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
         }
         onCancel={() => cancel.mutate(attempt.attemptId)}
-        onDismiss={() => setAttemptId(null)}
+        onDismiss={forgetAttempt}
         onRetry={() => {
-          setAttemptId(null);
+          forgetAttempt();
           beginLogin.mutate(attempt.provider);
         }}
       />
@@ -197,6 +237,20 @@ function AccountBody({ account }: { account: AccountDescription }) {
 
   return (
     <>
+      {/* The unlock beat. It sits above the sync block rather than in place of
+          it: the machine is already signed in by the time this renders, and
+          hiding the state it just reached would turn a confirmation into
+          another wait. */}
+      {unlocked.showing ? (
+        <div
+          className={cn(SECTION, "flex items-center gap-2 text-accent")}
+          data-testid="unlock-confirmation"
+        >
+          <SuccessCheckIcon shown />
+          <span className="min-w-0 font-semibold">Documents unlocked</span>
+        </div>
+      ) : null}
+
       {/* Sync block: the state's own dot leads the line, so the popover
           reads the same way the trigger badge does. */}
       <div className={cn(SECTION, "flex flex-col gap-1")}>
@@ -226,7 +280,11 @@ function AccountBody({ account }: { account: AccountDescription }) {
         </dl>
       ) : null}
 
-      {account.canSignIn ? (
+      {/* Never offered before the outstanding-login answer is in: a machine
+          stopped at the key prompt is signed out as far as sync status knows,
+          and inviting a second device approval in that half-second is how the
+          user ends up with two attempts and no key. */}
+      {account.canSignIn && !findingOutstanding ? (
         <div className={cn(SECTION, "flex flex-col gap-1.5")}>
           {/* GitHub leads on the accent control and the rest follow on the
               neutral one — not because a provider is better, but because the
@@ -280,6 +338,47 @@ function AccountBody({ account }: { account: AccountDescription }) {
       ) : null}
     </>
   );
+}
+
+/**
+ * How long the unlock confirmation stays up. The same beat the archive button
+ * flashes, for the same reason: long enough to register, short enough that it
+ * never reads as a state the user is waiting out.
+ */
+const UNLOCK_BEAT_MS = 1100;
+
+/**
+ * A one-shot confirmation that the documents unlocked, which clears itself.
+ *
+ * It is deliberately not derived from the attempt's state. A completed attempt
+ * is dropped the moment it completes — that is what lets the popover settle
+ * into the signed-in state — so there is nothing left to render from, and the
+ * beat has to be its own short-lived fact.
+ *
+ * Reduced motion is handled where the rest of the board handles it: the check's
+ * `.t-success-check` animation is silenced by the stylesheet, leaving the
+ * confirmation legible and still.
+ */
+function useUnlockBeat(): { showing: boolean; flash: () => void } {
+  const [showing, setShowing] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  const flash = useCallback(() => {
+    setShowing(true);
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      setShowing(false);
+    }, UNLOCK_BEAT_MS);
+  }, []);
+
+  return { showing, flash };
 }
 
 /**
@@ -572,9 +671,14 @@ const SETTLED_LOGIN_STATES = Object.keys(
 ) as LoginAttemptView["state"][];
 
 /**
- * The dot overlaid on the account icon. It is decorative — the trigger's
- * accessible name already carries the same state in words — so it is hidden
- * from assistive technology. The spinner is silenced under
+ * The dot overlaid on the account icon, for the states that carry information:
+ * a run in flight, a failure, a machine that has never synced. An up-to-date
+ * machine is the resting case and carries nothing, so the badge means something
+ * whenever it is lit.
+ *
+ * It is decorative — the trigger's accessible name already carries the same
+ * state in words — so it is hidden from assistive technology. The spinner is
+ * silenced under
  * `prefers-reduced-motion` by the stylesheet's `.t-sync-spinner` rule, the same
  * way the board's other animations opt out; the state stays legible from the
  * indicator's colour and from the popover.
@@ -583,13 +687,22 @@ function SyncIndicator({ state }: { state: AccountState }) {
   // A signed-out machine has no sync to report, so it carries no badge at all.
   if (state === "logged-out" || state === "unknown") return null;
 
+  // Nor does a machine that is simply up to date: success is the resting state,
+  // and a badge that is almost always lit says nothing when it matters. Only
+  // the states that carry information — a run in flight, a failure, a machine
+  // that has never synced — mark the avatar.
+  if (state === "synced") return null;
+
   const base =
     "absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-surface";
 
   if (state === "syncing") {
     return (
       <span className={base} data-sync-indicator="syncing" aria-hidden="true">
-        <Loader2 size={10} className="t-sync-spinner animate-spin" />
+        <Loader2
+          size={10}
+          className="t-sync-spinner animate-spin text-accent"
+        />
       </span>
     );
   }
@@ -606,10 +719,11 @@ function SyncIndicator({ state }: { state: AccountState }) {
     );
   }
 
+  // What is left is a machine that is signed in but has never synced.
   return (
     <span
-      className={`${base} size-2 ${state === "synced" ? "bg-accent" : "bg-border-strong"}`}
-      data-sync-indicator={state === "synced" ? "synced" : "idle"}
+      className={`${base} size-2 bg-border-strong`}
+      data-sync-indicator="idle"
       aria-hidden="true"
     />
   );

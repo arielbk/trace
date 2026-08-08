@@ -30,9 +30,29 @@ test("light and dark palettes are both defined as custom properties", () => {
   }
 });
 
+test("the sync spinner rotates about its own centre", () => {
+  // At badge size an inline SVG sits on the text baseline, which offsets its
+  // box by a fraction of a pixel and reads as a wobble rather than a turn.
+  // Blocking it out and pinning the origin keeps the rotation concentric.
+  const rule = css.match(/^\.t-sync-spinner\s*{[^}]*}/m)?.[0] ?? "";
+  expect(rule).toMatch(/display:\s*block/);
+  expect(rule).toMatch(/transform-origin:\s*50%\s*50%/);
+});
+
 test("the account menu's sync spinner is silenced under reduced motion", () => {
   const reducedMotionBlock = css.slice(
     css.indexOf("@media (prefers-reduced-motion: reduce)"),
   );
   expect(reducedMotionBlock).toMatch(/\.t-sync-spinner\s*{[^}]*animation:\s*none/);
+});
+
+test("the success check the unlock beat draws is silenced the same way", () => {
+  const reducedMotionBlock = css.slice(
+    css.indexOf("@media (prefers-reduced-motion: reduce)"),
+  );
+  // Silenced, not hidden: the confirmation still has to be readable — hence the
+  // opacity override beside the stopped animation.
+  expect(reducedMotionBlock).toMatch(
+    /\.t-success-check\s*{[^}]*animation:\s*none[^}]*opacity:\s*1/,
+  );
 });

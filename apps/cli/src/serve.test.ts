@@ -207,7 +207,11 @@ test("trace serve fires a background sync on start", async () => {
 });
 
 test("board mutations and POST /api/sync reach the sync hooks through the serve listener", () => {
-  const syncHooks = { onMutation: vi.fn(), requestSync: vi.fn() };
+  const syncHooks = {
+    onMutation: vi.fn(),
+    requestSync: vi.fn(),
+    onLoginComplete: vi.fn(),
+  };
 
   dispatch("POST", `/api/tasks/${taskId}/pin`, undefined, syncHooks);
   expect(syncHooks.onMutation).toHaveBeenCalledOnce();
@@ -259,6 +263,21 @@ test("createSyncHooks runs a requested sync immediately but throttles repeats", 
 
   now += 1;
   hooks.requestSync();
+  expect(trigger).toHaveBeenCalledTimes(2);
+});
+
+test("createSyncHooks syncs on a completed login immediately, without throttling it", () => {
+  // A clock that never moves: whatever the request throttle is holding, it is
+  // still holding it when the login completes.
+  const trigger = vi.fn();
+  const hooks = createSyncHooks(trigger, () => 1_000_000);
+
+  // The board's own start-up sync has just run and taken the request throttle
+  // with it; a login completing seconds later is exactly the case the periodic
+  // interval handles badly, so it must not be swallowed.
+  hooks.requestSync();
+  hooks.onLoginComplete();
+
   expect(trigger).toHaveBeenCalledTimes(2);
 });
 

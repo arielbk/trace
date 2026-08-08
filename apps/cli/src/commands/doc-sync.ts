@@ -45,7 +45,7 @@ export type DocMetadataAccessor = {
   update(
     taskId: string,
     path: string,
-    fields: { title?: string; description?: string },
+    fields: { title?: string; description?: string; createdAt?: string },
   ): void;
 };
 
@@ -211,12 +211,8 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         const destination = join(docsDir, ...file.path.split("/"));
         mkdirSync(dirname(destination), { recursive: true });
         writeFileSync(destination, contents.get(file.path)!);
-        // Restore the source machine's edit time; manifests from older
-        // clients carry no date and keep the local write time.
-        if (file.modifiedAt !== undefined) {
-          const modifiedAt = new Date(file.modifiedAt);
-          utimesSync(destination, modifiedAt, modifiedAt);
-        }
+        const stamp = stampFor(file, manifest);
+        if (stamp) utimesSync(destination, new Date(stamp), new Date(stamp));
       }
       // Entries that carry metadata are authoritative for it; entries without
       // any leave local task_docs rows untouched, so an old-format manifest
@@ -226,6 +222,10 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         this.options.docs?.update(task.id, join(docsDir, ...file.path.split("/")), {
           ...(file.title === undefined ? {} : { title: file.title }),
           ...(file.description === undefined ? {} : { description: file.description }),
+          // A row minted here would otherwise date the doc to the pull. The
+          // row wins over the file's mtime in the doc listing, so it has to
+          // carry the same source timestamp the file just got.
+          createdAt: stampFor(file, manifest),
         });
       }
       // Adopt the incoming wrapped key verbatim so a re-push re-sends the same
@@ -319,6 +319,19 @@ function fingerprintOf(files: DocCryptoFile[]): string {
     file.description ?? null,
   ]);
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+// When the source machine last wrote this file. Manifests from older clients
+// carry no per-file date; the manifest's own seal time is still the source
+// machine's clock, and closer to the truth than this machine's. That field
+// rides the wire in the clear, so an unparseable value falls back to now
+// rather than dating the doc to nonsense.
+function stampFor(
+  file: DocCryptoFile,
+  manifest: SyncDocManifest,
+): string | undefined {
+  const stamp = file.modifiedAt ?? manifest.updatedAt;
+  return Number.isNaN(Date.parse(stamp)) ? undefined : stamp;
 }
 
 function validateManifest(files: DocCryptoFile[]): void {

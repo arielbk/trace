@@ -25,6 +25,13 @@ const SIGNED_OUT: SyncStatusResponse = {
   autoSync: true,
 };
 
+/** What `GET /api/sync/status` reports once a login has run to completion. */
+const SIGNED_IN: SyncStatusResponse = {
+  state: "never-synced",
+  identity: "The Octocat",
+  autoSync: true,
+};
+
 const WAITING: LoginAttemptView = {
   attemptId: "attempt-1",
   state: "waiting-for-approval",
@@ -32,6 +39,14 @@ const WAITING: LoginAttemptView = {
   verificationUrl: "https://auth.test/device?user_code=ABCD-EFGH",
   userCode: "ABCD-EFGH",
 };
+
+/** States the serving process considers over, so no longer outstanding. */
+const SETTLED_STATES: ReadonlySet<LoginAttemptView["state"]> = new Set([
+  "complete",
+  "failed",
+  "expired",
+  "cancelled",
+]);
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -62,9 +77,16 @@ function localAuthServer(options: {
   masterKey?: string;
   /** How `POST /logout` refuses, for hosts that serve no auth routes at all. */
   logoutFailure?: { status: number; body: string };
+  /** Serve `polled` as the machine's outstanding login from the outset, as a
+   * serving process does when an earlier popover walked away from one. */
+  outstanding?: boolean;
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
+  // The serving process only holds a login once one has been started through
+  // it — which `outstanding` short-circuits for a board that opens onto an
+  // attempt no popover of its own began.
+  let live = options.outstanding ?? false;
   const calls: string[] = [];
   const bodies: unknown[] = [];
   const fetch = vi
@@ -74,9 +96,18 @@ function localAuthServer(options: {
       calls.push(`${init?.method ?? "GET"} ${url}`);
       if (init?.body) bodies.push(JSON.parse(String(init.body)));
       if (url === "/api/sync/status") {
+        // A completed login is what turns this machine signed-in, exactly as
+        // the serving process reports it once credentials are stored.
+        if (polled.state === "complete") return jsonResponse(SIGNED_IN);
         return jsonResponse(options.status ?? SIGNED_OUT);
       }
-      if (url === "/api/local-auth/login") return jsonResponse(started);
+      if (url === "/api/local-auth/login") {
+        live = true;
+        return jsonResponse(started);
+      }
+      if (url === "/api/local-auth/login/current") {
+        return jsonResponse(live && !SETTLED_STATES.has(polled.state) ? polled : null);
+      }
       if (url === "/api/local-auth/logout") {
         const { logoutFailure } = options;
         return logoutFailure
@@ -272,6 +303,27 @@ test("an identity that is only an address still leads the popover", async () => 
   expect(menu).not.toHaveTextContent("Not signed in");
 });
 
+test("a machine at rest after a successful sync carries no badge", async () => {
+  const user = userEvent.setup();
+  renderMenu({
+    state: "synced",
+    identity: "The Octocat",
+    lastSyncedAt: "2026-07-10T16:00:00.000Z",
+    autoSync: true,
+  });
+
+  const trigger = await screen.findByRole("button", {
+    name: "Account — last synced 5m ago",
+  });
+  // Success is the resting state: a permanent dot for it is noise, and the
+  // popover still says when the last sync landed.
+  expect(trigger.querySelector("[data-sync-indicator]")).toBeNull();
+
+  await user.click(trigger);
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  expect(menu).toHaveTextContent("Last synced 5m ago");
+});
+
 test("a run in flight shows a spinner and keeps the last successful sync visible", async () => {
   const user = userEvent.setup();
   renderMenu({
@@ -464,6 +516,23 @@ test("the spinner is animated by a class the stylesheet silences under reduced m
   expect(spinner).toHaveClass("t-sync-spinner");
 });
 
+test("the in-flight spinner reads in the accent rather than inheriting the trigger", async () => {
+  renderMenu({
+    state: "syncing",
+    startedAt: "2026-07-10T16:04:55.000Z",
+    autoSync: true,
+  });
+
+  const trigger = await screen.findByRole("button", {
+    name: "Account — syncing",
+  });
+  // The trigger's own text colour swaps on hover, so the badge has to name its
+  // colour: a run in flight is the accent, at rest and on hover alike.
+  expect(
+    trigger.querySelector("[data-sync-indicator='syncing'] svg"),
+  ).toHaveClass("text-accent");
+});
+
 test("signing in with GitHub opens the hosted approval page and watches the attempt", async () => {
   const user = userEvent.setup();
   const server = localAuthServer({});
@@ -522,6 +591,9 @@ test("a newly generated key is shown once, kept out of storage, and acknowledged
   expect(server.calls).toContain(
     "POST /api/local-auth/login/attempt-1/acknowledge-key",
   );
+  // A brand-new account has no documents to unlock — saving the key it was just
+  // handed is not the same beat, and claiming otherwise would be a lie.
+  expect(screen.queryByTestId("unlock-confirmation")).not.toBeInTheDocument();
 });
 
 const EXISTING_KEY = "cd".repeat(32);
@@ -570,6 +642,85 @@ test("an account with synced documents asks for its key and signs in once it val
   );
 });
 
+test("an accepted key confirms the documents unlocked before the menu settles", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.type(
+    screen.getByLabelText(/document encryption key/i),
+    EXISTING_KEY,
+  );
+  await user.click(screen.getByRole("button", { name: /^continue$/i }));
+
+  // The step that used to end in silence: the prompt vanished and the user was
+  // left guessing whether the key had been accepted.
+  const beat = await screen.findByTestId("unlock-confirmation");
+  expect(beat).toHaveTextContent(/unlocked/i);
+  // Animated by the class the stylesheet silences under reduced motion, the
+  // same way the sync spinner is (see styles.test.ts).
+  expect(beat.querySelector(".t-success-check")).toBeTruthy();
+  // Non-blocking: the signed-in state is already behind it, not waiting on it.
+  expect(
+    await screen.findByRole("button", { name: /sign out/i }),
+  ).toBeInTheDocument();
+
+  // And it is a beat, not a state: it clears itself.
+  await waitForElementToBeRemoved(
+    () => screen.queryByTestId("unlock-confirmation"),
+    { timeout: 3000 },
+  );
+  expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+});
+
+test("closing the popover at the key prompt does not strand the login behind it", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  // The reported trap: the popover's handle on the attempt was the only one, so
+  // dismissing it left the serving process holding an approved token the board
+  // could no longer finish — and offering only to start the whole thing again.
+  await user.keyboard("{Escape}");
+  await waitForElementToBeRemoved(() =>
+    screen.queryByRole("dialog", { name: /account/i }),
+  );
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  expect(
+    await screen.findByLabelText(/document encryption key/i),
+  ).toBeInTheDocument();
+  expect(server.calls).toContain("GET /api/local-auth/login/current");
+  // And it is the same attempt, not a second device approval.
+  expect(server.calls.filter((call) => call === "POST /api/local-auth/login")).toHaveLength(1);
+});
+
+test("a reloaded board picks up the login already in flight rather than offering another", async () => {
+  const user = userEvent.setup();
+  // A tab reloaded mid-unlock has no memory of the attempt, but the serving
+  // process it reloaded against is still holding one.
+  const server = localAuthServer({ outstanding: true });
+  renderWithLocalAuth(server);
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  expect(await screen.findByTestId("login-progress")).toHaveAttribute(
+    "data-login-state",
+    "waiting-for-approval",
+  );
+  expect(menu).toHaveTextContent("ABCD-EFGH");
+  // Starting a second device approval here is the mistake this prevents.
+  expect(menu).not.toHaveTextContent(/sign in with github/i);
+});
+
 test("a key that cannot decrypt the account is reported without losing the prompt", async () => {
   const user = userEvent.setup();
   const server = localAuthServer({
@@ -589,6 +740,8 @@ test("a key that cannot decrypt the account is reported without losing the promp
   );
   // Still on the prompt, so the user can try the right key.
   expect(screen.getByLabelText(/document encryption key/i)).toBeInTheDocument();
+  // And nothing was unlocked, so nothing says it was.
+  expect(screen.queryByTestId("unlock-confirmation")).not.toBeInTheDocument();
 });
 
 test("a fresh key is offered only behind the same warning and confirmation the CLI demands", async () => {
