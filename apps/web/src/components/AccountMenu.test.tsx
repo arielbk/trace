@@ -25,6 +25,13 @@ const SIGNED_OUT: SyncStatusResponse = {
   autoSync: true,
 };
 
+/** What `GET /api/sync/status` reports once a login has run to completion. */
+const SIGNED_IN: SyncStatusResponse = {
+  state: "never-synced",
+  identity: "The Octocat",
+  autoSync: true,
+};
+
 const WAITING: LoginAttemptView = {
   attemptId: "attempt-1",
   state: "waiting-for-approval",
@@ -89,6 +96,9 @@ function localAuthServer(options: {
       calls.push(`${init?.method ?? "GET"} ${url}`);
       if (init?.body) bodies.push(JSON.parse(String(init.body)));
       if (url === "/api/sync/status") {
+        // A completed login is what turns this machine signed-in, exactly as
+        // the serving process reports it once credentials are stored.
+        if (polled.state === "complete") return jsonResponse(SIGNED_IN);
         return jsonResponse(options.status ?? SIGNED_OUT);
       }
       if (url === "/api/local-auth/login") {
@@ -543,6 +553,9 @@ test("a newly generated key is shown once, kept out of storage, and acknowledged
   expect(server.calls).toContain(
     "POST /api/local-auth/login/attempt-1/acknowledge-key",
   );
+  // A brand-new account has no documents to unlock — saving the key it was just
+  // handed is not the same beat, and claiming otherwise would be a lie.
+  expect(screen.queryByTestId("unlock-confirmation")).not.toBeInTheDocument();
 });
 
 const EXISTING_KEY = "cd".repeat(32);
@@ -589,6 +602,40 @@ test("an account with synced documents asks for its key and signs in once it val
       screen.queryByLabelText(/document encryption key/i),
     ).not.toBeInTheDocument(),
   );
+});
+
+test("an accepted key confirms the documents unlocked before the menu settles", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.type(
+    screen.getByLabelText(/document encryption key/i),
+    EXISTING_KEY,
+  );
+  await user.click(screen.getByRole("button", { name: /^continue$/i }));
+
+  // The step that used to end in silence: the prompt vanished and the user was
+  // left guessing whether the key had been accepted.
+  const beat = await screen.findByTestId("unlock-confirmation");
+  expect(beat).toHaveTextContent(/unlocked/i);
+  // Animated by the class the stylesheet silences under reduced motion, the
+  // same way the sync spinner is (see styles.test.ts).
+  expect(beat.querySelector(".t-success-check")).toBeTruthy();
+  // Non-blocking: the signed-in state is already behind it, not waiting on it.
+  expect(
+    await screen.findByRole("button", { name: /sign out/i }),
+  ).toBeInTheDocument();
+
+  // And it is a beat, not a state: it clears itself.
+  await waitForElementToBeRemoved(
+    () => screen.queryByTestId("unlock-confirmation"),
+    { timeout: 3000 },
+  );
+  expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
 });
 
 test("closing the popover at the key prompt does not strand the login behind it", async () => {
@@ -655,6 +702,8 @@ test("a key that cannot decrypt the account is reported without losing the promp
   );
   // Still on the prompt, so the user can try the right key.
   expect(screen.getByLabelText(/document encryption key/i)).toBeInTheDocument();
+  // And nothing was unlocked, so nothing says it was.
+  expect(screen.queryByTestId("unlock-confirmation")).not.toBeInTheDocument();
 });
 
 test("a fresh key is offered only behind the same warning and confirmation the CLI demands", async () => {

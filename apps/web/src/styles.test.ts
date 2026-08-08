@@ -36,3 +36,14 @@ test("the account menu's sync spinner is silenced under reduced motion", () => {
   );
   expect(reducedMotionBlock).toMatch(/\.t-sync-spinner\s*{[^}]*animation:\s*none/);
 });
+
+test("the success check the unlock beat draws is silenced the same way", () => {
+  const reducedMotionBlock = css.slice(
+    css.indexOf("@media (prefers-reduced-motion: reduce)"),
+  );
+  // Silenced, not hidden: the confirmation still has to be readable — hence the
+  // opacity override beside the stopped animation.
+  expect(reducedMotionBlock).toMatch(
+    /\.t-success-check\s*{[^}]*animation:\s*none[^}]*opacity:\s*1/,
+  );
+});

@@ -7,7 +7,7 @@ import {
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
@@ -21,6 +21,7 @@ import {
   useSyncStatus,
 } from "../lib/api.ts";
 import { cn } from "../lib/utils.ts";
+import { SuccessCheckIcon } from "./icons.tsx";
 import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
 
 /**
@@ -127,6 +128,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
   const [claimed, setClaimed] = useState(false);
   const { data: outstanding, isPending: findingOutstanding } = useCurrentLogin();
   const { data: attempt } = useLoginAttempt(attemptId);
+  const unlocked = useUnlockBeat();
 
   /** Take up an attempt, wherever it came from, and watch it from here. */
   const watchAttempt = useCallback(
@@ -174,7 +176,13 @@ function AccountBody({ account }: { account: AccountDescription }) {
   const submitKey = useMutation({
     mutationFn: ({ attemptId, key }: { attemptId: string; key: string }) =>
       submitExistingKey(attemptId, key),
-    onSuccess: recordAttempt,
+    onSuccess: (settled) => {
+      recordAttempt(settled);
+      // Only this path unlocks anything: a key the service accepted is a key
+      // that decrypted the account's documents. A refusal comes back on the
+      // same attempt still waiting for a key, and says so where it was typed.
+      if (settled.state === "complete") unlocked.flash();
+    },
   });
   const replaceKey = useMutation({
     mutationFn: ({
@@ -229,6 +237,20 @@ function AccountBody({ account }: { account: AccountDescription }) {
 
   return (
     <>
+      {/* The unlock beat. It sits above the sync block rather than in place of
+          it: the machine is already signed in by the time this renders, and
+          hiding the state it just reached would turn a confirmation into
+          another wait. */}
+      {unlocked.showing ? (
+        <div
+          className={cn(SECTION, "flex items-center gap-2 text-accent")}
+          data-testid="unlock-confirmation"
+        >
+          <SuccessCheckIcon shown />
+          <span className="min-w-0 font-semibold">Documents unlocked</span>
+        </div>
+      ) : null}
+
       {/* Sync block: the state's own dot leads the line, so the popover
           reads the same way the trigger badge does. */}
       <div className={cn(SECTION, "flex flex-col gap-1")}>
@@ -316,6 +338,47 @@ function AccountBody({ account }: { account: AccountDescription }) {
       ) : null}
     </>
   );
+}
+
+/**
+ * How long the unlock confirmation stays up. The same beat the archive button
+ * flashes, for the same reason: long enough to register, short enough that it
+ * never reads as a state the user is waiting out.
+ */
+const UNLOCK_BEAT_MS = 1100;
+
+/**
+ * A one-shot confirmation that the documents unlocked, which clears itself.
+ *
+ * It is deliberately not derived from the attempt's state. A completed attempt
+ * is dropped the moment it completes — that is what lets the popover settle
+ * into the signed-in state — so there is nothing left to render from, and the
+ * beat has to be its own short-lived fact.
+ *
+ * Reduced motion is handled where the rest of the board handles it: the check's
+ * `.t-success-check` animation is silenced by the stylesheet, leaving the
+ * confirmation legible and still.
+ */
+function useUnlockBeat(): { showing: boolean; flash: () => void } {
+  const [showing, setShowing] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  const flash = useCallback(() => {
+    setShowing(true);
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      setShowing(false);
+    }, UNLOCK_BEAT_MS);
+  }, []);
+
+  return { showing, flash };
 }
 
 /**
