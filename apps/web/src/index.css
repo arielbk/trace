@@ -328,6 +328,15 @@
   transform: scale(var(--icon-swap-start-scale));
 }
 
+/* The sync spinner, on the account badge and in its popover. An inline SVG sits
+   on the text baseline, so at 10px its box lands on a fractional pixel and the
+   rotation reads as a wobble; blocking it out and pinning the origin keeps the
+   turn concentric. Silenced under reduced motion further down. */
+.t-sync-spinner {
+  display: block;
+  transform-origin: 50% 50%;
+}
+
 .t-success-check {
   display: inline-block;
   transform-origin: center;

@@ -303,6 +303,27 @@ test("an identity that is only an address still leads the popover", async () => 
   expect(menu).not.toHaveTextContent("Not signed in");
 });
 
+test("a machine at rest after a successful sync carries no badge", async () => {
+  const user = userEvent.setup();
+  renderMenu({
+    state: "synced",
+    identity: "The Octocat",
+    lastSyncedAt: "2026-07-10T16:00:00.000Z",
+    autoSync: true,
+  });
+
+  const trigger = await screen.findByRole("button", {
+    name: "Account — last synced 5m ago",
+  });
+  // Success is the resting state: a permanent dot for it is noise, and the
+  // popover still says when the last sync landed.
+  expect(trigger.querySelector("[data-sync-indicator]")).toBeNull();
+
+  await user.click(trigger);
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  expect(menu).toHaveTextContent("Last synced 5m ago");
+});
+
 test("a run in flight shows a spinner and keeps the last successful sync visible", async () => {
   const user = userEvent.setup();
   renderMenu({
@@ -493,6 +514,23 @@ test("the spinner is animated by a class the stylesheet silences under reduced m
   // The board opts out of motion in CSS rather than per component; the
   // stylesheet silences this class (see styles.test.ts).
   expect(spinner).toHaveClass("t-sync-spinner");
+});
+
+test("the in-flight spinner reads in the accent rather than inheriting the trigger", async () => {
+  renderMenu({
+    state: "syncing",
+    startedAt: "2026-07-10T16:04:55.000Z",
+    autoSync: true,
+  });
+
+  const trigger = await screen.findByRole("button", {
+    name: "Account — syncing",
+  });
+  // The trigger's own text colour swaps on hover, so the badge has to name its
+  // colour: a run in flight is the accent, at rest and on hover alike.
+  expect(
+    trigger.querySelector("[data-sync-indicator='syncing'] svg"),
+  ).toHaveClass("text-accent");
 });
 
 test("signing in with GitHub opens the hosted approval page and watches the attempt", async () => {

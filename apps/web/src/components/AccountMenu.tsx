@@ -671,9 +671,14 @@ const SETTLED_LOGIN_STATES = Object.keys(
 ) as LoginAttemptView["state"][];
 
 /**
- * The dot overlaid on the account icon. It is decorative — the trigger's
- * accessible name already carries the same state in words — so it is hidden
- * from assistive technology. The spinner is silenced under
+ * The dot overlaid on the account icon, for the states that carry information:
+ * a run in flight, a failure, a machine that has never synced. An up-to-date
+ * machine is the resting case and carries nothing, so the badge means something
+ * whenever it is lit.
+ *
+ * It is decorative — the trigger's accessible name already carries the same
+ * state in words — so it is hidden from assistive technology. The spinner is
+ * silenced under
  * `prefers-reduced-motion` by the stylesheet's `.t-sync-spinner` rule, the same
  * way the board's other animations opt out; the state stays legible from the
  * indicator's colour and from the popover.
@@ -682,13 +687,22 @@ function SyncIndicator({ state }: { state: AccountState }) {
   // A signed-out machine has no sync to report, so it carries no badge at all.
   if (state === "logged-out" || state === "unknown") return null;
 
+  // Nor does a machine that is simply up to date: success is the resting state,
+  // and a badge that is almost always lit says nothing when it matters. Only
+  // the states that carry information — a run in flight, a failure, a machine
+  // that has never synced — mark the avatar.
+  if (state === "synced") return null;
+
   const base =
     "absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-surface";
 
   if (state === "syncing") {
     return (
       <span className={base} data-sync-indicator="syncing" aria-hidden="true">
-        <Loader2 size={10} className="t-sync-spinner animate-spin" />
+        <Loader2
+          size={10}
+          className="t-sync-spinner animate-spin text-accent"
+        />
       </span>
     );
   }
@@ -705,10 +719,11 @@ function SyncIndicator({ state }: { state: AccountState }) {
     );
   }
 
+  // What is left is a machine that is signed in but has never synced.
   return (
     <span
-      className={`${base} size-2 ${state === "synced" ? "bg-accent" : "bg-border-strong"}`}
-      data-sync-indicator={state === "synced" ? "synced" : "idle"}
+      className={`${base} size-2 bg-border-strong`}
+      data-sync-indicator="idle"
       aria-hidden="true"
     />
   );
