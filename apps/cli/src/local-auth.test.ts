@@ -580,6 +580,66 @@ test("cancelling at the key prompt gives up the approved login entirely", async 
   expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
 });
 
+test("an attempt stopped at the key prompt is the machine's outstanding login", async () => {
+  const hosted = hostedAuth(existingAccount(generateTaskKey()));
+  const service = createLocalAuthService(env, {
+    fetch: hosted.fetch,
+    sleep: async () => undefined,
+  });
+  const started = await service.startLogin("github");
+
+  hosted.approve();
+  for (let poll = 0; poll < 500; poll += 1) {
+    await Promise.resolve();
+    if (service.readLogin(started.attemptId)?.state === "waiting-for-existing-key") {
+      break;
+    }
+  }
+
+  // The board dropped its handle on this attempt when the popover closed; the
+  // serving process is where the attempt actually lives, so it can be found
+  // again at whatever state it has reached.
+  expect(service.readCurrentLogin()).toEqual(
+    service.readLogin(started.attemptId),
+  );
+  expect(service.readCurrentLogin()?.state).toBe("waiting-for-existing-key");
+});
+
+test("a machine with nothing in flight has no outstanding login", async () => {
+  const hosted = hostedAuth();
+  const service = createLocalAuthService(env, {
+    fetch: hosted.fetch,
+    sleep: async () => undefined,
+  });
+
+  expect(service.readCurrentLogin()).toBeNull();
+
+  // A settled attempt is over, not outstanding: cancelling must not leave
+  // something for the next opened popover to walk back into.
+  const started = await service.startLogin("github");
+  service.cancelLogin(started.attemptId);
+  expect(service.readCurrentLogin()).toBeNull();
+});
+
+test("the board can ask for the outstanding login without holding its id", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const found = await request(listener, "GET", "/api/local-auth/login/current");
+  expect(found.status).toBe(200);
+  expect(JSON.parse(found.body) as AttemptView).toMatchObject({
+    attemptId,
+    state: "waiting-for-existing-key",
+  });
+
+  // Nothing outstanding is an answer, not a failure: a board that treated it
+  // as one could not tell "no login in flight" from "these routes are gone".
+  await submitExistingKey(listener, attemptId, masterKey);
+  const none = await request(listener, "GET", "/api/local-auth/login/current");
+  expect(none.status).toBe(200);
+  expect(JSON.parse(none.body)).toBeNull();
+});
+
 test("the endpoints refuse what they cannot serve", async () => {
   const hosted = hostedAuth();
   const listener = makeListener(hosted);

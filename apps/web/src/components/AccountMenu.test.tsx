@@ -33,6 +33,14 @@ const WAITING: LoginAttemptView = {
   userCode: "ABCD-EFGH",
 };
 
+/** States the serving process considers over, so no longer outstanding. */
+const SETTLED_STATES: ReadonlySet<LoginAttemptView["state"]> = new Set([
+  "complete",
+  "failed",
+  "expired",
+  "cancelled",
+]);
+
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -62,9 +70,16 @@ function localAuthServer(options: {
   masterKey?: string;
   /** How `POST /logout` refuses, for hosts that serve no auth routes at all. */
   logoutFailure?: { status: number; body: string };
+  /** Serve `polled` as the machine's outstanding login from the outset, as a
+   * serving process does when an earlier popover walked away from one. */
+  outstanding?: boolean;
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
+  // The serving process only holds a login once one has been started through
+  // it — which `outstanding` short-circuits for a board that opens onto an
+  // attempt no popover of its own began.
+  let live = options.outstanding ?? false;
   const calls: string[] = [];
   const bodies: unknown[] = [];
   const fetch = vi
@@ -76,7 +91,13 @@ function localAuthServer(options: {
       if (url === "/api/sync/status") {
         return jsonResponse(options.status ?? SIGNED_OUT);
       }
-      if (url === "/api/local-auth/login") return jsonResponse(started);
+      if (url === "/api/local-auth/login") {
+        live = true;
+        return jsonResponse(started);
+      }
+      if (url === "/api/local-auth/login/current") {
+        return jsonResponse(live && !SETTLED_STATES.has(polled.state) ? polled : null);
+      }
       if (url === "/api/local-auth/logout") {
         const { logoutFailure } = options;
         return logoutFailure
@@ -568,6 +589,51 @@ test("an account with synced documents asks for its key and signs in once it val
       screen.queryByLabelText(/document encryption key/i),
     ).not.toBeInTheDocument(),
   );
+});
+
+test("closing the popover at the key prompt does not strand the login behind it", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  // The reported trap: the popover's handle on the attempt was the only one, so
+  // dismissing it left the serving process holding an approved token the board
+  // could no longer finish — and offering only to start the whole thing again.
+  await user.keyboard("{Escape}");
+  await waitForElementToBeRemoved(() =>
+    screen.queryByRole("dialog", { name: /account/i }),
+  );
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  expect(
+    await screen.findByLabelText(/document encryption key/i),
+  ).toBeInTheDocument();
+  expect(server.calls).toContain("GET /api/local-auth/login/current");
+  // And it is the same attempt, not a second device approval.
+  expect(server.calls.filter((call) => call === "POST /api/local-auth/login")).toHaveLength(1);
+});
+
+test("a reloaded board picks up the login already in flight rather than offering another", async () => {
+  const user = userEvent.setup();
+  // A tab reloaded mid-unlock has no memory of the attempt, but the serving
+  // process it reloaded against is still holding one.
+  const server = localAuthServer({ outstanding: true });
+  renderWithLocalAuth(server);
+
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  const menu = await screen.findByRole("dialog", { name: /account/i });
+  expect(await screen.findByTestId("login-progress")).toHaveAttribute(
+    "data-login-state",
+    "waiting-for-approval",
+  );
+  expect(menu).toHaveTextContent("ABCD-EFGH");
+  // Starting a second device approval here is the mistake this prevents.
+  expect(menu).not.toHaveTextContent(/sign in with github/i);
 });
 
 test("a key that cannot decrypt the account is reported without losing the prompt", async () => {

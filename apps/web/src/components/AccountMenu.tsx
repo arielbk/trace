@@ -7,7 +7,7 @@ import {
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
@@ -16,6 +16,7 @@ import {
   postLogout,
   startLogin,
   submitExistingKey,
+  useCurrentLogin,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
@@ -120,7 +121,39 @@ const QUIET_ACTION =
 function AccountBody({ account }: { account: AccountDescription }) {
   const queryClient = useQueryClient();
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  // Whether this popover has settled on which attempt it watches. It is a
+  // one-way latch: once the popover has adopted an attempt, or deliberately let
+  // one go, the outstanding-login answer must not pull it back.
+  const [claimed, setClaimed] = useState(false);
+  const { data: outstanding, isPending: findingOutstanding } = useCurrentLogin();
   const { data: attempt } = useLoginAttempt(attemptId);
+
+  /** Take up an attempt, wherever it came from, and watch it from here. */
+  const watchAttempt = useCallback(
+    (view: LoginAttemptView) => {
+      queryClient.setQueryData(["login-attempt", view.attemptId], view);
+      queryClient.setQueryData(["current-login"], view);
+      setAttemptId(view.attemptId);
+      setClaimed(true);
+    },
+    [queryClient],
+  );
+
+  /** Let go of an attempt that is over — nothing is outstanding after this. */
+  const forgetAttempt = useCallback(() => {
+    queryClient.setQueryData(["current-login"], null);
+    setAttemptId(null);
+    setClaimed(true);
+  }, [queryClient]);
+
+  // A popover opens knowing nothing, so it asks. Adopting the attempt at
+  // whatever state it has reached is what makes closing the popover mid-login
+  // survivable: the serving process, not this component, is where an attempt
+  // lives.
+  useEffect(() => {
+    if (claimed || !outstanding) return;
+    watchAttempt(outstanding);
+  }, [claimed, outstanding, watchAttempt]);
 
   const beginLogin = useMutation({
     mutationFn: startLogin,
@@ -128,8 +161,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
       // Opened from the user's click so the popup is not blocked, and with
       // `noopener` so the hosted page gets no handle on the board.
       window.open(started.verificationUrl, "_blank", "noopener,noreferrer");
-      queryClient.setQueryData(["login-attempt", started.attemptId], started);
-      setAttemptId(started.attemptId);
+      watchAttempt(started);
     },
   });
   const recordAttempt = (settled: LoginAttemptView) => {
@@ -169,9 +201,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
   // the ordinary sync status describe the now signed-in machine.
   useEffect(() => {
     if (attempt?.state !== "complete") return;
-    setAttemptId(null);
+    forgetAttempt();
     void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
-  }, [attempt?.state, queryClient]);
+  }, [attempt?.state, forgetAttempt, queryClient]);
 
   if (attempt && attempt.state !== "complete") {
     return (
@@ -186,9 +218,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
           replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
         }
         onCancel={() => cancel.mutate(attempt.attemptId)}
-        onDismiss={() => setAttemptId(null)}
+        onDismiss={forgetAttempt}
         onRetry={() => {
-          setAttemptId(null);
+          forgetAttempt();
           beginLogin.mutate(attempt.provider);
         }}
       />
@@ -226,7 +258,11 @@ function AccountBody({ account }: { account: AccountDescription }) {
         </dl>
       ) : null}
 
-      {account.canSignIn ? (
+      {/* Never offered before the outstanding-login answer is in: a machine
+          stopped at the key prompt is signed out as far as sync status knows,
+          and inviting a second device approval in that half-second is how the
+          user ends up with two attempts and no key. */}
+      {account.canSignIn && !findingOutstanding ? (
         <div className={cn(SECTION, "flex flex-col gap-1.5")}>
           {/* GitHub leads on the accent control and the rest follow on the
               neutral one — not because a provider is better, but because the

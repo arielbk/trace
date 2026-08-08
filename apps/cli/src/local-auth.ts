@@ -100,6 +100,15 @@ export function createLocalAuthService(
       return attempts.get(attemptId)?.view ?? null;
     },
 
+    readCurrentLogin(): LoginAttemptView | null {
+      // Newest first: starting a second login supersedes whatever the user
+      // walked away from, so the one they are standing in front of wins.
+      for (const attempt of [...attempts.values()].reverse()) {
+        if (!SETTLED_STATES.includes(attempt.view.state)) return attempt.view;
+      }
+      return null;
+    },
+
     acknowledgeGeneratedKey(attemptId: string): LoginAttemptView | null {
       const attempt = attempts.get(attemptId);
       if (!attempt) return null;
