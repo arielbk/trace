@@ -38,12 +38,21 @@ import type { Env } from "./commands/seam.ts";
 export interface LocalAuthDependencies {
   fetch: AuthFetch;
   sleep: (milliseconds: number) => Promise<void>;
+  /**
+   * Called once per login that reaches `complete`. The serving process passes
+   * its background-sync trigger here: a machine that just signed in has
+   * documents waiting for it, and should not have to wait out the periodic
+   * interval to see them.
+   */
+  onLoginComplete: () => void;
 }
 
 /** An attempt in flight, plus the parts of it the board must never see. */
 interface LoginAttempt {
   view: LoginAttemptView;
   cancelled: boolean;
+  /** Fired by {@link setView}, once, when this attempt reaches `complete`. */
+  onComplete: () => void;
   /**
    * What a `waiting-for-existing-key` attempt needs to finish once the user
    * supplies their key: the approved bearer token, the server it came from, and
@@ -69,6 +78,7 @@ export function createLocalAuthService(
       new Promise<void>((resolve) => {
         setTimeout(resolve, milliseconds);
       }));
+  const onLoginComplete = dependencies.onLoginComplete ?? (() => {});
 
   const attempts = new Map<string, LoginAttempt>();
 
@@ -85,6 +95,7 @@ export function createLocalAuthService(
           userCode: device.userCode,
         },
         cancelled: false,
+        onComplete: onLoginComplete,
       };
       attempts.set(attempt.view.attemptId, attempt);
 
@@ -117,7 +128,7 @@ export function createLocalAuthService(
       // purely about having shown the key once, so it just drops it.
       const shown = { ...attempt.view };
       delete shown.generatedKey;
-      attempt.view = { ...shown, state: "complete" };
+      setView(attempt, { ...shown, state: "complete" });
       return attempt.view;
     },
 
@@ -138,15 +149,15 @@ export function createLocalAuthService(
       } catch (error) {
         // A wrong key is not a failed login: the user stays on the prompt with
         // the reason, and nothing at all has been written.
-        attempt.view = {
+        setView(attempt, {
           ...attempt.view,
           error: error instanceof Error ? error.message : String(error),
-        };
+        });
         return attempt.view;
       }
 
       writeStoredDocCryptoKey(env, masterKey);
-      attempt.view = { ...attempt.view, error: undefined };
+      setView(attempt, { ...attempt.view, error: undefined });
       await finishKeySetup(env, fetch, attempt, "complete");
       return attempt.view;
     },
@@ -162,16 +173,16 @@ export function createLocalAuthService(
       }
 
       if (confirmation.trim() !== REPLACEMENT_KEY_CONFIRMATION) {
-        attempt.view = {
+        setView(attempt, {
           ...attempt.view,
           error: `Type ${REPLACEMENT_KEY_CONFIRMATION} to confirm replacing your document encryption key.`,
-        };
+        });
         return attempt.view;
       }
 
       const masterKey = generateTaskKey();
       writeStoredDocCryptoKey(env, masterKey);
-      attempt.view = { ...attempt.view, error: undefined };
+      setView(attempt, { ...attempt.view, error: undefined });
       // Shown once, exactly as a fresh account's key is: this key is now the
       // only thing that can read anything this machine syncs from here on.
       await finishKeySetup(env, fetch, attempt, "showing-generated-key", masterKey);
@@ -183,7 +194,7 @@ export function createLocalAuthService(
       if (!attempt) return null;
       attempt.cancelled = true;
       if (!SETTLED_STATES.includes(attempt.view.state)) {
-        attempt.view = { ...attempt.view, state: "cancelled" };
+        setView(attempt, { ...attempt.view, state: "cancelled" });
       }
       return attempt.view;
     },
@@ -247,7 +258,7 @@ async function setUpDocumentKey(
   attempt.keySetup = { serverUrl, accessToken, wrappedKeys };
 
   if (manifests.length > 0) {
-    attempt.view = { ...attempt.view, state: "waiting-for-existing-key" };
+    setView(attempt, { ...attempt.view, state: "waiting-for-existing-key" });
     return;
   }
 
@@ -300,12 +311,25 @@ function settle(
   identity: string | null,
   generatedKey?: string,
 ): void {
-  attempt.view = {
+  setView(attempt, {
     ...attempt.view,
     state,
     ...(identity ? { identity } : {}),
     ...(generatedKey ? { generatedKey } : {}),
-  };
+  });
+}
+
+/**
+ * The one writer of an attempt's view, and the one place a login is observed to
+ * complete. Hanging the completion hook off the *transition* into `complete` —
+ * rather than off each of the paths that reaches it — is what makes "one sync
+ * per login" true of all of them, and true only once: a later write that leaves
+ * the attempt complete does not fire it again.
+ */
+function setView(attempt: LoginAttempt, view: LoginAttemptView): void {
+  const completed = view.state === "complete" && attempt.view.state !== "complete";
+  attempt.view = view;
+  if (completed) attempt.onComplete();
 }
 
 /** States an attempt never leaves once it reaches them. */
@@ -324,13 +348,13 @@ function settleFailure(attempt: LoginAttempt, error: unknown): void {
   // explicit cancellation is the outcome that matters, not the interruption.
   if (attempt.cancelled) return;
   if (error instanceof DeviceCodeExpiredError) {
-    attempt.view = {
+    setView(attempt, {
       ...attempt.view,
       state: "expired",
       error: LOGIN_EXPIRED_MESSAGE,
-    };
+    });
     return;
   }
   const message = error instanceof Error ? error.message : String(error);
-  attempt.view = { ...attempt.view, state: "failed", error: message };
+  setView(attempt, { ...attempt.view, state: "failed", error: message });
 }

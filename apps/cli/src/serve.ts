@@ -55,6 +55,7 @@ export const PERIODIC_SYNC_INTERVAL_MS = 5 * 60_000;
 export type ServeSyncHooks = {
   onMutation: () => void;
   requestSync: () => void;
+  onLoginComplete: () => void;
 };
 
 /**
@@ -62,7 +63,12 @@ export type ServeSyncHooks = {
  * background sync shortly after the burst ends; explicit requests (the board
  * client on window focus) run immediately but at most once per
  * {@link REQUEST_SYNC_MIN_INTERVAL_MS}. The trigger itself no-ops when logged
- * out, so neither path needs an auth check here.
+ * out, so no path needs an auth check here.
+ *
+ * A completed login is the one case that neither schedules nor throttles: it
+ * happens once, it is the moment the process stops being logged out, and the
+ * user is watching. Making it share the request throttle would let the board's
+ * own start-up sync swallow it.
  */
 export function createSyncHooks(
   trigger: () => void,
@@ -84,6 +90,7 @@ export function createSyncHooks(
       lastRequestedAt = now();
       trigger();
     },
+    onLoginComplete: trigger,
   };
 }
 
@@ -270,7 +277,9 @@ export function createTraceServeServer(
       Boolean(resolveConfiguredServerUrl(env)),
       syncHooks,
       () => resolveAutoSyncEnabled(env),
-      createLocalAuthService(env),
+      // Signing in is a mutation of what this machine can see, so it belongs on
+      // the same sync trigger the board's mutations already use.
+      createLocalAuthService(env, { onLoginComplete: syncHooks?.onLoginComplete }),
     ),
   );
 }
