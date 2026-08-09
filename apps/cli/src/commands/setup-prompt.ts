@@ -5,13 +5,9 @@ import {
 } from "./setup-candidates.ts";
 import type { ToolName } from "./integration-registry.ts";
 import type { Env } from "./seam.ts";
+import type { ConfirmPrompt, PromptResult } from "./confirm-prompt.ts";
 
-/**
- * The answer to one prompt. `cancelled` is a user-directed escape (Clack's
- * cancel symbol, normalised here) rather than an error, so the orchestrator
- * never has to know about Clack's sentinel value.
- */
-export type PromptResult<T> = { cancelled: true } | { cancelled: false; value: T };
+export type { PromptResult } from "./confirm-prompt.ts";
 
 /** One selectable Integration Target inside the picker. */
 export type TargetOption = {
@@ -35,16 +31,13 @@ export type TargetSelectionRequest = {
 };
 
 /**
- * The injectable seam between setup orchestration and Clack. Everything the
+ * The injectable seam between setup orchestration and Clack: {@link ConfirmPrompt}
+ * plus the one thing only setup needs, the target picker. Everything the
  * interactive flow needs from a terminal lives here, so orchestration can be
  * driven by a fake in tests without rendering a real UI.
  */
-export type SetupPrompt = {
+export type SetupPrompt = ConfirmPrompt & {
   selectTargets(request: TargetSelectionRequest): Promise<PromptResult<string[]>>;
-  confirmInstall(request: { message: string }): Promise<PromptResult<boolean>>;
-  note(message: string, title: string): void;
-  /** Renders an attention-grabbing terminal warning without changing exit status. */
-  warn(message: string): void;
 };
 
 /**

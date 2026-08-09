@@ -76,7 +76,7 @@ export async function interactiveSetupOperation(
     );
   }
 
-  const confirmed = await prompt.confirmInstall({
+  const confirmed = await prompt.confirm({
     message: "Install Trace into these targets?",
   });
   if (confirmed.cancelled || !confirmed.value) return success(CANCELLED);
