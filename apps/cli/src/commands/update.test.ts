@@ -393,11 +393,13 @@ test("on Windows the package manager and the CLI are spawned through a shell", (
   // `npm.cmd` and `trace.cmd` are batch shims, and Node refuses to spawn
   // `.cmd`/`.bat` without a shell since the CVE-2024-27980 fix — it throws
   // EINVAL. Without this, `trace update` cannot run on Windows at all.
-  const calls: { command: string; shell: boolean | undefined }[] = [];
+  // The arguments ride in the command string because a non-empty args array
+  // alongside `shell: true` is what trips DEP0190.
+  const calls: { command: string; args: string[]; shell: boolean | undefined }[] = [];
   const deps = createDefaultDeps({
     platform: "win32",
-    spawnSync: (command, _args, options) => {
-      calls.push({ command, shell: options.shell });
+    spawnSync: (command, args, options) => {
+      calls.push({ command, args, shell: options.shell });
       return { status: 0, stdout: "", stderr: "" };
     },
   });
@@ -405,15 +407,26 @@ test("on Windows the package manager and the CLI are spawned through a shell", (
   deps.spawnInstall("npm", "0.19.0");
   deps.spawnReconcile("C:\\Users\\dev\\AppData\\Roaming\\npm\\trace.cmd");
 
-  expect(calls.map(({ shell }) => shell)).toEqual([true, true]);
+  expect(calls).toEqual([
+    {
+      command: "npm install -g @arielbk/trace@0.19.0",
+      args: [],
+      shell: true,
+    },
+    {
+      command: "C:\\Users\\dev\\AppData\\Roaming\\npm\\trace.cmd setup --registered --yes",
+      args: [],
+      shell: true,
+    },
+  ]);
 });
 
 test("on POSIX spawning does not go through a shell", () => {
-  const calls: { shell: boolean | undefined }[] = [];
+  const calls: { command: string; args: string[]; shell: boolean | undefined }[] = [];
   const deps = createDefaultDeps({
     platform: "darwin",
-    spawnSync: (_command, _args, options) => {
-      calls.push({ shell: options.shell });
+    spawnSync: (command, args, options) => {
+      calls.push({ command, args, shell: options.shell });
       return { status: 0, stdout: "", stderr: "" };
     },
   });
@@ -421,5 +434,8 @@ test("on POSIX spawning does not go through a shell", () => {
   deps.spawnInstall("pnpm", "0.19.0");
   deps.spawnReconcile("/opt/global/bin/trace");
 
-  expect(calls.map(({ shell }) => shell)).toEqual([false, false]);
+  expect(calls).toEqual([
+    { command: "pnpm", args: ["add", "-g", "@arielbk/trace@0.19.0"], shell: false },
+    { command: "/opt/global/bin/trace", args: ["setup", "--registered", "--yes"], shell: false },
+  ]);
 });

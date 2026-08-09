@@ -4,6 +4,7 @@ import {
   type PackageManager,
 } from "./integration-registry.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
+import { spawnInvocation } from "./spawn-invocation.ts";
 import { resolvePackagedVersion } from "./setup-operations.ts";
 
 export type SpawnResult = { status: number | null; stderr: string };
@@ -45,13 +46,8 @@ export function createDefaultDeps(
   const platform = host.platform ?? process.platform;
   const spawnSync = host.spawnSync ?? (nodeSpawnSync as unknown as SpawnSync);
 
-  // On Windows both the package managers (`npm.cmd`, `pnpm.cmd`) and the Trace
-  // CLI are batch shims, and Node has refused to spawn `.cmd`/`.bat` without a
-  // shell since the CVE-2024-27980 fix — it throws EINVAL. Elsewhere a shell
-  // only adds a parsing layer, so it stays off.
-  const shell = platform === "win32";
-
-  const run = (command: string, args: string[]): SpawnResult => {
+  const run = (rawCommand: string, rawArgs: string[]): SpawnResult => {
+    const { command, args, shell } = spawnInvocation(platform, rawCommand, rawArgs);
     const result = spawnSync(command, args, { encoding: "utf8", shell });
     return {
       status: result.status,
