@@ -3,6 +3,39 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.18.2
+
+Fixes to the sign-in and first-sync flow, found by walking the whole flow on a
+second machine.
+
+### Fixes
+
+- **A login you walked away from is recoverable.** The board can now ask the
+  serving process whether this machine has a login in progress and pick it back
+  up. Previously the only copy of the attempt lived in the account popover's
+  component state, so closing the popover at the key prompt — or reloading the
+  page — stranded an approved token with no way to finish it, offering nothing
+  but "start over".
+- **Signing in starts a sync immediately** instead of leaving a freshly
+  signed-in machine idle for up to five minutes waiting out the periodic
+  interval.
+- **Accepting a document key confirms itself** with a brief "Documents
+  unlocked" beat, where before a correct key produced no acknowledgement.
+- **The avatar's sync badge is quiet when everything is fine.** It used to
+  render a dot for the *succeeded* state, so it was lit almost always and
+  carried no signal when it mattered. Its in-flight spinner now rotates cleanly
+  in the accent colour instead of wobbling on the text baseline.
+- **Pulled documents keep the source machine's timestamps.** A task pulled to a
+  second machine reported "last active" as the moment of the pull, so it could
+  claim activity that never happened. Documents carrying a title or description
+  were affected even where the file mtime was already correct.
+
+### Chores
+
+- Dependency updates across the workspace, including React Router 8, jsdom 30,
+  `@testing-library/jest-dom` 7, and globals 17, plus a pinned esbuild under
+  tsup. Clears 11 dev-only advisories reported by `pnpm audit`.
+
 ## 0.18.0
 
 Trace now supports GitHub Copilot CLI as a first-class session host alongside
