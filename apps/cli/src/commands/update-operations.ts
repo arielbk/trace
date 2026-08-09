@@ -1,4 +1,5 @@
 import { spawnSync as nodeSpawnSync } from "node:child_process";
+import type { ConfirmPrompt } from "./confirm-prompt.ts";
 import {
   IntegrationRegistry,
   type PackageManager,
@@ -8,6 +9,12 @@ import { spawnInvocation } from "./spawn-invocation.ts";
 import { resolvePackagedVersion } from "./setup-operations.ts";
 
 export type SpawnResult = { status: number | null; stderr: string };
+
+/**
+ * Declining is a user-directed exit, not a failure — nothing non-interactive can
+ * reach it, so exiting zero costs no scriptability. Mirrors setup's wording.
+ */
+const CANCELLED = "Update cancelled; no changes made.\n";
 
 export type UpdateDeps = {
   /** Fetches the latest published version of @arielbk/trace from the npm registry. */
@@ -74,10 +81,15 @@ export function createDefaultDeps(
 
 const defaultDeps: UpdateDeps = createDefaultDeps();
 
+/**
+ * @param prompt Confirms the update in the terminal. Absent — every
+ * non-interactive caller — leaves `trace update` on its preview-then-exit path.
+ */
 export async function updateOperation(
   rawArgs: string[],
   ctx: { env: Env; cwd: string; stdin: string },
   deps: UpdateDeps = defaultDeps,
+  prompt?: ConfirmPrompt,
 ): Promise<CommandResult> {
   const apply = rawArgs.includes("--yes");
 
@@ -115,8 +127,19 @@ export async function updateOperation(
 
   const planLine = `Trace v${currentVersion} → v${latestVersion} (via ${packageManager})\n`;
 
+  // `--yes` keeps its exact meaning of "skip the question", so only a bare
+  // invocation handed a prompt ever asks.
+  const asked = !apply && prompt !== undefined;
+
   if (!apply) {
-    return success(`${planLine}\nRe-run with --yes to apply.\n`);
+    if (prompt === undefined) {
+      return success(`${planLine}\nRe-run with --yes to apply.\n`);
+    }
+    prompt.note(planLine.trimEnd(), "Update plan");
+    const confirmed = await prompt.confirm({
+      message: `Update to v${latestVersion}?`,
+    });
+    if (confirmed.cancelled || !confirmed.value) return success(CANCELLED);
   }
 
   // Run install.
@@ -146,5 +169,9 @@ export async function updateOperation(
     }
   }
 
-  return success(`${planLine}\nUpdated to v${latestVersion} and reconciled registered targets.\n`);
+  // The terminal already displayed the plan above the question, so the closing
+  // summary does not repeat it — the same treatment interactive setup gives its
+  // own plan.
+  const summaryPlan = asked ? "" : `${planLine}\n`;
+  return success(`${summaryPlan}Updated to v${latestVersion} and reconciled registered targets.\n`);
 }
