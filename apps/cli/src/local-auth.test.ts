@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   createKeyWrapper,
   createTaskDocCrypto,
@@ -578,6 +578,191 @@ test("cancelling at the key prompt gives up the approved login entirely", async 
   expect((JSON.parse(late.body) as AttemptView).state).toBe("cancelled");
   expect(readStoredDocCryptoKey(env)).toBeNull();
   expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+});
+
+test("an attempt stopped at the key prompt is the machine's outstanding login", async () => {
+  const hosted = hostedAuth(existingAccount(generateTaskKey()));
+  const service = createLocalAuthService(env, {
+    fetch: hosted.fetch,
+    sleep: async () => undefined,
+  });
+  const started = await service.startLogin("github");
+
+  hosted.approve();
+  for (let poll = 0; poll < 500; poll += 1) {
+    await Promise.resolve();
+    if (service.readLogin(started.attemptId)?.state === "waiting-for-existing-key") {
+      break;
+    }
+  }
+
+  // The board dropped its handle on this attempt when the popover closed; the
+  // serving process is where the attempt actually lives, so it can be found
+  // again at whatever state it has reached.
+  expect(service.readCurrentLogin()).toEqual(
+    service.readLogin(started.attemptId),
+  );
+  expect(service.readCurrentLogin()?.state).toBe("waiting-for-existing-key");
+});
+
+test("a machine with nothing in flight has no outstanding login", async () => {
+  const hosted = hostedAuth();
+  const service = createLocalAuthService(env, {
+    fetch: hosted.fetch,
+    sleep: async () => undefined,
+  });
+
+  expect(service.readCurrentLogin()).toBeNull();
+
+  // A settled attempt is over, not outstanding: cancelling must not leave
+  // something for the next opened popover to walk back into.
+  const started = await service.startLogin("github");
+  service.cancelLogin(started.attemptId);
+  expect(service.readCurrentLogin()).toBeNull();
+});
+
+test("the board can ask for the outstanding login without holding its id", async () => {
+  const masterKey = generateTaskKey();
+  const { listener, attemptId } = await loginToExistingKeyPrompt(masterKey);
+
+  const found = await request(listener, "GET", "/api/local-auth/login/current");
+  expect(found.status).toBe(200);
+  expect(JSON.parse(found.body) as AttemptView).toMatchObject({
+    attemptId,
+    state: "waiting-for-existing-key",
+  });
+
+  // Nothing outstanding is an answer, not a failure: a board that treated it
+  // as one could not tell "no login in flight" from "these routes are gone".
+  await submitExistingKey(listener, attemptId, masterKey);
+  const none = await request(listener, "GET", "/api/local-auth/login/current");
+  expect(none.status).toBe(200);
+  expect(JSON.parse(none.body)).toBeNull();
+});
+
+type Service = ReturnType<typeof createLocalAuthService>;
+
+/**
+ * A local auth service holding the serving process's background-sync trigger,
+ * as a spy. Everything below asserts at that seam: whether a completed login
+ * asks for a sync, never whether a sync happened.
+ */
+function serviceWithSyncTrigger(hosted: HostedAuth): {
+  service: Service;
+  requestSync: ReturnType<typeof vi.fn>;
+} {
+  const requestSync = vi.fn();
+  return {
+    service: createLocalAuthService(env, {
+      fetch: hosted.fetch,
+      sleep: async () => undefined,
+      onLoginComplete: requestSync,
+    }),
+    requestSync,
+  };
+}
+
+/** Poll the in-memory service until its detached device sequence settles. */
+async function waitForServiceState(
+  service: Service,
+  attemptId: string,
+  state: string,
+): Promise<void> {
+  for (let poll = 0; poll < 500; poll += 1) {
+    // The sequence runs detached from `startLogin`, so a synchronous loop would
+    // never let it progress — yielding is what advances it.
+    await Promise.resolve();
+    if (service.readLogin(attemptId)?.state === state) return;
+  }
+  throw new Error(`login attempt never reached ${state}`);
+}
+
+test("accepting the account's existing key syncs the documents it just unlocked", async () => {
+  const masterKey = generateTaskKey();
+  const hosted = hostedAuth(existingAccount(masterKey));
+  const { service, requestSync } = serviceWithSyncTrigger(hosted);
+  const started = await service.startLogin("github");
+  hosted.approve();
+  await waitForServiceState(service, started.attemptId, "waiting-for-existing-key");
+
+  // Nothing to sync yet: no credentials are stored until the key is accepted.
+  expect(requestSync).not.toHaveBeenCalled();
+
+  const settled = await service.submitExistingKey(started.attemptId, masterKey);
+
+  expect(settled?.state).toBe("complete");
+  // This is the whole point of the slice: the machine that just signed in does
+  // not wait out the five-minute periodic interval to see its own documents.
+  expect(requestSync).toHaveBeenCalledOnce();
+});
+
+test("acknowledging the generated key syncs once, and not while the key is shown", async () => {
+  const hosted = hostedAuth();
+  const { service, requestSync } = serviceWithSyncTrigger(hosted);
+  const started = await service.startLogin("github");
+  hosted.approve();
+  await waitForServiceState(service, started.attemptId, "showing-generated-key");
+
+  // `showing-generated-key` holds stored credentials but is not a finished
+  // login — the user is still standing in front of a key they must save.
+  expect(requestSync).not.toHaveBeenCalled();
+
+  service.acknowledgeGeneratedKey(started.attemptId);
+  expect(requestSync).toHaveBeenCalledOnce();
+
+  // A second acknowledgement — a double-click, a replayed request — is not a
+  // second login, so it is not a second sync.
+  service.acknowledgeGeneratedKey(started.attemptId);
+  expect(requestSync).toHaveBeenCalledOnce();
+});
+
+test("a cancelled attempt never syncs, however far it got", async () => {
+  const masterKey = generateTaskKey();
+  const hosted = hostedAuth(existingAccount(masterKey));
+  const { service, requestSync } = serviceWithSyncTrigger(hosted);
+  const started = await service.startLogin("github");
+  hosted.approve();
+  await waitForServiceState(service, started.attemptId, "waiting-for-existing-key");
+
+  service.cancelLogin(started.attemptId);
+
+  // The device approval already yielded a token, so this attempt got further
+  // than most failures do — and a late key submission must not revive it into
+  // a sync either.
+  await service.submitExistingKey(started.attemptId, masterKey);
+  expect(service.readLogin(started.attemptId)?.state).toBe("cancelled");
+  expect(requestSync).not.toHaveBeenCalled();
+});
+
+test("an expired attempt never syncs", async () => {
+  // interval 0 is floored to the RFC 8628 minimum of 5s, so a 10s lifetime
+  // allows exactly two polls before the attempt gives up.
+  const hosted = hostedAuth({ expiresIn: 10 });
+  const { service, requestSync } = serviceWithSyncTrigger(hosted);
+
+  const started = await service.startLogin("github");
+  await waitForServiceState(service, started.attemptId, "expired");
+
+  expect(requestSync).not.toHaveBeenCalled();
+});
+
+test("a failed attempt never syncs", async () => {
+  const hosted = hostedAuth();
+  // The hosted server refuses the approval outright: a settled failure, not a
+  // pending one.
+  const rejecting: HostedAuth = {
+    ...hosted,
+    fetch: (async (input: unknown, init?: RequestInit) =>
+      String(input).endsWith("/device/token")
+        ? Response.json({ error: "access_denied" }, { status: 400 })
+        : hosted.fetch(input as string, init)) as typeof globalThis.fetch,
+  };
+  const { service, requestSync } = serviceWithSyncTrigger(rejecting);
+
+  const started = await service.startLogin("github");
+  await waitForServiceState(service, started.attemptId, "failed");
+
+  expect(requestSync).not.toHaveBeenCalled();
 });
 
 test("the endpoints refuse what they cannot serve", async () => {

@@ -119,6 +119,10 @@ export type AddTaskDocOptions = {
 export type UpdateTaskDocOptions = {
   title?: string | null;
   description?: string | null;
+  // Only consulted when the row does not exist yet: the timestamp the row is
+  // created with. Sync passes the source machine's file date so a pulled doc
+  // is not reported as having been written the moment it landed here.
+  createdAt?: string;
 };
 
 export type TokenTotals = {

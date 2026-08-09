@@ -84,6 +84,15 @@ export interface LocalAuthService {
   /** The current view of an attempt, or `null` when the serving process has
    * never heard of it (a restart, or a stale board tab). */
   readLogin(attemptId: string): LoginAttemptView | null;
+  /**
+   * The attempt this machine is still in the middle of, or `null` when there is
+   * none. The board's handle on an attempt lives only as long as the popover
+   * that started it, so a user who closes the popover mid-login — at the key
+   * prompt above all — would otherwise be stranded: the serving process holds
+   * an approved token it cannot finish with, and the board offers only to start
+   * over. This is how the board finds its way back.
+   */
+  readCurrentLogin(): LoginAttemptView | null;
   /** Confirm the user has saved a one-time generated key, which drops it from
    * the attempt and finishes the login. */
   acknowledgeGeneratedKey(attemptId: string): LoginAttemptView | null;
@@ -134,6 +143,17 @@ export function handleLocalAuthRequest(
     if (method !== "POST") return resolved(methodNotAllowed());
     service.logout();
     return resolved(json({ ok: true }));
+  }
+
+  // Ahead of the per-attempt route it would otherwise match: `current` is a
+  // question about the machine, not an attempt id. Ids are UUIDs, so the word
+  // can never collide with one.
+  if (path === `${LOGIN_PATH}/current`) {
+    if (method !== "GET") return resolved(methodNotAllowed());
+    // `null` rather than a 404: having no login in flight is an ordinary
+    // answer, and the board must be able to tell it from a host that serves no
+    // local-auth routes at all.
+    return resolved(json(service.readCurrentLogin()));
   }
 
   const existingKeyMatch =

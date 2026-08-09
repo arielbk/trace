@@ -104,6 +104,17 @@ export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> 
   return localAuth<LoginAttemptView>(`/login/${encodeURIComponent(attemptId)}`);
 }
 
+/**
+ * The login this machine is still in the middle of, or `null` when there is
+ * none. A board tab's handle on an attempt lasts only as long as the popover
+ * holding it, so this is what a freshly opened popover asks to find a login
+ * someone walked away from — an approved attempt stopped at the key prompt
+ * above all, which the serving process cannot finish on its own.
+ */
+export function fetchCurrentLogin(): Promise<LoginAttemptView | null> {
+  return localAuth<LoginAttemptView | null>("/login/current");
+}
+
 export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/acknowledge-key`,
@@ -172,6 +183,17 @@ const SETTLED_LOGIN_STATES: ReadonlySet<LoginAttemptView["state"]> = new Set([
  * as the attempt settles, so it is never a second always-on polling loop.
  */
 const LOGIN_POLL_MS = 2000;
+
+/**
+ * Asked once each time the account popover opens, and not polled: the answer
+ * only changes through this board's own actions, which update it in place.
+ */
+export function useCurrentLogin() {
+  return useQuery({
+    queryKey: ["current-login"],
+    queryFn: fetchCurrentLogin,
+  });
+}
 
 export function useLoginAttempt(attemptId: string | null) {
   return useQuery({

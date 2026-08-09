@@ -318,7 +318,59 @@ test("pulled docs keep the source machine's modified dates", async () => {
   }
 });
 
-test("a manifest entry without a modified date still applies and leaves the write time alone", async () => {
+test("the doc reader reports pulled docs at their source timestamps", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const firstDb = join(root, "first", "trace.sqlite");
+  const secondDb = join(root, "second", "trace.sqlite");
+  const first = openTraceStore(firstDb);
+  const second = openTraceStore(secondDb);
+  const task = first.createTask("Timestamped docs");
+  const server = new DocumentTransport();
+  const keyWrapper = createKeyWrapper("7c".repeat(32));
+  const docsAccessor = (store: typeof first) => ({
+    list: (taskId: string) => store.listDocsForTask(taskId),
+    update: (
+      taskId: string,
+      path: string,
+      fields: { title?: string; description?: string; createdAt?: string },
+    ) => void store.updateTaskDoc(taskId, path, fields),
+  });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { keyWrapper, docs: docsAccessor(first) });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper, docs: docsAccessor(second) });
+
+  try {
+    const firstDir = resolveTaskDocsDir(firstDb, task.slug);
+    mkdirSync(firstDir, { recursive: true });
+    writeFileSync(join(firstDir, "spec.md"), "the spec");
+    writeFileSync(join(firstDir, "scratch.md"), "loose notes");
+    first.addTaskDoc(task.id, join(firstDir, "spec.md"), { title: "PRD" });
+    const specDate = new Date("2025-02-11T10:20:30.000Z");
+    const scratchDate = new Date("2025-02-12T18:00:00.000Z");
+    utimesSync(join(firstDir, "spec.md"), specDate, specDate);
+    utimesSync(join(firstDir, "scratch.md"), scratchDate, scratchDate);
+
+    await synchronize(first, server, firstDocs);
+    await synchronize(second, server, secondDocs);
+
+    // Both the registered doc and the bare one report the day they were last
+    // written on the source machine, not the moment this machine received them.
+    const secondDir = resolveTaskDocsDir(secondDb, task.slug);
+    const pulled = second.listDocsForTask(task.id);
+    expect(pulled.find((doc) => doc.path === join(secondDir, "spec.md"))).toMatchObject({
+      title: "PRD",
+      createdAt: specDate.toISOString(),
+    });
+    expect(pulled.find((doc) => doc.path === join(secondDir, "scratch.md"))).toMatchObject({
+      createdAt: scratchDate.toISOString(),
+    });
+  } finally {
+    first.close();
+    second.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a manifest entry without a modified date is stamped with the manifest's updatedAt", async () => {
   const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
   const firstDb = join(root, "first", "trace.sqlite");
   const secondDb = join(root, "second", "trace.sqlite");
@@ -346,17 +398,80 @@ test("a manifest entry without a modified date still applies and leaves the writ
     const legacyFiles = crypto
       .openFilesList(server.manifests[0]!.filesCiphertext)
       .map(({ path, blobHash }) => ({ path, blobHash }));
+    const sealedAt = "2024-11-02T09:15:00.000Z";
     server.manifests[0] = {
       ...server.manifests[0]!,
       filesCiphertext: crypto.sealFilesList(legacyFiles),
+      updatedAt: sealedAt,
+    };
+
+    await synchronize(second, server, secondDocs);
+    const pulled = join(resolveTaskDocsDir(secondDb, task.slug), "spec.md");
+    expect(readFileSync(pulled, "utf8")).toBe("the spec");
+    // No per-file date → the manifest's own seal time, which is still the
+    // truth about the source machine, rather than this machine's clock.
+    expect(statSync(pulled).mtime.toISOString()).toBe(sealedAt);
+    expect(
+      second.listDocsForTask(task.id).find((doc) => doc.path === pulled),
+    ).toMatchObject({ createdAt: sealedAt });
+  } finally {
+    first.close();
+    second.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unparseable manifest date lands the bundle at the local write time", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-sync-"));
+  const firstDb = join(root, "first", "trace.sqlite");
+  const secondDb = join(root, "second", "trace.sqlite");
+  const first = openTraceStore(firstDb);
+  const second = openTraceStore(secondDb);
+  const task = first.createTask("Undated docs");
+  const server = new DocumentTransport();
+  const keyWrapper = createKeyWrapper("35".repeat(32));
+  const docsAccessor = (store: typeof first) => ({
+    list: (taskId: string) => store.listDocsForTask(taskId),
+    update: (
+      taskId: string,
+      path: string,
+      fields: { title?: string; description?: string; createdAt?: string },
+    ) => void store.updateTaskDoc(taskId, path, fields),
+  });
+  const firstDocs = new FileSystemDocumentStore(firstDb, () => first.syncSnapshot().tasks, { keyWrapper, docs: docsAccessor(first) });
+  const secondDocs = new FileSystemDocumentStore(secondDb, () => second.syncSnapshot().tasks, { keyWrapper, docs: docsAccessor(second) });
+
+  try {
+    const firstDir = resolveTaskDocsDir(firstDb, task.slug);
+    mkdirSync(firstDir, { recursive: true });
+    writeFileSync(join(firstDir, "spec.md"), "the spec");
+    first.addTaskDoc(task.id, join(firstDir, "spec.md"), { title: "PRD" });
+    await synchronize(first, server, firstDocs);
+
+    // `updatedAt` rides the wire in the clear, so unlike the sealed per-file
+    // dates it can arrive as anything at all.
+    const crypto = createTaskDocCrypto(
+      keyWrapper.unwrapTaskKey(server.wrappedKeys.get(task.id)!),
+    );
+    const undatedFiles = crypto
+      .openFilesList(server.manifests[0]!.filesCiphertext)
+      .map(({ path, blobHash, title }) => ({ path, blobHash, title }));
+    server.manifests[0] = {
+      ...server.manifests[0]!,
+      filesCiphertext: crypto.sealFilesList(undatedFiles),
+      updatedAt: "whenever",
     };
 
     const beforePull = Date.now();
     await synchronize(second, server, secondDocs);
     const pulled = join(resolveTaskDocsDir(secondDb, task.slug), "spec.md");
     expect(readFileSync(pulled, "utf8")).toBe("the spec");
-    // No date in the manifest → the file keeps its local write time.
     expect(statSync(pulled).mtime.getTime()).toBeGreaterThanOrEqual(beforePull - 1000);
+    // The doc row it mints must not carry the junk either — every consumer
+    // sorts and renders on this field.
+    const doc = second.listDocsForTask(task.id).find((item) => item.path === pulled);
+    expect(Date.parse(doc!.createdAt)).not.toBeNaN();
+    expect(Date.parse(doc!.createdAt)).toBeGreaterThanOrEqual(beforePull - 1000);
   } finally {
     first.close();
     second.close();
