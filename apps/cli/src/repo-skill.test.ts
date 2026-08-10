@@ -10,7 +10,7 @@ const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 // name, which differs across clones and worktrees.
 const projectSlug = basename(repoRoot).toLowerCase();
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
-const skillReadme = join(repoRoot, "plugin", "skills", "trace", "SKILL.md");
+const skillReadme = join(repoRoot, "skills", "trace", "SKILL.md");
 
 test("trace skill resolves or creates a task by title, binds a simulated session, and re-enters context", () => {
   expect(existsSync(skillReadme)).toBe(true);
@@ -298,7 +298,6 @@ test("repo skill prose is pruned to the bind verb and dispatches the host nudge"
   // in the shared SKILL.md.
   const claudeResource = join(
     repoRoot,
-    "plugin",
     "skills",
     "trace",
     "resources",
