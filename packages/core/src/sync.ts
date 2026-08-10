@@ -47,7 +47,16 @@ export type SyncSessionRow = {
   gitWorktreeLabel?: string | null;
 };
 
-export type SyncPayload = { tasks: SyncTaskRow[]; sessions: SyncSessionRow[] };
+export type SyncPayload = {
+  tasks: SyncTaskRow[];
+  sessions: SyncSessionRow[];
+  // The server's watermark for this response: an opaque token the client
+  // stores and replays as the next pull's `since`. It is whatever the server
+  // computed over the user's rows, never something derived from the rows
+  // below — an empty response still has to advance it. Absent when the server
+  // predates incremental pull, in which case the response is full state.
+  cursor?: string;
+};
 
 export type SyncDocManifest = {
   taskId: string;
@@ -76,22 +85,37 @@ export interface SyncDocumentStore {
   ): Promise<{ pulled: number; downloaded: number }>;
 }
 
+/**
+ * Rows and documents are pulled from separate endpoints over separate tables,
+ * so each keeps its own watermark. Merging them into one would hold both back
+ * to whichever endpoint lagged, and silently skip the rows in between.
+ */
+export type SyncCursorScope = "rows" | "documents";
+
 export interface SyncStore {
   syncSnapshot(): SyncPayload;
   mergeSyncPayload(payload: SyncPayload): { pulled: number };
+  /**
+   * The last cursor the server handed this machine for `scope`, or null when
+   * it has never seen one. Null means "pull everything": dropping the stored
+   * cursor is the full-resync escape hatch.
+   */
+  syncCursor(scope: SyncCursorScope): string | null;
+  setSyncCursor(scope: SyncCursorScope, cursor: string): void;
 }
 
 export interface SyncTransport {
   push(payload: SyncPayload): Promise<{ accepted: number }>;
-  pull(): Promise<SyncPayload>;
+  pull(since?: string): Promise<SyncPayload>;
   pushDocuments?(
     manifests: SyncDocManifest[],
     blobs: SyncBlob[],
     wrappedKeys: SyncWrappedKey[],
   ): Promise<{ accepted: number; uploaded: number }>;
-  pullDocumentManifests?(): Promise<{
+  pullDocumentManifests?(since?: string): Promise<{
     manifests: SyncDocManifest[];
     wrappedKeys: SyncWrappedKey[];
+    cursor?: string;
   }>;
   missingBlobs?(hashes: string[]): Promise<string[]>;
   downloadBlob?(hash: string): Promise<Uint8Array | null>;
@@ -119,7 +143,12 @@ export async function synchronize(
 }> {
   const before = store.syncSnapshot();
   const pushed = await transport.push(before);
-  const pulled = store.mergeSyncPayload(await transport.pull());
+  const payload = await transport.pull(store.syncCursor("rows") ?? undefined);
+  const pulled = store.mergeSyncPayload(payload);
+  // Only after the merge landed, and only when the server actually sent one:
+  // a server that predates incremental pull answers with full state and no
+  // cursor, and must leave the watermark exactly where it was.
+  if (payload.cursor !== undefined) store.setSyncCursor("rows", payload.cursor);
   if (!documents) return { pushed: pushed.accepted, pulled: pulled.pulled };
   if (
     !transport.pushDocuments ||
@@ -139,12 +168,17 @@ export async function synchronize(
     snapshot.blobs.filter((blob) => missing.has(blob.hash)),
     snapshot.wrappedKeys,
   );
-  const remote = await transport.pullDocumentManifests();
+  const remote = await transport.pullDocumentManifests(
+    store.syncCursor("documents") ?? undefined,
+  );
   const pulledDocuments = await documents.apply(
     remote.manifests,
     remote.wrappedKeys,
     (hash) => transport.downloadBlob!(hash),
   );
+  if (remote.cursor !== undefined) {
+    store.setSyncCursor("documents", remote.cursor);
+  }
   return {
     pushed: pushed.accepted,
     pulled: pulled.pulled,

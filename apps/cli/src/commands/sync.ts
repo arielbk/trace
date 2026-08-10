@@ -215,6 +215,18 @@ function recordSyncStatus(
   }
 }
 
+/**
+ * Attach a watermark to a pull path. Omitting it entirely — rather than
+ * sending an empty one — is what asks the server for full state, so a machine
+ * that has never pulled and a server that has never heard of cursors both land
+ * on the same request the client has always sent.
+ */
+function withSince(path: string, since?: string): string {
+  return since === undefined
+    ? path
+    : `${path}?since=${encodeURIComponent(since)}`;
+}
+
 class HttpSyncTransport implements SyncTransport {
   private readonly serverUrl: string;
   private readonly token: string;
@@ -238,8 +250,8 @@ class HttpSyncTransport implements SyncTransport {
     });
   }
 
-  async pull(): Promise<SyncPayload> {
-    return this.request<SyncPayload>("/api/sync/pull");
+  async pull(since?: string): Promise<SyncPayload> {
+    return this.request<SyncPayload>(withSince("/api/sync/pull", since));
   }
 
   async pushDocuments(
@@ -261,11 +273,12 @@ class HttpSyncTransport implements SyncTransport {
     });
   }
 
-  async pullDocumentManifests(): Promise<{
+  async pullDocumentManifests(since?: string): Promise<{
     manifests: SyncDocManifest[];
     wrappedKeys: SyncWrappedKey[];
+    cursor?: string;
   }> {
-    return this.request("/api/sync/docs/manifests");
+    return this.request(withSince("/api/sync/docs/manifests", since));
   }
 
   async missingBlobs(hashes: string[]): Promise<string[]> {

@@ -149,6 +149,43 @@ test("sync sends local rows with the bearer token and prints a summary", async (
   }
 });
 
+test("a second sync asks the server only for what it has not already seen", async () => {
+  const home = loggedInHome("trace-sync-cursor-");
+  const databasePath = join(home, "trace.db");
+  openTraceStore(databasePath).close();
+  const pulls: string[] = [];
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+    const url = new URL(String(input));
+    switch (url.pathname) {
+      case "/api/sync/blobs/missing":
+        return Response.json([]);
+      case "/api/sync/docs/push":
+        return Response.json({ accepted: 0, uploaded: 0 });
+      case "/api/sync/docs/manifests":
+        pulls.push(`docs:${url.searchParams.get("since") ?? ""}`);
+        return Response.json({ manifests: [], wrappedKeys: [], cursor: "9" });
+      case "/api/sync/push":
+        return Response.json({ accepted: 0 });
+      default:
+        pulls.push(`rows:${url.searchParams.get("since") ?? ""}`);
+        return Response.json({ tasks: [], sessions: [], cursor: "42" });
+    }
+  });
+  const env = {
+    HOME: home,
+    TRACE_DB: databasePath,
+    TRACE_SERVER_URL: "https://sync.test",
+  };
+
+  expect(await runSyncCommand(env, { fetch })).toMatchObject({ exitCode: 0 });
+  expect(await runSyncCommand(env, { fetch })).toMatchObject({ exitCode: 0 });
+
+  // The watermark survives the process exiting: it lives in the database, not
+  // in the transport, so the second `trace sync` picks up where the first left
+  // off rather than asking for full state again.
+  expect(pulls).toEqual(["rows:", "docs:", "rows:42", "docs:9"]);
+});
+
 test("a failed sync records the error for the board without throwing", async () => {
   const home = mkdtempSync(join(tmpdir(), "trace-sync-cli-"));
   const databasePath = join(home, "trace.db");

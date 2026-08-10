@@ -11,8 +11,10 @@ import {
   synchronize,
   type SyncBlob,
   type SyncDocManifest,
+  type SyncCursorScope,
   type SyncDocumentStore,
   type SyncPayload,
+  type SyncStore,
   type SyncTransport,
   type SyncWrappedKey,
 } from "./sync.ts";
@@ -92,6 +94,44 @@ class MemoryTransport implements SyncTransport {
   }
 }
 
+/**
+ * A transport that records the watermark each pull was given and answers with
+ * whatever cursor the test sets — the server owns that value, so the tests
+ * hand it back rather than deriving it from the rows.
+ */
+class CursorTransport implements SyncTransport {
+  pulledSince: (string | undefined)[] = [];
+  pulledDocumentsSince: (string | undefined)[] = [];
+  cursor: string | undefined;
+  documentsCursor: string | undefined;
+
+  async push() {
+    return { accepted: 0 };
+  }
+
+  async pull(since?: string): Promise<SyncPayload> {
+    this.pulledSince.push(since);
+    return { tasks: [], sessions: [], cursor: this.cursor };
+  }
+
+  async pushDocuments() {
+    return { accepted: 0, uploaded: 0 };
+  }
+
+  async pullDocumentManifests(since?: string) {
+    this.pulledDocumentsSince.push(since);
+    return { manifests: [], wrappedKeys: [], cursor: this.documentsCursor };
+  }
+
+  async missingBlobs() {
+    return [];
+  }
+
+  async downloadBlob() {
+    return null;
+  }
+}
+
 class MemoryDocumentStore implements SyncDocumentStore {
   constructor(
     private manifest: SyncDocManifest,
@@ -137,6 +177,21 @@ function testFiles(
     path: string;
     blobHash: string;
   }[];
+}
+
+/**
+ * A SyncStore with no rows of its own, for the document tests: they exercise
+ * manifests and blobs, and only need synchronize() to have something to call.
+ * Its watermarks live in memory rather than sqlite.
+ */
+function rowlessStore(): SyncStore {
+  const cursors = new Map<SyncCursorScope, string>();
+  return {
+    syncSnapshot: () => ({ tasks: [], sessions: [] }),
+    mergeSyncPayload: () => ({ pulled: 0 }),
+    syncCursor: (scope) => cursors.get(scope) ?? null,
+    setSyncCursor: (scope, cursor) => void cursors.set(scope, cursor),
+  };
 }
 
 function database(name: string) {
@@ -470,6 +525,87 @@ describe("row synchronization", () => {
   });
 });
 
+describe("incremental pull", () => {
+  test("the cursor a pull returns is stored and sent as the next pull's since", async () => {
+    const server = new CursorTransport();
+    const store = openTraceStore(database("cursor"));
+
+    server.cursor = "7";
+    await synchronize(store, server);
+    server.cursor = "9";
+    await synchronize(store, server);
+
+    // First pull has no watermark to send; the second carries what the
+    // server handed back, never a value derived from the returned rows.
+    expect(server.pulledSince).toEqual([undefined, "7"]);
+    store.close();
+  });
+
+  test("a pull that returns no rows still advances the watermark", async () => {
+    const server = new CursorTransport();
+    const store = openTraceStore(database("empty-cursor"));
+
+    server.cursor = "7";
+    await synchronize(store, server);
+    // Nothing changed server-side, but rows this machine will never be sent
+    // again may still have been written: only the server's cursor knows.
+    server.cursor = "9";
+    expect(await synchronize(store, server)).toEqual({ pushed: 0, pulled: 0 });
+    await synchronize(store, server);
+
+    expect(server.pulledSince).toEqual([undefined, "7", "9"]);
+    store.close();
+  });
+
+  test("a server that sends no cursor gets a full pull and leaves the watermark alone", async () => {
+    const server = new CursorTransport();
+    const store = openTraceStore(database("legacy-server"));
+
+    // A server predating incremental pull answers every request with full
+    // state, so there is nothing to record and nothing to send.
+    await synchronize(store, server);
+    await synchronize(store, server);
+    expect(server.pulledSince).toEqual([undefined, undefined]);
+    expect(store.syncCursor("rows")).toBeNull();
+
+    // Should such a server appear after one that did send cursors, the stored
+    // watermark stays put — replaying it is safe, discarding it is not.
+    server.cursor = "7";
+    await synchronize(store, server);
+    server.cursor = undefined;
+    await synchronize(store, server);
+    expect(store.syncCursor("rows")).toBe("7");
+
+    store.close();
+  });
+
+  test("document manifests keep a watermark of their own", async () => {
+    const server = new CursorTransport();
+    const store = openTraceStore(database("doc-cursor"));
+    const documents = new MemoryDocumentStore(
+      {
+        taskId: "task-a",
+        filesCiphertext: "[]",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        machineId: "machine-a",
+      },
+      new Map(),
+    );
+
+    server.cursor = "7";
+    server.documentsCursor = "4";
+    await synchronize(store, server, documents);
+    await synchronize(store, server, documents);
+
+    // The two endpoints advance independently — they serve different tables,
+    // so folding them into one watermark would skip whichever lagged.
+    expect(server.pulledSince).toEqual([undefined, "7"]);
+    expect(server.pulledDocumentsSince).toEqual([undefined, "4"]);
+    expect(store.syncCursor("documents")).toBe("4");
+    store.close();
+  });
+});
+
 describe("document synchronization", () => {
   test("content-addressed documents converge, removals replace the task manifest, and re-sync is a no-op", async () => {
     const server = new MemoryTransport();
@@ -498,11 +634,11 @@ describe("document synchronization", () => {
       new Map(),
     );
 
-    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first))
+    expect(await synchronize(rowlessStore(), server, first))
       .toMatchObject({ uploadedBlobs: 2, pushedManifests: 1 });
     // Wrapped keys ride alongside manifests through synchronize().
     expect(server.wrappedKeys.get("task-a")).toBe("wrapped");
-    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, second))
+    expect(await synchronize(rowlessStore(), server, second))
       .toMatchObject({ downloadedBlobs: 2, pulledManifests: 1 });
     expect(second.paths()).toEqual(["state.md", "notes.md"]);
 
@@ -517,10 +653,10 @@ describe("document synchronization", () => {
       },
       new Map([["state-v1", new TextEncoder().encode("state")]]),
     );
-    await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, removal);
-    await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first);
+    await synchronize(rowlessStore(), server, removal);
+    await synchronize(rowlessStore(), server, first);
     expect(first.paths()).toEqual(["state.md"]);
-    expect(await synchronize({ syncSnapshot: () => ({ tasks: [], sessions: [] }), mergeSyncPayload: () => ({ pulled: 0 }) }, server, first))
+    expect(await synchronize(rowlessStore(), server, first))
       .toMatchObject({ uploadedBlobs: 0, pushedManifests: 0, downloadedBlobs: 0, pulledManifests: 0 });
     expect(server.blobUploadSizes.at(-1)).toBe(0);
   });

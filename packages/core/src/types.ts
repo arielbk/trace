@@ -1,6 +1,6 @@
 import type { ParsedStateMd } from "./state-parser.ts";
 import type { ProjectFingerprints } from "./project-fingerprint.ts";
-import type { SyncPayload } from "./sync.ts";
+import type { SyncCursorScope, SyncPayload } from "./sync.ts";
 
 export type Project = {
   id: string;
@@ -328,6 +328,13 @@ export type TaskStore = {
    * lets a caller ask "is there anything to push?" without building a payload.
    */
   syncFingerprint(): string;
+  /**
+   * The server-assigned watermark this machine last pulled up to, or null when
+   * it has never been given one. Opaque to the client — it is stored and
+   * replayed verbatim, never compared or incremented locally.
+   */
+  syncCursor(scope: SyncCursorScope): string | null;
+  setSyncCursor(scope: SyncCursorScope, cursor: string): void;
   mergeSyncPayload(payload: SyncPayload): { pulled: number };
   close(): void;
 };

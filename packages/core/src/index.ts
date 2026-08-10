@@ -9,6 +9,7 @@ export type { DocCrypto, DocCryptoFile, KeyWrapper } from "./doc-crypto.ts";
 export type {
   SyncPayload,
   SyncBlob,
+  SyncCursorScope,
   SyncDocManifest,
   SyncDocumentStore,
   SyncSessionRow,
