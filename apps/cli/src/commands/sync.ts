@@ -16,6 +16,12 @@ import {
 import { spawn as nodeSpawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
+import {
+  localSyncFingerprint,
+  readAutomaticSyncState,
+  shouldRequestAutomaticSync,
+  updateAutomaticSyncState,
+} from "./automatic-sync-policy.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 import { readStoredDocCryptoKey } from "./key.ts";
 import type { CommandResult, Env } from "./seam.ts";
@@ -62,6 +68,20 @@ export function requestAutomaticSync(
   if (!readAuthToken(env)) return;
   const executable = dependencies.executable ?? process.argv[1];
   if (!executable) return;
+
+  const databasePath = resolveDatabasePath(env);
+  if (
+    !shouldRequestAutomaticSync({
+      state: readAutomaticSyncState(databasePath),
+      fingerprint: localSyncFingerprint(databasePath),
+      now: Date.now(),
+    })
+  ) {
+    return;
+  }
+  updateAutomaticSyncState(databasePath, {
+    lastRequestedAt: new Date().toISOString(),
+  });
 
   try {
     const child = (dependencies.spawn ?? nodeSpawn)(
@@ -137,12 +157,18 @@ export async function runSyncCommand(
         },
       }),
     );
+    const syncedAt = new Date().toISOString();
     recordSyncStatus(databasePath, (path) =>
-      finalizeSyncRun(path, runId, {
-        lastSyncedAt: new Date().toISOString(),
-        lastError: undefined,
-      }),
+      finalizeSyncRun(path, runId, { lastSyncedAt: syncedAt, lastError: undefined }),
     );
+    // What the machine looks like now that server and local state agree — the
+    // baseline the next automatic trigger compares itself against. Taken after
+    // the merge and after the document push rewrote `doc-sync.json`, so a sync
+    // that changed nothing leaves a fingerprint the next request matches.
+    updateAutomaticSyncState(databasePath, {
+      lastSyncedAt: syncedAt,
+      fingerprint: localSyncFingerprint(databasePath),
+    });
     const documentChanges =
       (result.pushedManifests ?? 0) +
       (result.pulledManifests ?? 0) +

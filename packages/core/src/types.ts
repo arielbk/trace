@@ -321,6 +321,13 @@ export type TaskStore = {
   listDocsForTask(taskId: string): TaskDoc[];
   removeTaskDoc(taskId: string, path: string): void;
   syncSnapshot(): SyncPayload;
+  /**
+   * A cheap stand-in for {@link syncSnapshot} that changes whenever the rows it
+   * would send do: how many there are and the newest `updatedAt` on each side.
+   * Reading it costs one query instead of every row, which is the point — it
+   * lets a caller ask "is there anything to push?" without building a payload.
+   */
+  syncFingerprint(): string;
   mergeSyncPayload(payload: SyncPayload): { pulled: number };
   close(): void;
 };

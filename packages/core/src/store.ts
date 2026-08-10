@@ -1302,6 +1302,30 @@ class NodeSqliteTaskStore implements TaskStore {
     return { tasks, sessions };
   }
 
+  syncFingerprint(): string {
+    // Row counts as well as MAX(updated_at), so a row appearing or disappearing
+    // moves the fingerprint even when it is older than everything already here.
+    const row = this.#sqlite
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM tasks) AS taskCount,
+                (SELECT MAX(updated_at) FROM tasks) AS taskUpdatedAt,
+                (SELECT COUNT(*) FROM sessions) AS sessionCount,
+                (SELECT MAX(updated_at) FROM sessions) AS sessionUpdatedAt`,
+      )
+      .get() as {
+      taskCount: number;
+      taskUpdatedAt: string | null;
+      sessionCount: number;
+      sessionUpdatedAt: string | null;
+    };
+    return [
+      row.taskCount,
+      row.taskUpdatedAt ?? "",
+      row.sessionCount,
+      row.sessionUpdatedAt ?? "",
+    ].join("/");
+  }
+
   mergeSyncPayload(payload: SyncPayload): { pulled: number } {
     const local = this.syncSnapshot();
     const localTasks = new Map(local.tasks.map((row) => [row.id, row]));
