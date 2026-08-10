@@ -96,8 +96,10 @@ trace update
 ```
 
 Resolves the latest published version, reinstalls via your package manager, then
-runs `trace setup` for each registered agent to reconcile skills and hooks.
-Update is not selective and never opens the picker: it reconciles every target
+runs `trace setup` for each registered agent to reconcile skills and hooks. In a
+terminal it shows the version it would move to and asks before applying, so one
+command is enough; `trace update --yes` skips the question, and without a
+terminal it prints the plan and exits. Update is not selective and never opens the picker: it reconciles every target
 in `~/.trace/integrations.json`, so an install you chose once stays current
 without you re-choosing it. Use `trace setup` when you want to change *which*
 targets Trace manages.

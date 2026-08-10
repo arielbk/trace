@@ -21,7 +21,10 @@ export type ClackApi = {
     required: boolean;
     selectableGroups: boolean;
   }): Promise<string[] | symbol>;
-  confirm(options: { message: string }): Promise<boolean | symbol>;
+  confirm(options: {
+    message: string;
+    initialValue: boolean;
+  }): Promise<boolean | symbol>;
   note(message?: string, title?: string): void;
   warn(message: string): void;
   isCancel(value: unknown): boolean;
@@ -72,10 +75,13 @@ export function createClackPrompt(clack: ClackApi = defaultClack): SetupPrompt {
       return { cancelled: false, value: submitted as string[] };
     },
 
-    async confirmInstall(request: {
-      message: string;
-    }): Promise<PromptResult<boolean>> {
-      const answer = await clack.confirm({ message: request.message });
+    async confirm(request: { message: string }): Promise<PromptResult<boolean>> {
+      // Accepting the default is the common answer on both call sites — setting
+      // up the detected targets, taking the offered update — so Enter means yes.
+      const answer = await clack.confirm({
+        message: request.message,
+        initialValue: true,
+      });
       if (clack.isCancel(answer)) return { cancelled: true };
       return { cancelled: false, value: answer as boolean };
     },

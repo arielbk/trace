@@ -43,6 +43,15 @@ function isBareSetup(argv: string[]): boolean {
 }
 
 /**
+ * Bare `trace update` confirms inline instead of demanding a second run with
+ * `--yes`. As with setup, "bare" means the argument vector is exactly the
+ * command — any flag at all keeps update on the deterministic path.
+ */
+function isBareUpdate(argv: string[]): boolean {
+  return argv.length === 1 && argv[0] === "update";
+}
+
+/**
  * Decides what the host process can offer the CLI. A picker needs a real
  * terminal on *both* streams — a redirected stdin cannot answer it and a piped
  * stdout must stay machine-readable — so anything less stays deterministic.
@@ -121,7 +130,16 @@ export async function runTraceCliAsync(
     return runAuthCommand(command, env, { onOutput });
   }
   if (command === "update") {
-    return updateOperation(argv.slice(1), { env, cwd, stdin });
+    // The interactivity check lives inside this early return rather than after
+    // it, since the return is what update dispatch goes through.
+    const canAsk =
+      isBareUpdate(argv) && interactive === true && createPrompt !== undefined;
+    return updateOperation(
+      argv.slice(1),
+      { env, cwd, stdin },
+      undefined,
+      canAsk ? createPrompt() : undefined,
+    );
   }
   if (isBareSetup(argv) && interactive === true && createPrompt !== undefined) {
     return interactiveSetupOperation({ env, cwd, stdin }, createPrompt());
@@ -179,8 +197,8 @@ function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
       row("trace task list", "See your tasks") +
       row('trace task create "Title"', "Create a task") +
       `\n${style.heading("Keep Trace current")}\n` +
-      row("trace update", "Check for an update") +
-      row("trace update --yes", "Install it and refresh integrations") +
+      row("trace update", "Update Trace and refresh integrations") +
+      row("trace update --yes", "Update without asking first") +
       `\n${style.heading("Cloud")}\n` +
       row("trace login", "Connect your Trace account") +
       row("trace sync", "Sync local work") +

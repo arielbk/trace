@@ -13,7 +13,7 @@ test("a terminal on both streams gets an interactive session with a prompt adapt
 
   const prompt = options.createPrompt?.();
   expect(prompt?.selectTargets).toBeTypeOf("function");
-  expect(prompt?.confirmInstall).toBeTypeOf("function");
+  expect(prompt?.confirm).toBeTypeOf("function");
   expect(prompt?.note).toBeTypeOf("function");
 });
 

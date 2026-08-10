@@ -67,7 +67,7 @@ function fakePrompt(answers: {
       };
       return Promise.resolve(answer);
     },
-    confirmInstall(request) {
+    confirm(request) {
       prompt.confirmRequests.push(request);
       return Promise.resolve(answers.confirm ?? { cancelled: false, value: true });
     },
