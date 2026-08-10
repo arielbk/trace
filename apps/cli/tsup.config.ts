@@ -7,7 +7,7 @@ const appRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(appRoot, "../..");
 const webDistDir = resolve(repoRoot, "apps/web/dist");
 const bundledWebDir = resolve(appRoot, "dist/web");
-const skillsSourceDir = resolve(repoRoot, "plugin/skills");
+const skillsSourceDir = resolve(repoRoot, "skills");
 const bundledSkillsDir = resolve(appRoot, "dist/skills");
 
 function copyWebAssets(): void {

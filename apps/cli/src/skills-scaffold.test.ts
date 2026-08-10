@@ -5,22 +5,8 @@ import { describe, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const pluginManifest = join(repoRoot, ".claude-plugin", "plugin.json");
-const codexPluginManifest = join(
-  repoRoot,
-  "plugin",
-  ".codex-plugin",
-  "plugin.json",
-);
-const codexMarketplaceManifest = join(
-  repoRoot,
-  ".agents",
-  "plugins",
-  "marketplace.json",
-);
 const rootPackage = join(repoRoot, "package.json");
-const hooksConfig = join(repoRoot, "hooks", "hooks.json");
-const skillsRoot = join(repoRoot, "plugin", "skills");
+const skillsRoot = join(repoRoot, "skills");
 const traceSkill = join(skillsRoot, "trace", "SKILL.md");
 const traceClaudeResource = join(skillsRoot, "trace", "resources", "claude.md");
 const traceCodexResource = join(skillsRoot, "trace", "resources", "codex.md");
@@ -43,62 +29,12 @@ function bareTraceCommand(): string {
   return "trace";
 }
 
-describe("plugin scaffold", () => {
-  it("ships a Claude Code plugin manifest, hooks, and skills that invoke the bare CLI", () => {
+describe("skills scaffold", () => {
+  it("ships skills that invoke the bare CLI", () => {
     const packageJson = JSON.parse(readFileSync(rootPackage, "utf8")) as {
       type?: string;
     };
     assert.equal(packageJson.type, "module");
-
-    const manifest = JSON.parse(readFileSync(pluginManifest, "utf8")) as {
-      name?: string;
-      displayName?: string;
-      description?: string;
-      skills?: string;
-      hooks?: string;
-    };
-    assert.equal(manifest.name, "trace");
-    assert.equal(manifest.displayName, "Trace");
-    assert.equal(typeof manifest.description, "string");
-    // The canonical skills tree lives one level down, under plugin/skills/, so
-    // the one physical tree can also serve as the Codex plugin's ./skills/.
-    assert.equal(manifest.skills, "./plugin/skills/");
-    // The conventional hooks/hooks.json is auto-loaded; referencing it from the
-    // manifest causes a duplicate-hooks load error in Claude Code.
-    assert.equal(manifest.hooks, undefined);
-
-    const hooks = JSON.parse(readFileSync(hooksConfig, "utf8")) as {
-      hooks?: {
-        SessionStart?: Array<{
-          matcher?: string;
-          hooks?: Array<{ type?: string; command?: string }>;
-        }>;
-        SubagentStop?: Array<{
-          hooks?: Array<{ type?: string; command?: string }>;
-        }>;
-      };
-    };
-    assert.deepEqual(hooks.hooks?.SessionStart, [
-      {
-        matcher: "startup|resume|clear|compact",
-        hooks: [
-          {
-            type: "command",
-            command: `${bareTraceCommand()} hook session-start`,
-          },
-        ],
-      },
-    ]);
-    assert.deepEqual(hooks.hooks?.SubagentStop, [
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `${bareTraceCommand()} hook subagent-stop`,
-          },
-        ],
-      },
-    ]);
 
     for (const skill of [
       traceSkill,
@@ -141,55 +77,21 @@ describe("plugin scaffold", () => {
     }
   });
 
-  it("shares one skills tree between the Claude and Codex plugins via a nested path", () => {
-    const manifest = JSON.parse(readFileSync(codexPluginManifest, "utf8")) as {
-      name?: string;
-      version?: string;
-      description?: string;
-      skills?: string;
-    };
-    assert.equal(manifest.name, "trace");
-    assert.equal(typeof manifest.version, "string");
-    assert.equal(typeof manifest.description, "string");
-    // The Codex plugin root is the ./plugin subdir, which holds the one
-    // canonical skills tree at ./skills/ — the same tree the Claude manifest
-    // reaches via the nested ./plugin/skills/ path. No generated mirror.
-    assert.equal(manifest.skills, "./skills/");
-
-    const marketplace = JSON.parse(
-      readFileSync(codexMarketplaceManifest, "utf8"),
-    ) as {
-      name?: string;
-      plugins?: Array<{
-        name?: string;
-        source?: { source?: string; path?: string };
-      }>;
-    };
-    assert.equal(marketplace.name, "trace");
-    assert.equal(marketplace.plugins?.length, 1);
-    assert.equal(marketplace.plugins?.[0]?.name, "trace");
-    assert.equal(marketplace.plugins?.[0]?.source?.source, "local");
-
-    // Regression guard: Codex silently drops a plugin whose source.path is the
-    // marketplace root ("./") — it requires a subdirectory carrying its own
-    // .codex-plugin/plugin.json. The shared plugin root is ./plugin, and the
-    // canonical skills tree lives inside it so Codex's copy-on-install reaches
-    // it without an escaping path.
-    const pluginPath = marketplace.plugins?.[0]?.source?.path;
-    assert.equal(pluginPath, "./plugin");
-    assert.notEqual(pluginPath, "./");
-    assert.equal(
-      existsSync(
-        join(repoRoot, pluginPath as string, ".codex-plugin", "plugin.json"),
-      ),
-      true,
-    );
-    assert.equal(
-      existsSync(
-        join(repoRoot, pluginPath as string, "skills", "trace", "SKILL.md"),
-      ),
-      true,
-    );
+  it("ships no plugin-install manifests, which trace setup replaced", () => {
+    // The marketplace/plugin install channel was retired in favour of a global
+    // CLI install plus `trace setup`, which copies this same tree into each
+    // agent's config root. The manifests outlived their channel by four
+    // releases, drifting to a version string nothing bumped. If one comes back
+    // it needs a story for how it stays in sync — hence this guard.
+    for (const retired of [
+      join(repoRoot, ".claude-plugin"),
+      join(repoRoot, ".agents", "plugins"),
+      join(repoRoot, "plugin"),
+      // Duplicated the hook definitions that setup-operations.ts now owns.
+      join(repoRoot, "hooks"),
+    ]) {
+      assert.equal(existsSync(retired), false, `${retired} should not exist`);
+    }
   });
 
   it("ships a host-neutral trace skill that dispatches to per-host resources", () => {

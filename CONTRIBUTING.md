@@ -67,13 +67,13 @@ drives real `claude -p` calls against a sandbox config dir. See
 - `apps/cli`: the `trace` CLI
 - `apps/web`: the board (the local web UI)
 - `packages/core`: the store, transcript adapters, and re-entry manifest
-- `plugin/skills/`: the one canonical skills tree, shared by both hosts. The
-  Claude plugin (manifest at `.claude-plugin/plugin.json`) reaches it via the
-  nested `./plugin/skills/` path; the Codex plugin roots at `plugin/` itself
-  (manifest `plugin/.codex-plugin/plugin.json`, surfaced through
-  `.agents/plugins/marketplace.json`) and reads `./skills/`. No generated mirror.
+- `skills/`: the one canonical skills tree, shared by every host. The CLI build
+  copies it to `apps/cli/dist/skills/` so the npm tarball ships it, and
+  `trace setup` installs from whichever of the two it finds. No generated
+  mirror, and no plugin manifest — the marketplace install channel was retired
+  in favour of the global CLI plus `trace setup`.
 - The only per-host skill, `trace`, is a host-neutral dispatcher
-  (`plugin/skills/trace/SKILL.md`) that points at `resources/claude.md` or
+  (`skills/trace/SKILL.md`) that points at `resources/claude.md` or
   `resources/codex.md` for the host-specific binding flow.
 
 ## Testing skills and the CLI locally
@@ -100,8 +100,7 @@ build.
 
 A release publishes one package, `@arielbk/trace`, to npm. The tarball contains
 the CLI, web UI, and canonical skills tree; `trace setup` installs those bundled
-artifacts. Repository plugin manifests remain compatibility metadata and are not
-versioned release artifacts.
+artifacts.
 
 One command stamps `apps/cli/package.json`, builds the web UI and CLI, packs the
 tarball, and publishes it. A dry-run restores the original package version when

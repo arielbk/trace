@@ -87,7 +87,7 @@ type AgentSetupOptions = {
   configRoot: string;
   /** Registered Trace integration targets and their owned artifacts. */
   registry: IntegrationRegistry;
-  /** Directory holding the packaged skill templates (`plugin/skills`). */
+  /** Directory holding the packaged skill templates (`skills/`). */
   skillsSourceDir: string;
   /** Absolute path to the persistent Trace CLI used for hook commands. */
   cliPath: string;
@@ -101,7 +101,7 @@ type AgentSetupOptions = {
 
 /**
  * Locates the packaged skill templates. Checks two locations:
- * 1. Source tree: `plugin/skills` four levels above `src/commands/setup-operations.ts`
+ * 1. Source tree: `skills/` four levels above `src/commands/setup-operations.ts`
  * 2. Published bundle: `dist/skills/` adjacent to `dist/trace.js` (copied there
  *    by the build step so the tarball ships the canonical templates)
  */
@@ -109,10 +109,7 @@ function resolvePackagedSkillsDir(): string {
   const sourceRoot = fileURLToPath(new URL("../../../..", import.meta.url));
   const bundleDir = dirname(resolve(fileURLToPath(import.meta.url)));
 
-  const candidates = [
-    join(sourceRoot, "plugin", "skills"),
-    join(bundleDir, "skills"),
-  ];
+  const candidates = [join(sourceRoot, "skills"), join(bundleDir, "skills")];
 
   for (const candidate of candidates) {
     if (existsSync(join(candidate, "trace", "SKILL.md"))) {
@@ -120,7 +117,7 @@ function resolvePackagedSkillsDir(): string {
     }
   }
 
-  return join(sourceRoot, "plugin", "skills");
+  return join(sourceRoot, "skills");
 }
 
 function targetRecord(
