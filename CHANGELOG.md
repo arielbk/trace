@@ -3,6 +3,36 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.19.0
+
+`trace update` is now a one-step operation in a terminal, and no longer trips a
+Node deprecation warning on Windows.
+
+### Highlights
+
+- **Bare `trace update` asks instead of exiting.** Upgrading used to take two
+  commands: the first printed a plan and told you to re-run it with `--yes`.
+  Run interactively, it now shows the plan and asks `Update to vY?` with Yes
+  preselected, applying on confirmation. Declining — or Ctrl-C — prints
+  `Update cancelled; no changes made.` and exits 0.
+
+### Fixes
+
+- **Windows updates no longer emit DEP0190.** The update spawn passed an args
+  array alongside `shell: true` on win32, the exact combination Node
+  deprecated. Args are now folded into a single pre-quoted command string.
+  The shell stays on Windows deliberately — Node refuses to spawn `.cmd`/`.bat`
+  directly (CVE-2024-27980), and both the package managers and the recorded CLI
+  path are batch shims there. POSIX is untouched.
+
+### Chores
+
+- The prompt seam is split, so a command needing only a yes/no question
+  receives a narrow `ConfirmPrompt` rather than the full setup prompt.
+- Non-interactive `trace update` output is now pinned by whole-result
+  assertions lifted from the 0.18.2 release, covering the preview, `--yes`
+  apply, already-current, and reconcile-failure paths.
+
 ## 0.18.2
 
 Fixes to the sign-in and first-sync flow, found by walking the whole flow on a
