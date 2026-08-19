@@ -207,6 +207,41 @@ export function useLoginAttempt(attemptId: string | null) {
   });
 }
 
+export async function downloadTaskExport(
+  ref: string,
+  options: { includeTranscripts?: boolean } = {},
+): Promise<void> {
+  const query = options.includeTranscripts === true ? "?transcripts=1" : "";
+  const url = `/api/tasks/${encodeURIComponent(ref)}/export${query}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new HttpError(res.status, `GET export ${ref} failed: ${res.status}`);
+  }
+  const blob = await res.blob();
+  const fileName =
+    filenameFromContentDisposition(res.headers.get("content-disposition")) ??
+    `${ref}.zip`;
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (header === null) return null;
+  const quoted = /filename="([^"]+)"/.exec(header);
+  if (quoted?.[1]) return quoted[1];
+  const unquoted = /filename=([^;]+)/.exec(header);
+  return unquoted?.[1]?.trim() ?? null;
+}
+
 export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
   const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/archive`, { method: "POST" });
   if (!res.ok) throw new HttpError(res.status, `POST archive ${ref} failed: ${res.status}`);
