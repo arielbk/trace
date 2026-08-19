@@ -225,12 +225,3 @@ test("exportTranscript reports no-transcript-file for a Codex subagent synthetic
     }),
   ).toEqual({ status: "no-transcript-file" });
 });
-
-test("exportTranscript reports no-transcript-file for a Cursor composer locator", () => {
-  expect(
-    getTranscriptAdapter("cursor").exportTranscript({
-      transcriptPath: "cursor:composer-1",
-      ...localMachine,
-    }),
-  ).toEqual({ status: "no-transcript-file" });
-});

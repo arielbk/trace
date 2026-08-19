@@ -12,12 +12,15 @@ export type TranscriptFormat =
   | "claude-jsonl"
   | "codex-jsonl"
   | "copilot-jsonl"
-  | "cursor-agent-jsonl";
+  | "cursor-agent-jsonl"
+  | "cursor-composer-export";
 
 export type ExportTranscriptInput = {
   transcriptPath: string;
   sessionMachineId: string;
   localMachineId: string;
+  /** Cursor GUI composers only — points the reader at a storage tree. */
+  storageRoot?: string;
 };
 
 export type ExportedTranscript =

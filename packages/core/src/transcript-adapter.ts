@@ -72,8 +72,8 @@ export type ReadTranscriptHeadInput = ReadTranscriptTailInput;
  * consult `getTranscriptAdapter(tool)` instead of importing per-tool free
  * functions and re-branching on the tool string. `head` surfaces the first user
  * messages in order (for session naming); `tail` surfaces the last messages.
- * `exportTranscript` copies a file-backed transcript verbatim, or reports why
- * it cannot.
+ * `exportTranscript` copies a file-backed transcript verbatim, extracts a
+ * Cursor composer into JSON, or reports why it cannot.
  */
 export type TranscriptAdapter = {
   readonly tool: SessionTool;
