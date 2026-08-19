@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { openTraceStore } from "@trace/core";
+import { openTraceStore, unzipExportBundle } from "@trace/core";
 import { traceApiPlugin } from "../server/api-plugin.ts";
 
 type CapturedResponse = {
   statusCode: number;
   headers: Record<string, string>;
   body: string;
+  rawBody: string | Uint8Array | undefined;
 };
 
 type TestRequest = { method: string; url: string };
@@ -138,6 +139,37 @@ test("non-API requests fall through to the next middleware", () => {
   }
 });
 
+test("task export endpoint returns zip bytes with attachment disposition", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-web-api-"));
+  const databasePath = join(dir, "trace.sqlite");
+  const originalTraceDb = process.env.TRACE_DB;
+  process.env.TRACE_DB = databasePath;
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    store.close();
+
+    const response = invokeApi("GET", `/api/tasks/${task.slug}/export`);
+    const date = new Date().toISOString().slice(0, 10);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/zip");
+    expect(response.headers["content-disposition"]).toBe(
+      `attachment; filename="checkout-${date}.zip"`,
+    );
+    expect(response.rawBody).toBeInstanceOf(Uint8Array);
+    expect(
+      Object.keys(unzipExportBundle(response.rawBody as Uint8Array)).some((path) =>
+        path.endsWith("/manifest.json"),
+      ),
+    ).toBe(true);
+  } finally {
+    restoreTraceDb(originalTraceDb);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function invokeApi(
   method: string,
   url: string,
@@ -169,13 +201,15 @@ class TestResponse {
   statusCode = 200;
   readonly headers: Record<string, string> = {};
   body = "";
+  rawBody: string | Uint8Array | undefined;
 
   setHeader(name: string, value: string): void {
     this.headers[name.toLowerCase()] = value;
   }
 
-  end(body = ""): void {
-    this.body = body;
+  end(chunk?: string | Uint8Array): void {
+    this.rawBody = chunk;
+    this.body = typeof chunk === "string" ? chunk : "";
   }
 
   capture(): CapturedResponse {
@@ -183,6 +217,7 @@ class TestResponse {
       statusCode: this.statusCode,
       headers: this.headers,
       body: this.body,
+      rawBody: this.rawBody,
     };
   }
 }

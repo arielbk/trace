@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import {
   handleTraceApiRequest,
@@ -16,6 +16,8 @@ import {
   type TraceApiResponse,
   type TraceApiResponseSink,
 } from "./api-handler.ts";
+import { buildTaskExportZip } from "./export-input.ts";
+import { unzipExportBundle } from "./export-zip.ts";
 import { writeSyncStatusFile } from "./sync-status.ts";
 
 function jsonBody(response: TraceApiResponse | null) {
@@ -23,6 +25,22 @@ function jsonBody(response: TraceApiResponse | null) {
     throw new Error("expected JSON string body");
   }
   return JSON.parse(response.body);
+}
+
+function unzipTree(bytes: Uint8Array): Record<string, string> {
+  const files = unzipExportBundle(bytes);
+  const tree: Record<string, string> = {};
+  for (const [path, contents] of Object.entries(files)) {
+    tree[path] = new TextDecoder().decode(contents);
+  }
+  return tree;
+}
+
+function zipBytes(response: TraceApiResponse | null): Uint8Array {
+  if (response === null || !(response.body instanceof Uint8Array)) {
+    throw new Error("expected zip body");
+  }
+  return response.body;
 }
 
 function withSeededDatabase(
@@ -893,6 +911,124 @@ test("non-API requests return null so the host can fall through", () => {
   }
 });
 
+test("GET /api/tasks/:ref/export returns zip bytes matching the CLI builder tree", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "state.md"), "# State\nWhere things stand.\n");
+  writeFileSync(join(docsDir, "notes.md"), "native notes\n");
+
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-19T12:00:00.000Z"));
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/zip");
+    expect(response!.contentDisposition).toBe(
+      'attachment; filename="checkout-2026-08-19.zip"',
+    );
+    expect(response!.body).toBeInstanceOf(Uint8Array);
+
+    const store = openTraceStore(databasePath);
+    const expected = buildTaskExportZip(store, databasePath, taskSlug);
+    store.close();
+    expect(expected).not.toBeNull();
+    const tree = unzipTree(zipBytes(response));
+    expect(tree).toEqual(unzipTree(expected!.bytes));
+    expect(Object.keys(tree).sort()).toEqual([
+      "checkout-2026-08-19/README.md",
+      "checkout-2026-08-19/docs/notes.md",
+      "checkout-2026-08-19/docs/state.md",
+      "checkout-2026-08-19/manifest.json",
+    ]);
+    expect(Object.keys(tree).some((path) => path.includes("/transcripts/"))).toBe(
+      false,
+    );
+  } finally {
+    vi.useRealTimers();
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/export includes transcripts only when the query parameter is set", () => {
+  let taskId = "";
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    const task = store.createTask("checkout");
+    taskId = task.id;
+    taskSlug = task.slug;
+  });
+  const transcriptPath = join(databasePath, "..", "root.jsonl");
+  writeFileSync(transcriptPath, "verbatim session bytes\n");
+  const store = openTraceStore(databasePath);
+  store.assignSession(
+    store.registerSession({
+      id: "root-1",
+      transcriptPath,
+      tool: "claude",
+    }).id,
+    taskId,
+  );
+  store.close();
+
+  try {
+    const off = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export`,
+    );
+    expect(off!.status).toBe(200);
+    const offTree = unzipTree(zipBytes(off));
+    expect(
+      Object.keys(offTree).some((path) => path.includes("/transcripts/")),
+    ).toBe(false);
+
+    const on = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export?transcripts=1`,
+    );
+    expect(on!.status).toBe(200);
+    const onTree = unzipTree(zipBytes(on));
+    const transcriptPath = Object.keys(onTree).find((path) =>
+      path.endsWith("/transcripts/root-1.jsonl"),
+    );
+    expect(transcriptPath).toBeDefined();
+    expect(onTree[transcriptPath!]).toBe("verbatim session bytes\n");
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/export returns 404 for unknown tasks and 405 for non-GET", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const missing = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/tasks/does-not-exist/export",
+    );
+    expect(missing!.status).toBe(404);
+
+    const post = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/tasks/does-not-exist/export",
+    );
+    expect(post!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
 test("writeTraceApiResponse passes Uint8Array through without stringification", () => {
   const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
   let ended: string | Uint8Array | undefined;
@@ -911,10 +1047,14 @@ test("writeTraceApiResponse passes Uint8Array through without stringification", 
     status: 200,
     body: bytes,
     contentType: "application/zip",
+    contentDisposition: 'attachment; filename="checkout-2026-08-19.zip"',
   });
 
   expect(sink.statusCode).toBe(200);
   expect(headers["content-type"]).toBe("application/zip");
+  expect(headers["content-disposition"]).toBe(
+    'attachment; filename="checkout-2026-08-19.zip"',
+  );
   expect(ended).toBe(bytes);
   expect(typeof ended).not.toBe("string");
 });

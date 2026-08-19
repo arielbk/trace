@@ -1,6 +1,7 @@
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, resolve, sep } from "node:path";
+import { buildTaskExportZip } from "./export-input.ts";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { readSyncStatus } from "./sync-status.ts";
@@ -10,6 +11,7 @@ export type TraceApiResponse = {
   /** JSON/text for most routes; raw bytes for binary downloads such as zip export. */
   body: string | Uint8Array;
   contentType?: string;
+  contentDisposition?: string;
 };
 
 /**
@@ -137,6 +139,29 @@ export function handleTraceApiRequest(
       }
     }
 
+    const exportMatch = /^\/api\/tasks\/([^/]+)\/export\/?$/.exec(path);
+    if (exportMatch?.[1]) {
+      if (method !== "GET") return methodNotAllowed();
+      const store = openTraceStore(databasePath);
+      try {
+        const exported = buildTaskExportZip(
+          store,
+          databasePath,
+          decodeURIComponent(exportMatch[1]),
+          { includeTranscripts: transcriptsQueryEnabled(rawUrl) },
+        );
+        if (!exported) return notFound();
+        return {
+          status: 200,
+          body: exported.bytes,
+          contentType: "application/zip",
+          contentDisposition: `attachment; filename="${exported.fileName}"`,
+        };
+      } finally {
+        store.close();
+      }
+    }
+
     const match = /^\/api\/tasks\/([^/]+)\/timeline\/?$/.exec(path);
     if (match?.[1]) {
       if (method !== "GET") return methodNotAllowed();
@@ -209,6 +234,9 @@ export function writeTraceApiResponse(
   if (response.contentType) {
     sink.setHeader("content-type", response.contentType);
   }
+  if (response.contentDisposition) {
+    sink.setHeader("content-disposition", response.contentDisposition);
+  }
   sink.end(response.body);
 }
 
@@ -230,6 +258,14 @@ function methodNotAllowed(): TraceApiResponse {
 
 function badRequest(message: string): TraceApiResponse {
   return { status: 400, body: message };
+}
+
+function transcriptsQueryEnabled(rawUrl: string): boolean {
+  const value = new URLSearchParams(rawUrl.split("?", 2)[1] ?? "").get(
+    "transcripts",
+  );
+  if (value === null) return false;
+  return value === "1" || value.toLowerCase() === "true";
 }
 
 /** Content types for non-markdown docs, served as raw text. */
