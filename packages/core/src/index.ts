@@ -74,7 +74,31 @@ export type { StateMdDraft } from "./state-format.ts";
 export { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 export { resolveDocTitle } from "./display-title.ts";
 export type { ResolvableDoc } from "./display-title.ts";
-export { renderManifest, stripFence } from "./state-manifest.ts";
+export {
+  buildExportBundle,
+  exportFolderName,
+  manifestTokens,
+} from "./export-bundle.ts";
+export type {
+  BundleFile,
+  ExportBundleInput,
+  ExportDocInput,
+  ExportManifest,
+  ExportManifestDoc,
+  ExportManifestSession,
+  ExportManifestTokens,
+  ExportSessionInput,
+} from "./export-bundle.ts";
+export { unzipExportBundle, zipExportBundle } from "./export-zip.ts";
+export { buildTaskExportZip, gatherExportInput } from "./export-input.ts";
+export type {
+  GatherExportInputOptions,
+  TaskExportZip,
+} from "./export-input.ts";
+export {
+  renderManifest,
+  stripFence,
+} from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export {
   STATE_DOCUMENT_FILENAME,

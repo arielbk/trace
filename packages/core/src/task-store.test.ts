@@ -1329,6 +1329,8 @@ test("migration keeps existing session rows readable with a null model", () => {
         subagentType: null,
         agentId: null,
         createdAt: "2026-05-29T00:00:01.000Z",
+        updatedAt: "2026-05-29T00:00:01.000Z",
+        machineId: expect.any(String),
         tokenTotals: {
           inputTokens: 1,
           outputTokens: 2,
@@ -1824,19 +1826,22 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
     const doc = store.addTaskDoc(task.id, "/tmp/spec.md");
 
     waitForNextMillisecond();
-    const codexSession = store.registerSession({
-      id: "codex-session",
-      transcriptPath: "/tmp/codex.jsonl",
-      tool: "codex",
-      tokenTotals: {
-        inputTokens: 7,
-        outputTokens: 11,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 5,
-        totalTokens: 23,
-      },
-    });
-    store.assignSession(codexSession.id, task.id);
+    const assignedCodex = store.assignSession(
+      store.registerSession({
+        id: "codex-session",
+        transcriptPath: "/tmp/codex.jsonl",
+        tool: "codex",
+        tokenTotals: {
+          inputTokens: 7,
+          outputTokens: 11,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 5,
+          totalTokens: 23,
+        },
+      }).id,
+      task.id,
+    );
+    const assignedClaude = store.getSession(claudeSession.id)!;
 
     store.registerSession({
       id: "unassigned-session",
@@ -1859,19 +1864,19 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
       items: [
         {
           type: "session",
-          createdAt: claudeSession.createdAt,
-          session: { ...claudeSession, taskId: task.id },
+          createdAt: assignedClaude.createdAt,
+          session: assignedClaude,
           sessionName: null,
         },
         { type: "doc", createdAt: doc.createdAt, doc, sizeBytes: null },
         {
           type: "session",
-          createdAt: codexSession.createdAt,
-          session: { ...codexSession, taskId: task.id },
+          createdAt: assignedCodex.createdAt,
+          session: assignedCodex,
           sessionName: null,
         },
       ],
-      lastActivityAt: codexSession.createdAt,
+      lastActivityAt: assignedCodex.createdAt,
       tokenTotals: {
         inputTokens: 17,
         outputTokens: 31,

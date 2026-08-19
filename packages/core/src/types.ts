@@ -86,6 +86,8 @@ export type Session = {
   subagentType: string | null;
   agentId: string | null;
   createdAt: string;
+  updatedAt?: string;
+  machineId?: string;
   tokenTotals: TokenTotals;
   // Live context-window occupancy when the tool exposes it (Cursor/Codex).
   // Refreshed from the source transcript when the session is read.
