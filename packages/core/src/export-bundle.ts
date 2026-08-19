@@ -1,3 +1,8 @@
+import type {
+  ExportedTranscript,
+  TranscriptExportStatus,
+  TranscriptFormat,
+} from "./export-transcript.ts";
 import { addTokenTotals, emptyTokenTotals, freshTokenTotal } from "./token-totals.ts";
 import type { SessionOrigin, SessionTool, TokenTotals } from "./types.ts";
 
@@ -26,6 +31,7 @@ export type ExportSessionInput = {
   updatedAt: string;
   machineId: string;
   tokens: TokenTotals;
+  transcript?: ExportedTranscript;
 };
 
 export type ExportBundleInput = {
@@ -74,6 +80,11 @@ export type ExportManifestSession = {
   updatedAt: string;
   machineId: string;
   tokens: ExportManifestTokens;
+  transcript?: {
+    status: TranscriptExportStatus;
+    format?: TranscriptFormat;
+    path?: string;
+  };
 };
 
 export type ExportManifest = {
@@ -137,6 +148,15 @@ export function buildExportBundle(input: ExportBundleInput): BundleFile[] {
     }
   }
 
+  for (const session of input.sessions) {
+    const transcript = session.transcript;
+    if (transcript?.status !== "included") continue;
+    files.push({
+      path: `${folder}/${transcriptBundlePath(session.id, transcript.extension)}`,
+      contents: transcript.bytes,
+    });
+  }
+
   return files;
 }
 
@@ -181,19 +201,25 @@ function buildManifest(
       if (doc.description) entry.description = doc.description;
       return entry;
     }),
-    sessions: input.sessions.map((session) => ({
-      id: session.id,
-      tool: session.tool,
-      model: session.model,
-      origin: session.origin,
-      parentSessionId: session.parentSessionId,
-      subagentType: session.subagentType,
-      title: session.title,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
-      machineId: session.machineId,
-      tokens: manifestTokens(session.tokens),
-    })),
+    sessions: input.sessions.map((session) => {
+      const row: ExportManifestSession = {
+        id: session.id,
+        tool: session.tool,
+        model: session.model,
+        origin: session.origin,
+        parentSessionId: session.parentSessionId,
+        subagentType: session.subagentType,
+        title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        machineId: session.machineId,
+        tokens: manifestTokens(session.tokens),
+      };
+      if (session.transcript) {
+        row.transcript = manifestTranscript(session.id, session.transcript);
+      }
+      return row;
+    }),
     totals: {
       rootSessions: countOrigin(input.sessions, "root"),
       subagentSessions: countOrigin(input.sessions, "subagent"),
@@ -320,6 +346,24 @@ function uniqueDocPath(fileName: string, used: Set<string>): string {
 function basename(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] ?? path;
+}
+
+function transcriptBundlePath(sessionId: string, extension: ".jsonl" | ".json"): string {
+  return `transcripts/${sessionId}${extension}`;
+}
+
+function manifestTranscript(
+  sessionId: string,
+  transcript: ExportedTranscript,
+): NonNullable<ExportManifestSession["transcript"]> {
+  if (transcript.status !== "included") {
+    return { status: transcript.status };
+  }
+  return {
+    status: "included",
+    format: transcript.format,
+    path: transcriptBundlePath(sessionId, transcript.extension),
+  };
 }
 
 function countOrigin(

@@ -8,12 +8,14 @@ import {
   type ExportSessionInput,
 } from "./export-bundle.ts";
 import { zipExportBundle } from "./export-zip.ts";
+import { getTranscriptAdapter } from "./transcript-adapter.ts";
 import { resolveTaskDocsDir } from "./task-docs.ts";
 import type { Session, TaskDoc, TaskStore } from "./types.ts";
 
 export type GatherExportInputOptions = {
   exportedAt?: string;
   generator?: string;
+  includeTranscripts?: boolean;
 };
 
 export type TaskExportZip = {
@@ -38,7 +40,12 @@ export function gatherExportInput(
     .filter((doc): doc is ExportDocInput => doc !== null);
   const sessions = timeline.items
     .filter((item) => item.type === "session")
-    .map((item) => toExportSession(item.session));
+    .map((item) =>
+      toExportSession(
+        item.session,
+        options.includeTranscripts === true ? store.getMachineId() : undefined,
+      ),
+    );
 
   const task: ExportBundleInput["task"] = {
     id: timeline.task.id,
@@ -95,8 +102,11 @@ function toExportDoc(doc: TaskDoc, docsDir: string): ExportDocInput | null {
   return exportDoc;
 }
 
-function toExportSession(session: Session): ExportSessionInput {
-  return {
+function toExportSession(
+  session: Session,
+  localMachineId?: string,
+): ExportSessionInput {
+  const exported: ExportSessionInput = {
     id: session.id,
     tool: session.tool,
     model: session.model,
@@ -109,6 +119,14 @@ function toExportSession(session: Session): ExportSessionInput {
     machineId: session.machineId ?? "",
     tokens: session.tokenTotals,
   };
+  if (localMachineId !== undefined) {
+    exported.transcript = getTranscriptAdapter(session.tool).exportTranscript({
+      transcriptPath: session.transcriptPath,
+      sessionMachineId: session.machineId ?? "",
+      localMachineId,
+    });
+  }
+  return exported;
 }
 
 function isUnderDocsDir(path: string, docsDir: string): boolean {

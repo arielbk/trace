@@ -377,3 +377,69 @@ test("every fact README.md states also appears in manifest.json", () => {
     expect(manifestJson, `manifest missing fact: ${fact}`).toContain(fact);
   }
 });
+
+test("included transcripts land under transcripts/ and on the session row", () => {
+  const bytes = new TextEncoder().encode("verbatim jsonl\n");
+  const files = fileMap(
+    buildExportBundle(
+      input({
+        sessions: [
+          session({
+            id: "root-1",
+            transcript: {
+              status: "included",
+              bytes,
+              format: "claude-jsonl",
+              extension: ".jsonl",
+            },
+          }),
+        ],
+      }),
+    ),
+  );
+
+  expect(files.get(`${folder}/transcripts/root-1.jsonl`)).toBe("verbatim jsonl\n");
+
+  const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!) as {
+    sessions: Array<{ id: string; transcript: Record<string, string> }>;
+  };
+  expect(manifest.sessions[0]?.transcript).toEqual({
+    status: "included",
+    format: "claude-jsonl",
+    path: "transcripts/root-1.jsonl",
+  });
+});
+
+test("unavailable transcript statuses are distinguished and write no file", () => {
+  const files = buildExportBundle(
+    input({
+      sessions: [
+        session({ id: "other", transcript: { status: "another-machine" } }),
+        session({ id: "gone", transcript: { status: "file-gone" } }),
+        session({ id: "synthetic", transcript: { status: "no-transcript-file" } }),
+      ],
+    }),
+  );
+  const paths = files.map((file) => file.path);
+  expect(paths.some((path) => path.includes("/transcripts/"))).toBe(false);
+
+  const manifest = JSON.parse(fileMap(files).get(`${folder}/manifest.json`)!) as {
+    sessions: Array<{ id: string; transcript: { status: string } }>;
+  };
+  expect(manifest.sessions.map((row) => [row.id, row.transcript.status])).toEqual([
+    ["other", "another-machine"],
+    ["gone", "file-gone"],
+    ["synthetic", "no-transcript-file"],
+  ]);
+});
+
+test("sessions omit transcript when it was not requested", () => {
+  const files = fileMap(
+    buildExportBundle(input({ sessions: [session({ id: "root-1" })] })),
+  );
+  const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!) as {
+    sessions: Array<{ transcript?: unknown }>;
+  };
+  expect(manifest.sessions[0]?.transcript).toBeUndefined();
+  expect([...files.keys()].some((path) => path.includes("/transcripts/"))).toBe(false);
+});

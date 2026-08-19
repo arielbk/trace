@@ -325,4 +325,5 @@ export type TaskStore = {
   syncSnapshot(): SyncPayload;
   mergeSyncPayload(payload: SyncPayload): { pulled: number };
   close(): void;
+  getMachineId(): string;
 };

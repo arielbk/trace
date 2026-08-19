@@ -146,6 +146,10 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#backfillProjects();
   }
 
+  getMachineId(): string {
+    return this.#machineId;
+  }
+
   createTask(title: string, projectRoot = "", description?: string): Task {
     const trimmedTitle = title.trim();
     // A title that reads as a slug ("break-stop-and-stale-expiry") becomes a
