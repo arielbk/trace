@@ -195,6 +195,12 @@ export type {
   ParsedTranscript,
   TranscriptAdapter,
 } from "./transcript-adapter.ts";
+export type {
+  ExportedTranscript,
+  ExportTranscriptInput,
+  TranscriptExportStatus,
+  TranscriptFormat,
+} from "./export-transcript.ts";
 export {
   addTokenTotals,
   emptyTokenTotals,

@@ -157,3 +157,80 @@ test("readTail reads from disk and returns empty for a missing transcript", () =
     { role: "user", text: "Run the focused tests" },
   ]);
 });
+
+const localMachine = { sessionMachineId: "machine-a", localMachineId: "machine-a" };
+
+function includedBytes(tool: "claude" | "codex" | "copilot" | "cursor", path: string) {
+  const result = getTranscriptAdapter(tool).exportTranscript({
+    transcriptPath: path,
+    ...localMachine,
+  });
+  expect(result.status).toBe("included");
+  if (result.status !== "included") throw new Error("expected included transcript");
+  return result;
+}
+
+test("exportTranscript copies a claude transcript byte-for-byte with its native format", () => {
+  const exported = includedBytes("claude", claudeFixture);
+  expect(exported.bytes).toEqual(new Uint8Array(readFileSync(claudeFixture)));
+  expect(exported.format).toBe("claude-jsonl");
+  expect(exported.extension).toBe(".jsonl");
+});
+
+test("exportTranscript copies a codex transcript byte-for-byte with its native format", () => {
+  const exported = includedBytes("codex", codexFixture);
+  expect(exported.bytes).toEqual(new Uint8Array(readFileSync(codexFixture)));
+  expect(exported.format).toBe("codex-jsonl");
+  expect(exported.extension).toBe(".jsonl");
+});
+
+test("exportTranscript copies a copilot transcript byte-for-byte with its native format", () => {
+  const exported = includedBytes("copilot", copilotFixture);
+  expect(exported.bytes).toEqual(new Uint8Array(readFileSync(copilotFixture)));
+  expect(exported.format).toBe("copilot-jsonl");
+  expect(exported.extension).toBe(".jsonl");
+});
+
+test("exportTranscript copies a Cursor agent-transcript locator byte-for-byte", () => {
+  const exported = includedBytes("cursor", claudeFixture);
+  expect(exported.bytes).toEqual(new Uint8Array(readFileSync(claudeFixture)));
+  expect(exported.format).toBe("cursor-agent-jsonl");
+  expect(exported.extension).toBe(".jsonl");
+});
+
+test("exportTranscript reports another-machine when the file is missing and machine ids differ", () => {
+  expect(
+    getTranscriptAdapter("claude").exportTranscript({
+      transcriptPath: "/tmp/trace-export-missing-transcript.jsonl",
+      sessionMachineId: "other-machine",
+      localMachineId: "machine-a",
+    }),
+  ).toEqual({ status: "another-machine" });
+});
+
+test("exportTranscript reports file-gone when the path no longer exists on this machine", () => {
+  expect(
+    getTranscriptAdapter("claude").exportTranscript({
+      transcriptPath: "/tmp/trace-export-missing-transcript.jsonl",
+      ...localMachine,
+    }),
+  ).toEqual({ status: "file-gone" });
+});
+
+test("exportTranscript reports no-transcript-file for a Codex subagent synthetic locator", () => {
+  expect(
+    getTranscriptAdapter("codex").exportTranscript({
+      transcriptPath: "codex:subagent-thread",
+      ...localMachine,
+    }),
+  ).toEqual({ status: "no-transcript-file" });
+});
+
+test("exportTranscript reports no-transcript-file for a Cursor composer locator", () => {
+  expect(
+    getTranscriptAdapter("cursor").exportTranscript({
+      transcriptPath: "cursor:composer-1",
+      ...localMachine,
+    }),
+  ).toEqual({ status: "no-transcript-file" });
+});

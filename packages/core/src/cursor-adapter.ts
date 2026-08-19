@@ -7,6 +7,7 @@ import {
 } from "@trace/cursor-reader";
 import type { CursorMessage, CursorSession } from "@trace/cursor-reader";
 import { emptyTokenTotals } from "./token-totals.ts";
+import { exportFileTranscript } from "./export-transcript.ts";
 import {
   composerIdFromLocator,
   cursorLocatorFlavor,
@@ -176,5 +177,11 @@ export const cursorTranscriptAdapter: TranscriptAdapter = {
   },
   readTail(input: ReadTranscriptTailInput): TranscriptMessage[] {
     return cursorTail(input.transcriptPath, input.limit);
+  },
+  exportTranscript(input) {
+    if (cursorLocatorFlavor(input.transcriptPath) === "composer") {
+      return { status: "no-transcript-file" };
+    }
+    return exportFileTranscript(input, "cursor-agent-jsonl", "cursor");
   },
 };
