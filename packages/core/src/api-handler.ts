@@ -7,7 +7,8 @@ import { readSyncStatus } from "./sync-status.ts";
 
 export type TraceApiResponse = {
   status: number;
-  body: string;
+  /** JSON/text for most routes; raw bytes for binary downloads such as zip export. */
+  body: string | Uint8Array;
   contentType?: string;
 };
 
@@ -20,7 +21,7 @@ export type TraceApiResponse = {
 export interface TraceApiResponseSink {
   statusCode: number;
   setHeader(name: string, value: string): void;
-  end(chunk?: string): void;
+  end(chunk?: string | Uint8Array): void;
 }
 
 const JSON_CONTENT_TYPE = "application/json";
