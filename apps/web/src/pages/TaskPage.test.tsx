@@ -7,10 +7,11 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -50,11 +51,6 @@ function routedFetch(
 }
 
 beforeAll(() => {
-  Object.defineProperty(navigator, "clipboard", {
-    value: { writeText: vi.fn().mockResolvedValue(undefined) },
-    writable: true,
-    configurable: true,
-  });
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -67,6 +63,22 @@ beforeAll(() => {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
+  });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+});
+
+beforeEach(() => {
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
   });
 });
 
@@ -1425,43 +1437,61 @@ test("TaskTimelineView header shows Re-enter button with prompt as title", () =>
   );
 });
 
-test("TaskTimelineView header shows the export control with transcripts off", () => {
+test("TaskTimelineView header keeps Export and Archive behind the more-actions menu", () => {
   const timeline = baseTimeline();
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <TaskTimelineView timeline={timeline} />
-    </MemoryRouter>,
-  );
-  expect(html).toContain("Export");
-  expect(html).toContain("Include transcripts");
-  expect(html).toContain("verbatim");
-  expect(html).toContain("unredacted");
-  expect(html).not.toContain("checked");
-});
-
-test("TaskTimelineView header shows Archive button for unarchived task", () => {
-  const timeline = baseTimeline({ archivedAt: null });
   const html = renderToStaticMarkup(
     <MemoryRouter>
       <TaskTimelineView timeline={timeline} onArchive={() => {}} />
     </MemoryRouter>,
   );
-  expect(html).toContain('aria-label="Archive task"');
-  expect(html).not.toContain('aria-label="Unarchive task"');
+  expect(html).toContain("Re-enter");
+  expect(html).toContain('aria-label="More actions"');
+  expect(html).not.toContain(">Export<");
+  expect(html).not.toContain("Include transcripts");
+  expect(html).not.toContain('aria-label="Archive task"');
 });
 
-test("TaskTimelineView header shows Unarchive button for archived task", () => {
+test("TaskTimelineView more-actions menu exposes Export, transcripts warning, and Archive", async () => {
+  const user = userEvent.setup();
+  const timeline = baseTimeline({ archivedAt: null });
+  render(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} onArchive={() => {}} />
+    </MemoryRouter>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+
+  expect(
+    await screen.findByRole("button", { name: /^Export$/ }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /^Export with transcripts$/ }),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/verbatim/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Archive task" })).toBeInTheDocument();
+});
+
+test("TaskTimelineView more-actions menu shows Unarchive for an archived task", async () => {
+  const user = userEvent.setup();
   const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
-  const html = renderToStaticMarkup(
+  render(
     <MemoryRouter>
       <TaskTimelineView timeline={timeline} onUnarchive={() => {}} />
     </MemoryRouter>,
   );
-  expect(html).toContain('aria-label="Unarchive task"');
-  expect(html).not.toContain('aria-label="Archive task"');
+
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  expect(
+    await screen.findByRole("button", { name: "Unarchive task" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Archive task" }),
+  ).not.toBeInTheDocument();
 });
 
-test("TaskTimelineView Archive button calls onArchive handler on click", async () => {
+test("TaskTimelineView Archive menu item calls onArchive handler on click", async () => {
+  const user = userEvent.setup();
   const onArchive = vi.fn().mockResolvedValue(undefined);
   const timeline = baseTimeline({ archivedAt: null });
   render(
@@ -1469,11 +1499,13 @@ test("TaskTimelineView Archive button calls onArchive handler on click", async (
       <TaskTimelineView timeline={timeline} onArchive={onArchive} />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByLabelText("Archive task"));
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  await user.click(await screen.findByRole("button", { name: "Archive task" }));
   await waitFor(() => expect(onArchive).toHaveBeenCalledTimes(1));
 });
 
-test("TaskTimelineView Unarchive button calls onUnarchive handler on click", async () => {
+test("TaskTimelineView Unarchive menu item calls onUnarchive handler on click", async () => {
+  const user = userEvent.setup();
   const onUnarchive = vi.fn().mockResolvedValue(undefined);
   const timeline = baseTimeline({ archivedAt: "2026-06-01T00:00:00.000Z" });
   render(
@@ -1481,7 +1513,10 @@ test("TaskTimelineView Unarchive button calls onUnarchive handler on click", asy
       <TaskTimelineView timeline={timeline} onUnarchive={onUnarchive} />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByLabelText("Unarchive task"));
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Unarchive task" }),
+  );
   await waitFor(() => expect(onUnarchive).toHaveBeenCalledTimes(1));
 });
 
@@ -2663,7 +2698,10 @@ describe("TaskPage", () => {
     renderTaskPage("my-task", makeQueryClient());
     await screen.findByText("My task");
 
-    fireEvent.click(screen.getByLabelText("Archive task"));
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Archive task" }),
+    );
 
     await waitFor(() => {
       const archiveCall = fetchMock.mock.calls.find(
