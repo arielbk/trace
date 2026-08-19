@@ -432,12 +432,17 @@ export function skillDocsDirUsage(): string {
 }
 
 export function exportUsage(): string {
-  return "Usage: trace export [task] [--out <path>]";
+  return "Usage: trace export [task] [--include-transcripts] [--out <path>]";
 }
 
-export function parseExportArgs(args: string[]): { ref?: string; out?: string } {
+export function parseExportArgs(args: string[]): {
+  ref?: string;
+  out?: string;
+  includeTranscripts: boolean;
+} {
   const refWords: string[] = [];
   let out: string | undefined;
+  let includeTranscripts = false;
 
   let index = 0;
   while (index < args.length && !looksLikeFlag(args[index])) {
@@ -451,13 +456,16 @@ export function parseExportArgs(args: string[]): { ref?: string; out?: string } 
       if (!value) throw new Error(exportUsage());
       out = value;
       index += 2;
+    } else if (flag === "--include-transcripts") {
+      includeTranscripts = true;
+      index += 1;
     } else {
       throw new Error(`Unknown option: ${flag}`);
     }
   }
 
   const ref = refWords.join(" ").trim();
-  return { ...(ref.length > 0 ? { ref } : {}), out };
+  return { ...(ref.length > 0 ? { ref } : {}), out, includeTranscripts };
 }
 
 export function recallCandidatesUsage(): string {

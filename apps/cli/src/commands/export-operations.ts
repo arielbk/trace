@@ -72,6 +72,7 @@ export function exportOperation(
 
     const exported = buildTaskExportZip(store, databasePath, resolved.id, {
       generator: ctx.env.TRACE_CURRENT_VERSION ?? resolvePackagedVersion(),
+      includeTranscripts: parsed.includeTranscripts,
     });
     if (!exported) {
       return failure(`Task not found: ${taskRef}`, 1);
@@ -80,6 +81,12 @@ export function exportOperation(
     const outPath = resolve(ctx.cwd, parsed.out ?? exported.fileName);
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, exported.bytes);
-    return success(`${outPath}\n`);
+    return {
+      exitCode: 0,
+      stdout: `${outPath}\n${exported.bytes.byteLength} bytes\n`,
+      stderr: parsed.includeTranscripts
+        ? "Warning: transcripts are copied verbatim and unredacted. They may contain secrets, absolute paths, and machine identifiers.\n"
+        : "",
+    };
   });
 }

@@ -137,8 +137,10 @@ test("trace export writes a dated zip with README, manifest, and docs", () => {
 
     const date = new Date().toISOString().slice(0, 10);
     const zipPath = join(dir, `checkout-${date}.zip`);
-    expect(result.stdout).toBe(`${zipPath}\n`);
     expect(existsSync(zipPath)).toBe(true);
+    expect(result.stdout).toBe(
+      `${zipPath}\n${readFileSync(zipPath).byteLength} bytes\n`,
+    );
 
     const zip = unzipText(zipPath);
     expect(zip.folder).toBe(`checkout-${date}`);
@@ -251,8 +253,10 @@ test("trace export with no task argument exports the bound task", () => {
     expect(result.exitCode).toBe(0);
     const date = new Date().toISOString().slice(0, 10);
     const zipPath = join(dir, `bound-export-${date}.zip`);
-    expect(result.stdout).toBe(`${zipPath}\n`);
     expect(existsSync(zipPath)).toBe(true);
+    expect(result.stdout).toBe(
+      `${zipPath}\n${readFileSync(zipPath).byteLength} bytes\n`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -269,14 +273,82 @@ test("trace export --out writes the zip to the given path", () => {
     const outPath = join(dir, "nested", "custom.zip");
     const result = runTraceCli(["export", "checkout", "--out", outPath], env, dir);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe(`${outPath}\n`);
     expect(existsSync(outPath)).toBe(true);
+    expect(result.stdout).toBe(
+      `${outPath}\n${readFileSync(outPath).byteLength} bytes\n`,
+    );
 
     const zip = unzipText(outPath);
     expect(zip.names).toContain(`${zip.folder}/manifest.json`);
     expect(JSON.parse(zip.text(`${zip.folder}/manifest.json`)).task.slug).toBe(
       "checkout",
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("trace export --include-transcripts copies files, warns, and reports size", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-export-transcripts-"));
+  const env = tempEnv(dir);
+
+  try {
+    mkdirSync(join(dir, ".git"));
+    expect(runTraceCli(["task", "create", "Checkout"], env, dir).exitCode).toBe(0);
+
+    const transcriptPath = join(dir, "root.jsonl");
+    const transcriptBytes = "verbatim session bytes\n";
+    writeFileSync(transcriptPath, transcriptBytes);
+
+    const store = openTraceStore(env.TRACE_DB as string);
+    const task = store.getTaskByRef("checkout")!;
+    store.assignSession(
+      store.registerSession({
+        id: "root-1",
+        transcriptPath,
+        tool: "claude",
+      }).id,
+      task.id,
+    );
+    store.close();
+
+    const without = runTraceCli(["export", "checkout", "--out", join(dir, "off.zip")], env, dir);
+    expect(without.exitCode).toBe(0);
+    expect(without.stderr).toBe("");
+    const offZip = unzipText(join(dir, "off.zip"));
+    expect(
+      offZip.names.some((name) => name.startsWith(`${offZip.folder}/transcripts/`)),
+    ).toBe(false);
+    expect(
+      (JSON.parse(offZip.text(`${offZip.folder}/manifest.json`)) as {
+        sessions: Array<{ transcript?: unknown }>;
+      }).sessions[0]?.transcript,
+    ).toBeUndefined();
+
+    const result = runTraceCli(
+      ["export", "checkout", "--include-transcripts", "--out", join(dir, "on.zip")],
+      env,
+      dir,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("verbatim");
+    expect(result.stderr).toContain("unredacted");
+    expect(result.stdout).toBe(
+      `${join(dir, "on.zip")}\n${readFileSync(join(dir, "on.zip")).byteLength} bytes\n`,
+    );
+
+    const zip = unzipText(join(dir, "on.zip"));
+    expect(zip.text(`${zip.folder}/transcripts/root-1.jsonl`)).toBe(transcriptBytes);
+    const manifest = JSON.parse(zip.text(`${zip.folder}/manifest.json`)) as {
+      sessions: Array<{
+        transcript: { status: string; format?: string; path?: string };
+      }>;
+    };
+    expect(manifest.sessions[0]?.transcript).toEqual({
+      status: "included",
+      format: "claude-jsonl",
+      path: "transcripts/root-1.jsonl",
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
