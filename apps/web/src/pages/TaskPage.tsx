@@ -19,6 +19,7 @@ import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { useClipboardCopy } from "../components/useClipboardCopy.ts";
+import { TaskExportControl } from "../components/TaskExportControl.tsx";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
 import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import {
@@ -102,9 +103,10 @@ function TaskDetailSkeleton() {
       </div>
       {/* Description */}
       <span className="t-skel-bar h-4 w-72 max-w-full mt-3" />
-      {/* Re-enter / archive button row */}
+      {/* Re-enter / export / archive button row */}
       <div className="flex items-center gap-2 mt-5">
         <span className="t-skel-bar h-8 w-28 rounded-control" />
+        <span className="t-skel-bar h-8 w-24 rounded-control" />
         <span className="t-skel-bar h-8 w-24 rounded-control ml-auto" />
       </div>
       {/* "Where you left off" panel */}
@@ -400,6 +402,7 @@ export function TaskTimelineView({
             title={timeline.task.title}
             slug={timeline.task.slug}
           />
+          <TaskExportControl taskRef={timeline.task.slug} />
           {onToggleArchive ? (
             <ArchiveToggleButton
               isArchived={isArchived}

@@ -1425,6 +1425,20 @@ test("TaskTimelineView header shows Re-enter button with prompt as title", () =>
   );
 });
 
+test("TaskTimelineView header shows the export control with transcripts off", () => {
+  const timeline = baseTimeline();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+  expect(html).toContain("Export");
+  expect(html).toContain("Include transcripts");
+  expect(html).toContain("verbatim");
+  expect(html).toContain("unredacted");
+  expect(html).not.toContain("checked");
+});
+
 test("TaskTimelineView header shows Archive button for unarchived task", () => {
   const timeline = baseTimeline({ archivedAt: null });
   const html = renderToStaticMarkup(
