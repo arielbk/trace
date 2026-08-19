@@ -44,6 +44,7 @@ export default defineConfig({
     "citty",
     "marked",
     "@clack/prompts",
+    "fflate",
   ],
   onSuccess: copyWebAssets,
 });
