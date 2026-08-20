@@ -1,5 +1,11 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { createContext, useContext, type ReactNode } from "react";
+import {
+  createContext,
+  forwardRef,
+  useContext,
+  type ComponentRef,
+  type ReactNode,
+} from "react";
 import { cn } from "../../lib/utils.ts";
 import { useDropdownTransition } from "./useDropdownTransition.ts";
 
@@ -61,17 +67,16 @@ export function Dropdown({ children }: { children: ReactNode }) {
   );
 }
 
-export function DropdownTrigger({
-  className,
-  children,
-  ...props
-}: React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Trigger>) {
+export const DropdownTrigger = forwardRef<
+  ComponentRef<typeof PopoverPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Trigger>
+>(function DropdownTrigger({ className, children, ...props }, ref) {
   return (
-    <PopoverPrimitive.Trigger className={className} {...props}>
+    <PopoverPrimitive.Trigger ref={ref} className={className} {...props}>
       {children}
     </PopoverPrimitive.Trigger>
   );
-}
+});
 
 export function DropdownContent({
   origin = "top-left",

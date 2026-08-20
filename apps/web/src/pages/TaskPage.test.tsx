@@ -1451,7 +1451,7 @@ test("TaskTimelineView header keeps Export and Archive behind the more-actions m
   expect(html).not.toContain('aria-label="Archive task"');
 });
 
-test("TaskTimelineView more-actions menu exposes Export, transcripts warning, and Archive", async () => {
+test("TaskTimelineView more-actions menu exposes concise export choices and Archive", async () => {
   const user = userEvent.setup();
   const timeline = baseTimeline({ archivedAt: null });
   render(
@@ -1463,12 +1463,15 @@ test("TaskTimelineView more-actions menu exposes Export, transcripts warning, an
   await user.click(screen.getByRole("button", { name: "More actions" }));
 
   expect(
-    await screen.findByRole("button", { name: /^Export$/ }),
+    await screen.findByRole("button", { name: "Export task" }),
   ).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: /^Export with transcripts$/ }),
   ).toBeInTheDocument();
-  expect(screen.getByText(/verbatim/)).toBeInTheDocument();
+  expect(
+    screen.getByText("Includes unredacted session logs"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/machine identifiers/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Archive task" })).toBeInTheDocument();
 });
 
