@@ -3,6 +3,22 @@
  * No DOM or React dependencies — keep this module trivially unit-testable.
  */
 
+/**
+ * Render a USD amount: `1.5` → `"$1.50"`. Sub-cent amounts keep extra digits
+ * so a priced-but-tiny figure never rounds to `$0.00`.
+ */
+export function formatUsd(amount: number): string {
+  const fractionDigits =
+    amount !== 0 && Math.abs(amount) < 0.01
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 4 }
+      : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    ...fractionDigits,
+  }).format(amount);
+}
+
 /** Abbreviate a token count: `16317514` → `"16.3M"`, `81123` → `"81.1K"`, `<1000` verbatim. */
 export function formatTokensCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

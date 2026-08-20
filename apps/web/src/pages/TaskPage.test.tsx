@@ -196,7 +196,7 @@ test("TaskTimelineView renders per-type SVG icons and model chips", () => {
   // The raw model ID is formatted into a human-readable display name.
   expect(html).toContain("Opus 4.7");
   expect(html).not.toContain("claude-opus-4-7");
-  expect(html).not.toContain(">—<");
+  expect(html).not.toMatch(/rounded-full[^>]*>—</);
   // Per-session tokens show the input/output split, not the cache-inflated total.
   expect(html).toContain("10 in");
   expect(html).toContain("5 out");
@@ -765,6 +765,140 @@ test("TaskTimelineView omits the description block when absent", () => {
   expect(html).not.toContain('data-testid="task-description"');
 });
 
+test("TaskTimelineView renders an em dash for an unpriced session, never $0.00", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "unknown-model",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        model: "codex-auto-review",
+        tokenTotals: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          totalTokens: 1_000_000,
+        },
+      }),
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain('data-testid="session-cost"');
+  expect(html).toMatch(/data-testid="session-cost"[^>]*>—</);
+  expect(html).not.toContain("$0.00");
+});
+
+test("TaskTimelineView shows a dollar figure beside a priced session's tokens", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "haiku-session",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        model: "claude-haiku-4-5",
+        tokenTotals: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          totalTokens: 1_000_000,
+        },
+      }),
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("1.0M in");
+  expect(html).toMatch(/data-testid="session-cost"[^>]*>\$1\.00</);
+  expect(html).toMatch(/data-testid="task-cost"[^>]*>\$1\.00</);
+  expect(html).not.toContain('data-testid="task-cost-partial"');
+});
+
+test("TokenSummary marks a mixed task total as partial and labels it list-price equivalent", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "priced",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        model: "claude-haiku-4-5",
+        tokenTotals: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          totalTokens: 1_000_000,
+        },
+      }),
+      sessionTimelineItem({
+        id: "unpriced",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        model: "codex-auto-review",
+        tokenTotals: {
+          inputTokens: 2_000_000,
+          outputTokens: 0,
+          totalTokens: 2_000_000,
+        },
+      }),
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toMatch(/data-testid="task-cost"[^>]*>\$1\.00</);
+  expect(html).toContain("list-price equivalent");
+  expect(html).toMatch(/data-testid="task-cost-partial"[^>]*>1 of 2 priced</);
+  expect(html).not.toContain("$0.00");
+});
+
+test("TokenSummary renders an em dash for an all-unpriced task total, never $0.00", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    items: [
+      sessionTimelineItem({
+        id: "unknown-a",
+        createdAt: "2026-05-29T00:01:00.000Z",
+        model: "codex-auto-review",
+        tokenTotals: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          totalTokens: 1_000_000,
+        },
+      }),
+      sessionTimelineItem({
+        id: "unknown-b",
+        createdAt: "2026-05-29T00:02:00.000Z",
+        model: null,
+        tokenTotals: {
+          inputTokens: 500_000,
+          outputTokens: 0,
+          totalTokens: 500_000,
+        },
+      }),
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toMatch(/data-testid="task-cost"[^>]*>—</);
+  expect(html).toMatch(/data-testid="task-cost-partial"[^>]*>0 of 2 priced</);
+  expect(html).not.toContain("$0.00");
+});
+
 test("TokenSummary renders cache reads/writes as a secondary line below the cards", () => {
   const timeline: TaskTimeline = {
     task: {
@@ -954,6 +1088,7 @@ function sessionTimelineItem({
   id,
   createdAt,
   tool = "claude",
+  model = null,
   parentSessionId = null,
   origin = "root",
   subagentType = null,
@@ -963,6 +1098,7 @@ function sessionTimelineItem({
   id: string;
   createdAt: string;
   tool?: "claude" | "codex";
+  model?: string | null;
   parentSessionId?: string | null;
   origin?: "root" | "subagent" | "spawned";
   subagentType?: string | null;
@@ -981,7 +1117,7 @@ function sessionTimelineItem({
       id,
       transcriptPath: `/tmp/${id}.jsonl`,
       tool,
-      model: null,
+      model,
       title: null,
       taskId: "task-1",
       parentSessionId,
