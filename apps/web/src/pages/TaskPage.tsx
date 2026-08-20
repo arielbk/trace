@@ -1,5 +1,6 @@
 import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { TriangleAlert } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { ParsedStateMd } from "@trace/core";
 import {
@@ -1413,78 +1414,74 @@ function TokenSummary({
   const sessionCount = rollup.pricedSessions + rollup.unpricedSessions;
   const costDisplay =
     rollup.totalUsd === null ? "—" : formatUsd(rollup.totalUsd);
+  const partialLabel =
+    rollup.unpricedSessions > 0
+      ? `${rollup.pricedSessions} of ${sessionCount} sessions priced`
+      : null;
   return (
-    <div className="mt-8 pt-6">
-      <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-        <dl
-          className="m-0 flex flex-wrap gap-x-11 gap-y-3"
-          aria-label="Token totals"
-        >
-          {cards.map((card) => (
-            <div key={card.label} className="min-w-16">
-              <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
-                {card.label}
-              </dt>
-              <dd
-                className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
-                title={String(card.value)}
-              >
-                {formatTokensCompact(card.value)}
-              </dd>
-            </div>
-          ))}
-          <div className="min-w-16">
+    <div className="mt-8 pt-6 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+      <dl
+        className="m-0 flex flex-wrap gap-x-11 gap-y-3"
+        aria-label="Token totals"
+      >
+        {cards.map((card) => (
+          <div key={card.label} className="min-w-16">
             <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
-              Cost
+              {card.label}
             </dt>
             <dd
-              data-testid="task-cost"
               className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
-              title={
-                rollup.totalUsd === null ? undefined : String(rollup.totalUsd)
-              }
+              title={String(card.value)}
             >
-              {costDisplay}
+              {formatTokensCompact(card.value)}
             </dd>
           </div>
-        </dl>
-        <p
-          data-testid="token-summary-cache"
-          className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
-        >
-          <span className="text-xs font-bold uppercase tracking-wide">
-            Cache
-          </span>
-          <span
-            className="whitespace-nowrap"
-            title={String(totals.cacheReadInputTokens)}
+        ))}
+        <div className="min-w-16">
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-text-muted">
+            Cost
+            {partialLabel ? (
+              <span
+                data-testid="task-cost-partial"
+                className="inline-flex cursor-help text-text-muted"
+                title={partialLabel}
+                aria-label={partialLabel}
+              >
+                <TriangleAlert size={11} strokeWidth={2.4} aria-hidden="true" />
+              </span>
+            ) : null}
+          </dt>
+          <dd
+            data-testid="task-cost"
+            className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
+            title={
+              rollup.totalUsd === null ? undefined : String(rollup.totalUsd)
+            }
           >
-            {formatTokensCompact(totals.cacheReadInputTokens)} read
-          </span>
-          <span className="opacity-50" aria-hidden="true">
-            ·
-          </span>
-          <span
-            className="whitespace-nowrap"
-            title={String(totals.cacheCreationInputTokens)}
-          >
-            {formatTokensCompact(totals.cacheCreationInputTokens)} written
-          </span>
-        </p>
-      </div>
+            {costDisplay}
+          </dd>
+        </div>
+      </dl>
       <p
-        data-testid="task-cost-basis"
-        className="m-0 mt-2 text-xs text-text-muted"
+        data-testid="token-summary-cache"
+        className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
       >
-        list-price equivalent
-        {rollup.unpricedSessions > 0 ? (
-          <>
-            {" · "}
-            <span data-testid="task-cost-partial">
-              {rollup.pricedSessions} of {sessionCount} priced
-            </span>
-          </>
-        ) : null}
+        <span className="text-xs font-bold uppercase tracking-wide">Cache</span>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheReadInputTokens)}
+        >
+          {formatTokensCompact(totals.cacheReadInputTokens)} read
+        </span>
+        <span className="opacity-50" aria-hidden="true">
+          ·
+        </span>
+        <span
+          className="whitespace-nowrap"
+          title={String(totals.cacheCreationInputTokens)}
+        >
+          {formatTokensCompact(totals.cacheCreationInputTokens)} written
+        </span>
       </p>
     </div>
   );

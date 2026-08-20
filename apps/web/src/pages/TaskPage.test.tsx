@@ -824,7 +824,7 @@ test("TaskTimelineView shows a dollar figure beside a priced session's tokens", 
   expect(html).not.toContain('data-testid="task-cost-partial"');
 });
 
-test("TokenSummary marks a mixed task total as partial and labels it list-price equivalent", () => {
+test("TokenSummary warns on the Cost label when some sessions are unpriced", () => {
   const timeline: TaskTimeline = {
     ...baseTimeline(),
     items: [
@@ -858,9 +858,9 @@ test("TokenSummary marks a mixed task total as partial and labels it list-price 
   );
 
   expect(html).toMatch(/data-testid="task-cost"[^>]*>\$1\.00</);
-  expect(html).toContain("list-price equivalent");
-  expect(html).toMatch(/data-testid="task-cost-partial"[^>]*>1 of 2 priced</);
-  expect(html).toContain('data-testid="task-cost-basis"');
+  expect(html).toContain('data-testid="task-cost-partial"');
+  expect(html).toContain("1 of 2 sessions priced");
+  expect(html).not.toContain("list-price equivalent");
   expect(html).not.toContain("$0.00");
 });
 
@@ -898,8 +898,9 @@ test("TokenSummary renders an em dash for an all-unpriced task total, never $0.0
   );
 
   expect(html).toMatch(/data-testid="task-cost"[^>]*>—</);
-  expect(html).toMatch(/data-testid="task-cost-partial"[^>]*>0 of 2 priced</);
+  expect(html).toContain("0 of 2 sessions priced");
   expect(html).not.toContain("$0.00");
+  expect(html).not.toContain("list-price equivalent");
 });
 
 test("TokenSummary renders cache reads/writes as a secondary line below the cards", () => {
