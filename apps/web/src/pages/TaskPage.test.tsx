@@ -327,6 +327,8 @@ test("TaskTimelineView labels uncaptured session token totals as unavailable", (
   expect(html).toContain("tokens unavailable");
   expect(html).not.toContain("0 in");
   expect(html).not.toContain("0 out");
+  expect(html).not.toContain('data-testid="session-cost"');
+  expect(html).not.toContain("tokens unavailable ·");
 });
 
 test("TaskTimelineView renders relative timestamps, never raw ISO strings", () => {
@@ -765,7 +767,7 @@ test("TaskTimelineView omits the description block when absent", () => {
   expect(html).not.toContain('data-testid="task-description"');
 });
 
-test("TaskTimelineView renders an em dash for an unpriced session, never $0.00", () => {
+test("TaskTimelineView omits cost on an unpriced session, never $0.00", () => {
   const timeline: TaskTimeline = {
     ...baseTimeline(),
     items: [
@@ -788,8 +790,8 @@ test("TaskTimelineView renders an em dash for an unpriced session, never $0.00",
     </MemoryRouter>,
   );
 
-  expect(html).toContain('data-testid="session-cost"');
-  expect(html).toMatch(/data-testid="session-cost"[^>]*>—</);
+  expect(html).toContain("1.0M in · 0 out");
+  expect(html).not.toContain('data-testid="session-cost"');
   expect(html).not.toContain("$0.00");
 });
 
@@ -858,6 +860,7 @@ test("TokenSummary marks a mixed task total as partial and labels it list-price 
   expect(html).toMatch(/data-testid="task-cost"[^>]*>\$1\.00</);
   expect(html).toContain("list-price equivalent");
   expect(html).toMatch(/data-testid="task-cost-partial"[^>]*>1 of 2 priced</);
+  expect(html).toContain('data-testid="task-cost-basis"');
   expect(html).not.toContain("$0.00");
 });
 

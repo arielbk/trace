@@ -643,9 +643,7 @@ function SessionRootRow({
               className="font-mono"
               title={formatTokenBreakdown(item.session.tokenTotals)}
             >
-              {sessionTokenLine(item.session)}
-              {" · "}
-              <SessionCost session={item.session} />
+              <SessionTokenAndCost session={item.session} />
             </span>
           </p>
         </div>
@@ -798,8 +796,7 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
           title={formatTokenBreakdown(session.tokenTotals)}
         >
           {metaPrefix}
-          {" · "}
-          <SessionCost session={session} />
+          <SessionCostSuffix session={session} />
         </div>
       </div>
     </li>
@@ -1355,7 +1352,29 @@ function sessionTokenLine(session: SessionTimelineItem["session"]): string {
   return "tokens unavailable";
 }
 
-function SessionCost({
+function sessionCostUsd(
+  session: Pick<
+    SessionTimelineItem["session"],
+    "tool" | "model" | "tokenTotals"
+  >,
+): number | null {
+  return costFromSessions([session]).totalUsd;
+}
+
+function SessionTokenAndCost({
+  session,
+}: {
+  session: SessionTimelineItem["session"];
+}) {
+  return (
+    <>
+      {sessionTokenLine(session)}
+      <SessionCostSuffix session={session} />
+    </>
+  );
+}
+
+function SessionCostSuffix({
   session,
 }: {
   session: Pick<
@@ -1363,11 +1382,13 @@ function SessionCost({
     "tool" | "model" | "tokenTotals"
   >;
 }) {
-  const { totalUsd } = costFromSessions([session]);
+  const totalUsd = sessionCostUsd(session);
+  if (totalUsd === null) return null;
   return (
-    <span data-testid="session-cost">
-      {totalUsd === null ? "—" : formatUsd(totalUsd)}
-    </span>
+    <>
+      {" · "}
+      <span data-testid="session-cost">{formatUsd(totalUsd)}</span>
+    </>
   );
 }
 
@@ -1393,70 +1414,77 @@ function TokenSummary({
   const costDisplay =
     rollup.totalUsd === null ? "—" : formatUsd(rollup.totalUsd);
   return (
-    <div className="mt-8 pt-6 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-      <dl
-        className="m-0 flex flex-wrap gap-x-11 gap-y-3"
-        aria-label="Token totals"
-      >
-        {cards.map((card) => (
-          <div key={card.label} className="min-w-16">
+    <div className="mt-8 pt-6">
+      <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+        <dl
+          className="m-0 flex flex-wrap gap-x-11 gap-y-3"
+          aria-label="Token totals"
+        >
+          {cards.map((card) => (
+            <div key={card.label} className="min-w-16">
+              <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
+                {card.label}
+              </dt>
+              <dd
+                className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
+                title={String(card.value)}
+              >
+                {formatTokensCompact(card.value)}
+              </dd>
+            </div>
+          ))}
+          <div className="min-w-16">
             <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
-              {card.label}
+              Cost
             </dt>
             <dd
+              data-testid="task-cost"
               className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
-              title={String(card.value)}
+              title={
+                rollup.totalUsd === null ? undefined : String(rollup.totalUsd)
+              }
             >
-              {formatTokensCompact(card.value)}
+              {costDisplay}
             </dd>
           </div>
-        ))}
-        <div className="min-w-16">
-          <dt className="text-xs font-bold uppercase tracking-wide text-text-muted">
-            Cost
-          </dt>
-          <dd
-            data-testid="task-cost"
-            className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
-            title={
-              rollup.totalUsd === null ? undefined : String(rollup.totalUsd)
-            }
+        </dl>
+        <p
+          data-testid="token-summary-cache"
+          className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
+        >
+          <span className="text-xs font-bold uppercase tracking-wide">
+            Cache
+          </span>
+          <span
+            className="whitespace-nowrap"
+            title={String(totals.cacheReadInputTokens)}
           >
-            {costDisplay}
-          </dd>
-          <p className="m-0 mt-1 text-xs text-text-muted">
-            list-price equivalent
-          </p>
-          {rollup.unpricedSessions > 0 ? (
-            <p
-              data-testid="task-cost-partial"
-              className="m-0 mt-0.5 font-mono text-crumb text-text-muted"
-            >
-              {rollup.pricedSessions} of {sessionCount} priced
-            </p>
-          ) : null}
-        </div>
-      </dl>
+            {formatTokensCompact(totals.cacheReadInputTokens)} read
+          </span>
+          <span className="opacity-50" aria-hidden="true">
+            ·
+          </span>
+          <span
+            className="whitespace-nowrap"
+            title={String(totals.cacheCreationInputTokens)}
+          >
+            {formatTokensCompact(totals.cacheCreationInputTokens)} written
+          </span>
+        </p>
+      </div>
       <p
-        data-testid="token-summary-cache"
-        className="m-0 flex flex-wrap items-baseline gap-2 text-text-muted text-sm font-mono tabular-nums"
+        data-testid="task-cost-basis"
+        className="m-0 mt-2 text-xs text-text-muted"
       >
-        <span className="text-xs font-bold uppercase tracking-wide">Cache</span>
-        <span
-          className="whitespace-nowrap"
-          title={String(totals.cacheReadInputTokens)}
-        >
-          {formatTokensCompact(totals.cacheReadInputTokens)} read
-        </span>
-        <span className="opacity-50" aria-hidden="true">
-          ·
-        </span>
-        <span
-          className="whitespace-nowrap"
-          title={String(totals.cacheCreationInputTokens)}
-        >
-          {formatTokensCompact(totals.cacheCreationInputTokens)} written
-        </span>
+        list-price equivalent
+        {rollup.unpricedSessions > 0 ? (
+          <>
+            {" · "}
+            <span data-testid="task-cost-partial">
+              {rollup.pricedSessions} of {sessionCount} priced
+            </span>
+          </>
+        ) : null}
       </p>
     </div>
   );
