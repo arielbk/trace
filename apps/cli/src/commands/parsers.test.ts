@@ -239,6 +239,18 @@ test("parseSessionRefreshTokensArgs accepts no args and an optional --tool", () 
   });
 });
 
+test("parseSessionRefreshTokensArgs accepts --dry-run alone or with --tool", () => {
+  expect(parseSessionRefreshTokensArgs(["--dry-run"])).toEqual({
+    dryRun: true,
+  });
+  expect(
+    parseSessionRefreshTokensArgs(["--tool", "codex", "--dry-run"]),
+  ).toEqual({ tool: "codex", dryRun: true });
+  expect(
+    parseSessionRefreshTokensArgs(["--dry-run", "--tool", "codex"]),
+  ).toEqual({ tool: "codex", dryRun: true });
+});
+
 test("parseSessionRefreshTokensArgs rejects a missing value, unknown flag, or invalid tool", () => {
   expect(() => parseSessionRefreshTokensArgs(["--tool"])).toThrow(
     sessionRefreshTokensUsage(),

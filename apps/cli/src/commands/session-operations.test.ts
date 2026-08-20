@@ -177,3 +177,72 @@ test("session refresh-tokens heals stale rows and prints counts", () => {
     });
   });
 });
+
+test("session refresh-tokens --dry-run prints the proposed heal and does not persist", () => {
+  withTempContext((ctx) => {
+    const transcriptPath = join(ctx.cwd, "stale-codex.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "thread.started",
+          thread_id: "stale-codex",
+          model: "gpt-5-codex",
+        }),
+        JSON.stringify({
+          type: "turn.completed",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 10,
+            cached_input_tokens: 80,
+            total_tokens: 110,
+          },
+        }),
+      ].join("\n"),
+    );
+
+    sessionRegisterOperation(
+      [
+        "--id",
+        "stale-codex",
+        "--transcript",
+        transcriptPath,
+        "--tool",
+        "codex",
+        "--input-tokens",
+        "100",
+        "--output-tokens",
+        "10",
+        "--cache-read-input-tokens",
+        "80",
+        "--total-tokens",
+        "110",
+      ],
+      ctx,
+    );
+
+    expect(sessionRefreshTokensOperation(["--dry-run"], ctx)).toEqual({
+      exitCode: 0,
+      stdout: [
+        "stale-codex\tcodex",
+        "  input: 100 → 20",
+        "  output: 10 → 10",
+        "  cache-creation: 0 → 0",
+        "  cache-read: 80 → 80",
+        "  total: 110 → 110",
+        "  model: - → gpt-5-codex",
+        "healed: 1",
+        "unchanged: 0",
+        "unhealable: 0",
+        "dry-run: no changes written",
+        "",
+      ].join("\n"),
+      stderr: "",
+    });
+    expect(sessionRefreshTokensOperation([], ctx)).toEqual({
+      exitCode: 0,
+      stdout: "healed: 1\nunchanged: 0\nunhealable: 0\n",
+      stderr: "",
+    });
+  });
+});
