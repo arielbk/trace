@@ -4,11 +4,13 @@ import { expect, test } from "vitest";
 import {
   parseClaudeScanArgs,
   parseCodexScanArgs,
+  parseSessionRefreshTokensArgs,
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseTaskCreateArgs,
   parseTaskUpdateArgs,
   parseUpdateDocOptions,
+  sessionRefreshTokensUsage,
   sessionRegisterUsage,
   sessionSetParentUsage,
   taskCreateUsage,
@@ -228,4 +230,23 @@ test("parseClaudeScanArgs prefers an explicit --projects-root over CLAUDE_CONFIG
       CLAUDE_CONFIG_DIR: "/custom/claude",
     }),
   ).toBe("/explicit");
+});
+
+test("parseSessionRefreshTokensArgs accepts no args and an optional --tool", () => {
+  expect(parseSessionRefreshTokensArgs([])).toEqual({});
+  expect(parseSessionRefreshTokensArgs(["--tool", "codex"])).toEqual({
+    tool: "codex",
+  });
+});
+
+test("parseSessionRefreshTokensArgs rejects a missing value, unknown flag, or invalid tool", () => {
+  expect(() => parseSessionRefreshTokensArgs(["--tool"])).toThrow(
+    sessionRefreshTokensUsage(),
+  );
+  expect(() => parseSessionRefreshTokensArgs(["--limit", "3"])).toThrow(
+    "Unknown option: --limit",
+  );
+  expect(() => parseSessionRefreshTokensArgs(["--tool", "gemini"])).toThrow(
+    INVALID_SESSION_TOOL,
+  );
 });

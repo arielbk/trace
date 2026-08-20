@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -7,6 +7,7 @@ import {
   sessionActiveTaskOperation,
   sessionAssignOperation,
   sessionListOperation,
+  sessionRefreshTokensOperation,
   sessionRegisterOperation,
 } from "./session-operations.ts";
 import type { Env } from "./seam.ts";
@@ -103,6 +104,75 @@ test("session list --unassigned prints only unassigned sessions", () => {
     expect(sessionListOperation(["--unassigned"], ctx)).toEqual({
       exitCode: 0,
       stdout: `unassigned-session\tcodex\t${join(ctx.cwd, "unassigned.jsonl")}\n`,
+      stderr: "",
+    });
+  });
+});
+
+test("session refresh-tokens heals stale rows and prints counts", () => {
+  withTempContext((ctx) => {
+    const transcriptPath = join(ctx.cwd, "stale-codex.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "thread.started",
+          thread_id: "stale-codex",
+          model: "gpt-5-codex",
+        }),
+        JSON.stringify({
+          type: "turn.completed",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 10,
+            cached_input_tokens: 80,
+            total_tokens: 110,
+          },
+        }),
+      ].join("\n"),
+    );
+
+    sessionRegisterOperation(
+      [
+        "--id",
+        "stale-codex",
+        "--transcript",
+        transcriptPath,
+        "--tool",
+        "codex",
+        "--input-tokens",
+        "100",
+        "--output-tokens",
+        "10",
+        "--cache-read-input-tokens",
+        "80",
+        "--total-tokens",
+        "110",
+      ],
+      ctx,
+    );
+    sessionRegisterOperation(
+      [
+        "--id",
+        "gone-claude",
+        "--transcript",
+        join(ctx.cwd, "gone-claude.jsonl"),
+        "--tool",
+        "claude",
+        "--input-tokens",
+        "9",
+      ],
+      ctx,
+    );
+
+    expect(sessionRefreshTokensOperation(["--tool", "codex"], ctx)).toEqual({
+      exitCode: 0,
+      stdout: "healed: 1\nunchanged: 0\nunhealable: 0\n",
+      stderr: "",
+    });
+    expect(sessionRefreshTokensOperation([], ctx)).toEqual({
+      exitCode: 0,
+      stdout: "healed: 0\nunchanged: 1\nunhealable: 1\n",
       stderr: "",
     });
   });

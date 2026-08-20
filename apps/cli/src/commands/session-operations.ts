@@ -11,6 +11,7 @@ import {
   parseClaudeScanArgs,
   parseCodexScanArgs,
   parseSessionActiveTaskArgs,
+  parseSessionRefreshTokensArgs,
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseSessionTailLimit,
@@ -233,4 +234,22 @@ export function sessionScanOperation(
   }
 
   return failure("Usage: trace session scan --codex | --claude");
+}
+
+export function sessionRefreshTokensOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const parsedAttempt = attempt(() => parseSessionRefreshTokensArgs(rawArgs));
+  if (!parsedAttempt.ok) return parsedAttempt.result;
+  const parsed = parsedAttempt.value;
+
+  return withStore(ctx.env, (store) => {
+    const counts = store.refreshSessionTokens(
+      parsed.tool ? { tool: parsed.tool } : undefined,
+    );
+    return success(
+      `healed: ${counts.healed}\nunchanged: ${counts.unchanged}\nunhealable: ${counts.unhealable}\n`,
+    );
+  });
 }
