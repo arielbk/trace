@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
-import { costFromTokenTotals, pricedAt, resolveRate } from "./pricing.ts";
+import {
+  costFromSessions,
+  costFromTokenTotals,
+  pricedAt,
+  resolveRate,
+} from "./pricing.ts";
 import type { ModelRate } from "./pricing.ts";
-import type { TokenTotals } from "./types.ts";
+import type { Session, TokenTotals } from "./types.ts";
 
 test("resolveRate returns null for an unknown model, not zero or a fallback", () => {
   expect(resolveRate("claude", "not-a-real-model")).toBeNull();
@@ -94,4 +99,114 @@ test("resolveRate returns a rate for each observed model family", () => {
     expect(resolved?.inputUsdPerMillion).toBeGreaterThan(0);
     expect(resolved?.outputUsdPerMillion).toBeGreaterThan(0);
   }
+});
+
+function session(overrides: {
+  tool?: Session["tool"];
+  model: Session["model"];
+  tokenTotals?: TokenTotals;
+  origin?: Session["origin"];
+}): Pick<Session, "tool" | "model" | "tokenTotals" | "origin"> {
+  return {
+    tool: overrides.tool ?? "claude",
+    model: overrides.model,
+    tokenTotals: overrides.tokenTotals ?? millionEach,
+    origin: overrides.origin ?? "root",
+  };
+}
+
+test("costFromSessions yields a null amount for an all-unpriced collection, never zero", () => {
+  expect(costFromSessions([])).toEqual({
+    totalUsd: null,
+    pricedSessions: 0,
+    unpricedSessions: 0,
+  });
+  expect(
+    costFromSessions([
+      session({ model: null }),
+      session({ model: "not-a-real-model" }),
+    ]),
+  ).toEqual({
+    totalUsd: null,
+    pricedSessions: 0,
+    unpricedSessions: 2,
+  });
+});
+
+test("costFromSessions sums priced sessions and counts the unpriced remainder", () => {
+  const priced = session({ model: "claude-haiku-4-5" });
+  const alsoPriced = session({
+    tool: "codex",
+    model: "gpt-5.5",
+    tokenTotals: {
+      inputTokens: 500_000,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 500_000,
+    },
+  });
+  const unpriced = session({ model: "codex-auto-review" });
+  const haikuRate = resolveRate("claude", "claude-haiku-4-5")!;
+  const gptRate = resolveRate("codex", "gpt-5.5")!;
+
+  expect(costFromSessions([priced, unpriced, alsoPriced])).toEqual({
+    totalUsd:
+      costFromTokenTotals(priced.tokenTotals, haikuRate) +
+      costFromTokenTotals(alsoPriced.tokenTotals, gptRate),
+    pricedSessions: 2,
+    unpricedSessions: 1,
+  });
+});
+
+test("costFromSessions includes subagent and spawned rows in the total", () => {
+  const root = session({
+    model: "claude-haiku-4-5",
+    origin: "root",
+    tokenTotals: {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 1_000_000,
+    },
+  });
+  const subagent = session({
+    model: "claude-haiku-4-5",
+    origin: "subagent",
+    tokenTotals: {
+      inputTokens: 2_000_000,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 2_000_000,
+    },
+  });
+  const spawned = session({
+    model: "claude-haiku-4-5",
+    origin: "spawned",
+    tokenTotals: {
+      inputTokens: 3_000_000,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 3_000_000,
+    },
+  });
+  const haikuRate = resolveRate("claude", "claude-haiku-4-5")!;
+
+  expect(costFromSessions([root, subagent, spawned])).toEqual({
+    totalUsd: costFromTokenTotals(
+      {
+        inputTokens: 6_000_000,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+        totalTokens: 6_000_000,
+      },
+      haikuRate,
+    ),
+    pricedSessions: 3,
+    unpricedSessions: 0,
+  });
 });
