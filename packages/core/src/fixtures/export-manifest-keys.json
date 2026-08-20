@@ -1,0 +1,64 @@
+{
+  "docs": {
+    "description": true,
+    "path": true,
+    "source": true,
+    "sourcePath": true,
+    "title": true
+  },
+  "exportedAt": true,
+  "formatVersion": true,
+  "generator": true,
+  "project": {
+    "remote": true,
+    "slug": true
+  },
+  "sessions": {
+    "createdAt": true,
+    "id": true,
+    "machineId": true,
+    "model": true,
+    "origin": true,
+    "parentSessionId": true,
+    "subagentType": true,
+    "title": true,
+    "tokens": {
+      "cacheCreation": true,
+      "cacheRead": true,
+      "input": true,
+      "output": true,
+      "total": true
+    },
+    "tool": true,
+    "transcript": {
+      "format": true,
+      "path": true,
+      "status": true
+    },
+    "updatedAt": true
+  },
+  "task": {
+    "createdAt": true,
+    "description": true,
+    "id": true,
+    "slug": true,
+    "title": true
+  },
+  "totals": {
+    "firstSessionAt": true,
+    "freshTotal": true,
+    "lastSessionAt": true,
+    "models": true,
+    "rootSessions": true,
+    "spawnedSessions": true,
+    "subagentSessions": true,
+    "tokens": {
+      "cacheCreation": true,
+      "cacheRead": true,
+      "input": true,
+      "output": true,
+      "total": true
+    },
+    "tools": true
+  }
+}

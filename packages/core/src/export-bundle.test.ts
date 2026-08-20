@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { buildExportBundle, type ExportBundleInput } from "./export-bundle.ts";
 
@@ -443,3 +444,66 @@ test("sessions omit transcript when it was not requested", () => {
   expect(manifest.sessions[0]?.transcript).toBeUndefined();
   expect([...files.keys()].some((path) => path.includes("/transcripts/"))).toBe(false);
 });
+
+test("emitted manifest key set matches the checked-in schema fixture", () => {
+  const files = fileMap(
+    buildExportBundle(
+      input({
+        task: {
+          id: "task-1",
+          slug: "checkout",
+          title: "Checkout",
+          description: "Ship the cart",
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+        project: { slug: "trace", remote: "github.com/arielbk/trace" },
+        docs: [
+          {
+            sourcePath: "/docs/state.md",
+            contents: "# State\n",
+            title: "State",
+            description: "Where we left off",
+            source: "native",
+          },
+        ],
+        sessions: [
+          session({
+            id: "root-1",
+            title: "Wire the cart",
+            parentSessionId: null,
+            subagentType: null,
+            transcript: {
+              status: "included",
+              bytes: new TextEncoder().encode("verbatim\n"),
+              format: "claude-jsonl",
+              extension: ".jsonl",
+            },
+          }),
+        ],
+      }),
+    ),
+  );
+  const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!);
+  const fixture = JSON.parse(
+    readFileSync(new URL("./fixtures/export-manifest-keys.json", import.meta.url), "utf8"),
+  );
+
+  expect(manifestKeySet(manifest)).toEqual(fixture);
+});
+
+function manifestKeySet(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const sample = value.find(
+      (item) => item !== null && typeof item === "object" && !Array.isArray(item),
+    );
+    return sample ? manifestKeySet(sample) : true;
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((key) => [key, manifestKeySet((value as Record<string, unknown>)[key])]),
+    );
+  }
+  return true;
+}
