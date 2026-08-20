@@ -9,11 +9,15 @@
   "exportedAt": true,
   "formatVersion": true,
   "generator": true,
+  "pricedAt": true,
   "project": {
     "remote": true,
     "slug": true
   },
   "sessions": {
+    "cost": {
+      "usd": true
+    },
     "createdAt": true,
     "id": true,
     "machineId": true,
@@ -45,6 +49,11 @@
     "title": true
   },
   "totals": {
+    "cost": {
+      "pricedSessions": true,
+      "unpricedSessions": true,
+      "usd": true
+    },
     "firstSessionAt": true,
     "freshTotal": true,
     "lastSessionAt": true,

@@ -86,7 +86,9 @@ export type {
   ExportManifest,
   ExportManifestDoc,
   ExportManifestSession,
+  ExportManifestSessionCost,
   ExportManifestTokens,
+  ExportManifestTotalsCost,
   ExportSessionInput,
 } from "./export-bundle.ts";
 export { unzipExportBundle, zipExportBundle } from "./export-zip.ts";
