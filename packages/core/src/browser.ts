@@ -25,6 +25,7 @@ export type {
   GitWorkContext,
   LastWorkedOn,
   Session,
+  SessionTokenRefreshChange,
   SessionTokenRefreshCounts,
   SessionTool,
   StateAuthor,

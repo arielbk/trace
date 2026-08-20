@@ -77,7 +77,7 @@ test("refreshSessionTokens heals a pre-fix Codex row so buckets sum to the recor
     expect(storedBucketSum).toBe(190);
     expect(stored.tokenTotals.totalTokens).toBe(110);
 
-    expect(store.refreshSessionTokens()).toEqual({
+    expect(store.refreshSessionTokens()).toMatchObject({
       healed: 1,
       unchanged: 0,
       unhealable: 0,
@@ -118,7 +118,7 @@ test("refreshSessionTokens leaves a missing-transcript row untouched and counts 
       },
     });
 
-    expect(store.refreshSessionTokens()).toEqual({
+    expect(store.refreshSessionTokens()).toMatchObject({
       healed: 0,
       unchanged: 0,
       unhealable: 1,
@@ -186,12 +186,12 @@ test("refreshSessionTokens reports healed, unchanged, and unhealable counts and 
       },
     });
 
-    expect(store.refreshSessionTokens()).toEqual({
+    expect(store.refreshSessionTokens()).toMatchObject({
       healed: 1,
       unchanged: 1,
       unhealable: 1,
     });
-    expect(store.refreshSessionTokens()).toEqual({
+    expect(store.refreshSessionTokens()).toMatchObject({
       healed: 0,
       unchanged: 2,
       unhealable: 1,
@@ -225,11 +225,96 @@ test("refreshSessionTokens --tool only visits sessions for that tool", () => {
       tokenTotals: { inputTokens: 9, outputTokens: 1, totalTokens: 10 },
     });
 
-    expect(store.refreshSessionTokens({ tool: "codex" })).toEqual({
+    expect(store.refreshSessionTokens({ tool: "codex" })).toMatchObject({
       healed: 1,
       unchanged: 0,
       unhealable: 0,
     });
     expect(store.getSession("gone-claude")!.tokenTotals.inputTokens).toBe(9);
+  });
+});
+
+test("refreshSessionTokens dry-run reports a heal without writing it", () => {
+  withTempStore((store, dir) => {
+    const transcriptPath = writeCodexTranscript(dir, "stale-codex", {
+      input_tokens: 100,
+      output_tokens: 10,
+      cached_input_tokens: 80,
+      total_tokens: 110,
+    });
+    store.registerSession({
+      id: "stale-codex",
+      transcriptPath,
+      tool: "codex",
+      tokenTotals: {
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheReadInputTokens: 80,
+        totalTokens: 110,
+      },
+    });
+
+    expect(store.refreshSessionTokens({ dryRun: true })).toEqual({
+      healed: 1,
+      unchanged: 0,
+      unhealable: 0,
+      changes: [
+        {
+          id: "stale-codex",
+          tool: "codex",
+          before: {
+            tokenTotals: {
+              inputTokens: 100,
+              outputTokens: 10,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 80,
+              totalTokens: 110,
+            },
+            model: null,
+          },
+          after: {
+            tokenTotals: {
+              inputTokens: 20,
+              outputTokens: 10,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 80,
+              totalTokens: 110,
+            },
+            model: "gpt-5-codex",
+          },
+        },
+      ],
+    });
+    expect(store.refreshSessionTokens()).toEqual({
+      healed: 1,
+      unchanged: 0,
+      unhealable: 0,
+      changes: [
+        {
+          id: "stale-codex",
+          tool: "codex",
+          before: {
+            tokenTotals: {
+              inputTokens: 100,
+              outputTokens: 10,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 80,
+              totalTokens: 110,
+            },
+            model: null,
+          },
+          after: {
+            tokenTotals: {
+              inputTokens: 20,
+              outputTokens: 10,
+              cacheCreationInputTokens: 0,
+              cacheReadInputTokens: 80,
+              totalTokens: 110,
+            },
+            model: "gpt-5-codex",
+          },
+        },
+      ],
+    });
   });
 });

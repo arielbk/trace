@@ -959,7 +959,9 @@ class NodeSqliteTaskStore implements TaskStore {
 
   refreshSessionTokens(options?: {
     tool?: SessionTool;
+    dryRun?: boolean;
   }): SessionTokenRefreshCounts {
+    const persist = options?.dryRun !== true;
     const rows = options?.tool
       ? this.#sqlite
           .prepare(
@@ -984,10 +986,11 @@ class NodeSqliteTaskStore implements TaskStore {
     let healed = 0;
     let unchanged = 0;
     let unhealable = 0;
+    const changes: SessionTokenRefreshCounts["changes"] = [];
 
     for (const row of rows) {
       const original = sessionFromRow(row as SessionRow);
-      const { parsed } = this.#refreshSessionWithParse(original);
+      const { parsed } = this.#refreshSessionWithParse(original, persist);
       if (parsed === null) {
         unhealable += 1;
         continue;
@@ -998,12 +1001,18 @@ class NodeSqliteTaskStore implements TaskStore {
       const model = parsed.model ?? original.model;
       if (tokenTotalsDiffer(totals, stored) || model !== original.model) {
         healed += 1;
+        changes.push({
+          id: original.id,
+          tool: original.tool,
+          before: { tokenTotals: stored, model: original.model },
+          after: { tokenTotals: totals, model },
+        });
       } else {
         unchanged += 1;
       }
     }
 
-    return { healed, unchanged, unhealable };
+    return { healed, unchanged, unhealable, changes };
   }
 
   #taskSessionRows(taskId: string): Session[] {
@@ -1575,7 +1584,10 @@ class NodeSqliteTaskStore implements TaskStore {
   // discovery can consume tool-specific fields (Codex spawn records) without
   // parsing the transcript a second time. `parsed` is null when the transcript
   // is missing or unparseable — the stored session values survive untouched.
-  #refreshSessionWithParse(session: Session): {
+  #refreshSessionWithParse(
+    session: Session,
+    persist = true,
+  ): {
     session: Session;
     parsed: ParsedTranscript | null;
   } {
@@ -1632,7 +1644,7 @@ class NodeSqliteTaskStore implements TaskStore {
       transcriptPathChanged ||
       contextTokensChanged;
 
-    if (didWrite) {
+    if (didWrite && persist) {
       const updatedAt = this.#updatedNow();
       this.#sqlite
         .prepare(

@@ -138,10 +138,18 @@ export type TokenTotals = {
   totalTokens: number;
 };
 
+export type SessionTokenRefreshChange = {
+  id: string;
+  tool: SessionTool;
+  before: { tokenTotals: TokenTotals; model: string | null };
+  after: { tokenTotals: TokenTotals; model: string | null };
+};
+
 export type SessionTokenRefreshCounts = {
   healed: number;
   unchanged: number;
   unhealable: number;
+  changes: SessionTokenRefreshChange[];
 };
 
 // Current context-window occupancy for a session — a live snapshot, not
@@ -316,6 +324,7 @@ export type TaskStore = {
   listSessionsForTask(taskId: string): Session[];
   refreshSessionTokens(options?: {
     tool?: SessionTool;
+    dryRun?: boolean;
   }): SessionTokenRefreshCounts;
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;

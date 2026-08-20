@@ -147,6 +147,7 @@ export type {
   ReEntryManifestSession,
   Session,
   SessionOrigin,
+  SessionTokenRefreshChange,
   SessionTokenRefreshCounts,
   SessionTool,
   SetSessionParentInput,
