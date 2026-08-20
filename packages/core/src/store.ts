@@ -59,6 +59,7 @@ import type {
   Session,
   SessionOrigin,
   SetSessionParentInput,
+  SessionTokenRefreshCounts,
   SessionTool,
   Task,
   TaskDoc,
@@ -956,6 +957,55 @@ class NodeSqliteTaskStore implements TaskStore {
     );
   }
 
+  refreshSessionTokens(options?: {
+    tool?: SessionTool;
+  }): SessionTokenRefreshCounts {
+    const rows = options?.tool
+      ? this.#sqlite
+          .prepare(
+            `
+              SELECT *
+              FROM sessions
+              WHERE tool = ?
+              ORDER BY created_at ASC, id ASC
+            `,
+          )
+          .all(options.tool)
+      : this.#sqlite
+          .prepare(
+            `
+              SELECT *
+              FROM sessions
+              ORDER BY created_at ASC, id ASC
+            `,
+          )
+          .all();
+
+    let healed = 0;
+    let unchanged = 0;
+    let unhealable = 0;
+
+    for (const row of rows) {
+      const original = sessionFromRow(row as SessionRow);
+      const { parsed } = this.#refreshSessionWithParse(original);
+      if (parsed === null) {
+        unhealable += 1;
+        continue;
+      }
+
+      const totals = parsed.tokenTotals;
+      const stored = original.tokenTotals;
+      const model = parsed.model ?? original.model;
+      if (tokenTotalsDiffer(totals, stored) || model !== original.model) {
+        healed += 1;
+      } else {
+        unchanged += 1;
+      }
+    }
+
+    return { healed, unchanged, unhealable };
+  }
+
   #taskSessionRows(taskId: string): Session[] {
     return this.#sqlite
       .prepare(
@@ -1548,12 +1598,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const totals = fresh.tokenTotals;
     const stored = session.tokenTotals;
-    const totalsChanged =
-      totals.inputTokens !== stored.inputTokens ||
-      totals.outputTokens !== stored.outputTokens ||
-      totals.cacheCreationInputTokens !== stored.cacheCreationInputTokens ||
-      totals.cacheReadInputTokens !== stored.cacheReadInputTokens ||
-      totals.totalTokens !== stored.totalTokens;
+    const totalsChanged = tokenTotalsDiffer(totals, stored);
 
     // Only adopt a freshly parsed title; a transcript that no longer reports a
     // title (e.g. a truncated tail) must not clobber a previously stored one.
@@ -2111,6 +2156,16 @@ function sessionFromRow(row: SessionRow): Session {
 
 function isSessionOrigin(value: string): value is SessionOrigin {
   return value === "root" || value === "subagent" || value === "spawned";
+}
+
+function tokenTotalsDiffer(left: TokenTotals, right: TokenTotals): boolean {
+  return (
+    left.inputTokens !== right.inputTokens ||
+    left.outputTokens !== right.outputTokens ||
+    left.cacheCreationInputTokens !== right.cacheCreationInputTokens ||
+    left.cacheReadInputTokens !== right.cacheReadInputTokens ||
+    left.totalTokens !== right.totalTokens
+  );
 }
 
 function taskDocFromRow(row: TaskDocRow): TaskDoc {

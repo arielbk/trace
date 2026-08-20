@@ -138,6 +138,12 @@ export type TokenTotals = {
   totalTokens: number;
 };
 
+export type SessionTokenRefreshCounts = {
+  healed: number;
+  unchanged: number;
+  unhealable: number;
+};
+
 // Current context-window occupancy for a session — a live snapshot, not
 // cumulative spend. Cursor and Codex expose it, so it remains optional for
 // tools and transcript formats that do not.
@@ -308,6 +314,9 @@ export type TaskStore = {
   ): Session | null;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
+  refreshSessionTokens(options?: {
+    tool?: SessionTool;
+  }): SessionTokenRefreshCounts;
   getTaskTimeline(taskId: string): TaskTimeline | null;
   getReEntryManifest(taskId: string): ReEntryManifest | null;
   addTaskDoc(
