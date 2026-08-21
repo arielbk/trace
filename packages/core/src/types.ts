@@ -169,6 +169,8 @@ export type TaskTimeline = {
   stateUpdatedAt?: string;
   /** Historical Git labels from the newest task session that recorded them. */
   lastWorkedOn?: LastWorkedOn;
+  /** The tool and model of the session that wrote the current state prose. */
+  stateAuthor?: StateAuthor;
   /**
    * True when the task's docs have changed since state.md's prose last
    * reflected them (or the prose was never written). Present only when the
@@ -194,6 +196,15 @@ export type GitWorkContext = {
 export type LastWorkedOn = {
   branch?: string;
   worktree?: string;
+};
+
+// Who wrote the living state file: the tool (and model, when recorded) of the
+// session that authored the `state.md` prose currently on disk. Attribution is
+// resolved against the file's timestamp, so it never credits the session that
+// is merely reading it back.
+export type StateAuthor = {
+  tool: SessionTool;
+  model?: string;
 };
 
 // A document index entry: metadata an agent reads to decide what to open, not

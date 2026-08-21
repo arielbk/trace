@@ -24,6 +24,7 @@ export type {
   LastWorkedOn,
   Session,
   SessionTool,
+  StateAuthor,
   Task,
   TaskDoc,
   TaskStore,

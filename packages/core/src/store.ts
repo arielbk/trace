@@ -44,6 +44,7 @@ import {
   type ParsedTranscript,
 } from "./transcript-adapter.ts";
 import { lastWorkedOnFromSessions } from "./git-context.ts";
+import { resolveStateAuthor } from "./state-author.ts";
 import { resolveDocTitle } from "./display-title.ts";
 import { INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
@@ -996,6 +997,8 @@ class NodeSqliteTaskStore implements TaskStore {
           localPath: session.gitWorktreePath,
         })),
     );
+    const stateUpdatedAt = state && stateDoc ? stateDoc.createdAt : undefined;
+    const stateAuthor = resolveStateAuthor(sessionList, stateUpdatedAt);
     const stateStale = computeStateStale(
       resolveTaskDocsDir(this.#databasePath, task.slug),
       docs,
@@ -1014,8 +1017,9 @@ class NodeSqliteTaskStore implements TaskStore {
         emptyTokenTotals(),
       ),
       ...(state ? { state } : {}),
-      ...(state && stateDoc ? { stateUpdatedAt: stateDoc.createdAt } : {}),
+      ...(stateUpdatedAt ? { stateUpdatedAt } : {}),
       ...(lastWorkedOn ? { lastWorkedOn } : {}),
+      ...(stateAuthor ? { stateAuthor } : {}),
       ...(stateStale === undefined ? {} : { stateStale }),
     };
   }

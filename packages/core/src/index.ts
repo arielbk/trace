@@ -64,6 +64,7 @@ export {
   lastWorkedOnFromSessions,
   readGitWorkContext,
 } from "./git-context.ts";
+export { resolveStateAuthor } from "./state-author.ts";
 export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
@@ -112,6 +113,7 @@ export type {
   SessionOrigin,
   SessionTool,
   SetSessionParentInput,
+  StateAuthor,
   Task,
   TaskDoc,
   TaskStore,
