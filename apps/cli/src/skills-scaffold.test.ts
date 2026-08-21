@@ -270,4 +270,23 @@ describe("skills scaffold", () => {
     assert.match(source, /tell the user the URL/i);
     assert.match(source, /stops the server with Ctrl-C/);
   });
+
+  it("ships a state skill that authors a concise snapshot without empty placeholders", () => {
+    assert.equal(existsSync(stateSkill), true);
+
+    const source = readFileSync(stateSkill, "utf8");
+
+    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+    const meta = frontmatter?.[1];
+    assert.equal(typeof meta, "string");
+    assert.match(meta as string, /^name:\s*trace-state\s*$/m);
+
+    assert.match(source, /## Current state/);
+    assert.match(source, /## Next step/);
+    assert.match(source, /omit/i);
+    assert.match(source, /question/i);
+    assert.equal(source.includes("## Decisions made"), false);
+    assert.equal(source.includes("## Open questions"), false);
+    assert.equal(/write [`'"]none[`'"]/i.test(source), false);
+  });
 });

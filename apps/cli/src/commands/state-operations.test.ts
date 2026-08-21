@@ -324,3 +324,26 @@ test("state check does not create state.md for a task with zero non-state docs",
     expect(existsSync(statePath)).toBe(false);
   });
 });
+
+test("state reflect then check is a no-op for concise living-state prose", () => {
+  withTempContext((ctx) => {
+    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
+    const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
+    bindSession(ctx, slug, "session-concise");
+
+    stateCheckOperation([slug], ctx);
+    const seeded = readFileSync(statePath, "utf8");
+    writeFileSync(
+      statePath,
+      seeded.replace(
+        "# Checkout flow\n",
+        "# Checkout is resumable.\n\n## Current state\n\nThe parser slice is in place.\n\n## Next step\n\nAdd parsed state to the timeline API.\n",
+      ),
+    );
+
+    stateReflectOperation([slug], ctx);
+
+    const verdict = JSON.parse(stateCheckOperation([slug], ctx).stdout);
+    expect(verdict.needsProsePass).toBe(false);
+  });
+});

@@ -21,8 +21,8 @@ two triggers, the same operation either way:
   them to orient, so fold what they establish into the sections below.
 
 The skill captures where things stand into a single living `state.md` in the
-bound task's docs dir, using the exact section structure below. Running it a
-second time updates the same file in place; there is never a second file.
+bound task's docs dir. Running it a second time updates the same file in
+place; there is never a second file.
 
 You do not need to debounce this yourself — the drift trigger only fires on a
 real docs change (a fingerprint gate), so this is not a per-turn note-taking
@@ -63,54 +63,40 @@ that this skill requires a bound task, write nothing, and stop.
 
 If the file exists, read it fully — this is the accumulated state from prior
 sessions. You will merge this session's developments into it. If it does not
-exist, you are writing it fresh.
+exist, you are writing it fresh. Legacy files may still contain Decisions made
+or Open questions sections; do not copy those sections into the rewrite.
+Decisions belong in durable task documents.
 
 ### 3. Identify this session's developments
 
-From the current conversation context, identify what changed in this session:
+From the current conversation context, identify:
 
-- Decisions that were made (architectural choices, approaches agreed on,
-  approaches ruled out)
-- What was implemented, fixed, or changed
-- Where things stand right now (what's working, what isn't, current state of
-  the code or plan)
-- The concrete next step a fresh agent should take to continue
-- Open questions that remain unresolved
+- A one-sentence summary of where the work stands now
+- The current position — a short paragraph of what's in place, working, or
+  incomplete
+- The single next action, or the unresolved question that *is* the next step
 
-When a prior `state.md` exists, fold the new developments in: update each
-section to reflect the current state rather than appending per-session notes.
-The file accumulates state across sessions — it is a snapshot of *now*, not a
-log. Old decisions that are still load-bearing stay; superseded decisions get
-replaced or struck.
+When a prior `state.md` exists, fold the new developments in: rewrite the
+snapshot of *now* rather than appending per-session notes. Prefer accuracy
+over length.
 
 ### 4. Write `state.md`
 
-Write the file to `<taskDocsDir>/state.md` using this structure:
+Write the file to `<taskDocsDir>/state.md` using this structure. Omit any
+section that has nothing to say — do not stub it with a placeholder.
 
 ```markdown
-# <one-line summary of where things stand now>
-
-## Decisions made
-
-<Bullet list of key decisions. Include the reasoning briefly when it affects
-future choices. Omit decisions that are obvious from the code.>
+# <one-sentence summary of where things stand now>
 
 ## Current state
 
-<1–3 paragraphs: what's working, what's in place, what's broken or incomplete.
-Concrete and specific — a fresh agent reading this should know exactly what
-the codebase looks like right now.>
+<A short paragraph: what's working, what's in place, what's broken or
+incomplete. Concrete enough that a fresh agent knows the current position.>
 
 ## Next step
 
-<The single most important thing a fresh agent should do to continue this work.
-One clear, actionable task, not a list.>
-
-## Open questions
-
-<Bullet list of unresolved questions or decisions. Mark "unblocking" if one
-needs to be resolved before the next step can proceed. Write "none" only if
-there genuinely are none.>
+<The single most important next action — or the unresolved question that
+must be answered before work can continue. Not a list.>
 ```
 
 **Do not write a docs footer.** The list of other docs in this task is a
@@ -155,8 +141,8 @@ intended.
 - The file is always `state.md` — never `state-2026-05-17.md` or a second
   state file. The living state is in one place; per-session history lives in
   the transcripts.
-- Write plain prose and bullets. No code blocks, no diffs. Code lives in git.
-- When merging, prefer accuracy over length. A shorter, accurate state file
-  is better than a long one that mixes stale and current state.
+- Write plain prose. No code blocks, no diffs. Code lives in git.
+- Brevity is guidance, not a word limit. A shorter, accurate snapshot is
+  better than a long file that mixes stale and current state.
 - If the task has a `re-enter` manifest line `state: / path: <path>`, that
   path IS `<taskDocsDir>/state.md` — they are the same file.
