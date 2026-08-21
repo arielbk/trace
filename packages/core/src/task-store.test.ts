@@ -137,6 +137,9 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "context_tokens_limit",
         "updated_at",
         "machine_id",
+        "git_branch",
+        "git_worktree_label",
+        "git_worktree_path",
       ]);
     } finally {
       database.close();

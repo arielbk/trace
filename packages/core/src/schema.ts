@@ -80,6 +80,9 @@ export const sessions = sqliteTable("sessions", {
   contextTokensLimit: integer("context_tokens_limit"),
   updatedAt: text("updated_at").notNull(),
   machineId: text("machine_id").notNull(),
+  gitBranch: text("git_branch"),
+  gitWorktreeLabel: text("git_worktree_label"),
+  gitWorktreePath: text("git_worktree_path"),
 });
 
 export const taskDocs = sqliteTable(

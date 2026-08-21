@@ -20,6 +20,8 @@ export type {
   ReEntryManifest,
   ReEntryManifestDoc,
   ReEntryManifestSession,
+  GitWorkContext,
+  LastWorkedOn,
   Session,
   SessionTool,
   Task,

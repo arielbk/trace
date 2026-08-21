@@ -10,8 +10,15 @@ docs, and architecture reviews so names stay consistent.
 - **Session** — one agent run (Claude Code, Codex, or Cursor) recorded against a
   task. Carries a tool, id, transcript path, model, and token totals.
 - **Re-entry manifest** — the bundle a fresh session reloads to resume a task:
-  the task, its docs, the distilled `state.md`, and pointers to prior sessions
-  (newest first).
+  the task, its docs, the distilled `state.md`, historical last-worked-on Git
+  context, and pointers to prior sessions (newest first).
+- **Last worked on** — historical Git context belonging to the most recent
+  task-associated session that captured it: branch name, optional linked-worktree
+  display label, and a machine-local absolute path that is not portable. It does
+  not mean the task is owned by that branch or worktree.
+- **Git work context** — the normalization boundary for last-worked-on metadata
+  (`readGitWorkContext`); persistence, sync, manifest formatting, and UI read
+  this record rather than reinterpreting repository state.
 - **Token Totals** — the value module owning token arithmetic (`empty`, `add`,
   `fromUsage`); consumed by adapters and the store instead of per-call copies.
 

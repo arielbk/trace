@@ -43,11 +43,13 @@ import {
   getTranscriptAdapter,
   type ParsedTranscript,
 } from "./transcript-adapter.ts";
+import { lastWorkedOnFromSessions } from "./git-context.ts";
 import { INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
+  GitWorkContext,
   Project,
   ProjectMergeResult,
   ProjectResolution,
@@ -764,22 +766,48 @@ class NodeSqliteTaskStore implements TaskStore {
     );
   }
 
-  assignSession(sessionId: string, taskId: string): Session {
+  assignSession(
+    sessionId: string,
+    taskId: string,
+    gitContext?: GitWorkContext,
+  ): Session {
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
-    this.#sqlite
-      .prepare("UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?")
-      .run(task.id, this.#updatedNow(), this.#machineId, session.id);
+    if (gitContext) {
+      this.#sqlite
+        .prepare(
+          `UPDATE sessions
+           SET task_id = ?, git_branch = ?, git_worktree_label = ?, git_worktree_path = ?,
+               updated_at = ?, machine_id = ?
+           WHERE id = ?`,
+        )
+        .run(
+          task.id,
+          gitContext.branch?.trim() || null,
+          gitContext.worktreeLabel?.trim() || null,
+          gitContext.localPath?.trim() || null,
+          this.#updatedNow(),
+          this.#machineId,
+          session.id,
+        );
+    } else {
+      this.#sqlite
+        .prepare(
+          "UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?",
+        )
+        .run(task.id, this.#updatedNow(), this.#machineId, session.id);
+    }
 
     // A re-bind moves the parent's whole fan: descendants still on the
     // parent's previous task follow it rather than stranding there.
     this.#cascadeTaskIdToDescendants(session.id, task.id, session.taskId);
 
-    return { ...session, taskId: task.id };
+    const assigned = this.getSession(session.id);
+    return assigned ?? { ...session, taskId: task.id };
   }
 
   // Walk the `parent_session_id` descendant tree from `parentId`, stamping
@@ -980,17 +1008,24 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(taskId);
     if (!task) return null;
 
-    const sessions = this.listSessionsForTask(task.id)
+    const orderedSessions = this.listSessionsForTask(task.id)
       .slice()
-      .sort(compareSessionsNewestFirst)
-      .map((session, index) => ({
-        id: session.id,
-        transcriptPath: session.transcriptPath,
-        tool: session.tool,
-        model: session.model,
-        createdAt: session.createdAt,
-        isMostRecent: index === 0,
-      }));
+      .sort(compareSessionsNewestFirst);
+    const sessions = orderedSessions.map((session, index) => ({
+      id: session.id,
+      transcriptPath: session.transcriptPath,
+      tool: session.tool,
+      model: session.model,
+      createdAt: session.createdAt,
+      isMostRecent: index === 0,
+    }));
+    const lastWorkedOn = lastWorkedOnFromSessions(
+      orderedSessions.map((session) => ({
+        branch: session.gitBranch,
+        worktreeLabel: session.gitWorktreeLabel,
+        localPath: session.gitWorktreePath,
+      })),
+    );
 
     const allDocs = this.listDocsForTask(task.id);
     const stateDoc = allDocs.find((d) => basename(d.path) === "state.md");
@@ -1009,6 +1044,7 @@ class NodeSqliteTaskStore implements TaskStore {
       ...(stateDoc ? { state: stateDoc } : {}),
       docs,
       sessions,
+      ...(lastWorkedOn ? { lastWorkedOn } : {}),
     };
   }
 
@@ -1863,6 +1899,9 @@ type SessionRow = {
   total_tokens: number;
   context_tokens_used: number | null;
   context_tokens_limit: number | null;
+  git_branch: string | null;
+  git_worktree_label: string | null;
+  git_worktree_path: string | null;
 };
 
 type TaskDocRow = {
@@ -1902,7 +1941,7 @@ function projectFromRow(row: ProjectRow): Project {
 }
 
 function sessionFromRow(row: SessionRow): Session {
-  return {
+  const session: Session = {
     id: row.id,
     transcriptPath: row.transcript_path,
     tool: row.tool,
@@ -1929,6 +1968,10 @@ function sessionFromRow(row: SessionRow): Session {
           }
         : null,
   };
+  if (row.git_branch) session.gitBranch = row.git_branch;
+  if (row.git_worktree_label) session.gitWorktreeLabel = row.git_worktree_label;
+  if (row.git_worktree_path) session.gitWorktreePath = row.git_worktree_path;
+  return session;
 }
 
 function isSessionOrigin(value: string): value is SessionOrigin {

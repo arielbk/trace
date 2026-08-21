@@ -59,6 +59,11 @@ export type { TraceConfigFile } from "./config.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { readProjectFingerprints } from "./project-fingerprint.ts";
 export type { ProjectFingerprints } from "./project-fingerprint.ts";
+export {
+  lastWorkedOnFromContext,
+  lastWorkedOnFromSessions,
+  readGitWorkContext,
+} from "./git-context.ts";
 export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
@@ -94,6 +99,8 @@ export type {
   ActiveTask,
   AddTaskDocOptions,
   ContextTokens,
+  GitWorkContext,
+  LastWorkedOn,
   Project,
   ProjectMergeResult,
   ProjectResolution,

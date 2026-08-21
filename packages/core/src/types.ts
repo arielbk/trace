@@ -90,6 +90,9 @@ export type Session = {
   // Live context-window occupancy when the tool exposes it (Cursor/Codex).
   // Refreshed from the source transcript when the session is read.
   contextTokens?: ContextTokens | null;
+  gitBranch?: string;
+  gitWorktreeLabel?: string;
+  gitWorktreePath?: string;
 };
 
 export type TaskDoc = {
@@ -178,6 +181,17 @@ export type TaskSummary = Task & {
   hasDocs: boolean;
 };
 
+export type GitWorkContext = {
+  branch?: string;
+  worktreeLabel?: string;
+  localPath?: string;
+};
+
+export type LastWorkedOn = {
+  branch?: string;
+  worktree?: string;
+};
+
 export type ReEntryManifestDoc = TaskDoc;
 
 export type ReEntryManifestSession = {
@@ -195,6 +209,7 @@ export type ReEntryManifest = {
   state?: ReEntryManifestDoc;
   docs: ReEntryManifestDoc[];
   sessions: ReEntryManifestSession[];
+  lastWorkedOn?: LastWorkedOn;
 };
 
 export type RegisterSessionInput = {
@@ -246,7 +261,11 @@ export type TaskStore = {
   unpinTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;
   setSessionParent(input: SetSessionParentInput): Session;
-  assignSession(sessionId: string, taskId: string): Session;
+  assignSession(
+    sessionId: string,
+    taskId: string,
+    gitContext?: GitWorkContext,
+  ): Session;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
