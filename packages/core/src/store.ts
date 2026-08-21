@@ -44,6 +44,7 @@ import {
   type ParsedTranscript,
 } from "./transcript-adapter.ts";
 import { lastWorkedOnFromSessions } from "./git-context.ts";
+import { resolveDocTitle } from "./display-title.ts";
 import { INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
@@ -56,6 +57,7 @@ import type {
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
+  ReEntryManifestDoc,
   Session,
   SessionOrigin,
   SetSessionParentInput,
@@ -1025,14 +1027,9 @@ class NodeSqliteTaskStore implements TaskStore {
     const orderedSessions = this.listSessionsForTask(task.id)
       .slice()
       .sort(compareSessionsNewestFirst);
-    const sessions = orderedSessions.map((session, index) => ({
-      id: session.id,
-      transcriptPath: session.transcriptPath,
-      tool: session.tool,
-      model: session.model,
-      createdAt: session.createdAt,
-      isMostRecent: index === 0,
-    }));
+    // Progressive disclosure: only the latest session ships by default. Older
+    // transcripts stay reachable through `trace session` on demand.
+    const latestSession = orderedSessions[0];
     const lastWorkedOn = lastWorkedOnFromSessions(
       orderedSessions.map((session) => ({
         branch: session.gitBranch,
@@ -1043,7 +1040,9 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const allDocs = this.listDocsForTask(task.id);
     const stateDoc = allDocs.find((d) => basename(d.path) === "state.md");
-    const docs = allDocs.filter((d) => basename(d.path) !== "state.md");
+    const docs = allDocs
+      .filter((d) => basename(d.path) !== "state.md")
+      .map((doc) => toManifestDoc(doc));
 
     return {
       task: {
@@ -1055,9 +1054,19 @@ class NodeSqliteTaskStore implements TaskStore {
         ...(task.description ? { description: task.description } : {}),
       },
       taskDocsDir: resolveTaskDocsDir(this.#databasePath, task.slug),
-      ...(stateDoc ? { state: stateDoc } : {}),
+      ...(stateDoc ? { state: { path: stateDoc.path } } : {}),
       docs,
-      sessions,
+      ...(latestSession
+        ? {
+            lastSession: {
+              id: latestSession.id,
+              transcriptPath: latestSession.transcriptPath,
+              tool: latestSession.tool,
+              model: latestSession.model,
+              createdAt: latestSession.createdAt,
+            },
+          }
+        : {}),
       ...(lastWorkedOn ? { lastWorkedOn } : {}),
     };
   }
@@ -2113,6 +2122,27 @@ function computeStateStale(
     })),
   );
   return readProseFingerprint(content) !== fingerprint;
+}
+
+/**
+ * Turn a stored doc into a manifest index entry: a resolved display title (the
+ * doc body is read so the H1 branch of the shared fallback chain can fire), the
+ * pointer, and a description only when one was recorded — never inferred.
+ */
+function toManifestDoc(doc: TaskDoc): ReEntryManifestDoc {
+  return {
+    title: resolveDocTitle(doc, readDocContentOrNull(doc.path)),
+    ...(doc.description ? { description: doc.description } : {}),
+    path: doc.path,
+  };
+}
+
+function readDocContentOrNull(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
 }
 
 function readDocContentOrEmpty(path: string): string {

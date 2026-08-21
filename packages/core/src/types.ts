@@ -196,23 +196,34 @@ export type LastWorkedOn = {
   worktree?: string;
 };
 
-export type ReEntryManifestDoc = TaskDoc;
+// A document index entry: metadata an agent reads to decide what to open, not
+// the document itself. The title is always resolved (explicit title → first H1
+// → filename); a description is carried only when the doc actually has one.
+export type ReEntryManifestDoc = {
+  path: string;
+  title: string;
+  description?: string;
+};
 
+// The one session pointer the manifest carries: the latest session associated
+// with the task. The manifest is built before the entering session is
+// registered, so this is always the *prior* session, never the current one.
 export type ReEntryManifestSession = {
   id: string;
   transcriptPath: string;
   tool: SessionTool;
   model: string | null;
   createdAt: string;
-  isMostRecent: boolean;
 };
 
 export type ReEntryManifest = {
   task: Pick<Task, "id" | "title" | "projectRoot" | "description">;
   taskDocsDir: string;
-  state?: ReEntryManifestDoc;
+  // The living state file is a pointer, not an index entry — it is read first
+  // and in full, so it needs no title or description to be chosen from a list.
+  state?: { path: string };
   docs: ReEntryManifestDoc[];
-  sessions: ReEntryManifestSession[];
+  lastSession?: ReEntryManifestSession;
   lastWorkedOn?: LastWorkedOn;
 };
 
