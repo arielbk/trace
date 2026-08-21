@@ -1670,7 +1670,8 @@ test("TaskTimelineView renders state recency, exact timestamp, and historical Gi
 
   expect(html).toContain("3m ago");
   expect(html).toContain('data-testid="state-card"');
-  expect(html).toContain('data-testid="state-footer"');
+  expect(html).toContain('data-testid="state-lower-grid"');
+  expect(html).toContain('data-testid="state-context"');
   expect(html).toContain('data-testid="state-next-step"');
   expect(html).toContain('dateTime="2026-06-03T11:57:00.000Z"');
   expect(html).toContain('title="Updated 2026-06-03T11:57:00.000Z"');
@@ -1688,7 +1689,26 @@ test("LeftOffPanel uses the neutral no-state placeholder", () => {
   expect(html).not.toContain("save state");
 });
 
-test("LeftOffPanel footer relies on spacing rather than an extra divider", () => {
+test("LeftOffPanel places task metadata in the lower context area", () => {
+  const { getByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        openQuestions: [],
+      }}
+      lastWorkedOn={{ branch: "feature-checkout" }}
+    />,
+  );
+
+  expect(getByTestId("state-context")).not.toHaveClass("border-t");
+  expect(getByTestId("state-context")).toHaveTextContent("Context");
+  expect(getByTestId("state-card")).toHaveClass("content-bleed");
+  expect(getByTestId("state-card")).not.toHaveClass("rounded-xl");
+});
+
+test("LeftOffPanel separates a muted freshness notice in the heading", () => {
   const { getByTestId } = render(
     <LeftOffPanel
       state={{
@@ -1698,12 +1718,124 @@ test("LeftOffPanel footer relies on spacing rather than an extra divider", () =>
         openQuestions: [],
       }}
       stale
+      lastWorkedOn={{ branch: "feature-checkout" }}
+      updatedAt="2026-06-03T11:57:00.000Z"
     />,
   );
 
-  expect(getByTestId("state-footer")).not.toHaveClass("border-t");
-  expect(getByTestId("state-card")).toHaveClass("content-bleed");
-  expect(getByTestId("state-card")).not.toHaveClass("rounded-xl");
+  expect(getByTestId("state-stale-badge")).toHaveAttribute("role", "status");
+  expect(getByTestId("state-stale-badge")).toHaveTextContent(
+    "Docs changed since snapshot",
+  );
+  expect(getByTestId("state-stale-badge").previousElementSibling).toHaveClass("w-px");
+  expect(getByTestId("state-recency")).not.toContainHTML("svg");
+  expect(getByTestId("state-context")).toContainElement(
+    getByTestId("last-work-context"),
+  );
+});
+
+test("LeftOffPanel splits context and next step into desktop columns", () => {
+  const { getByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        nextStep: "Ship the release notes.",
+        openQuestions: [],
+      }}
+      lastWorkedOn={{ branch: "feature-checkout" }}
+    />,
+  );
+
+  expect(getByTestId("state-lower-grid")).toHaveClass("md:grid-cols-2");
+  expect(getByTestId("state-context")).toHaveClass("order-2", "md:order-1");
+  expect(getByTestId("state-next-step")).toHaveClass("order-1", "md:order-2");
+});
+
+test("LeftOffPanel names the tool and model that last wrote the state prose", () => {
+  const { getByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        openQuestions: [],
+      }}
+      lastWorkedOn={{ branch: "feature-checkout" }}
+      stateAuthor={{ tool: "codex", model: "gpt-5.6-terra" }}
+    />,
+  );
+
+  const author = getByTestId("state-author");
+  expect(author).toHaveAttribute("aria-label", "Last written by Codex · GPT-5.6 Terra");
+  expect(author.textContent).toContain("Codex");
+  expect(author.textContent).toContain("GPT-5.6 Terra");
+  expect(getByTestId("state-context")).toContainElement(author);
+  // A bare mark, not the boxed TypeIcon tile — it has to sit at the same
+  // weight as the branch icon on the line above it.
+  expect(author.querySelector(".type-icon")).toBeNull();
+  expect(author.querySelector("svg")).toHaveAttribute("width", "12");
+});
+
+test("LeftOffPanel omits the model when the author session recorded none", () => {
+  const { getByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        openQuestions: [],
+      }}
+      stateAuthor={{ tool: "cursor" }}
+    />,
+  );
+
+  expect(getByTestId("state-author")).toHaveAttribute(
+    "aria-label",
+    "Last written by Cursor",
+  );
+  expect(getByTestId("state-author").textContent).not.toContain("·");
+});
+
+test("LeftOffPanel shows the context column for authorship alone", () => {
+  const { getByTestId, queryByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        nextStep: "Ship the release notes.",
+        openQuestions: [],
+      }}
+      stateAuthor={{ tool: "claude", model: "claude-opus-5" }}
+    />,
+  );
+
+  expect(getByTestId("state-context")).toHaveTextContent("Context");
+  expect(queryByTestId("last-work-context")).toBeNull();
+  expect(getByTestId("state-lower-grid")).toHaveClass("md:grid-cols-2");
+});
+
+test("LeftOffPanel copies the last-worked branch", async () => {
+  render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        openQuestions: [],
+      }}
+      lastWorkedOn={{ branch: "feature-checkout" }}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Copy branch feature-checkout" }));
+
+  await waitFor(() => {
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("feature-checkout");
+  });
+  expect(screen.getByRole("button", { name: "Copied branch feature-checkout" })).toHaveTextContent("Copied");
 });
 
 // activity-timeline-restyle: continuous spine tests
