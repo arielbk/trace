@@ -63,6 +63,8 @@ export { generatePlaceholderSlug, slugify } from "./slug.ts";
 export { resolveDatabasePath } from "./db-path.ts";
 export { parseStateMd } from "./state-parser.ts";
 export type { ParsedStateMd } from "./state-parser.ts";
+export { formatStateMd } from "./state-format.ts";
+export type { StateMdDraft } from "./state-format.ts";
 export { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 export { resolveDocTitle } from "./display-title.ts";
 export type { ResolvableDoc } from "./display-title.ts";
