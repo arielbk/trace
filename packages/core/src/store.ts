@@ -1209,7 +1209,9 @@ class NodeSqliteTaskStore implements TaskStore {
                 cache_creation_input_tokens AS cacheCreationInputTokens,
                 cache_read_input_tokens AS cacheReadInputTokens,
                 total_tokens AS totalTokens, updated_at AS updatedAt,
-                machine_id AS machineId
+                machine_id AS machineId,
+                git_branch AS gitBranch,
+                git_worktree_label AS gitWorktreeLabel
          FROM sessions ORDER BY id`,
       )
       .all() as SyncPayload["sessions"];
@@ -1313,8 +1315,8 @@ class NodeSqliteTaskStore implements TaskStore {
            (id, transcript_path, tool, model, title, task_id, parent_session_id,
             origin, subagent_type, agent_id, created_at, input_tokens, output_tokens,
             cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
-            updated_at, machine_id)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            updated_at, machine_id, git_branch, git_worktree_label)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            transcript_path=excluded.transcript_path, tool=excluded.tool,
            model=excluded.model, title=excluded.title, task_id=excluded.task_id,
@@ -1325,9 +1327,12 @@ class NodeSqliteTaskStore implements TaskStore {
            cache_creation_input_tokens=excluded.cache_creation_input_tokens,
            cache_read_input_tokens=excluded.cache_read_input_tokens,
            total_tokens=excluded.total_tokens, updated_at=excluded.updated_at,
-           machine_id=excluded.machine_id`,
+           machine_id=excluded.machine_id,
+           git_branch=excluded.git_branch,
+           git_worktree_label=excluded.git_worktree_label`,
       );
       for (const row of sessions) {
+        const existing = localSessions.get(row.id);
         upsertSession.run(
           row.id,
           row.transcriptPath,
@@ -1346,6 +1351,12 @@ class NodeSqliteTaskStore implements TaskStore {
           row.totalTokens,
           row.updatedAt,
           row.machineId,
+          "gitBranch" in row
+            ? (row.gitBranch ?? null)
+            : (existing?.gitBranch ?? null),
+          "gitWorktreeLabel" in row
+            ? (row.gitWorktreeLabel ?? null)
+            : (existing?.gitWorktreeLabel ?? null),
         );
       }
       const setParent = this.#sqlite.prepare(

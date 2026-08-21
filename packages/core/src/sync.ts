@@ -40,6 +40,11 @@ export type SyncSessionRow = {
   totalTokens: number;
   updatedAt: string;
   machineId: string;
+  // Optional on the wire: historical last-worked-on Git labels. Rows from
+  // clients predating this field omit them. Absolute worktree paths stay
+  // machine-local and never appear here.
+  gitBranch?: string | null;
+  gitWorktreeLabel?: string | null;
 };
 
 export type SyncPayload = { tasks: SyncTaskRow[]; sessions: SyncSessionRow[] };
