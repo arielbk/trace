@@ -967,7 +967,9 @@ class NodeSqliteTaskStore implements TaskStore {
           sessionName: resolveSessionName(session),
         }),
       ),
-      ...docs.map(
+      ...docs
+        .filter((doc) => basename(doc.path) !== "state.md")
+        .map(
         (doc): TaskTimelineItem => ({
           type: "doc",
           createdAt: doc.createdAt,
@@ -982,6 +984,16 @@ class NodeSqliteTaskStore implements TaskStore {
       ...docs.map((doc) => doc.createdAt),
     ].reduce((latest, current) => (current > latest ? current : latest));
     const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
+    const lastWorkedOn = lastWorkedOnFromSessions(
+      sessionList
+        .slice()
+        .sort(compareSessionsNewestFirst)
+        .map((session) => ({
+          branch: session.gitBranch,
+          worktreeLabel: session.gitWorktreeLabel,
+          localPath: session.gitWorktreePath,
+        })),
+    );
     const stateStale = computeStateStale(
       resolveTaskDocsDir(this.#databasePath, task.slug),
       docs,
@@ -1000,6 +1012,8 @@ class NodeSqliteTaskStore implements TaskStore {
         emptyTokenTotals(),
       ),
       ...(state ? { state } : {}),
+      ...(state && stateDoc ? { stateUpdatedAt: stateDoc.createdAt } : {}),
+      ...(lastWorkedOn ? { lastWorkedOn } : {}),
       ...(stateStale === undefined ? {} : { stateStale }),
     };
   }

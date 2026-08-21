@@ -1905,6 +1905,55 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
   }
 });
 
+test("task timeline keeps state out of activity while exposing its timestamp and last-work labels", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(
+      join(docsDir, "state.md"),
+      "# Checkout\n\nReady for release.\n",
+    );
+    writeFileSync(join(docsDir, "plan.md"), "# Plan\n");
+    const session = store.registerSession({
+      id: "git-context-session",
+      transcriptPath: "/tmp/context.jsonl",
+      tool: "codex",
+    });
+    store.assignSession(session.id, task.id, {
+      branch: "feature-checkout",
+      worktreeLabel: "checkout-ui",
+    });
+
+    const timeline = store.getTaskTimeline(task.id)!;
+
+    expect(timeline.state?.summary).toBe("Checkout");
+    expect(timeline.stateUpdatedAt).toEqual(expect.any(String));
+    expect(timeline.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+    expect(
+      timeline.items.some(
+        (item) => item.type === "doc" && item.doc.path.endsWith("state.md"),
+      ),
+    ).toBe(false);
+    expect(
+      timeline.items.some(
+        (item) => item.type === "doc" && item.doc.path.endsWith("plan.md"),
+      ),
+    ).toBe(true);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task timeline reports stateStale from the prose fingerprint", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");

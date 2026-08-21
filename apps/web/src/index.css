@@ -84,6 +84,13 @@
   grid-template-columns: auto minmax(0, 1fr);
 }
 
+/* Shared edge treatment for a row or section that is intentionally surfaced
+ * beyond the reading column while preserving its text alignment. */
+.content-bleed {
+  margin-inline: calc(var(--spacing) * -6);
+  padding-inline: calc(var(--spacing) * 6);
+}
+
 @utility token-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 }

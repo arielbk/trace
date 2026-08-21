@@ -5,6 +5,7 @@ import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
   resumeCommand,
+  type LastWorkedOn,
   type SessionTool,
   type TaskTimeline,
   type TaskTimelineItem,
@@ -12,7 +13,6 @@ import {
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
-import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
@@ -112,7 +112,7 @@ function TaskDetailSkeleton() {
         <span className="t-skel-bar h-4 w-64 max-w-full" />
       </div>
       {/* Token summary */}
-      <div className="mt-8 pt-6 border-t border-border flex gap-11">
+      <div className="mt-8 pt-6 flex gap-11">
         {Array.from({ length: 3 }, (_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <span className="t-skel-bar h-3 w-12" />
@@ -409,7 +409,10 @@ export function TaskTimelineView({
       </div>
       <LeftOffPanel
         state={timeline.state}
+        updatedAt={timeline.stateUpdatedAt}
+        lastWorkedOn={timeline.lastWorkedOn}
         stale={timeline.stateStale}
+        now={now}
         onDocLinkClick={navigateStateDocLink}
       />
       <TokenSummary totals={timeline.tokenTotals} />
@@ -481,7 +484,7 @@ export function TaskTimelineView({
               return (
                 <li key={`doc:${item.doc.path}`}>
                   <div
-                    className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"
+                    className="content-bleed relative grid timeline-grid gap-3.5 py-3 hover:bg-surface cursor-pointer"
                     role="button"
                     tabIndex={0}
                     aria-label={`View ${truncatePath(item.doc.path)}`}
@@ -592,7 +595,7 @@ function SessionRootRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+      <div className="content-bleed relative grid timeline-grid gap-3.5 py-3 hover:bg-surface">
         <div className="relative z-10 flex justify-center">
           <TypeIcon type={item.session.tool} />
         </div>
@@ -782,7 +785,7 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     : null;
 
   return (
-    <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+    <li className="content-bleed grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 hover:bg-surface">
       <div className="flex justify-center pt-px">
         <TypeIcon type={session.tool} size="sm" />
       </div>
@@ -808,125 +811,181 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
 
 export function LeftOffPanel({
   state,
+  updatedAt,
+  lastWorkedOn,
   stale,
+  now,
   onDocLinkClick,
 }: {
   state?: ParsedStateMd;
+  updatedAt?: string;
+  lastWorkedOn?: LastWorkedOn;
   stale?: boolean;
+  now?: Date;
   onDocLinkClick?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   if (!state) {
     return (
-      <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
-        No context saved yet — say &ldquo;save state&rdquo; in a bound session
-        to capture where you left off.
-      </p>
+      <section
+        data-testid="state-card"
+        className="content-bleed mt-9 bg-surface py-6"
+      >
+        <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-accent">
+          Current state
+        </h2>
+        <p className="m-0 mt-3 text-sm text-text-muted">
+          No state captured yet.
+        </p>
+      </section>
     );
   }
 
-  const hasGrid =
-    state.decisions.length > 0 ||
-    Boolean(state.nextStep) ||
-    state.openQuestions.length > 0;
+  const hasSupportingSections =
+    state.decisions.length > 0 || state.openQuestions.length > 0;
+  const hasFooter = Boolean(updatedAt) || Boolean(stale) || Boolean(lastWorkedOn);
 
   return (
     <section
-      className="mt-8 pt-6 border-t border-border"
+      data-testid="state-card"
+      className="content-bleed mt-9 bg-surface py-6"
       onClick={onDocLinkClick}
     >
-      <div className="flex items-baseline gap-3 mb-2.5">
-        <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-accent">
-          Where you left off
-        </h2>
-        {stale ? (
-          <span
-            data-testid="state-stale-badge"
-            className="font-mono text-crumb text-text-muted whitespace-nowrap"
+      <h2 className="m-0 mb-4 text-xs font-bold uppercase tracking-widest text-accent">
+        Current state
+      </h2>
+      <div>
+        {state.summary ? (
+          <p
+            className="m-0 text-md font-semibold leading-normal text-text text-pretty"
+            dangerouslySetInnerHTML={{ __html: state.summary }}
+          />
+        ) : null}
+        {state.currentState.length > 0 ? (
+          <div
+            className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
+            dangerouslySetInnerHTML={{
+              __html: state.currentState.join("\n"),
+            }}
+          />
+        ) : null}
+        {state.nextStep ? (
+          <div data-testid="state-next-step" className="mt-7">
+            <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+              Next step
+            </h3>
+            <div className="flex gap-2.5">
+              <NextStepArrow />
+              <div
+                className="left-off-prose min-w-0 flex-1 text-sm font-medium leading-normal text-text-muted"
+                dangerouslySetInnerHTML={{ __html: state.nextStep }}
+              />
+            </div>
+          </div>
+        ) : null}
+        {hasSupportingSections ? (
+          <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+            {state.decisions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Decisions made
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.decisions.map((d, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="state-inline text-sm leading-normal text-text-muted"
+                        dangerouslySetInnerHTML={{ __html: d }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {state.openQuestions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
+                  Open questions
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.openQuestions.map((q, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="state-inline text-sm leading-normal text-text-muted"
+                        dangerouslySetInnerHTML={{ __html: q }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {hasFooter ? (
+          <div
+            data-testid="state-footer"
+            className="mt-10 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 font-mono text-crumb text-text-muted"
           >
-            docs changed since this was saved
-          </span>
+            {lastWorkedOn ? (
+              <span
+                data-testid="last-work-context"
+                className="inline-flex min-h-chip-min items-center gap-x-1.5 rounded-full bg-bg px-2 text-xs leading-none text-chip-text"
+                aria-label={`Last worked on ${[
+                  lastWorkedOn.branch,
+                  lastWorkedOn.worktree,
+                ]
+                  .filter(Boolean)
+                  .join(" in ")}`}
+                title={`Last worked on ${[
+                  lastWorkedOn.branch,
+                  lastWorkedOn.worktree,
+                ]
+                  .filter(Boolean)
+                  .join(" in ")}`}
+              >
+                <span className="text-accent"><BranchIcon testId="last-work-icon" /></span>
+                <span className="font-medium text-text-muted">Last worked on</span>
+                {lastWorkedOn.branch ? (
+                  <span className="font-bold text-text">{lastWorkedOn.branch}</span>
+                ) : null}
+                {lastWorkedOn.worktree ? (
+                  <span>· {lastWorkedOn.worktree}</span>
+                ) : null}
+              </span>
+            ) : (
+              <span />
+            )}
+            <span className="ml-auto inline-flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+              {stale ? (
+                <span
+                  data-testid="state-stale-badge"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <span className="text-warning"><StateStaleIcon /></span>
+                  Docs changed
+                </span>
+              ) : null}
+              {updatedAt ? (
+                <time
+                  dateTime={updatedAt}
+                  title={`Updated ${updatedAt}`}
+                  className="inline-flex items-center gap-1 border-l border-border pl-4 whitespace-nowrap"
+                >
+                  <ClockIcon />
+                  {formatRelativeTime(updatedAt, now)}
+                </time>
+              ) : null}
+            </span>
+          </div>
         ) : null}
       </div>
-      <ClampedSection maxHeight={200}>
-        <div>
-          {state.summary ? (
-            <p
-              className="m-0 text-md font-semibold leading-normal text-text text-pretty"
-              dangerouslySetInnerHTML={{ __html: state.summary }}
-            />
-          ) : null}
-          {state.currentState.length > 0 ? (
-            <div
-              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
-              dangerouslySetInnerHTML={{
-                __html: state.currentState.join("\n"),
-              }}
-            />
-          ) : null}
-          {hasGrid ? (
-            <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-              {state.decisions.length > 0 ? (
-                <div>
-                  <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                    Decisions made
-                  </h3>
-                  <ul className="m-0 p-0 flex flex-col gap-2.5">
-                    {state.decisions.map((d, i) => (
-                      <li key={i} className="flex gap-2.5">
-                        <span
-                          className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                          aria-hidden="true"
-                        />
-                        <span
-                          className="state-inline text-sm leading-normal text-text-muted"
-                          dangerouslySetInnerHTML={{ __html: d }}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-6">
-                {state.nextStep ? (
-                  <div>
-                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                      Next step
-                    </h3>
-                    <div className="flex gap-2.5">
-                      <NextStepArrow />
-                      <div
-                        className="left-off-prose text-sm font-medium leading-normal text-text-muted"
-                        dangerouslySetInnerHTML={{ __html: state.nextStep }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                {state.openQuestions.length > 0 ? (
-                  <div>
-                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                      Open questions
-                    </h3>
-                    <ul className="m-0 p-0 flex flex-col gap-2.5">
-                      {state.openQuestions.map((q, i) => (
-                        <li key={i} className="flex gap-2.5">
-                          <span
-                            className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                            aria-hidden="true"
-                          />
-                          <span
-                            className="state-inline text-sm leading-normal text-text-muted"
-                            dangerouslySetInnerHTML={{ __html: q }}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </ClampedSection>
     </section>
   );
 }
@@ -1153,7 +1212,7 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <div className="mt-8 pt-6 border-t border-border flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+    <div className="mt-8 pt-6 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
       <dl
         className="m-0 flex flex-wrap gap-x-11 gap-y-3"
         aria-label="Token totals"
@@ -1231,6 +1290,48 @@ function ClockIcon() {
     >
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+
+function BranchIcon({ testId }: { testId?: string }) {
+  return (
+    <svg
+      {...(testId ? { "data-testid": testId } : {})}
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M6 8v2a4 4 0 0 0 4 4h8" />
+      <path d="M18 8v8" />
+    </svg>
+  );
+}
+
+function StateStaleIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+      <path d="M8 15h8" />
     </svg>
   );
 }

@@ -165,6 +165,10 @@ export type TaskTimeline = {
   tokenTotals: TokenTotals;
   lastActivityAt: string;
   state?: ParsedStateMd;
+  /** Modification time of the native state.md file, when its prose can render. */
+  stateUpdatedAt?: string;
+  /** Historical Git labels from the newest task session that recorded them. */
+  lastWorkedOn?: LastWorkedOn;
   /**
    * True when the task's docs have changed since state.md's prose last
    * reflected them (or the prose was never written). Present only when the

@@ -1499,7 +1499,7 @@ test("LeftOffPanel renders all sections when full state is present", () => {
 
   const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
 
-  expect(html).toContain("Where you left off");
+  expect(html).toContain("Current state");
   expect(html).toContain("Working on the checkout redesign");
   expect(html).toContain("Use React Query for data fetching");
   expect(html).toContain("Skip caching layer");
@@ -1525,7 +1525,7 @@ test("LeftOffPanel omits headers for missing sections (partial state)", () => {
 
   const html = renderToStaticMarkup(<LeftOffPanel state={state} />);
 
-  expect(html).toContain("Where you left off");
+  expect(html).toContain("Current state");
   expect(html).toContain("Auth migration in progress");
   expect(html).toContain("JWT tokens implemented");
   // Sections with no content should not render their headers
@@ -1537,10 +1537,9 @@ test("LeftOffPanel omits headers for missing sections (partial state)", () => {
 test("LeftOffPanel renders save-state prompt when state is absent", () => {
   const html = renderToStaticMarkup(<LeftOffPanel state={undefined} />);
 
-  expect(html).toContain("No context saved yet");
-  expect(html).toContain("save state");
+  expect(html).toContain("No state captured yet");
   // No section headers when there's no state
-  expect(html).not.toContain("Where you left off");
+  expect(html).toContain("Current state");
   expect(html).not.toContain("Decisions");
 });
 
@@ -1555,7 +1554,7 @@ test("LeftOffPanel shows the stale badge when docs changed since the state was s
 
   const html = renderToStaticMarkup(<LeftOffPanel state={state} stale />);
 
-  expect(html).toContain("docs changed since this was saved");
+  expect(html).toContain("Docs changed");
 });
 
 test("LeftOffPanel hides the stale badge when the state is fresh", () => {
@@ -1571,7 +1570,7 @@ test("LeftOffPanel hides the stale badge when the state is fresh", () => {
     <LeftOffPanel state={state} stale={false} />,
   );
 
-  expect(html).not.toContain("docs changed since this was saved");
+  expect(html).not.toContain("Docs changed");
 });
 
 test("LeftOffPanel renders HTML fragments without escaping inline markup", () => {
@@ -1608,7 +1607,7 @@ test("TaskTimelineView renders LeftOffPanel with state when timeline has state",
     </MemoryRouter>,
   );
 
-  expect(html).toContain("Where you left off");
+  expect(html).toContain("Current state");
   expect(html).toContain("Working on billing integration");
 });
 
@@ -1621,7 +1620,7 @@ test("TaskTimelineView renders save-state prompt when timeline has no state", ()
     </MemoryRouter>,
   );
 
-  expect(html).toContain("No context saved yet");
+  expect(html).toContain("No state captured yet");
 });
 
 test("TaskTimelineView surfaces stateStale as the panel's stale badge", () => {
@@ -1643,7 +1642,68 @@ test("TaskTimelineView surfaces stateStale as the panel's stale badge", () => {
     </MemoryRouter>,
   );
 
-  expect(html).toContain("docs changed since this was saved");
+  expect(html).toContain("Docs changed");
+});
+
+test("TaskTimelineView renders state recency, exact timestamp, and historical Git labels", () => {
+  const timeline: TaskTimeline = {
+    ...baseTimeline(),
+    state: {
+      summary: "Ready for release",
+      decisions: [],
+      currentState: ["The final checks are complete."],
+      nextStep: "Ship the release notes.",
+      openQuestions: [],
+    },
+    stateUpdatedAt: "2026-06-03T11:57:00.000Z",
+    lastWorkedOn: {
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <TaskTimelineView timeline={timeline} now={new Date("2026-06-03T12:00:00.000Z")} />
+    </MemoryRouter>,
+  );
+
+  expect(html).toContain("3m ago");
+  expect(html).toContain('data-testid="state-card"');
+  expect(html).toContain('data-testid="state-footer"');
+  expect(html).toContain('data-testid="state-next-step"');
+  expect(html).toContain('dateTime="2026-06-03T11:57:00.000Z"');
+  expect(html).toContain('title="Updated 2026-06-03T11:57:00.000Z"');
+  expect(html).toContain("Last worked on");
+  expect(html).toContain("feature-checkout");
+  expect(html).toContain("checkout-ui");
+  expect(html).toContain('data-testid="last-work-context"');
+  expect((html.match(/data-testid="last-work-icon"/g) ?? []).length).toBe(1);
+});
+
+test("LeftOffPanel uses the neutral no-state placeholder", () => {
+  const html = renderToStaticMarkup(<LeftOffPanel state={undefined} />);
+
+  expect(html).toContain("No state captured yet");
+  expect(html).not.toContain("save state");
+});
+
+test("LeftOffPanel footer relies on spacing rather than an extra divider", () => {
+  const { getByTestId } = render(
+    <LeftOffPanel
+      state={{
+        summary: "Ready for release",
+        decisions: [],
+        currentState: [],
+        openQuestions: [],
+      }}
+      stale
+    />,
+  );
+
+  expect(getByTestId("state-footer")).not.toHaveClass("border-t");
+  expect(getByTestId("state-card")).toHaveClass("content-bleed");
+  expect(getByTestId("state-card")).not.toHaveClass("rounded-xl");
 });
 
 // activity-timeline-restyle: continuous spine tests
