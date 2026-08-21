@@ -32,7 +32,7 @@ trace skill re-enter "break-stop-and-stale-expiry"
 
 This **one command both fetches the re-entry manifest and binds the current
 session** to the resolved task. The CLI builds the manifest first — so the
-manifest's `mostRecent: true` session is the _prior_ session, not this one —
+manifest's `lastSession:` pointer is the _prior_ session, not this one —
 then binds the current session, atomically. Binding is inferred from the live
 session in the environment; run outside a session (a human at a bare terminal
 reading the docs) there is nothing to bind, so it just prints the manifest.
@@ -61,13 +61,16 @@ Treat the command's output as a manifest and consume it in this order:
    state file written by the `trace-state` skill — a one-sentence summary, a
    short current position, and one next action or unresolved question. Open
    with a recap drawn from it.
-4. After reading `state.md`, pull other docs from `docs:` **only when**
-   `state.md` links to them or the current work explicitly needs them. Do not
+4. `docs:` is an **index**, not content — each entry carries a title, an
+   optional one-line description, and the path. Read the index, then open only
+   the docs `state.md` links to or the current work explicitly needs. Do not
    read every sibling doc by default.
 5. When **no** `state:` field is present, read the decision docs first, in the
-   listed order, then fall back to the transcript tail for the `mostRecent: true`
-   session with `trace session tail <session-id>` **only if** those docs do not
-   cover the current state.
+   listed order, then fall back to the transcript tail for the `lastSession:`
+   pointer with `trace session tail <session-id>` **only if** those docs do not
+   cover the current state. Older sessions are deliberately absent from the
+   manifest; reach for them with `trace task show <slug>` only if the latest
+   transcript genuinely does not cover the ground.
 6. **Never paste raw transcripts** into the chat, and **never re-ask** the user
    to re-explain context that the manifest, docs, or transcript tail already
    cover.

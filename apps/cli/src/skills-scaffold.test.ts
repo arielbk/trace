@@ -216,7 +216,9 @@ describe("skills scaffold", () => {
     assert.match(source, /authoritative/i);
     assert.match(source, /read the decision docs first/i);
     assert.match(source, /transcript tail/);
-    assert.match(source, /mostRecent: true/);
+    assert.match(source, /lastSession:/);
+    // The doc pointers are an index of metadata, not embedded content.
+    assert.match(source, /`docs:` is an \*\*index\*\*/);
     assert.match(source, /lastWorkedOn:/);
     assert.match(source, /last worked on/i);
     assert.match(source, /never paste raw transcripts/i);

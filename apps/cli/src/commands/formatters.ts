@@ -159,24 +159,34 @@ export function formatReEntryManifest(manifest: ReEntryManifest): string {
     );
   }
 
+  // A document index, not document content: title first so an agent can scan
+  // the list and decide what is worth opening, then the optional one-line
+  // description, then the pointer it follows on demand.
   if (manifest.docs.length === 0) {
     lines.push("docs: []");
   } else {
-    lines.push("docs:", ...manifest.docs.map((doc) => `- path: ${doc.path}`));
+    lines.push(
+      "docs:",
+      ...manifest.docs.flatMap((doc) => [
+        `- title: ${doc.title}`,
+        ...(doc.description ? [`  description: ${doc.description}`] : []),
+        `  path: ${doc.path}`,
+      ]),
+    );
   }
 
-  if (manifest.sessions.length === 0) {
-    lines.push("sessions: []");
-  } else {
+  // Only the prior session ships by default — older transcripts stay one
+  // `trace session` call away. Absent (a task nobody has worked yet) prints
+  // nothing at all, like the other optional pointers.
+  if (manifest.lastSession) {
     lines.push(
-      "sessions:",
-      ...manifest.sessions.flatMap((session) => [
-        `- id: ${session.id}`,
-        `  tool: ${session.tool}`,
-        `  transcript: ${session.transcriptPath}`,
-        `  mostRecent: ${session.isMostRecent ? "true" : "false"}`,
-        ...(session.model ? [`  model: ${session.model}`] : []),
-      ]),
+      "lastSession:",
+      `  id: ${manifest.lastSession.id}`,
+      `  tool: ${manifest.lastSession.tool}`,
+      `  transcript: ${manifest.lastSession.transcriptPath}`,
+      ...(manifest.lastSession.model
+        ? [`  model: ${manifest.lastSession.model}`]
+        : []),
     );
   }
 

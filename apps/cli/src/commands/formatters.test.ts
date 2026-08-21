@@ -84,7 +84,7 @@ test("formatSessionSummary renders the resolved transcript path", () => {
   );
 });
 
-test("formatReEntryManifest renders empty docs and sessions", () => {
+test("formatReEntryManifest renders an empty doc index and omits an absent session", () => {
   const manifest: ReEntryManifest = {
     task: {
       id: "task-1",
@@ -94,7 +94,6 @@ test("formatReEntryManifest renders empty docs and sessions", () => {
     },
     taskDocsDir: "/trace/tasks/ship-formatters/docs",
     docs: [],
-    sessions: [],
   };
 
   expect(formatReEntryManifest(manifest)).toBe(
@@ -106,13 +105,12 @@ test("formatReEntryManifest renders empty docs and sessions", () => {
       "  projectRoot: /repo",
       "taskDocsDir: /trace/tasks/ship-formatters/docs",
       "docs: []",
-      "sessions: []",
       "",
     ].join("\n"),
   );
 });
 
-test("formatReEntryManifest renders docs, state, and sessions", () => {
+test("formatReEntryManifest renders state, the doc index, and the prior session", () => {
   const manifest: ReEntryManifest = {
     task: {
       id: "task-1",
@@ -120,18 +118,22 @@ test("formatReEntryManifest renders docs, state, and sessions", () => {
       projectRoot: "/repo",
     },
     taskDocsDir: "/trace/tasks/ship-formatters/docs",
-    state: { ...doc, path: "/trace/tasks/ship-formatters/docs/state.md" },
-    docs: [doc],
-    sessions: [
+    state: { path: "/trace/tasks/ship-formatters/docs/state.md" },
+    docs: [
       {
-        id: "session-1",
-        transcriptPath: "/tmp/session.jsonl",
-        tool: "codex",
-        model: "gpt-5-codex",
-        createdAt: "2026-06-18T17:01:00.000Z",
-        isMostRecent: true,
+        title: "Formatter Spec",
+        description: "Why formatting moved behind a seam",
+        path: "/tmp/spec.md",
       },
+      { title: "notes.md", path: "/tmp/notes.md" },
     ],
+    lastSession: {
+      id: "session-1",
+      transcriptPath: "/tmp/session.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+      createdAt: "2026-06-18T17:01:00.000Z",
+    },
   };
 
   expect(formatReEntryManifest(manifest)).toBe(
@@ -144,12 +146,15 @@ test("formatReEntryManifest renders docs, state, and sessions", () => {
       "  path: /trace/tasks/ship-formatters/docs/state.md",
       "taskDocsDir: /trace/tasks/ship-formatters/docs",
       "docs:",
-      "- path: /tmp/spec.md",
-      "sessions:",
-      "- id: session-1",
+      "- title: Formatter Spec",
+      "  description: Why formatting moved behind a seam",
+      "  path: /tmp/spec.md",
+      "- title: notes.md",
+      "  path: /tmp/notes.md",
+      "lastSession:",
+      "  id: session-1",
       "  tool: codex",
       "  transcript: /tmp/session.jsonl",
-      "  mostRecent: true",
       "  model: gpt-5-codex",
       "",
     ].join("\n"),
@@ -169,7 +174,6 @@ test("formatReEntryManifest renders historical last-worked-on git context", () =
       worktree: "feature-checkout",
     },
     docs: [],
-    sessions: [],
   };
 
   expect(formatReEntryManifest(manifest)).toBe(
@@ -183,7 +187,6 @@ test("formatReEntryManifest renders historical last-worked-on git context", () =
       "  branch: main",
       "  worktree: feature-checkout",
       "docs: []",
-      "sessions: []",
       "",
     ].join("\n"),
   );

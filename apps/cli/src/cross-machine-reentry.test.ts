@@ -201,12 +201,10 @@ test("a handoff on machine A re-enters on machine B with state.md, docs, and A's
     expect(manifest!.taskDocsDir).toBe(docsB);
     expect(manifest!.state?.path).toBe(join(docsB, "state.md"));
     expect(manifest!.docs.map((doc) => basename(doc.path))).toEqual(["plan.md"]);
-    expect(manifest!.sessions).toHaveLength(1);
-    expect(manifest!.sessions[0]).toMatchObject({
+    expect(manifest!.lastSession).toMatchObject({
       id: "session-a",
       tool: "claude",
       transcriptPath: transcriptOnA,
-      isMostRecent: true,
     });
     storeB.close();
   } finally {
