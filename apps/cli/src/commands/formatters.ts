@@ -147,6 +147,18 @@ export function formatReEntryManifest(manifest: ReEntryManifest): string {
 
   lines.push(`taskDocsDir: ${manifest.taskDocsDir}`);
 
+  if (manifest.lastWorkedOn) {
+    lines.push(
+      "lastWorkedOn:",
+      ...(manifest.lastWorkedOn.branch
+        ? [`  branch: ${manifest.lastWorkedOn.branch}`]
+        : []),
+      ...(manifest.lastWorkedOn.worktree
+        ? [`  worktree: ${manifest.lastWorkedOn.worktree}`]
+        : []),
+    );
+  }
+
   if (manifest.docs.length === 0) {
     lines.push("docs: []");
   } else {

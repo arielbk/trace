@@ -156,6 +156,39 @@ test("formatReEntryManifest renders docs, state, and sessions", () => {
   );
 });
 
+test("formatReEntryManifest renders historical last-worked-on git context", () => {
+  const manifest: ReEntryManifest = {
+    task: {
+      id: "task-1",
+      title: "Ship formatters",
+      projectRoot: "/repo",
+    },
+    taskDocsDir: "/trace/tasks/ship-formatters/docs",
+    lastWorkedOn: {
+      branch: "main",
+      worktree: "feature-checkout",
+    },
+    docs: [],
+    sessions: [],
+  };
+
+  expect(formatReEntryManifest(manifest)).toBe(
+    [
+      "task:",
+      "  id: task-1",
+      "  title: Ship formatters",
+      "  projectRoot: /repo",
+      "taskDocsDir: /trace/tasks/ship-formatters/docs",
+      "lastWorkedOn:",
+      "  branch: main",
+      "  worktree: feature-checkout",
+      "docs: []",
+      "sessions: []",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("taskNotFoundMessage includes near candidates when they match the ref", () => {
   expect(taskNotFoundMessage([task], "format")).toBe(
     [

@@ -217,6 +217,8 @@ describe("skills scaffold", () => {
     assert.match(source, /read the decision docs first/i);
     assert.match(source, /transcript tail/);
     assert.match(source, /mostRecent: true/);
+    assert.match(source, /lastWorkedOn:/);
+    assert.match(source, /last worked on/i);
     assert.match(source, /never paste raw transcripts/i);
     // The protocol is host-agnostic — the skill names all three hosts rather
     // than deferring any of them.

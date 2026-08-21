@@ -3,6 +3,7 @@ import {
   discoverCodexSubagentSessions,
   discoverCursorSubagentSessions,
   getTranscriptAdapter,
+  readGitWorkContext,
   scanClaudeCodeSessions,
   scanCodexSessions,
 } from "@trace/core";
@@ -51,7 +52,11 @@ export function sessionAssignOperation(
   if (!taskId) return failure("Task id is required");
 
   return withStore(ctx.env, (store) => {
-    const session = store.assignSession(sessionId, taskId);
+    const session = store.assignSession(
+      sessionId,
+      taskId,
+      readGitWorkContext(ctx.cwd),
+    );
     return success(formatSessionSummary(session));
   });
 }

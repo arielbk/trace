@@ -51,19 +51,24 @@ Treat the command's output as a manifest and consume it in this order:
 1. When the manifest carries a `description:` line, that is the task's stored
    summary — use it to orient and to confirm you have the right task; don't
    re-derive it.
-2. If the manifest carries a `state:` field, **read that file first** and treat
+2. If the manifest carries a `lastWorkedOn:` block, that is historical Git
+   context from the most recently active task-associated session — the branch,
+   and a worktree label only when the work happened in a linked worktree. Treat
+   it as where the task was last worked on, not as a permanent task-to-branch
+   or task-to-worktree relationship.
+3. If the manifest carries a `state:` field, **read that file first** and treat
    it as the authoritative snapshot of where the task stands. It is the living
    state file written by the `trace-state` skill — a one-sentence summary, a
    short current position, and one next action or unresolved question. Open
    with a recap drawn from it.
-3. After reading `state.md`, pull other docs from `docs:` **only when**
+4. After reading `state.md`, pull other docs from `docs:` **only when**
    `state.md` links to them or the current work explicitly needs them. Do not
    read every sibling doc by default.
-4. When **no** `state:` field is present, read the decision docs first, in the
+5. When **no** `state:` field is present, read the decision docs first, in the
    listed order, then fall back to the transcript tail for the `mostRecent: true`
    session with `trace session tail <session-id>` **only if** those docs do not
    cover the current state.
-5. **Never paste raw transcripts** into the chat, and **never re-ask** the user
+6. **Never paste raw transcripts** into the chat, and **never re-ask** the user
    to re-explain context that the manifest, docs, or transcript tail already
    cover.
 

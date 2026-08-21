@@ -1,6 +1,7 @@
 import {
   discoverCodexSubagentSessions,
   discoverCursorSubagentSessions,
+  readGitWorkContext,
   resolveTaskDocsDir,
   type TaskStore,
 } from "@trace/core";
@@ -77,7 +78,11 @@ export function skillWorkOnTaskOperation(
       ? store.unarchiveTask(resolvedTask.id)
       : resolvedTask;
 
-    const assigned = store.assignSession(session.id, task.id);
+    const assigned = store.assignSession(
+      session.id,
+      task.id,
+      readGitWorkContext(ctx.cwd),
+    );
 
     // Materialize the docs-manifest footer at the bind seam so a task that
     // already has a native doc (spec-first, task created after) gets a complete
@@ -163,7 +168,11 @@ export function skillReEnterOperation(
         transcriptPath: identity.transcriptPath,
         tool: identity.tool,
       });
-      store.assignSession(session.id, resolved.id);
+      store.assignSession(
+        session.id,
+        resolved.id,
+        readGitWorkContext(ctx.cwd),
+      );
       bound = true;
     }
 
