@@ -96,6 +96,27 @@ test("parseStateMd folds wrapped continuation lines into each decision", () => {
   ]);
 });
 
+test("parseStateMd reads concise snapshots that omit decisions and open questions", () => {
+  const state = parseStateMd(`# Checkout is resumable.
+
+## Current state
+
+The parser slice is in place.
+
+## Next step
+
+Add parsed state to the timeline API.
+`);
+
+  expect(state).toEqual({
+    summary: "Checkout is resumable.",
+    decisions: [],
+    currentState: ["<p>The parser slice is in place.</p>"],
+    nextStep: "<p>Add parsed state to the timeline API.</p>",
+    openQuestions: [],
+  });
+});
+
 test("parseStateMd gracefully omits missing sections", () => {
   const state = parseStateMd(`# Partial handoff
 
@@ -137,6 +158,56 @@ test("parseStateMd returns empty collections for empty input", () => {
     currentState: [],
     openQuestions: [],
   });
+});
+
+test("parseStateMd treats a question as the next step without an open-questions list", () => {
+  const state = parseStateMd(`# Auth approach is unresolved.
+
+## Current state
+
+Both session cookies and JWTs are still on the table.
+
+## Next step
+
+Should the board keep using session cookies?
+`);
+
+  expect(state.summary).toBe("Auth approach is unresolved.");
+  expect(state.currentState).toEqual([
+    "<p>Both session cookies and JWTs are still on the table.</p>",
+  ]);
+  expect(state.nextStep).toBe(
+    "<p>Should the board keep using session cookies?</p>",
+  );
+  expect(state.decisions).toEqual([]);
+  expect(state.openQuestions).toEqual([]);
+});
+
+test("parseStateMd drops none placeholders from omitted empty sections", () => {
+  const state = parseStateMd(`# Waiting on a decision.
+
+## Decisions made
+
+none
+
+## Current state
+
+The spike is done.
+
+## Next step
+
+none
+
+## Open questions
+
+none
+`);
+
+  expect(state.summary).toBe("Waiting on a decision.");
+  expect(state.decisions).toEqual([]);
+  expect(state.currentState).toEqual(["<p>The spike is done.</p>"]);
+  expect(state.nextStep).toBeUndefined();
+  expect(state.openQuestions).toEqual([]);
 });
 
 test("parseStateMd renders inline markdown and neutralizes unsafe link protocols", () => {

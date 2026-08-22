@@ -137,6 +137,9 @@ test("store opens in WAL mode and applies migrations idempotently", () => {
         "context_tokens_limit",
         "updated_at",
         "machine_id",
+        "git_branch",
+        "git_worktree_label",
+        "git_worktree_path",
       ]);
     } finally {
       database.close();
@@ -1902,6 +1905,55 @@ test("task timeline aggregates assigned sessions, docs, and token totals", async
   }
 });
 
+test("task timeline keeps state out of activity while exposing its timestamp and last-work labels", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const docsDir = resolveTaskDocsDir(databasePath, task.slug);
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(
+      join(docsDir, "state.md"),
+      "# Checkout\n\nReady for release.\n",
+    );
+    writeFileSync(join(docsDir, "plan.md"), "# Plan\n");
+    const session = store.registerSession({
+      id: "git-context-session",
+      transcriptPath: "/tmp/context.jsonl",
+      tool: "codex",
+    });
+    store.assignSession(session.id, task.id, {
+      branch: "feature-checkout",
+      worktreeLabel: "checkout-ui",
+    });
+
+    const timeline = store.getTaskTimeline(task.id)!;
+
+    expect(timeline.state?.summary).toBe("Checkout");
+    expect(timeline.stateUpdatedAt).toEqual(expect.any(String));
+    expect(timeline.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+    expect(
+      timeline.items.some(
+        (item) => item.type === "doc" && item.doc.path.endsWith("state.md"),
+      ),
+    ).toBe(false);
+    expect(
+      timeline.items.some(
+        (item) => item.type === "doc" && item.doc.path.endsWith("plan.md"),
+      ),
+    ).toBe(true);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("task timeline reports stateStale from the prose fingerprint", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, "trace.sqlite");
@@ -1939,7 +1991,7 @@ test("task timeline reports stateStale from the prose fingerprint", () => {
   }
 });
 
-test("re-entry manifest includes task docs and newest-first session pointers", () => {
+test("re-entry manifest includes task docs and the latest session pointer", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
 
@@ -1981,25 +2033,15 @@ test("re-entry manifest includes task docs and newest-first session pointers", (
         expect.objectContaining({ path: nativeDocPath }),
         expect.objectContaining({ path: externalDocPath }),
       ]),
-      sessions: [
-        {
-          id: "newest-session",
-          tool: "codex",
-          transcriptPath: "/tmp/newest.jsonl",
-          model: "gpt-5-codex",
-          createdAt: newestSession.createdAt,
-          isMostRecent: true,
-        },
-        {
-          id: "older-session",
-          tool: "claude",
-          transcriptPath: "/tmp/older.jsonl",
-          model: null,
-          createdAt: olderSession.createdAt,
-          isMostRecent: false,
-        },
-      ],
+      lastSession: {
+        id: "newest-session",
+        tool: "codex",
+        transcriptPath: "/tmp/newest.jsonl",
+        model: "gpt-5-codex",
+        createdAt: newestSession.createdAt,
+      },
     });
+    expect(olderSession.createdAt < newestSession.createdAt).toBe(true);
 
     store.close();
   } finally {
@@ -2023,7 +2065,6 @@ test("re-entry manifest returns empty sections for tasks without docs or session
       },
       taskDocsDir: join(dir, ".trace", "tasks", task.slug, "docs"),
       docs: [],
-      sessions: [],
     });
     expect(store.getReEntryManifest("missing")).toBeNull();
 
@@ -3147,3 +3188,178 @@ function taskColumnNames(database: DatabaseSync): string[] {
     .all()
     .map((row) => (row as { name: string }).name);
 }
+
+test("re-entry manifest doc index resolves a title for every document", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("doc-index", "/repo");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+
+    const explicitPath = join(docsDir, "spec.md");
+    const headingPath = join(docsDir, "plan.md");
+    const bareNamePath = join(docsDir, "scratch-notes.md");
+    writeFileSync(explicitPath, "# Ignored Heading\n");
+    writeFileSync(headingPath, "# The Plan\n\nbody\n");
+    writeFileSync(bareNamePath, "no heading here\n");
+    store.addTaskDoc(task.id, explicitPath, { title: "Checkout Spec" });
+
+    const docs = store.getReEntryManifest(task.id)?.docs ?? [];
+    const titleByPath = new Map(docs.map((doc) => [doc.path, doc.title]));
+
+    expect(titleByPath.get(explicitPath)).toBe("Checkout Spec");
+    expect(titleByPath.get(headingPath)).toBe("The Plan");
+    expect(titleByPath.get(bareNamePath)).toBe("scratch-notes.md");
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest doc index carries recorded descriptions and omits missing ones", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("doc-descriptions", "/repo");
+    const docsDir = join(dir, ".trace", "tasks", task.slug, "docs");
+    mkdirSync(docsDir, { recursive: true });
+
+    const describedPath = join(docsDir, "prd.md");
+    const plainPath = join(docsDir, "notes.md");
+    writeFileSync(describedPath, "# PRD\n");
+    writeFileSync(plainPath, "# Notes\n");
+    store.addTaskDoc(task.id, describedPath, {
+      description: "Why the checkout flow changes",
+    });
+
+    const docs = store.getReEntryManifest(task.id)?.docs ?? [];
+    const described = docs.find((doc) => doc.path === describedPath);
+    const plain = docs.find((doc) => doc.path === plainPath);
+
+    expect(described?.description).toBe("Why the checkout flow changes");
+    expect(plain && "description" in plain).toBe(false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("re-entry manifest carries only the most recent prior session pointer", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, ".trace", "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("one-session", "/repo");
+
+    const older = store.registerSession({
+      id: "older-session",
+      transcriptPath: "/tmp/older.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(older.id, task.id);
+
+    waitForNextMillisecond();
+    const newest = store.registerSession({
+      id: "newest-session",
+      transcriptPath: "/tmp/newest.jsonl",
+      tool: "codex",
+      model: "gpt-5-codex",
+    });
+    store.assignSession(newest.id, task.id);
+
+    expect(store.getReEntryManifest(task.id)?.lastSession).toEqual({
+      id: "newest-session",
+      tool: "codex",
+      transcriptPath: "/tmp/newest.jsonl",
+      model: "gpt-5-codex",
+      createdAt: newest.createdAt,
+    });
+
+    const bare = store.createTask("no-sessions", "/repo");
+    const bareManifest = store.getReEntryManifest(bare.id);
+    expect(bareManifest && "lastSession" in bareManifest).toBe(false);
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recording a session's work context re-samples the branch without rebinding", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "moving-session",
+      transcriptPath: "/tmp/moving.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id, { branch: "main" });
+
+    // The session cut a branch after binding: the work landed on the new one.
+    const moved = store.recordSessionWorkContext(session.id, {
+      branch: "feature-checkout",
+      worktreeLabel: "checkout-ui",
+      localPath: "/repo/checkout-ui",
+    });
+
+    expect(moved?.gitBranch).toBe("feature-checkout");
+    expect(moved?.taskId).toBe(task.id);
+    expect(store.getTaskTimeline(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+    expect(store.getReEntryManifest(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recording an unchanged or empty work context leaves the session alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "settled-session",
+      transcriptPath: "/tmp/settled.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id, { branch: "main" });
+
+    // Unchanged: nothing to record, so the row is not rewritten.
+    expect(
+      store.recordSessionWorkContext(session.id, { branch: "main" })?.gitBranch,
+    ).toBe("main");
+
+    // Empty (the cwd left the repo): never erase a branch Trace already knows.
+    expect(
+      store.recordSessionWorkContext(session.id, {})?.gitBranch,
+    ).toBe("main");
+
+    // An unknown session is bookkeeping on a hook path — report, never throw.
+    expect(store.recordSessionWorkContext("no-such-session", { branch: "x" })).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

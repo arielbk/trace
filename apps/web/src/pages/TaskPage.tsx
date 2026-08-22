@@ -5,18 +5,20 @@ import type { ParsedStateMd } from "@trace/core";
 import {
   freshTokenTotal,
   resumeCommand,
+  type LastWorkedOn,
   type SessionTool,
+  type StateAuthor,
   type TaskTimeline,
   type TaskTimelineItem,
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
-import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
+import { useClipboardCopy } from "../components/useClipboardCopy.ts";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
 import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import {
@@ -112,7 +114,7 @@ function TaskDetailSkeleton() {
         <span className="t-skel-bar h-4 w-64 max-w-full" />
       </div>
       {/* Token summary */}
-      <div className="mt-8 pt-6 border-t border-border flex gap-11">
+      <div className="mt-8 pt-6 flex gap-11">
         {Array.from({ length: 3 }, (_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <span className="t-skel-bar h-3 w-12" />
@@ -409,7 +411,11 @@ export function TaskTimelineView({
       </div>
       <LeftOffPanel
         state={timeline.state}
+        updatedAt={timeline.stateUpdatedAt}
+        lastWorkedOn={timeline.lastWorkedOn}
+        stateAuthor={timeline.stateAuthor}
         stale={timeline.stateStale}
+        now={now}
         onDocLinkClick={navigateStateDocLink}
       />
       <TokenSummary totals={timeline.tokenTotals} />
@@ -481,7 +487,7 @@ export function TaskTimelineView({
               return (
                 <li key={`doc:${item.doc.path}`}>
                   <div
-                    className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface cursor-pointer"
+                    className="content-bleed relative grid timeline-grid gap-3.5 py-3 hover:bg-surface cursor-pointer"
                     role="button"
                     tabIndex={0}
                     aria-label={`View ${truncatePath(item.doc.path)}`}
@@ -592,7 +598,7 @@ function SessionRootRow({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="relative grid timeline-grid gap-3.5 py-3 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+      <div className="content-bleed relative grid timeline-grid gap-3.5 py-3 hover:bg-surface">
         <div className="relative z-10 flex justify-center">
           <TypeIcon type={item.session.tool} />
         </div>
@@ -782,7 +788,7 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     : null;
 
   return (
-    <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 pl-3 -ml-3 pr-3 -mr-3 hover:bg-surface">
+    <li className="content-bleed grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2.5 items-start py-1.5 hover:bg-surface">
       <div className="flex justify-center pt-px">
         <TypeIcon type={session.tool} size="sm" />
       </div>
@@ -808,126 +814,317 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
 
 export function LeftOffPanel({
   state,
+  updatedAt,
+  lastWorkedOn,
+  stateAuthor,
   stale,
+  now,
   onDocLinkClick,
 }: {
   state?: ParsedStateMd;
+  updatedAt?: string;
+  lastWorkedOn?: LastWorkedOn;
+  stateAuthor?: StateAuthor;
   stale?: boolean;
+  now?: Date;
   onDocLinkClick?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   if (!state) {
     return (
-      <p className="mt-8 pt-6 border-t border-border text-sm text-text-muted">
-        No context saved yet — say &ldquo;save state&rdquo; in a bound session
-        to capture where you left off.
-      </p>
+      <section
+        data-testid="state-card"
+        className="content-bleed mt-9 bg-surface py-6"
+      >
+        <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-text-muted">
+          Current state
+        </h2>
+        <p className="m-0 mt-3 text-sm text-text-muted">
+          No state captured yet.
+        </p>
+      </section>
     );
   }
 
-  const hasGrid =
-    state.decisions.length > 0 ||
-    Boolean(state.nextStep) ||
-    state.openQuestions.length > 0;
+  const hasSupportingSections =
+    state.decisions.length > 0 || state.openQuestions.length > 0;
+  const hasContext = Boolean(lastWorkedOn) || Boolean(stateAuthor);
+  const hasLowerSection = hasContext || Boolean(state.nextStep);
 
   return (
     <section
-      className="mt-8 pt-6 border-t border-border"
+      data-testid="state-card"
+      className="content-bleed mt-9 bg-surface py-6"
       onClick={onDocLinkClick}
     >
-      <div className="flex items-baseline gap-3 mb-2.5">
-        <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-accent">
-          Where you left off
-        </h2>
-        {stale ? (
-          <span
-            data-testid="state-stale-badge"
-            className="font-mono text-crumb text-text-muted whitespace-nowrap"
-          >
-            docs changed since this was saved
+      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h2 className="m-0 text-xs font-bold uppercase tracking-widest text-text-muted">
+            Current state
+          </h2>
+          {stale ? (
+            <>
+              <span className="h-4 w-px bg-border" aria-hidden="true" />
+              <span
+                data-testid="state-stale-badge"
+                role="status"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted"
+              >
+                <span className="text-warning" aria-hidden="true">
+                  <StateStaleIcon />
+                </span>
+                Docs changed since snapshot
+              </span>
+            </>
+          ) : null}
+        </div>
+        {updatedAt ? (
+          // Labelled, not a bare relative time: this measures when the prose was
+          // written, which is not the same as when anything about the task last
+          // happened. An unlabelled corner timestamp read as the latter.
+          <span className="ml-auto font-mono text-crumb text-text-muted tabular-nums whitespace-nowrap">
+            State written{" "}
+            <time
+              data-testid="state-recency"
+              dateTime={updatedAt}
+              title={`Prose written ${updatedAt}`}
+            >
+              {formatRelativeTime(updatedAt, now)}
+            </time>
           </span>
         ) : null}
       </div>
-      <ClampedSection maxHeight={200}>
-        <div>
-          {state.summary ? (
-            <p
-              className="m-0 text-md font-semibold leading-normal text-text text-pretty"
-              dangerouslySetInnerHTML={{ __html: state.summary }}
-            />
-          ) : null}
-          {state.currentState.length > 0 ? (
-            <div
-              className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
-              dangerouslySetInnerHTML={{
-                __html: state.currentState.join("\n"),
-              }}
-            />
-          ) : null}
-          {hasGrid ? (
-            <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-              {state.decisions.length > 0 ? (
-                <div>
-                  <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                    Decisions made
-                  </h3>
-                  <ul className="m-0 p-0 flex flex-col gap-2.5">
-                    {state.decisions.map((d, i) => (
-                      <li key={i} className="flex gap-2.5">
-                        <span
-                          className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                          aria-hidden="true"
-                        />
-                        <span
-                          className="state-inline text-sm leading-normal text-text-muted"
-                          dangerouslySetInnerHTML={{ __html: d }}
-                        />
-                      </li>
-                    ))}
-                  </ul>
+      <div>
+        {state.summary ? (
+          <p
+            className="m-0 text-md font-semibold leading-normal text-text text-pretty"
+            dangerouslySetInnerHTML={{ __html: state.summary }}
+          />
+        ) : null}
+        {state.currentState.length > 0 ? (
+          <div
+            className="left-off-prose mt-3 text-base text-text-muted leading-relaxed text-pretty"
+            dangerouslySetInnerHTML={{
+              __html: state.currentState.join("\n"),
+            }}
+          />
+        ) : null}
+        {hasLowerSection ? (
+          <div
+            data-testid="state-lower-grid"
+            className={cn(
+              "mt-8 grid grid-cols-1 gap-y-7",
+              hasContext && state.nextStep && "md:grid-cols-2 md:gap-x-12",
+            )}
+          >
+            {hasContext ? (
+              <div data-testid="state-context" className="order-2 md:order-1">
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-text-muted">
+                  Context
+                </h3>
+                <div className="flex flex-col items-start gap-2">
+                  {lastWorkedOn ? (
+                    <LastWorkedOnContext lastWorkedOn={lastWorkedOn} />
+                  ) : null}
+                  {stateAuthor ? (
+                    <StateAuthorContext author={stateAuthor} />
+                  ) : null}
                 </div>
-              ) : null}
-              <div className="flex flex-col gap-6">
-                {state.nextStep ? (
-                  <div>
-                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                      Next step
-                    </h3>
-                    <div className="flex gap-2.5">
-                      <NextStepArrow />
-                      <div
-                        className="left-off-prose text-sm font-medium leading-normal text-text-muted"
-                        dangerouslySetInnerHTML={{ __html: state.nextStep }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                {state.openQuestions.length > 0 ? (
-                  <div>
-                    <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-accent">
-                      Open questions
-                    </h3>
-                    <ul className="m-0 p-0 flex flex-col gap-2.5">
-                      {state.openQuestions.map((q, i) => (
-                        <li key={i} className="flex gap-2.5">
-                          <span
-                            className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
-                            aria-hidden="true"
-                          />
-                          <span
-                            className="state-inline text-sm leading-normal text-text-muted"
-                            dangerouslySetInnerHTML={{ __html: q }}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
               </div>
-            </div>
-          ) : null}
-        </div>
-      </ClampedSection>
+            ) : null}
+            {state.nextStep ? (
+              <div data-testid="state-next-step" className="order-1 md:order-2">
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-text-muted">
+                  Next step
+                </h3>
+                <div className="flex gap-2.5">
+                  <NextStepArrow />
+                  <div
+                    className="left-off-prose min-w-0 flex-1 text-sm font-medium leading-normal text-text-muted"
+                    dangerouslySetInnerHTML={{ __html: state.nextStep }}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {hasSupportingSections ? (
+          <div className="mt-7 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
+            {state.decisions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-text-muted">
+                  Decisions made
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.decisions.map((d, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="state-inline text-sm leading-normal text-text-muted"
+                        dangerouslySetInnerHTML={{ __html: d }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {state.openQuestions.length > 0 ? (
+              <div>
+                <h3 className="m-0 mb-3 text-xs font-bold uppercase tracking-wide text-text-muted">
+                  Open questions
+                </h3>
+                <ul className="m-0 p-0 flex flex-col gap-2.5">
+                  {state.openQuestions.map((q, i) => (
+                    <li key={i} className="flex gap-2.5">
+                      <span
+                        className="mt-1.5 size-1 shrink-0 rounded-full bg-border-strong"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="state-inline text-sm leading-normal text-text-muted"
+                        dangerouslySetInnerHTML={{ __html: q }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </section>
+  );
+}
+
+function LastWorkedOnContext({ lastWorkedOn }: { lastWorkedOn: LastWorkedOn }) {
+  const { copied, copy } = useClipboardCopy();
+  const context = [lastWorkedOn.branch, lastWorkedOn.worktree]
+    .filter(Boolean)
+    .join(" in ");
+
+  if (!lastWorkedOn.branch) {
+    return (
+      <span
+        data-testid="last-work-context"
+        className="inline-flex items-center gap-x-1.5 font-mono text-crumb text-text-muted"
+        aria-label={`Last worked on ${context}`}
+        title={`Last worked on ${context}`}
+      >
+        <span className="text-accent"><BranchIcon testId="last-work-icon" /></span>
+        <span>Last worked on</span>
+        {lastWorkedOn.worktree ? <span className="font-semibold text-text">{lastWorkedOn.worktree}</span> : null}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="last-work-context"
+      className="inline-flex items-center gap-x-1.5 font-mono text-crumb text-text-muted cursor-pointer rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      aria-label={copied ? `Copied branch ${lastWorkedOn.branch}` : `Copy branch ${lastWorkedOn.branch}`}
+      title={`Copy branch ${lastWorkedOn.branch}`}
+      onClick={() => void copy(lastWorkedOn.branch!)}
+    >
+      <span className="text-accent"><BranchIcon testId="last-work-icon" /></span>
+      <span>Last worked on</span>
+      <span className="font-bold text-text">{copied ? "Copied" : lastWorkedOn.branch}</span>
+      {lastWorkedOn.worktree ? <span>· {lastWorkedOn.worktree}</span> : null}
+    </button>
+  );
+}
+
+// A bare tool mark, sized to sit inline in a line of text. The boxed TypeIcon
+// tile carries weight the metadata lines do not want — next to the 12px branch
+// icon its border and tinted background read as a badge rather than a bullet.
+function ToolMark({ tool, size = 12 }: { tool: SessionTool; size?: number }) {
+  if (tool === "cursor") {
+    return (
+      <>
+        <img
+          src={cursorIconLightUrl}
+          alt=""
+          width={size}
+          height={size}
+          className="block rounded-[2px] dark:hidden"
+          aria-hidden="true"
+        />
+        <img
+          src={cursorIconDarkUrl}
+          alt=""
+          width={size}
+          height={size}
+          className="hidden rounded-[2px] dark:block"
+          aria-hidden="true"
+        />
+      </>
+    );
+  }
+
+  if (tool === "copilot") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        width={size}
+        height={size}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {COPILOT_GLYPH_PATHS.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
+    );
+  }
+
+  // Codex draws with currentColor rather than the tile's gradient: at this size
+  // the ramp is invisible, and a second gradient would duplicate its element id.
+  return (
+    <svg
+      viewBox={tool === "codex" ? "2.75 2.75 18.5 18.5" : "0 0 24 24"}
+      width={size}
+      height={size}
+      aria-hidden="true"
+    >
+      <path
+        d={tool === "codex" ? CODEX_GLYPH_PATH : CLAUDE_GLYPH_PATH}
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+// Who wrote the snapshot above. The branch line says where the work happened;
+// this says whose words you are reading — the thing you most want to know when
+// the state was written by someone (or something) other than you.
+function StateAuthorContext({ author }: { author: StateAuthor }) {
+  const model = author.model ? formatModelName(author.model) : null;
+  const label = `Last written by ${TOOL_LABELS[author.tool]}${model ? ` · ${model}` : ""}`;
+
+  return (
+    <span
+      data-testid="state-author"
+      className="inline-flex items-center gap-x-1.5 font-mono text-crumb text-text-muted"
+      aria-label={label}
+      title={label}
+    >
+      <span
+        className="inline-flex"
+        style={{ color: TYPE_ICON_STYLES[author.tool].color }}
+        aria-hidden="true"
+      >
+        <ToolMark tool={author.tool} />
+      </span>
+      <span>Last written by</span>
+      <span className="font-bold text-text">{TOOL_LABELS[author.tool]}</span>
+      {model ? <span>· {model}</span> : null}
+    </span>
   );
 }
 
@@ -963,6 +1160,13 @@ function docRouteFromStateClick(
   });
 }
 
+const TOOL_LABELS: Record<SessionTool, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  copilot: "Copilot",
+  cursor: "Cursor",
+};
+
 const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   claude: "Claude session",
   codex: "Codex session",
@@ -970,6 +1174,16 @@ const TYPE_LABELS: Record<SessionTool | "doc", string> = {
   cursor: "Cursor session",
   doc: "Document",
 };
+
+// Shared glyph data: the boxed TypeIcon tile and the bare inline ToolMark
+// draw the same marks at different sizes and chrome.
+const CLAUDE_GLYPH_PATH =
+  "M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z";
+
+const CODEX_GLYPH_PATH =
+  "M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z";
+
+const COPILOT_GLYPH_PATHS = ["M6 18 18 6", "m9 6 9 9", "M6 9v9h9"];
 
 const TYPE_ICON_STYLES: Record<SessionTool | "doc", CSSProperties> = {
   claude: {
@@ -1031,10 +1245,7 @@ function TypeIcon({
           height={glyph}
           aria-hidden="true"
         >
-          <path
-            d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
-            fill="currentColor"
-          />
+          <path d={CLAUDE_GLYPH_PATH} fill="currentColor" />
         </svg>
       ) : type === "codex" ? (
         <svg
@@ -1043,10 +1254,7 @@ function TypeIcon({
           height={glyph}
           aria-hidden="true"
         >
-          <path
-            d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z"
-            fill="url(#codex-icon-gradient)"
-          />
+          <path d={CODEX_GLYPH_PATH} fill="url(#codex-icon-gradient)" />
           <defs>
             <linearGradient
               id="codex-icon-gradient"
@@ -1094,9 +1302,9 @@ function TypeIcon({
           strokeLinejoin="round"
           aria-hidden="true"
         >
-          <path d="M6 18 18 6" />
-          <path d="m9 6 9 9" />
-          <path d="M6 9v9h9" />
+          {COPILOT_GLYPH_PATHS.map((d) => (
+            <path key={d} d={d} />
+          ))}
         </svg>
       ) : (
         <svg
@@ -1153,7 +1361,7 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Output", value: totals.outputTokens },
   ];
   return (
-    <div className="mt-8 pt-6 border-t border-border flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+    <div className="mt-8 pt-6 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
       <dl
         className="m-0 flex flex-wrap gap-x-11 gap-y-3"
         aria-label="Token totals"
@@ -1231,6 +1439,48 @@ function ClockIcon() {
     >
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7 12 12 15.5 14" />
+    </svg>
+  );
+}
+
+function BranchIcon({ testId }: { testId?: string }) {
+  return (
+    <svg
+      {...(testId ? { "data-testid": testId } : {})}
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="18" r="2" />
+      <path d="M6 8v2a4 4 0 0 0 4 4h8" />
+      <path d="M18 8v8" />
+    </svg>
+  );
+}
+
+function StateStaleIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+      <path d="M8 15h8" />
     </svg>
   );
 }

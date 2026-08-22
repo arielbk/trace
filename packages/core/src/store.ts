@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { resolveCodexTranscriptPathById } from "./codex-adapter.ts";
 import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
 import {
@@ -34,26 +34,28 @@ import {
 } from "./token-totals.ts";
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
-import {
-  computeDocsFingerprint,
-  hasProseBody,
-  readProseFingerprint,
-} from "./prose-fingerprint.ts";
+import { computeStateFreshness } from "./state-freshness.ts";
+import { partitionStateDocument } from "./state-document.ts";
 import {
   getTranscriptAdapter,
   type ParsedTranscript,
 } from "./transcript-adapter.ts";
+import { lastWorkedOnFromSessions } from "./git-context.ts";
+import { resolveStateAuthor } from "./state-author.ts";
+import { resolveDocTitle } from "./display-title.ts";
 import { INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 import { isSyntheticLocator, syntheticLocator } from "./transcript-locator.ts";
 import type {
   ActiveTask,
   AddTaskDocOptions,
+  GitWorkContext,
   Project,
   ProjectMergeResult,
   ProjectResolution,
   RecallCandidate,
   RegisterSessionInput,
   ReEntryManifest,
+  ReEntryManifestDoc,
   Session,
   SessionOrigin,
   SetSessionParentInput,
@@ -764,22 +766,102 @@ class NodeSqliteTaskStore implements TaskStore {
     );
   }
 
-  assignSession(sessionId: string, taskId: string): Session {
+  assignSession(
+    sessionId: string,
+    taskId: string,
+    gitContext?: GitWorkContext,
+  ): Session {
     const session = this.getSession(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     const task = this.getTaskByRef(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
-    this.#sqlite
-      .prepare("UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?")
-      .run(task.id, this.#updatedNow(), this.#machineId, session.id);
+    if (gitContext) {
+      this.#sqlite
+        .prepare(
+          `UPDATE sessions
+           SET task_id = ?, git_branch = ?, git_worktree_label = ?, git_worktree_path = ?,
+               updated_at = ?, machine_id = ?
+           WHERE id = ?`,
+        )
+        .run(
+          task.id,
+          gitContext.branch?.trim() || null,
+          gitContext.worktreeLabel?.trim() || null,
+          gitContext.localPath?.trim() || null,
+          this.#updatedNow(),
+          this.#machineId,
+          session.id,
+        );
+    } else {
+      this.#sqlite
+        .prepare(
+          "UPDATE sessions SET task_id = ?, updated_at = ?, machine_id = ? WHERE id = ?",
+        )
+        .run(task.id, this.#updatedNow(), this.#machineId, session.id);
+    }
 
     // A re-bind moves the parent's whole fan: descendants still on the
     // parent's previous task follow it rather than stranding there.
     this.#cascadeTaskIdToDescendants(session.id, task.id, session.taskId);
 
-    return { ...session, taskId: task.id };
+    const assigned = this.getSession(session.id);
+    return assigned ?? { ...session, taskId: task.id };
+  }
+
+  /**
+   * Re-sample where a session's work is landing, without touching its binding.
+   *
+   * `assignSession` records the Git work context once, at bind — which answers
+   * "where was this session standing when it bound", not "where did its work
+   * land". Branching mid-session is the normal flow, so every touchpoint that
+   * runs with a live cwd and a bound session calls this to keep `lastWorkedOn`
+   * honest.
+   *
+   * Two deliberate silences. An empty context (the cwd left the repository)
+   * never erases a branch Trace already knows — a stale-but-real branch beats
+   * none. An unchanged context writes nothing at all, so a per-turn hook does
+   * not churn `updated_at` and drag the row through every sync.
+   *
+   * Returns the session as it now stands, or null for an unknown id: this runs
+   * on hook paths where bookkeeping must never break the turn.
+   */
+  recordSessionWorkContext(
+    sessionId: string,
+    gitContext: GitWorkContext,
+  ): Session | null {
+    const session = this.getSession(sessionId);
+    if (!session) return null;
+
+    const branch = gitContext.branch?.trim() || null;
+    const worktreeLabel = gitContext.worktreeLabel?.trim() || null;
+    const localPath = gitContext.localPath?.trim() || null;
+    if (!branch && !worktreeLabel && !localPath) return session;
+
+    const unchanged =
+      branch === (session.gitBranch ?? null) &&
+      worktreeLabel === (session.gitWorktreeLabel ?? null) &&
+      localPath === (session.gitWorktreePath ?? null);
+    if (unchanged) return session;
+
+    this.#sqlite
+      .prepare(
+        `UPDATE sessions
+           SET git_branch = ?, git_worktree_label = ?, git_worktree_path = ?,
+               updated_at = ?, machine_id = ?
+         WHERE id = ?`,
+      )
+      .run(
+        branch,
+        worktreeLabel,
+        localPath,
+        this.#updatedNow(),
+        this.#machineId,
+        session.id,
+      );
+
+    return this.getSession(session.id) ?? session;
   }
 
   // Walk the `parent_session_id` descendant tree from `parentId`, stamping
@@ -929,7 +1011,8 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const sessionList = this.listSessionsForTask(task.id);
     const docs = this.listDocsForTask(task.id);
-    const stateDoc = docs.find((doc) => basename(doc.path) === "state.md");
+    const { state: stateDoc, others: contentDocs } =
+      partitionStateDocument(docs);
     const items: TaskTimelineItem[] = [
       ...sessionList.map(
         (session): TaskTimelineItem => ({
@@ -939,7 +1022,7 @@ class NodeSqliteTaskStore implements TaskStore {
           sessionName: resolveSessionName(session),
         }),
       ),
-      ...docs.map(
+      ...contentDocs.map(
         (doc): TaskTimelineItem => ({
           type: "doc",
           createdAt: doc.createdAt,
@@ -948,17 +1031,37 @@ class NodeSqliteTaskStore implements TaskStore {
         }),
       ),
     ].sort(compareTimelineItems);
+    const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
+    const docsDir = resolveTaskDocsDir(this.#databasePath, task.slug);
+    const freshness = computeStateFreshness(docsDir, docs);
+    // When the prose carries a stamp, that is when it was written. Otherwise
+    // fall back to the file's mtime — the best a pre-stamp State Document can
+    // offer, even though Trace's own footer bookkeeping moves it.
+    const stateUpdatedAt =
+      state && stateDoc
+        ? (freshness.stamp?.writtenAt ?? stateDoc.createdAt)
+        : undefined;
+    // state.md's mtime is deliberately excluded: it moves whenever Trace
+    // reconciles the docs footer, which is bookkeeping, not task activity. The
+    // prose-write time counts, because writing prose is real work.
     const lastActivityAt = [
       task.createdAt,
       ...sessionList.map((session) => session.createdAt),
-      ...docs.map((doc) => doc.createdAt),
+      ...contentDocs.map((doc) => doc.createdAt),
+      ...(stateUpdatedAt ? [stateUpdatedAt] : []),
     ].reduce((latest, current) => (current > latest ? current : latest));
-    const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
-    const stateStale = computeStateStale(
-      resolveTaskDocsDir(this.#databasePath, task.slug),
-      docs,
-      stateDoc?.path,
+    const lastWorkedOn = lastWorkedOnFromSessions(
+      sessionList
+        .slice()
+        .sort(compareSessionsNewestFirst)
+        .map((session) => ({
+          branch: session.gitBranch,
+          worktreeLabel: session.gitWorktreeLabel,
+          localPath: session.gitWorktreePath,
+        })),
     );
+    const stateAuthor = resolveStateAuthor(sessionList, stateUpdatedAt);
+    const stateStale = freshness.needsProsePass;
 
     return {
       task: {
@@ -972,6 +1075,9 @@ class NodeSqliteTaskStore implements TaskStore {
         emptyTokenTotals(),
       ),
       ...(state ? { state } : {}),
+      ...(stateUpdatedAt ? { stateUpdatedAt } : {}),
+      ...(lastWorkedOn ? { lastWorkedOn } : {}),
+      ...(stateAuthor ? { stateAuthor } : {}),
       ...(stateStale === undefined ? {} : { stateStale }),
     };
   }
@@ -980,21 +1086,24 @@ class NodeSqliteTaskStore implements TaskStore {
     const task = this.getTaskByRef(taskId);
     if (!task) return null;
 
-    const sessions = this.listSessionsForTask(task.id)
+    const orderedSessions = this.listSessionsForTask(task.id)
       .slice()
-      .sort(compareSessionsNewestFirst)
-      .map((session, index) => ({
-        id: session.id,
-        transcriptPath: session.transcriptPath,
-        tool: session.tool,
-        model: session.model,
-        createdAt: session.createdAt,
-        isMostRecent: index === 0,
-      }));
+      .sort(compareSessionsNewestFirst);
+    // Progressive disclosure: only the latest session ships by default. Older
+    // transcripts stay reachable through `trace session` on demand.
+    const latestSession = orderedSessions[0];
+    const lastWorkedOn = lastWorkedOnFromSessions(
+      orderedSessions.map((session) => ({
+        branch: session.gitBranch,
+        worktreeLabel: session.gitWorktreeLabel,
+        localPath: session.gitWorktreePath,
+      })),
+    );
 
     const allDocs = this.listDocsForTask(task.id);
-    const stateDoc = allDocs.find((d) => basename(d.path) === "state.md");
-    const docs = allDocs.filter((d) => basename(d.path) !== "state.md");
+    const { state: stateDoc, others: contentDocs } =
+      partitionStateDocument(allDocs);
+    const docs = contentDocs.map((doc) => toManifestDoc(doc));
 
     return {
       task: {
@@ -1006,9 +1115,20 @@ class NodeSqliteTaskStore implements TaskStore {
         ...(task.description ? { description: task.description } : {}),
       },
       taskDocsDir: resolveTaskDocsDir(this.#databasePath, task.slug),
-      ...(stateDoc ? { state: stateDoc } : {}),
+      ...(stateDoc ? { state: { path: stateDoc.path } } : {}),
       docs,
-      sessions,
+      ...(latestSession
+        ? {
+            lastSession: {
+              id: latestSession.id,
+              transcriptPath: latestSession.transcriptPath,
+              tool: latestSession.tool,
+              model: latestSession.model,
+              createdAt: latestSession.createdAt,
+            },
+          }
+        : {}),
+      ...(lastWorkedOn ? { lastWorkedOn } : {}),
     };
   }
 
@@ -1173,7 +1293,9 @@ class NodeSqliteTaskStore implements TaskStore {
                 cache_creation_input_tokens AS cacheCreationInputTokens,
                 cache_read_input_tokens AS cacheReadInputTokens,
                 total_tokens AS totalTokens, updated_at AS updatedAt,
-                machine_id AS machineId
+                machine_id AS machineId,
+                git_branch AS gitBranch,
+                git_worktree_label AS gitWorktreeLabel
          FROM sessions ORDER BY id`,
       )
       .all() as SyncPayload["sessions"];
@@ -1277,8 +1399,8 @@ class NodeSqliteTaskStore implements TaskStore {
            (id, transcript_path, tool, model, title, task_id, parent_session_id,
             origin, subagent_type, agent_id, created_at, input_tokens, output_tokens,
             cache_creation_input_tokens, cache_read_input_tokens, total_tokens,
-            updated_at, machine_id)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            updated_at, machine_id, git_branch, git_worktree_label)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            transcript_path=excluded.transcript_path, tool=excluded.tool,
            model=excluded.model, title=excluded.title, task_id=excluded.task_id,
@@ -1289,9 +1411,12 @@ class NodeSqliteTaskStore implements TaskStore {
            cache_creation_input_tokens=excluded.cache_creation_input_tokens,
            cache_read_input_tokens=excluded.cache_read_input_tokens,
            total_tokens=excluded.total_tokens, updated_at=excluded.updated_at,
-           machine_id=excluded.machine_id`,
+           machine_id=excluded.machine_id,
+           git_branch=excluded.git_branch,
+           git_worktree_label=excluded.git_worktree_label`,
       );
       for (const row of sessions) {
+        const existing = localSessions.get(row.id);
         upsertSession.run(
           row.id,
           row.transcriptPath,
@@ -1310,6 +1435,12 @@ class NodeSqliteTaskStore implements TaskStore {
           row.totalTokens,
           row.updatedAt,
           row.machineId,
+          "gitBranch" in row
+            ? (row.gitBranch ?? null)
+            : (existing?.gitBranch ?? null),
+          "gitWorktreeLabel" in row
+            ? (row.gitWorktreeLabel ?? null)
+            : (existing?.gitWorktreeLabel ?? null),
         );
       }
       const setParent = this.#sqlite.prepare(
@@ -1863,6 +1994,9 @@ type SessionRow = {
   total_tokens: number;
   context_tokens_used: number | null;
   context_tokens_limit: number | null;
+  git_branch: string | null;
+  git_worktree_label: string | null;
+  git_worktree_path: string | null;
 };
 
 type TaskDocRow = {
@@ -1902,7 +2036,7 @@ function projectFromRow(row: ProjectRow): Project {
 }
 
 function sessionFromRow(row: SessionRow): Session {
-  return {
+  const session: Session = {
     id: row.id,
     transcriptPath: row.transcript_path,
     tool: row.tool,
@@ -1929,6 +2063,10 @@ function sessionFromRow(row: SessionRow): Session {
           }
         : null,
   };
+  if (row.git_branch) session.gitBranch = row.git_branch;
+  if (row.git_worktree_label) session.gitWorktreeLabel = row.git_worktree_label;
+  if (row.git_worktree_path) session.gitWorktreePath = row.git_worktree_path;
+  return session;
 }
 
 function isSessionOrigin(value: string): value is SessionOrigin {
@@ -2015,43 +2153,23 @@ function readParsedState(path: string): ReturnType<typeof parseStateMd> | null {
 }
 
 /**
- * Whether state.md's prose has drifted from the task's docs — the same
- * fingerprint comparison `trace state check` makes, recomputed at board read
- * time. Undefined when the task has no non-state doc (nothing to reflect on);
- * true when the prose was never written, is empty, or was stamped against a
- * different doc set.
+ * Turn a stored doc into a manifest index entry: a resolved display title (the
+ * doc body is read so the H1 branch of the shared fallback chain can fire), the
+ * pointer, and a description only when one was recorded — never inferred.
  */
-function computeStateStale(
-  docsDir: string,
-  docs: TaskDoc[],
-  statePath: string | undefined,
-): boolean | undefined {
-  const nonStateDocs = docs.filter((doc) => basename(doc.path) !== "state.md");
-  if (nonStateDocs.length === 0) return undefined;
-
-  if (!statePath) return true;
-  let content: string;
-  try {
-    content = readFileSync(statePath, "utf8");
-  } catch {
-    return true;
-  }
-  if (!hasProseBody(content)) return true;
-
-  const fingerprint = computeDocsFingerprint(
-    nonStateDocs.map((doc) => ({
-      path: relative(docsDir, doc.path),
-      content: readDocContentOrEmpty(doc.path),
-    })),
-  );
-  return readProseFingerprint(content) !== fingerprint;
+function toManifestDoc(doc: TaskDoc): ReEntryManifestDoc {
+  return {
+    title: resolveDocTitle(doc, readDocContentOrNull(doc.path)),
+    ...(doc.description ? { description: doc.description } : {}),
+    path: doc.path,
+  };
 }
 
-function readDocContentOrEmpty(path: string): string {
+function readDocContentOrNull(path: string): string | null {
   try {
     return readFileSync(path, "utf8");
   } catch {
-    return "";
+    return null;
   }
 }
 

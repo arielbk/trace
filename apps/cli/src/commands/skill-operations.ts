@@ -4,6 +4,7 @@ import {
   resolveTaskDocsDir,
   type TaskStore,
 } from "@trace/core";
+import { bindSessionToTask, liveSession } from "./bind.ts";
 import { inferCliSessionIdentity } from "./identity.ts";
 import { requestAutomaticSync } from "./sync.ts";
 import {
@@ -22,7 +23,10 @@ import {
   resolveSkillTaskRef,
   taskNotFoundMessage,
 } from "./formatters.ts";
-import { computeStateFreshness, proseDriftReason } from "./state-operations.ts";
+import {
+  computeTaskStateFreshness,
+  proseDriftReason,
+} from "./state-operations.ts";
 import { reconcileStateFooter } from "./task-operations.ts";
 import {
   attempt,
@@ -66,8 +70,10 @@ export function skillWorkOnTaskOperation(
     const projectRootAttempt = resolveProjectRoot(project, ctx.cwd, store);
     if (!projectRootAttempt.ok) return projectRootAttempt.result;
     const projectRoot = projectRootAttempt.value;
+    // Resolve the project before the task exists: creating a task links the
+    // project as a side effect, so this is the only call that can truthfully
+    // report a project as newly created.
     const projectResolution = store.resolveProject(projectRoot);
-    const session = store.registerSession(registerInput);
 
     const resolvedTask =
       resolveSkillTaskRef(store.listTasks(), title, (id) => store.getTask(id)) ??
@@ -77,15 +83,15 @@ export function skillWorkOnTaskOperation(
       ? store.unarchiveTask(resolvedTask.id)
       : resolvedTask;
 
-    const assigned = store.assignSession(session.id, task.id);
-
-    // Materialize the docs-manifest footer at the bind seam so a task that
-    // already has a native doc (spec-first, task created after) gets a complete
-    // state.md on bind — no `trace state check` required.
-    reconcileStateFooter(store, databasePath, task);
+    // The session identity arrives on the command line here, so this seam
+    // always binds — there is no "is anyone live?" question to ask.
+    const session = bindSessionToTask(
+      { store, databasePath, task, cwd: ctx.cwd },
+      registerInput,
+    );
 
     return success(
-      `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
+      `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(session, task, databasePath)}`,
     );
   });
   if (result.exitCode === 0) (ctx.triggerSync ?? requestAutomaticSync)(ctx.env);
@@ -119,11 +125,13 @@ export function skillReEnterOperation(
 
   const ref = rawArgs[0];
   if (!ref) return failure("Task slug or title is required");
-  const identity = inferCliSessionIdentity(ctx.env, ctx.cwd);
-  const projectRootAttempt =
-    identity.id !== undefined && identity.transcriptPath !== undefined
-      ? resolveProjectRoot(undefined, ctx.cwd)
-      : null;
+  // Ask the bind seam whether there is anyone to bind before doing the work
+  // only a bind needs: run from a bare terminal there is no session, and
+  // re-entry degrades to printing the manifest.
+  const registration = liveSession(ctx.env, ctx.cwd);
+  const projectRootAttempt = registration
+    ? resolveProjectRoot(undefined, ctx.cwd)
+    : null;
   if (projectRootAttempt && !projectRootAttempt.ok) {
     return projectRootAttempt.result;
   }
@@ -148,23 +156,23 @@ export function skillReEnterOperation(
 
     // Going back to a task is itself working on it, whatever terminal it runs
     // from — the wired inferrer means a re-enter issued from a Cursor session
-    // registers that session the same way work-on-task does.
+    // registers that session the same way work-on-task does. The bind lands
+    // after the manifest is built, so `lastSession` still points at the prior
+    // session rather than at this one.
     let projectResolution = "";
-    let bound = false;
-    if (identity.id !== undefined && identity.transcriptPath !== undefined) {
-      const resolution = store.resolveProject(
-        projectRootAttempt && projectRootAttempt.ok
-          ? projectRootAttempt.value
-          : ctx.cwd,
+    const bound = registration !== null;
+    if (registration) {
+      projectResolution = formatProjectResolution(
+        store.resolveProject(
+          projectRootAttempt && projectRootAttempt.ok
+            ? projectRootAttempt.value
+            : ctx.cwd,
+        ),
       );
-      projectResolution = formatProjectResolution(resolution);
-      const session = store.registerSession({
-        id: identity.id,
-        transcriptPath: identity.transcriptPath,
-        tool: identity.tool,
-      });
-      store.assignSession(session.id, resolved.id);
-      bound = true;
+      bindSessionToTask(
+        { store, databasePath, task: resolved, cwd: ctx.cwd },
+        registration,
+      );
     }
 
     // The portable prose-freshness trigger: platforms without a live Stop hook
@@ -174,7 +182,7 @@ export function skillReEnterOperation(
     // actual bind (a bare terminal reading the manifest is never directed to
     // invoke a skill), mirroring `state check`'s strict-binding contract.
     const freshness = bound
-      ? computeStateFreshness(store, databasePath, resolved)
+      ? computeTaskStateFreshness(store, databasePath, resolved)
       : undefined;
     const drift =
       freshness?.needsProsePass && freshness.mode

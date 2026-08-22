@@ -10,7 +10,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openTraceStore, resolveTaskDocsDir } from "@trace/core";
+import {
+  openTraceStore,
+  readProseStamp,
+  resolveTaskDocsDir,
+} from "@trace/core";
 import { expect, test } from "vitest";
 import { taskCreateOperation } from "./task-operations.ts";
 import {
@@ -279,11 +283,11 @@ test("state reflect advances the marker even when prose text is unchanged", () =
 
     const written = readFileSync(statePath, "utf8");
     expect(written).toContain("## Summary");
-    expect(written).toContain(`<!-- trace:prose-fingerprint:${markerB} -->`);
+    expect(written).toContain(`trace:prose-fingerprint:${markerB}:`);
   });
 });
 
-test("state reflect is a byte-identical no-op on repeat", () => {
+test("state reflect re-stamps the prose-write time on every run", () => {
   withTempContext((ctx) => {
     const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
     const statePath = seedNativeDoc(ctx, slug, "spec.md", "Spec body.\n");
@@ -297,30 +301,18 @@ test("state reflect is a byte-identical no-op on repeat", () => {
     );
 
     stateReflectOperation([slug], ctx);
-    const first = readFileSync(statePath, "utf8");
-    const past = new Date("2020-01-01T00:00:00Z");
-    utimesSync(statePath, past, past);
-    const beforeMtime = statSync(statePath).mtimeMs;
+    const first = readProseStamp(readFileSync(statePath, "utf8"));
 
     stateReflectOperation([slug], ctx);
+    const second = readProseStamp(readFileSync(statePath, "utf8"));
 
-    expect(readFileSync(statePath, "utf8")).toBe(first);
-    expect(statSync(statePath).mtimeMs).toBe(beforeMtime);
-  });
-});
-
-test("state check does not create state.md for a task with zero non-state docs", () => {
-  withTempContext((ctx) => {
-    const slug = taskCreateOperation(["Checkout flow"], ctx).stdout.trim();
-    const databasePath = ctx.env.TRACE_DB as string;
-    const statePath = join(resolveTaskDocsDir(databasePath, slug), "state.md");
-
-    const result = stateCheckOperation([slug], ctx);
-
-    expect(result.exitCode).toBe(0);
-    const verdict = JSON.parse(result.stdout);
-    expect(verdict.stateExists).toBe(false);
-    expect(verdict.statePath).toBe(statePath);
-    expect(existsSync(statePath)).toBe(false);
+    // Reflect is the "the prose was just written" seam and is never called
+    // speculatively, so it records a fresh time rather than staying a no-op.
+    // The fingerprint — what drift compares — is unchanged.
+    expect(second?.fingerprint).toBe(first?.fingerprint);
+    expect(second?.writtenAt).toBeDefined();
+    expect(
+      Date.parse(second?.writtenAt as string),
+    ).toBeGreaterThanOrEqual(Date.parse(first?.writtenAt as string));
   });
 });

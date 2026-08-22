@@ -216,7 +216,11 @@ describe("skills scaffold", () => {
     assert.match(source, /authoritative/i);
     assert.match(source, /read the decision docs first/i);
     assert.match(source, /transcript tail/);
-    assert.match(source, /mostRecent: true/);
+    assert.match(source, /lastSession:/);
+    // The doc pointers are an index of metadata, not embedded content.
+    assert.match(source, /`docs:` is an \*\*index\*\*/);
+    assert.match(source, /lastWorkedOn:/);
+    assert.match(source, /last worked on/i);
     assert.match(source, /never paste raw transcripts/i);
     // The protocol is host-agnostic — the skill names all three hosts rather
     // than deferring any of them.
@@ -269,5 +273,24 @@ describe("skills scaffold", () => {
     assert.match(source, /next available port/i);
     assert.match(source, /tell the user the URL/i);
     assert.match(source, /stops the server with Ctrl-C/);
+  });
+
+  it("ships a state skill that authors a concise snapshot without empty placeholders", () => {
+    assert.equal(existsSync(stateSkill), true);
+
+    const source = readFileSync(stateSkill, "utf8");
+
+    const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+    const meta = frontmatter?.[1];
+    assert.equal(typeof meta, "string");
+    assert.match(meta as string, /^name:\s*trace-state\s*$/m);
+
+    assert.match(source, /## Current state/);
+    assert.match(source, /## Next step/);
+    assert.match(source, /omit/i);
+    assert.match(source, /question/i);
+    assert.equal(source.includes("## Decisions made"), false);
+    assert.equal(source.includes("## Open questions"), false);
+    assert.equal(/write [`'"]none[`'"]/i.test(source), false);
   });
 });

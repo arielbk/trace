@@ -58,7 +58,7 @@ test("a Claude task can be re-entered from Codex with prior docs and sessions", 
     );
     expect(reentered).toContain("decision.md");
     expect(reentered).toMatch(
-      /sessions:\n- id: claude-session-1\n {2}tool: claude\n {2}transcript: .*claude-session-1\.jsonl\n {2}mostRecent: true/,
+      /lastSession:\n {2}id: claude-session-1\n {2}tool: claude\n {2}transcript: .*claude-session-1\.jsonl/,
     );
 
     const shown = execFileSync(
@@ -114,7 +114,7 @@ test("a Cursor-bound task surfaces its cursor session in the re-entry manifest",
     expect(reentered).toContain("plan.md");
     expect(reentered).toMatch(
       new RegExp(
-        `sessions:\\n- id: ${composerId}\\n {2}tool: cursor\\n {2}transcript: cursor:${composerId}\\n {2}mostRecent: true`,
+        `lastSession:\\n {2}id: ${composerId}\\n {2}tool: cursor\\n {2}transcript: cursor:${composerId}`,
       ),
     );
 
@@ -176,7 +176,7 @@ test("Codex-created work can be re-entered from Claude through the same manifest
     expect(reentered).toContain("title: Codex created task");
     expect(reentered).toContain("notes.md");
     expect(reentered).toMatch(
-      /sessions:\n- id: codex-session-1\n {2}tool: codex\n {2}transcript: .*codex-session-1\.jsonl\n {2}mostRecent: true/,
+      /lastSession:\n {2}id: codex-session-1\n {2}tool: codex\n {2}transcript: .*codex-session-1\.jsonl/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

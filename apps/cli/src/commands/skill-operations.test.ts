@@ -219,7 +219,7 @@ test("skill re-enter returns a manifest and binds the current session", () => {
     expect(reentered.exitCode).toBe(0);
     expect(reentered.stdout).toContain("title: Manifest task");
     expect(reentered.stdout).toContain(`taskDocsDir: ${docsDir}`);
-    expect(reentered.stdout).toContain(`- path: ${docPath}`);
+    expect(reentered.stdout).toContain(`- title: Decision\n  path: ${docPath}`);
 
     const store = openTraceStore(ctx.env.TRACE_DB as string);
     try {

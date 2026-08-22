@@ -79,9 +79,9 @@ test("trace skill resolves or creates a task by title, binds a simulated session
     );
     expect(context).toMatch(/task:\n {2}id: [0-9a-f-]{36}/);
     expect(context).toMatch(/title: checkout/);
-    expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
+    expect(context).toMatch(/docs:\n- title: spec\.md\n {2}path: \/tmp\/spec\.md/);
     expect(context).toMatch(
-      /sessions:\n- id: claude-session-1\n {2}tool: claude\n {2}transcript: \/tmp\/claude-session-1\.jsonl\n {2}mostRecent: true/,
+      /lastSession:\n {2}id: claude-session-1\n {2}tool: claude\n {2}transcript: \/tmp\/claude-session-1\.jsonl/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

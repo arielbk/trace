@@ -76,16 +76,13 @@ test("the re-entry manifest lists a bound cursor session", () => {
     const manifest = store.getReEntryManifest(task.id);
 
     expect(manifest).not.toBeNull();
-    expect(manifest?.sessions).toEqual([
-      {
-        id: COMPOSER_ID,
-        transcriptPath: `cursor:${COMPOSER_ID}`,
-        tool: "cursor",
-        model: "claude-opus-4-7",
-        createdAt: expect.any(String),
-        isMostRecent: true,
-      },
-    ]);
+    expect(manifest?.lastSession).toEqual({
+      id: COMPOSER_ID,
+      transcriptPath: `cursor:${COMPOSER_ID}`,
+      tool: "cursor",
+      model: "claude-opus-4-7",
+      createdAt: expect.any(String),
+    });
   } finally {
     store.close();
   }

@@ -842,7 +842,7 @@ test("task show and skill re-enter list docs written under the trace task docs d
       },
     );
     expect(context).toMatch(/docs:/);
-    expect(context).toContain(`- path: ${docPath}`);
+    expect(context).toContain(`- title: Decision\n  path: ${docPath}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -930,15 +930,15 @@ test("task timeline --json prints the aggregated task timeline", () => {
     expect(timeline.task.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(timeline.task.title).toBe("checkout");
     // The session precedes the docs chronologically. add-doc also renders the
-    // manifest into a freshly-created state.md, so it appears alongside the
-    // registered doc (order between the two same-instant docs is incidental).
+    // manifest into a freshly-created state.md, but the living state file is
+    // presented on its own and never as an ordinary activity item.
     expect(timeline.items[0]?.type).toBe("session");
     expect(timeline.items[0]?.session?.id).toBe("session-1");
     const docPaths = timeline.items
       .filter((item) => item.type === "doc")
       .map((item) => item.doc?.path);
     expect(docPaths).toContain("/tmp/spec.md");
-    expect(docPaths.some((path) => path?.endsWith("state.md"))).toBe(true);
+    expect(docPaths.some((path) => path?.endsWith("state.md"))).toBe(false);
     expect(timeline.items[0]?.session?.model).toBe("gpt-5-codex");
     expect(timeline.tokenTotals).toEqual({
       inputTokens: 12,
@@ -1022,9 +1022,9 @@ test("skill work-on-task binds a simulated session and re-enter lists task conte
       },
     );
     expect(context).toMatch(/task:\n {2}id: [0-9a-f-]{36}/);
-    expect(context).toMatch(/docs:\n- path: \/tmp\/spec\.md/);
+    expect(context).toMatch(/docs:\n- title: spec\.md\n {2}path: \/tmp\/spec\.md/);
     expect(context).toMatch(
-      /sessions:\n- id: codex-session-1\n {2}tool: codex\n {2}transcript: \/tmp\/codex-session-1\.jsonl\n {2}mostRecent: true/,
+      /lastSession:\n {2}id: codex-session-1\n {2}tool: codex\n {2}transcript: \/tmp\/codex-session-1\.jsonl/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1206,7 +1206,7 @@ test("skill work-on-task with a blank session id fails without creating the task
   }
 });
 
-test("skill re-enter prints an ordered manifest with empty sections", () => {
+test("skill re-enter prints a progressively disclosed manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-manifest-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
   const env = { ...process.env, TRACE_DB: databasePath };
@@ -1225,18 +1225,38 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
     );
     expect(emptyManifest).toMatch(/task:\n {2}id: [0-9a-f-]{36}\n/);
     expect(emptyManifest).toContain("docs: []\n");
-    expect(emptyManifest).toContain("sessions: []\n");
+    expect(emptyManifest).not.toContain("lastSession:");
 
     const docsDir = join(dir, ".trace", "tasks", taskId, "docs");
     const nativeDocPath = join(docsDir, "decision.md");
     mkdirSync(docsDir, { recursive: true });
-    writeFileSync(nativeDocPath, "# Decision\n");
+    writeFileSync(nativeDocPath, "# Decision\n\nWe chose the store-first seam.\n");
     execFileSync(
       process.execPath,
-      [traceBin, "task", "add-doc", taskId, "/tmp/external.md"],
+      [
+        traceBin,
+        "task",
+        "add-doc",
+        taskId,
+        "/tmp/external.md",
+        "--title",
+        "External Notes",
+        "--description",
+        "Scratch notes kept outside the task",
+      ],
       { encoding: "utf8", env },
     );
 
+    const olderTranscript = join(dir, "older.jsonl");
+    const newerTranscript = join(dir, "newer.jsonl");
+    writeFileSync(
+      olderTranscript,
+      `${JSON.stringify({ type: "user_message", message: "Older" })}\n`,
+    );
+    writeFileSync(
+      newerTranscript,
+      `${JSON.stringify({ type: "assistant_message", message: "Newer" })}\n`,
+    );
     execFileSync(
       process.execPath,
       [
@@ -1246,7 +1266,7 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
         "--id",
         "older-session",
         "--transcript",
-        "/tmp/older.jsonl",
+        olderTranscript,
         "--tool",
         "claude",
       ],
@@ -1266,7 +1286,7 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
         "--id",
         "newer-session",
         "--transcript",
-        "/tmp/newer.jsonl",
+        newerTranscript,
         "--tool",
         "codex",
       ],
@@ -1284,17 +1304,35 @@ test("skill re-enter prints an ordered manifest with empty sections", () => {
       { encoding: "utf8", env },
     );
 
-    expect(manifest).toContain(`- path: ${nativeDocPath}`);
-    expect(manifest).toContain("- path: /tmp/external.md");
-    expect(manifest.indexOf("- id: newer-session")).toBeLessThan(
-      manifest.indexOf("- id: older-session"),
+    // The doc index is metadata: a resolved title, the recorded description,
+    // and the pointer — never the document body.
+    expect(manifest).toContain(`- title: Decision\n  path: ${nativeDocPath}`);
+    expect(manifest).toContain(
+      "- title: External Notes\n  description: Scratch notes kept outside the task\n  path: /tmp/external.md",
     );
+    expect(manifest).not.toContain("We chose the store-first seam.");
+
+    // Only the prior session is disclosed; superseded history stays out.
     expect(manifest).toMatch(
-      /- id: newer-session\n {2}tool: codex\n {2}transcript: \/tmp\/newer\.jsonl\n {2}mostRecent: true/,
+      new RegExp(
+        `lastSession:\\n {2}id: newer-session\\n {2}tool: codex\\n {2}transcript: ${newerTranscript}`,
+      ),
     );
-    expect(manifest).toMatch(
-      /- id: older-session\n {2}tool: claude\n {2}transcript: \/tmp\/older\.jsonl\n {2}mostRecent: false/,
+    expect(manifest).not.toContain("older-session");
+
+    // The pointers are still followable on demand: the doc path opens the
+    // document, and the session id tails the transcript.
+    const indexedDocPath = manifest.match(/ {2}path: (.*decision\.md)/)?.[1];
+    expect(indexedDocPath).toBe(nativeDocPath);
+    expect(readFileSync(indexedDocPath!, "utf8")).toContain(
+      "We chose the store-first seam.",
     );
+    const tail = execFileSync(
+      process.execPath,
+      [traceBin, "session", "tail", "newer-session"],
+      { encoding: "utf8", env },
+    );
+    expect(tail).toBe("assistant: Newer\n");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

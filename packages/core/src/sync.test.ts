@@ -525,3 +525,211 @@ describe("document synchronization", () => {
     expect(server.blobUploadSizes.at(-1)).toBe(0);
   });
 });
+
+describe("last-work context synchronization", () => {
+  test("the session snapshot carries portable git labels and omits the local path", () => {
+    const store = openTraceStore(database("last-work-snapshot"));
+    const task = store.createTask("Checkout");
+    store.registerSession({
+      id: "session-a",
+      transcriptPath: "/machine-a/transcript.jsonl",
+      tool: "codex",
+    });
+    store.assignSession("session-a", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+      localPath: "/Users/ada/.worktrees/feature-checkout",
+    });
+
+    const [row] = store.syncSnapshot().sessions;
+    expect(row).toMatchObject({
+      gitBranch: "feature-branch",
+      gitWorktreeLabel: "feature-checkout",
+    });
+    expect(row).not.toHaveProperty("gitWorktreePath");
+    expect(row).not.toHaveProperty("localPath");
+    expect(JSON.stringify(row)).not.toContain(
+      "/Users/ada/.worktrees/feature-checkout",
+    );
+
+    store.close();
+  });
+
+  test("a second store pulls branch and worktree label without the origin path", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("last-work-first"));
+    const second = openTraceStore(database("last-work-second"));
+    const task = first.createTask("Checkout", "/machine-a/checkout");
+    first.registerSession({
+      id: "session-a",
+      transcriptPath: "/machine-a/transcript.jsonl",
+      tool: "codex",
+    });
+    first.assignSession("session-a", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+      localPath: "/Users/ada/.worktrees/feature-checkout",
+    });
+
+    expect(await synchronize(first, server)).toEqual({ pushed: 2, pulled: 0 });
+    expect(await synchronize(second, server)).toEqual({ pushed: 0, pulled: 2 });
+
+    expect(second.getSession("session-a")).toMatchObject({
+      gitBranch: "feature-branch",
+      gitWorktreeLabel: "feature-checkout",
+    });
+    expect(second.getSession("session-a")?.gitWorktreePath).toBeUndefined();
+    expect(second.getReEntryManifest(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-branch",
+      worktree: "feature-checkout",
+    });
+    expect(JSON.stringify(second.getReEntryManifest(task.id))).not.toContain(
+      "/Users/ada/.worktrees/feature-checkout",
+    );
+
+    first.close();
+    second.close();
+  });
+
+  test("re-entry on the receiving store follows the latest session with git context", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("last-work-latest-first"));
+    const second = openTraceStore(database("last-work-latest-second"));
+    const task = first.createTask("Checkout");
+    first.registerSession({
+      id: "older",
+      transcriptPath: "/machine-a/older.jsonl",
+      tool: "claude",
+    });
+    first.assignSession("older", task.id, { branch: "main" });
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    first.registerSession({
+      id: "newer",
+      transcriptPath: "/machine-a/newer.jsonl",
+      tool: "codex",
+    });
+    first.assignSession("newer", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+    });
+
+    await synchronize(first, server);
+    await synchronize(second, server);
+
+    expect(second.getReEntryManifest(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-branch",
+      worktree: "feature-checkout",
+    });
+
+    first.close();
+    second.close();
+  });
+
+  test("a legacy session row without git fields still merges", () => {
+    const store = openTraceStore(database("last-work-legacy-insert"));
+    const task = store.createTask("Checkout");
+    const createdAt = "2026-08-01T00:00:00.000Z";
+    store.mergeSyncPayload({
+      tasks: [],
+      sessions: [
+        {
+          id: "session-legacy",
+          transcriptPath: "/old/transcript.jsonl",
+          tool: "claude",
+          model: null,
+          title: null,
+          taskId: task.id,
+          parentSessionId: null,
+          origin: "root",
+          subagentType: null,
+          agentId: null,
+          createdAt,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          totalTokens: 0,
+          updatedAt: createdAt,
+          machineId: "legacy-machine",
+        },
+      ],
+    });
+
+    expect(store.getSession("session-legacy")).toMatchObject({
+      taskId: task.id,
+    });
+    expect(store.getSession("session-legacy")?.gitBranch).toBeUndefined();
+    expect(store.getReEntryManifest(task.id)?.lastWorkedOn).toBeUndefined();
+    store.close();
+  });
+
+  test("a legacy last-write does not erase captured git labels", () => {
+    const store = openTraceStore(database("last-work-legacy-lww"));
+    const task = store.createTask("Checkout");
+    store.registerSession({
+      id: "session-a",
+      transcriptPath: "/machine-a/transcript.jsonl",
+      tool: "codex",
+    });
+    store.assignSession("session-a", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+      localPath: "/Users/ada/.worktrees/feature-checkout",
+    });
+
+    const [row] = store.syncSnapshot().sessions;
+    const legacy = {
+      ...row!,
+      updatedAt: new Date(Date.parse(row!.updatedAt) + 10).toISOString(),
+      machineId: "legacy-machine",
+    };
+    delete legacy.gitBranch;
+    delete legacy.gitWorktreeLabel;
+
+    store.mergeSyncPayload({ tasks: [], sessions: [legacy] });
+
+    expect(store.getSession("session-a")).toMatchObject({
+      gitBranch: "feature-branch",
+      gitWorktreeLabel: "feature-checkout",
+      gitWorktreePath: "/Users/ada/.worktrees/feature-checkout",
+    });
+    store.close();
+  });
+
+  test("a later inbound write keeps the local worktree path", async () => {
+    const server = new MemoryTransport();
+    const first = openTraceStore(database("last-work-path-first"));
+    const second = openTraceStore(database("last-work-path-second"));
+    const task = first.createTask("Checkout");
+    first.registerSession({
+      id: "session-a",
+      transcriptPath: "/machine-a/transcript.jsonl",
+      tool: "codex",
+    });
+    first.assignSession("session-a", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+      localPath: "/Users/ada/.worktrees/feature-checkout",
+    });
+
+    await synchronize(first, server);
+    await synchronize(second, server);
+
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    second.assignSession("session-a", task.id, {
+      branch: "feature-branch",
+      worktreeLabel: "feature-checkout",
+    });
+    await synchronize(second, server);
+    await synchronize(first, server);
+
+    expect(first.getSession("session-a")?.gitWorktreePath).toBe(
+      "/Users/ada/.worktrees/feature-checkout",
+    );
+    expect(second.getSession("session-a")?.gitWorktreePath).toBeUndefined();
+
+    first.close();
+    second.close();
+  });
+});

@@ -9,9 +9,26 @@ docs, and architecture reviews so names stay consistent.
   optional project root, registered sessions, and a docs directory.
 - **Session** — one agent run (Claude Code, Codex, or Cursor) recorded against a
   task. Carries a tool, id, transcript path, model, and token totals.
-- **Re-entry manifest** — the bundle a fresh session reloads to resume a task:
-  the task, its docs, the distilled `state.md`, and pointers to prior sessions
-  (newest first).
+- **Re-entry manifest** — the progressively disclosed bundle a fresh session
+  reloads to resume a task: the task, the distilled `state.md`, historical
+  last-worked-on Git context, a **document index**, and a single pointer to the
+  prior session. It carries metadata, never document bodies or transcripts.
+- **Document index** — the manifest's `docs:` list: one entry per task document
+  with a resolved title (explicit title → first H1 → filename), an optional
+  recorded one-line description, and the path. An agent reads the index to
+  decide what is worth opening, then follows the pointer on demand.
+- **Last worked on** — historical Git context belonging to the most recent
+  task-associated session that captured it: branch name, optional linked-worktree
+  display label, and a machine-local absolute path that is not portable. It does
+  not mean the task is owned by that branch or worktree.
+- **Git work context** — the normalization boundary for last-worked-on metadata
+  (`readGitWorkContext`); persistence, sync, manifest formatting, and UI read
+  this record rather than reinterpreting repository state.
+- **State author** — the tool and model that wrote the `state.md` prose now on
+  disk (`resolveStateAuthor`): the newest non-subagent session that had already
+  started when the file was last written. Resolved *backwards* from the state
+  file's timestamp so the session reading the snapshot back — or the one that
+  just re-entered the task — never gets credited with words it did not write.
 - **Token Totals** — the value module owning token arithmetic (`empty`, `add`,
   `fromUsage`); consumed by adapters and the store instead of per-call copies.
 

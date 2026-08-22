@@ -81,7 +81,7 @@ This single command both fetches the re-entry manifest **and** binds the
 current session to the task, atomically — there is no separate `work-on-task`
 bind step. Then consume the manifest exactly as the `trace-reenter` skill
 documents (read `state.md` first as authoritative, then `docs:` as linked, then
-the `mostRecent: true` transcript tail only as a fallback; never paste raw
+the `lastSession:` transcript tail only as a fallback; never paste raw
 transcripts; never re-ask for context the manifest already covers). The
 manifest-consumption protocol lives in one place — `trace-reenter` — so recall
 does not restate it here.

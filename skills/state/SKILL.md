@@ -21,8 +21,8 @@ two triggers, the same operation either way:
   them to orient, so fold what they establish into the sections below.
 
 The skill captures where things stand into a single living `state.md` in the
-bound task's docs dir, using the exact section structure below. Running it a
-second time updates the same file in place; there is never a second file.
+bound task's docs dir. Running it a second time updates the same file in
+place; there is never a second file.
 
 You do not need to debounce this yourself — the drift trigger only fires on a
 real docs change (a fingerprint gate), so this is not a per-turn note-taking
@@ -63,54 +63,54 @@ that this skill requires a bound task, write nothing, and stop.
 
 If the file exists, read it fully — this is the accumulated state from prior
 sessions. You will merge this session's developments into it. If it does not
-exist, you are writing it fresh.
+exist, you are writing it fresh. Legacy files may still contain Decisions made
+or Open questions sections; do not copy those sections into the rewrite.
+Decisions belong in durable task documents.
 
 ### 3. Identify this session's developments
 
-From the current conversation context, identify what changed in this session:
+From the current conversation context, identify:
 
-- Decisions that were made (architectural choices, approaches agreed on,
-  approaches ruled out)
-- What was implemented, fixed, or changed
-- Where things stand right now (what's working, what isn't, current state of
-  the code or plan)
-- The concrete next step a fresh agent should take to continue
-- Open questions that remain unresolved
+- A one-sentence summary of where the work stands now
+- The current position — **one paragraph**, plainly written, of what's in
+  place, working, or incomplete
+- The single next action, or the unresolved question that *is* the next step
 
-When a prior `state.md` exists, fold the new developments in: update each
-section to reflect the current state rather than appending per-session notes.
-The file accumulates state across sessions — it is a snapshot of *now*, not a
-log. Old decisions that are still load-bearing stay; superseded decisions get
-replaced or struck.
+When a prior `state.md` exists, fold the new developments in: rewrite the
+snapshot of *now* rather than appending per-session notes.
+
+**This file is an orientation note, not a report.** A fresh agent reads it to
+learn where to look — the task's docs hold the detail, and the manifest footer
+below your prose already points at every one of them. So:
+
+- **`## Current state` is one paragraph.** Not two, not three. If it will not
+  fit, that is the signal that something in it belongs in a doc.
+- **Point, don't restate.** When a defect, decision, or plan is already written
+  up in a task doc, name it in a clause and link the doc — never re-narrate its
+  reasoning, file paths, or line numbers here.
+- **Drop what stopped mattering.** Superseded detail, resolved questions, and
+  the play-by-play of how the work got here belong in the transcripts. Prune on
+  every rewrite; a state file that only ever grows has stopped being a snapshot.
+- **Write plainly.** Short sentences, ordinary words, no piled-up subclauses.
 
 ### 4. Write `state.md`
 
-Write the file to `<taskDocsDir>/state.md` using this structure:
+Write the file to `<taskDocsDir>/state.md` using this structure. Omit any
+section that has nothing to say — do not stub it with a placeholder.
 
 ```markdown
-# <one-line summary of where things stand now>
-
-## Decisions made
-
-<Bullet list of key decisions. Include the reasoning briefly when it affects
-future choices. Omit decisions that are obvious from the code.>
+# <one-sentence summary of where things stand now>
 
 ## Current state
 
-<1–3 paragraphs: what's working, what's in place, what's broken or incomplete.
-Concrete and specific — a fresh agent reading this should know exactly what
-the codebase looks like right now.>
+<One paragraph: what's working, what's in place, what's broken or incomplete.
+Enough that a fresh agent knows the current position and which doc to open
+next — not enough to replace those docs.>
 
 ## Next step
 
-<The single most important thing a fresh agent should do to continue this work.
-One clear, actionable task, not a list.>
-
-## Open questions
-
-<Bullet list of unresolved questions or decisions. Mark "unblocking" if one
-needs to be resolved before the next step can proceed. Write "none" only if
-there genuinely are none.>
+<The single most important next action — or the unresolved question that
+must be answered before work can continue. Not a list.>
 ```
 
 **Do not write a docs footer.** The list of other docs in this task is a
@@ -155,8 +155,10 @@ intended.
 - The file is always `state.md` — never `state-2026-05-17.md` or a second
   state file. The living state is in one place; per-session history lives in
   the transcripts.
-- Write plain prose and bullets. No code blocks, no diffs. Code lives in git.
-- When merging, prefer accuracy over length. A shorter, accurate state file
-  is better than a long one that mixes stale and current state.
+- Write plain prose. No code blocks, no diffs. Code lives in git.
+- Length is the failure mode this file actually suffers from. A short snapshot
+  that points at the right doc beats a long one that inlines it — and beats a
+  complete one that mixes stale detail with current state. When accuracy seems
+  to demand more words, put those words in a task doc and link it.
 - If the task has a `re-enter` manifest line `state: / path: <path>`, that
   path IS `<taskDocsDir>/state.md` — they are the same file.

@@ -885,7 +885,6 @@ test("skill re-enter exits 0 and outputs manifest with required fields", () => {
     expect(r.stdout).toContain("task:");
     expect(r.stdout).toContain("taskDocsDir:");
     expect(r.stdout).toContain("docs:");
-    expect(r.stdout).toContain("sessions:");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });

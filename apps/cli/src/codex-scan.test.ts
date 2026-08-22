@@ -131,7 +131,7 @@ test("Codex skill command flow scans, binds, and re-enters a task", () => {
     expect(reentered).toContain("docs:");
     expect(reentered).toContain("decision.md");
     expect(reentered).toMatch(
-      /sessions:\n- id: codex-thread-1\n {2}tool: codex\n {2}transcript: .*codex-thread-1\.jsonl\n {2}mostRecent: true/,
+      /lastSession:\n {2}id: codex-thread-1\n {2}tool: codex\n {2}transcript: .*codex-thread-1\.jsonl/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

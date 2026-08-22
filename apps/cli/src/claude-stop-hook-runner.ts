@@ -80,7 +80,14 @@ export function runClaudeStopHook(
       ? { CLAUDE_TRANSCRIPT_PATH: identity.transcriptPath }
       : {}),
   };
-  const result = runTraceCli(["state", "check", task.slug], childEnv);
+  // The payload's cwd is where the turn ran; `state check` re-samples the
+  // session's Git work context from it, so a session that branched mid-turn
+  // reports the branch its work landed on.
+  const result = runTraceCli(
+    ["state", "check", task.slug],
+    childEnv,
+    input.cwd ?? process.cwd(),
+  );
   if (result.exitCode !== 0) {
     return failure(
       result.stderr.trim() || `state check exited ${result.exitCode}`,

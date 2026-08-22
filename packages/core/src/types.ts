@@ -90,6 +90,9 @@ export type Session = {
   // Live context-window occupancy when the tool exposes it (Cursor/Codex).
   // Refreshed from the source transcript when the session is read.
   contextTokens?: ContextTokens | null;
+  gitBranch?: string;
+  gitWorktreeLabel?: string;
+  gitWorktreePath?: string;
 };
 
 export type TaskDoc = {
@@ -163,6 +166,17 @@ export type TaskTimeline = {
   lastActivityAt: string;
   state?: ParsedStateMd;
   /**
+   * When the state.md prose was written: the time stamped by `state reflect`,
+   * falling back to the file's mtime for State Documents written before stamps
+   * carried one. Never the mtime alone — Trace's own footer bookkeeping moves
+   * that without the prose changing.
+   */
+  stateUpdatedAt?: string;
+  /** Historical Git labels from the newest task session that recorded them. */
+  lastWorkedOn?: LastWorkedOn;
+  /** The tool and model of the session that wrote the current state prose. */
+  stateAuthor?: StateAuthor;
+  /**
    * True when the task's docs have changed since state.md's prose last
    * reflected them (or the prose was never written). Present only when the
    * task has at least one non-state doc to reflect on.
@@ -178,23 +192,55 @@ export type TaskSummary = Task & {
   hasDocs: boolean;
 };
 
-export type ReEntryManifestDoc = TaskDoc;
+export type GitWorkContext = {
+  branch?: string;
+  worktreeLabel?: string;
+  localPath?: string;
+};
 
+export type LastWorkedOn = {
+  branch?: string;
+  worktree?: string;
+};
+
+// Who wrote the living state file: the tool (and model, when recorded) of the
+// session that authored the `state.md` prose currently on disk. Attribution is
+// resolved against the file's timestamp, so it never credits the session that
+// is merely reading it back.
+export type StateAuthor = {
+  tool: SessionTool;
+  model?: string;
+};
+
+// A document index entry: metadata an agent reads to decide what to open, not
+// the document itself. The title is always resolved (explicit title → first H1
+// → filename); a description is carried only when the doc actually has one.
+export type ReEntryManifestDoc = {
+  path: string;
+  title: string;
+  description?: string;
+};
+
+// The one session pointer the manifest carries: the latest session associated
+// with the task. The manifest is built before the entering session is
+// registered, so this is always the *prior* session, never the current one.
 export type ReEntryManifestSession = {
   id: string;
   transcriptPath: string;
   tool: SessionTool;
   model: string | null;
   createdAt: string;
-  isMostRecent: boolean;
 };
 
 export type ReEntryManifest = {
   task: Pick<Task, "id" | "title" | "projectRoot" | "description">;
   taskDocsDir: string;
-  state?: ReEntryManifestDoc;
+  // The living state file is a pointer, not an index entry — it is read first
+  // and in full, so it needs no title or description to be chosen from a list.
+  state?: { path: string };
   docs: ReEntryManifestDoc[];
-  sessions: ReEntryManifestSession[];
+  lastSession?: ReEntryManifestSession;
+  lastWorkedOn?: LastWorkedOn;
 };
 
 export type RegisterSessionInput = {
@@ -246,7 +292,18 @@ export type TaskStore = {
   unpinTask(ref: string): Task;
   registerSession(input: RegisterSessionInput): Session;
   setSessionParent(input: SetSessionParentInput): Session;
-  assignSession(sessionId: string, taskId: string): Session;
+  assignSession(
+    sessionId: string,
+    taskId: string,
+    gitContext?: GitWorkContext,
+  ): Session;
+  // Re-sample where a session's work is landing, leaving its binding alone.
+  // Null for an unknown id: this runs on hook paths where bookkeeping must
+  // never break the turn.
+  recordSessionWorkContext(
+    sessionId: string,
+    gitContext: GitWorkContext,
+  ): Session | null;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;
