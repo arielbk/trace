@@ -23,7 +23,10 @@ import {
   resolveSkillTaskRef,
   taskNotFoundMessage,
 } from "./formatters.ts";
-import { computeStateFreshness, proseDriftReason } from "./state-operations.ts";
+import {
+  computeTaskStateFreshness,
+  proseDriftReason,
+} from "./state-operations.ts";
 import { reconcileStateFooter } from "./task-operations.ts";
 import {
   attempt,
@@ -78,16 +81,18 @@ export function skillWorkOnTaskOperation(
       ? store.unarchiveTask(resolvedTask.id)
       : resolvedTask;
 
+    // Materialize the docs-manifest footer at the bind seam so a task that
+    // already has a native doc (spec-first, task created after) gets a complete
+    // state.md on bind — no `trace state check` required. Reconcile *before*
+    // assigning, matching re-enter: any bookkeeping write then lands before the
+    // new session exists, so it can never be mistaken for that session's work.
+    reconcileStateFooter(store, databasePath, task);
+
     const assigned = store.assignSession(
       session.id,
       task.id,
       readGitWorkContext(ctx.cwd),
     );
-
-    // Materialize the docs-manifest footer at the bind seam so a task that
-    // already has a native doc (spec-first, task created after) gets a complete
-    // state.md on bind — no `trace state check` required.
-    reconcileStateFooter(store, databasePath, task);
 
     return success(
       `${formatProjectResolution(projectResolution)}${formatSkillWorkOnTaskResult(assigned, task, databasePath)}`,
@@ -183,7 +188,7 @@ export function skillReEnterOperation(
     // actual bind (a bare terminal reading the manifest is never directed to
     // invoke a skill), mirroring `state check`'s strict-binding contract.
     const freshness = bound
-      ? computeStateFreshness(store, databasePath, resolved)
+      ? computeTaskStateFreshness(store, databasePath, resolved)
       : undefined;
     const drift =
       freshness?.needsProsePass && freshness.mode

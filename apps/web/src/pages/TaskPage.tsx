@@ -878,14 +878,19 @@ export function LeftOffPanel({
           ) : null}
         </div>
         {updatedAt ? (
-          <time
-            data-testid="state-recency"
-            dateTime={updatedAt}
-            title={`Updated ${updatedAt}`}
-            className="ml-auto font-mono text-crumb text-text-muted tabular-nums whitespace-nowrap"
-          >
-            {formatRelativeTime(updatedAt, now)}
-          </time>
+          // Labelled, not a bare relative time: this measures when the prose was
+          // written, which is not the same as when anything about the task last
+          // happened. An unlabelled corner timestamp read as the latter.
+          <span className="ml-auto font-mono text-crumb text-text-muted tabular-nums whitespace-nowrap">
+            State written{" "}
+            <time
+              data-testid="state-recency"
+              dateTime={updatedAt}
+              title={`Prose written ${updatedAt}`}
+            >
+              {formatRelativeTime(updatedAt, now)}
+            </time>
+          </span>
         ) : null}
       </div>
       <div>

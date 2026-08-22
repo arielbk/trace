@@ -74,12 +74,22 @@ export type { StateMdDraft } from "./state-format.ts";
 export { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 export { resolveDocTitle } from "./display-title.ts";
 export type { ResolvableDoc } from "./display-title.ts";
-export {
-  renderManifest,
-  stripFence,
-  updateStateManifest,
-} from "./state-manifest.ts";
+export { renderManifest, stripFence } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
+export {
+  STATE_DOCUMENT_FILENAME,
+  isStateDocument,
+  partitionStateDocument,
+  readStateDocument,
+  reconcileStateDocumentManifest,
+  renderStateDocument,
+  stampStateDocumentProse,
+  stateDocumentPath,
+  writeStateDocument,
+} from "./state-document.ts";
+export type { StateDocument } from "./state-document.ts";
+export { computeStateFreshness } from "./state-freshness.ts";
+export type { StateFreshness } from "./state-freshness.ts";
 export { SESSION_TOOLS, SESSION_TOOL_CHOICES, INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
 export {
   composerIdFromLocator,
@@ -93,9 +103,11 @@ export {
   computeDocsFingerprint,
   hasProseBody,
   readProseFingerprint,
+  readProseStamp,
   renderProseMarker,
+  stripProseMarkers,
 } from "./prose-fingerprint.ts";
-export type { DocFingerprintInput } from "./prose-fingerprint.ts";
+export type { DocFingerprintInput, ProseStamp } from "./prose-fingerprint.ts";
 export type {
   ActiveTask,
   AddTaskDocOptions,

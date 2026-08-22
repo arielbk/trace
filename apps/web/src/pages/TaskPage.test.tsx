@@ -1674,7 +1674,9 @@ test("TaskTimelineView renders state recency, exact timestamp, and historical Gi
   expect(html).toContain('data-testid="state-context"');
   expect(html).toContain('data-testid="state-next-step"');
   expect(html).toContain('dateTime="2026-06-03T11:57:00.000Z"');
-  expect(html).toContain('title="Updated 2026-06-03T11:57:00.000Z"');
+  expect(html).toContain('title="Prose written 2026-06-03T11:57:00.000Z"');
+  // Labelled, so the corner timestamp cannot be read as general task activity.
+  expect(html).toContain("State written");
   expect(html).toContain("Last worked on");
   expect(html).toContain("feature-checkout");
   expect(html).toContain("checkout-ui");

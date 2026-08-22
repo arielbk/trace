@@ -1,7 +1,8 @@
 import {
+  partitionStateDocument,
+  reconcileStateDocumentManifest,
   resolveDocTitle,
   resolveTaskDocsDir,
-  updateStateManifest,
   type ManifestEntry,
   type Task,
 } from "@trace/core";
@@ -95,35 +96,33 @@ function readDocContent(path: string): string | null {
   }
 }
 
-// Re-render the task's machine-owned state.md manifest footer from the docs
-// currently registered for the task. state.md is created when absent and is
-// excluded from its own manifest.
+// Re-render the task's machine-owned State Document manifest footer from the
+// docs currently registered for the task. The prose and its stamp are left
+// untouched; the file is created from a scaffold when absent.
 export function renderTaskDocManifest(
   store: Store,
   databasePath: string,
   task: Task,
 ): void {
-  const docsDir = resolveTaskDocsDir(databasePath, task.slug);
-  const statePath = join(docsDir, "state.md");
-  const entries = buildManifestEntries(store, databasePath, task);
-  mkdirSync(docsDir, { recursive: true });
-  updateStateManifest(statePath, task.title, entries);
+  reconcileStateDocumentManifest(
+    resolveTaskDocsDir(databasePath, task.slug),
+    task.title,
+    buildManifestEntries(store, databasePath, task),
+  );
 }
 
 // Reconcile the task's state.md footer, but only once the task has at least one
 // non-state doc — an empty task should not sprout a bare manifest (mirroring the
 // guard in `trace state check`). Idempotent (write-if-changed in
-// `updateStateManifest`), so calling it on every bind is a safe no-op when the
+// the State Document module), so calling it on every bind is a safe no-op when the
 // footer is already current.
 export function reconcileStateFooter(
   store: Store,
   databasePath: string,
   task: Task,
 ): void {
-  const hasNonStateDoc = store
-    .listDocsForTask(task.id)
-    .some((doc) => basename(doc.path) !== "state.md");
-  if (hasNonStateDoc) {
+  const { others } = partitionStateDocument(store.listDocsForTask(task.id));
+  if (others.length > 0) {
     renderTaskDocManifest(store, databasePath, task);
   }
 }
@@ -131,17 +130,15 @@ export function reconcileStateFooter(
 // Build the rendered manifest rows for a task's currently-registered non-state
 // docs, resolving each display title through the shared fallback chain (explicit
 // title → first H1 → filename) and reading the file body so the H1 branch can
-// fire. state.md is excluded from its own manifest.
+// fire. The State Document is excluded from its own manifest.
 export function buildManifestEntries(
   store: Store,
   databasePath: string,
   task: Task,
 ): ManifestEntry[] {
   const docsDir = resolveTaskDocsDir(databasePath, task.slug);
-  return store
-    .listDocsForTask(task.id)
-    .filter((doc) => basename(doc.path) !== "state.md")
-    .map((doc) => ({
+  return partitionStateDocument(store.listDocsForTask(task.id))
+    .others.map((doc) => ({
       label: resolveDocTitle(doc, readDocContent(doc.path)),
       href: relative(docsDir, doc.path) || basename(doc.path),
       ...(doc.description ? { description: doc.description } : {}),

@@ -1,9 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expect, test } from "vitest";
 import { parseStateMd } from "./state-parser.ts";
-import { renderManifest, updateStateManifest } from "./state-manifest.ts";
+import { renderManifest } from "./state-manifest.ts";
 
 test("renderManifest appends a fenced footer below a divider", () => {
   const out = renderManifest("# Checkout\n", [
@@ -68,16 +65,6 @@ test("renderManifest lists multiple docs", () => {
   expect(out).toContain("- [plan.md](plan.md) — The plan");
 });
 
-test("renderManifest excludes state.md from its own manifest", () => {
-  const out = renderManifest("# Checkout\n", [
-    { label: "state.md", href: "state.md", description: "Living state" },
-    { label: "spec.md", href: "spec.md", description: "The spec" },
-  ]);
-
-  expect(out).toContain("- [spec.md](spec.md) — The spec");
-  expect(out).not.toContain("state.md](");
-});
-
 test("renderManifest renders a bare link when a doc has no description", () => {
   const out = renderManifest("# Checkout\n", [
     { label: "notes.md", href: "notes.md" },
@@ -95,45 +82,4 @@ test("renderManifest inserts a fence on a state.md that lacks one", () => {
   expect(out).toContain("## Summary");
   expect(out).toContain("Prose only.");
   expect(out.match(/trace:docs-manifest:start/g)).toHaveLength(1);
-});
-
-test("updateStateManifest creates a minimal state.md when absent", () => {
-  const dir = mkdtempSync(join(tmpdir(), "trace-manifest-"));
-  const statePath = join(dir, "state.md");
-
-  try {
-    updateStateManifest(statePath, "Checkout flow", [
-      { label: "spec.md", href: "spec.md", description: "The spec" },
-    ]);
-
-    const written = readFileSync(statePath, "utf8");
-    expect(written).toContain("# Checkout flow");
-    expect(written).toContain("- [spec.md](spec.md) — The spec");
-    // No empty prose headings in the minimal scaffold.
-    expect(written).not.toContain("## Decisions");
-    expect(written).not.toContain("## Next step");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("updateStateManifest does not rewrite when content is unchanged", () => {
-  const dir = mkdtempSync(join(tmpdir(), "trace-manifest-"));
-  const statePath = join(dir, "state.md");
-  const entries = [{ label: "spec.md", href: "spec.md", description: "The spec" }];
-
-  try {
-    updateStateManifest(statePath, "Checkout flow", entries);
-
-    // Pin mtime to a fixed point in the past; a rewrite would bump it to now.
-    const past = new Date("2020-01-01T00:00:00Z");
-    utimesSync(statePath, past, past);
-    const before = statSync(statePath).mtimeMs;
-
-    updateStateManifest(statePath, "Checkout flow", entries);
-
-    expect(statSync(statePath).mtimeMs).toBe(before);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });

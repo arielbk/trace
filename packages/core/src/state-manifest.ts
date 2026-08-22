@@ -1,4 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+// The docs-manifest fence: the machine-owned region of the State Document that
+// indexes the task's other docs. This module owns the fence's shape — its
+// markers, heading, rows, and the `---` divider that separates it from the
+// prose — as pure transforms. `state-document.ts` owns the file it lives in.
 
 // One rendered row of the docs manifest. `label` is the link text, `href` the
 // link target (typically a path relative to state.md), and `description` the
@@ -48,33 +51,16 @@ export function stripFence(content: string): string {
  * return content carrying the fenced manifest region. Re-rendering replaces the
  * existing fence in place (preserving prose above it and producing byte-
  * identical output when the docs are unchanged) rather than stacking footers.
- * state.md is never listed in its own manifest. The fence sits below a `---`
- * divider so the state parser treats it as a strippable footer and needs no
- * changes.
+ * The fence sits below a `---` divider so the state parser treats it as a
+ * strippable footer.
+ *
+ * `entries` is expected to exclude the State Document already —
+ * `state-document.ts` owns that split.
  */
 export function renderManifest(
   content: string,
   entries: ManifestEntry[],
 ): string {
-  const docs = entries.filter((entry) => entry.label !== "state.md");
   const body = stripFence(content).replace(/\s+$/, "");
-  return `${body}\n\n---\n\n${renderFence(docs)}\n`;
-}
-
-/**
- * Read state.md — scaffolding a minimal `# <title>` document when it does not
- * exist — render the manifest footer from `entries`, and write it back.
- */
-export function updateStateManifest(
-  stateMdPath: string,
-  title: string,
-  entries: ManifestEntry[],
-): void {
-  const present = existsSync(stateMdPath);
-  const existing = present ? readFileSync(stateMdPath, "utf8") : `# ${title}\n`;
-  const next = renderManifest(existing, entries);
-  // Write-if-changed: skip the write (and the mtime bump) when the rendered
-  // output already matches what's on disk, so re-running check is a true no-op.
-  if (present && existing === next) return;
-  writeFileSync(stateMdPath, next);
+  return `${body}\n\n---\n\n${renderFence(entries)}\n`;
 }

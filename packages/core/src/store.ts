@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { resolveCodexTranscriptPathById } from "./codex-adapter.ts";
 import { registerCodexSubagentSpawn } from "./codex-subagent-discovery.ts";
 import {
@@ -34,11 +34,8 @@ import {
 } from "./token-totals.ts";
 import { resolveSessionName } from "./session-name.ts";
 import { parseStateMd } from "./state-parser.ts";
-import {
-  computeDocsFingerprint,
-  hasProseBody,
-  readProseFingerprint,
-} from "./prose-fingerprint.ts";
+import { computeStateFreshness } from "./state-freshness.ts";
+import { partitionStateDocument } from "./state-document.ts";
 import {
   getTranscriptAdapter,
   type ParsedTranscript,
@@ -960,7 +957,8 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const sessionList = this.listSessionsForTask(task.id);
     const docs = this.listDocsForTask(task.id);
-    const stateDoc = docs.find((doc) => basename(doc.path) === "state.md");
+    const { state: stateDoc, others: contentDocs } =
+      partitionStateDocument(docs);
     const items: TaskTimelineItem[] = [
       ...sessionList.map(
         (session): TaskTimelineItem => ({
@@ -970,9 +968,7 @@ class NodeSqliteTaskStore implements TaskStore {
           sessionName: resolveSessionName(session),
         }),
       ),
-      ...docs
-        .filter((doc) => basename(doc.path) !== "state.md")
-        .map(
+      ...contentDocs.map(
         (doc): TaskTimelineItem => ({
           type: "doc",
           createdAt: doc.createdAt,
@@ -981,12 +977,25 @@ class NodeSqliteTaskStore implements TaskStore {
         }),
       ),
     ].sort(compareTimelineItems);
+    const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
+    const docsDir = resolveTaskDocsDir(this.#databasePath, task.slug);
+    const freshness = computeStateFreshness(docsDir, docs);
+    // When the prose carries a stamp, that is when it was written. Otherwise
+    // fall back to the file's mtime — the best a pre-stamp State Document can
+    // offer, even though Trace's own footer bookkeeping moves it.
+    const stateUpdatedAt =
+      state && stateDoc
+        ? (freshness.stamp?.writtenAt ?? stateDoc.createdAt)
+        : undefined;
+    // state.md's mtime is deliberately excluded: it moves whenever Trace
+    // reconciles the docs footer, which is bookkeeping, not task activity. The
+    // prose-write time counts, because writing prose is real work.
     const lastActivityAt = [
       task.createdAt,
       ...sessionList.map((session) => session.createdAt),
-      ...docs.map((doc) => doc.createdAt),
+      ...contentDocs.map((doc) => doc.createdAt),
+      ...(stateUpdatedAt ? [stateUpdatedAt] : []),
     ].reduce((latest, current) => (current > latest ? current : latest));
-    const state = stateDoc ? readParsedState(stateDoc.path) : undefined;
     const lastWorkedOn = lastWorkedOnFromSessions(
       sessionList
         .slice()
@@ -997,13 +1006,8 @@ class NodeSqliteTaskStore implements TaskStore {
           localPath: session.gitWorktreePath,
         })),
     );
-    const stateUpdatedAt = state && stateDoc ? stateDoc.createdAt : undefined;
     const stateAuthor = resolveStateAuthor(sessionList, stateUpdatedAt);
-    const stateStale = computeStateStale(
-      resolveTaskDocsDir(this.#databasePath, task.slug),
-      docs,
-      stateDoc?.path,
-    );
+    const stateStale = freshness.needsProsePass;
 
     return {
       task: {
@@ -1043,10 +1047,9 @@ class NodeSqliteTaskStore implements TaskStore {
     );
 
     const allDocs = this.listDocsForTask(task.id);
-    const stateDoc = allDocs.find((d) => basename(d.path) === "state.md");
-    const docs = allDocs
-      .filter((d) => basename(d.path) !== "state.md")
-      .map((doc) => toManifestDoc(doc));
+    const { state: stateDoc, others: contentDocs } =
+      partitionStateDocument(allDocs);
+    const docs = contentDocs.map((doc) => toManifestDoc(doc));
 
     return {
       task: {
@@ -2096,39 +2099,6 @@ function readParsedState(path: string): ReturnType<typeof parseStateMd> | null {
 }
 
 /**
- * Whether state.md's prose has drifted from the task's docs — the same
- * fingerprint comparison `trace state check` makes, recomputed at board read
- * time. Undefined when the task has no non-state doc (nothing to reflect on);
- * true when the prose was never written, is empty, or was stamped against a
- * different doc set.
- */
-function computeStateStale(
-  docsDir: string,
-  docs: TaskDoc[],
-  statePath: string | undefined,
-): boolean | undefined {
-  const nonStateDocs = docs.filter((doc) => basename(doc.path) !== "state.md");
-  if (nonStateDocs.length === 0) return undefined;
-
-  if (!statePath) return true;
-  let content: string;
-  try {
-    content = readFileSync(statePath, "utf8");
-  } catch {
-    return true;
-  }
-  if (!hasProseBody(content)) return true;
-
-  const fingerprint = computeDocsFingerprint(
-    nonStateDocs.map((doc) => ({
-      path: relative(docsDir, doc.path),
-      content: readDocContentOrEmpty(doc.path),
-    })),
-  );
-  return readProseFingerprint(content) !== fingerprint;
-}
-
-/**
  * Turn a stored doc into a manifest index entry: a resolved display title (the
  * doc body is read so the H1 branch of the shared fallback chain can fire), the
  * pointer, and a description only when one was recorded — never inferred.
@@ -2146,14 +2116,6 @@ function readDocContentOrNull(path: string): string | null {
     return readFileSync(path, "utf8");
   } catch {
     return null;
-  }
-}
-
-function readDocContentOrEmpty(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
   }
 }
 

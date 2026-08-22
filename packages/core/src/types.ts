@@ -165,7 +165,12 @@ export type TaskTimeline = {
   tokenTotals: TokenTotals;
   lastActivityAt: string;
   state?: ParsedStateMd;
-  /** Modification time of the native state.md file, when its prose can render. */
+  /**
+   * When the state.md prose was written: the time stamped by `state reflect`,
+   * falling back to the file's mtime for State Documents written before stamps
+   * carried one. Never the mtime alone — Trace's own footer bookkeeping moves
+   * that without the prose changing.
+   */
   stateUpdatedAt?: string;
   /** Historical Git labels from the newest task session that recorded them. */
   lastWorkedOn?: LastWorkedOn;
