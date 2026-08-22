@@ -3,6 +3,35 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.20.0
+
+Trace task state is now concise, attributable, and progressively disclosed when
+you re-enter work. The release also completes the move away from the retired
+plugin-install channel: the CLI owns the canonical skills and managed setup.
+
+### Highlights
+
+- **State has one compact shape.** Living state documents keep a one-line
+  summary, a short current position, and one next action or unresolved question
+  instead of accumulating empty or repetitive sections.
+- **Re-entry starts with the useful context.** Manifests now surface the task's
+  state first, index supporting docs rather than dumping them, identify the
+  latest prior session, and report the branch and linked-worktree context where
+  the task was last worked on.
+- **State provenance is visible.** Trace records which session authored task
+  prose, and the task page explains whether displayed state came from that prose
+  or was inferred from activity.
+
+### Reliability
+
+- State freshness is owned by a single document model and sync preserves the
+  metadata needed to make the same freshness decision on another machine.
+- Git context is sampled when state is checked, so branching after a task bind
+  no longer leaves re-entry pointing at the branch the session originally
+  arrived on.
+- Canonical skills now ship from the top-level `skills/` tree; legacy plugin
+  marketplace manifests and hooks have been removed.
+
 ## 0.19.0
 
 `trace update` is now a one-step operation in a terminal, and no longer trips a
