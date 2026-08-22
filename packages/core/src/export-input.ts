@@ -34,9 +34,13 @@ export function gatherExportInput(
 
   const docsDir = resolveTaskDocsDir(databasePath, timeline.task.slug);
   const project = store.getProject(timeline.task.projectId);
-  const docs = timeline.items
-    .filter((item) => item.type === "doc")
-    .map((item) => toExportDoc(item.doc, docsDir))
+  // The timeline deliberately keeps the living State Document out of its
+  // activity feed. An export is a complete task snapshot, so gather from the
+  // store's document inventory instead and retain state.md alongside the
+  // content docs.
+  const docs = store
+    .listDocsForTask(timeline.task.id)
+    .map((doc) => toExportDoc(doc, docsDir))
     .filter((doc): doc is ExportDocInput => doc !== null);
   const sessions = timeline.items
     .filter((item) => item.type === "session")
