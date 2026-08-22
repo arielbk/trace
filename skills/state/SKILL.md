@@ -72,13 +72,26 @@ Decisions belong in durable task documents.
 From the current conversation context, identify:
 
 - A one-sentence summary of where the work stands now
-- The current position — a short paragraph of what's in place, working, or
-  incomplete
+- The current position — **one paragraph**, plainly written, of what's in
+  place, working, or incomplete
 - The single next action, or the unresolved question that *is* the next step
 
 When a prior `state.md` exists, fold the new developments in: rewrite the
-snapshot of *now* rather than appending per-session notes. Prefer accuracy
-over length.
+snapshot of *now* rather than appending per-session notes.
+
+**This file is an orientation note, not a report.** A fresh agent reads it to
+learn where to look — the task's docs hold the detail, and the manifest footer
+below your prose already points at every one of them. So:
+
+- **`## Current state` is one paragraph.** Not two, not three. If it will not
+  fit, that is the signal that something in it belongs in a doc.
+- **Point, don't restate.** When a defect, decision, or plan is already written
+  up in a task doc, name it in a clause and link the doc — never re-narrate its
+  reasoning, file paths, or line numbers here.
+- **Drop what stopped mattering.** Superseded detail, resolved questions, and
+  the play-by-play of how the work got here belong in the transcripts. Prune on
+  every rewrite; a state file that only ever grows has stopped being a snapshot.
+- **Write plainly.** Short sentences, ordinary words, no piled-up subclauses.
 
 ### 4. Write `state.md`
 
@@ -90,8 +103,9 @@ section that has nothing to say — do not stub it with a placeholder.
 
 ## Current state
 
-<A short paragraph: what's working, what's in place, what's broken or
-incomplete. Concrete enough that a fresh agent knows the current position.>
+<One paragraph: what's working, what's in place, what's broken or incomplete.
+Enough that a fresh agent knows the current position and which doc to open
+next — not enough to replace those docs.>
 
 ## Next step
 
@@ -142,7 +156,9 @@ intended.
   state file. The living state is in one place; per-session history lives in
   the transcripts.
 - Write plain prose. No code blocks, no diffs. Code lives in git.
-- Brevity is guidance, not a word limit. A shorter, accurate snapshot is
-  better than a long file that mixes stale and current state.
+- Length is the failure mode this file actually suffers from. A short snapshot
+  that points at the right doc beats a long one that inlines it — and beats a
+  complete one that mixes stale detail with current state. When accuracy seems
+  to demand more words, put those words in a task doc and link it.
 - If the task has a `re-enter` manifest line `state: / path: <path>`, that
   path IS `<taskDocsDir>/state.md` — they are the same file.
