@@ -79,10 +79,11 @@ export function runCopilotAgentStopHook(
   // so provide the hook payload's id through the guard's established Claude
   // compatibility channel; the store lookup above remains the authoritative
   // Copilot binding and only the shared command's gate consumes this value.
-  const result = runTraceCli(["state", "check", task.slug], {
-    ...env,
-    CLAUDE_CODE_SESSION_ID: sessionId,
-  });
+  const result = runTraceCli(
+    ["state", "check", task.slug],
+    { ...env, CLAUDE_CODE_SESSION_ID: sessionId },
+    input.cwd ?? process.cwd(),
+  );
   if (result.exitCode !== 0) {
     return failure(result.stderr.trim() || `state check exited ${result.exitCode}`, 1);
   }

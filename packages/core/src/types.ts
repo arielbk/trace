@@ -297,6 +297,13 @@ export type TaskStore = {
     taskId: string,
     gitContext?: GitWorkContext,
   ): Session;
+  // Re-sample where a session's work is landing, leaving its binding alone.
+  // Null for an unknown id: this runs on hook paths where bookkeeping must
+  // never break the turn.
+  recordSessionWorkContext(
+    sessionId: string,
+    gitContext: GitWorkContext,
+  ): Session | null;
   listUnassignedSessions(): Session[];
   listSessionsForTask(taskId: string): Session[];
   getTaskTimeline(taskId: string): TaskTimeline | null;

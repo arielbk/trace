@@ -35,11 +35,13 @@ function runTrace(
   args: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
+  stdin = "",
 ): string {
   return execFileSync(process.execPath, [traceBin, ...args], {
     cwd,
     env,
     encoding: "utf8",
+    input: stdin,
   });
 }
 
@@ -126,5 +128,101 @@ test("re-enter reports a linked-worktree label and the latest session wins", () 
   } finally {
     rmSync(container, { recursive: true, force: true });
     rmSync(mainRoot, { recursive: true, force: true });
+  }
+});
+
+test("the Stop hook re-samples the branch a bound session moved to", () => {
+  const cwd = createRepository("main");
+  const env = envFor(join(cwd, "trace.sqlite"));
+  const transcript = join(cwd, "session-moving.jsonl");
+
+  try {
+    runTrace(
+      [
+        "skill",
+        "work-on-task",
+        "Moving work",
+        "--id",
+        "session-moving",
+        "--transcript",
+        transcript,
+        "--tool",
+        "claude",
+      ],
+      cwd,
+      env,
+    );
+
+    // The normal flow the re-entry manifest itself invites: bind on the branch
+    // you arrived on, then cut the branch the work actually lands on.
+    git(cwd, "checkout", "-b", "feature-deepen", "--quiet");
+
+    runTrace(["hook", "stop"], cwd, env, JSON.stringify({
+      hook_event_name: "Stop",
+      session_id: "session-moving",
+      transcript_path: transcript,
+      cwd,
+    }));
+
+    // Read the manifest from an unbound invocation, so the answer comes from
+    // what the Stop hook recorded rather than from a fresh bind.
+    const reentered = runTrace(["skill", "re-enter", "Moving work"], cwd, env);
+    expect(reentered).toContain("lastWorkedOn:\n  branch: feature-deepen\n");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("the Stop hook leaves an unbound session's branch alone", () => {
+  const cwd = createRepository("main");
+  const env = envFor(join(cwd, "trace.sqlite"));
+  const transcript = join(cwd, "session-bystander.jsonl");
+
+  try {
+    runTrace(
+      [
+        "skill",
+        "work-on-task",
+        "Bound work",
+        "--id",
+        "session-bound",
+        "--transcript",
+        join(cwd, "session-bound.jsonl"),
+        "--tool",
+        "claude",
+      ],
+      cwd,
+      env,
+    );
+    runTrace(
+      [
+        "session",
+        "register",
+        "--id",
+        "session-bystander",
+        "--transcript",
+        transcript,
+        "--tool",
+        "claude",
+      ],
+      cwd,
+      env,
+    );
+
+    git(cwd, "checkout", "-b", "feature-bystander", "--quiet");
+
+    runTrace(["hook", "stop"], cwd, env, JSON.stringify({
+      hook_event_name: "Stop",
+      session_id: "session-bystander",
+      transcript_path: transcript,
+      cwd,
+    }));
+
+    // The bystander is not bound to the task, so its turn must not relabel
+    // where the task was last worked on.
+    const reentered = runTrace(["skill", "re-enter", "Bound work"], cwd, env);
+    expect(reentered).toContain("lastWorkedOn:\n  branch: main\n");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
   }
 });

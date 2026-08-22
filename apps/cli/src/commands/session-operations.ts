@@ -3,10 +3,10 @@ import {
   discoverCodexSubagentSessions,
   discoverCursorSubagentSessions,
   getTranscriptAdapter,
-  readGitWorkContext,
   scanClaudeCodeSessions,
   scanCodexSessions,
 } from "@trace/core";
+import { recordSessionWorkContext } from "./bind.ts";
 import {
   parseClaudeScanArgs,
   parseCodexScanArgs,
@@ -52,12 +52,13 @@ export function sessionAssignOperation(
   if (!taskId) return failure("Task id is required");
 
   return withStore(ctx.env, (store) => {
-    const session = store.assignSession(
-      sessionId,
-      taskId,
-      readGitWorkContext(ctx.cwd),
-    );
-    return success(formatSessionSummary(session));
+    // The plumbing bind: an already-registered session, an explicit task, and
+    // no project resolution or footer reconcile. It still samples the Git work
+    // context, so `lastWorkedOn` is populated the same way the skill seams
+    // populate it.
+    const assigned = store.assignSession(sessionId, taskId);
+    const session = recordSessionWorkContext(store, assigned.id, ctx.cwd);
+    return success(formatSessionSummary(session ?? assigned));
   });
 }
 

@@ -6,6 +6,7 @@ import {
   stampStateDocumentProse,
   type StateFreshness,
 } from "@trace/core";
+import { recordSessionWorkContext } from "./bind.ts";
 import {
   buildManifestEntries,
   renderTaskDocManifest,
@@ -68,6 +69,15 @@ export function stateCheckOperation(
       renderTaskDocManifest(store, databasePath, task);
     }
 
+    // The per-turn touchpoint with a live cwd and a bound session, so this is
+    // where a session that branched after binding gets its Git work context
+    // re-sampled. Same strict-binding gate as the prose directive below: an
+    // unbound turn must never relabel where someone else's task was worked on.
+    const boundSessionId = liveSessionBoundTo(store, ctx.env, task.id);
+    if (boundSessionId) {
+      recordSessionWorkContext(store, boundSessionId, ctx.cwd);
+    }
+
     const freshness = computeTaskStateFreshness(store, databasePath, task);
 
     const verdict: StateFreshness & { reason?: string } = {
@@ -79,10 +89,7 @@ export function stateCheckOperation(
     // Prose-pass directive is gated on an explicit binding of the current
     // session to this task — never the most-recent-task fallback. An unbound
     // session abstains: the prose fields are omitted entirely.
-    if (
-      freshness.needsProsePass !== undefined &&
-      isSessionBoundTo(store, ctx.env, task.id)
-    ) {
+    if (freshness.needsProsePass !== undefined && boundSessionId) {
       verdict.needsProsePass = freshness.needsProsePass;
       if (freshness.needsProsePass) {
         verdict.mode = freshness.mode;
@@ -165,11 +172,15 @@ export function stateReflectOperation(
   });
 }
 
-// True when the live session (resolved from env) exists and is explicitly bound
-// to `taskId`. Mirrors the strict-binding contract: an unbound session, or one
-// bound to a different task, does not qualify.
-function isSessionBoundTo(store: Store, env: Env, taskId: string): boolean {
+// The live session (resolved from env) when it exists and is explicitly bound
+// to `taskId`, else null. Mirrors the strict-binding contract: an unbound
+// session, or one bound to a different task, does not qualify.
+function liveSessionBoundTo(
+  store: Store,
+  env: Env,
+  taskId: string,
+): string | null {
   const { id } = inferSessionIdentity(env);
-  if (!id) return false;
-  return store.getSession(id)?.taskId === taskId;
+  if (!id) return null;
+  return store.getSession(id)?.taskId === taskId ? id : null;
 }

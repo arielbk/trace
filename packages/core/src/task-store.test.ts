@@ -3292,3 +3292,74 @@ test("re-entry manifest carries only the most recent prior session pointer", () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("recording a session's work context re-samples the branch without rebinding", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "moving-session",
+      transcriptPath: "/tmp/moving.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id, { branch: "main" });
+
+    // The session cut a branch after binding: the work landed on the new one.
+    const moved = store.recordSessionWorkContext(session.id, {
+      branch: "feature-checkout",
+      worktreeLabel: "checkout-ui",
+      localPath: "/repo/checkout-ui",
+    });
+
+    expect(moved?.gitBranch).toBe("feature-checkout");
+    expect(moved?.taskId).toBe(task.id);
+    expect(store.getTaskTimeline(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+    expect(store.getReEntryManifest(task.id)?.lastWorkedOn).toEqual({
+      branch: "feature-checkout",
+      worktree: "checkout-ui",
+    });
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("recording an unchanged or empty work context leaves the session alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trace-core-"));
+  const databasePath = join(dir, "trace.sqlite");
+
+  try {
+    const store = openTraceStore(databasePath);
+    const task = store.createTask("checkout");
+    const session = store.registerSession({
+      id: "settled-session",
+      transcriptPath: "/tmp/settled.jsonl",
+      tool: "claude",
+    });
+    store.assignSession(session.id, task.id, { branch: "main" });
+
+    // Unchanged: nothing to record, so the row is not rewritten.
+    expect(
+      store.recordSessionWorkContext(session.id, { branch: "main" })?.gitBranch,
+    ).toBe("main");
+
+    // Empty (the cwd left the repo): never erase a branch Trace already knows.
+    expect(
+      store.recordSessionWorkContext(session.id, {})?.gitBranch,
+    ).toBe("main");
+
+    // An unknown session is bookkeeping on a hook path — report, never throw.
+    expect(store.recordSessionWorkContext("no-such-session", { branch: "x" })).toBeNull();
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

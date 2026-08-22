@@ -810,6 +810,60 @@ class NodeSqliteTaskStore implements TaskStore {
     return assigned ?? { ...session, taskId: task.id };
   }
 
+  /**
+   * Re-sample where a session's work is landing, without touching its binding.
+   *
+   * `assignSession` records the Git work context once, at bind — which answers
+   * "where was this session standing when it bound", not "where did its work
+   * land". Branching mid-session is the normal flow, so every touchpoint that
+   * runs with a live cwd and a bound session calls this to keep `lastWorkedOn`
+   * honest.
+   *
+   * Two deliberate silences. An empty context (the cwd left the repository)
+   * never erases a branch Trace already knows — a stale-but-real branch beats
+   * none. An unchanged context writes nothing at all, so a per-turn hook does
+   * not churn `updated_at` and drag the row through every sync.
+   *
+   * Returns the session as it now stands, or null for an unknown id: this runs
+   * on hook paths where bookkeeping must never break the turn.
+   */
+  recordSessionWorkContext(
+    sessionId: string,
+    gitContext: GitWorkContext,
+  ): Session | null {
+    const session = this.getSession(sessionId);
+    if (!session) return null;
+
+    const branch = gitContext.branch?.trim() || null;
+    const worktreeLabel = gitContext.worktreeLabel?.trim() || null;
+    const localPath = gitContext.localPath?.trim() || null;
+    if (!branch && !worktreeLabel && !localPath) return session;
+
+    const unchanged =
+      branch === (session.gitBranch ?? null) &&
+      worktreeLabel === (session.gitWorktreeLabel ?? null) &&
+      localPath === (session.gitWorktreePath ?? null);
+    if (unchanged) return session;
+
+    this.#sqlite
+      .prepare(
+        `UPDATE sessions
+           SET git_branch = ?, git_worktree_label = ?, git_worktree_path = ?,
+               updated_at = ?, machine_id = ?
+         WHERE id = ?`,
+      )
+      .run(
+        branch,
+        worktreeLabel,
+        localPath,
+        this.#updatedNow(),
+        this.#machineId,
+        session.id,
+      );
+
+    return this.getSession(session.id) ?? session;
+  }
+
   // Walk the `parent_session_id` descendant tree from `parentId`, stamping
   // `taskId` onto every descendant currently at task_id = NULL — or, when
   // `followedTaskId` is given, also those still on that task (the parent's
