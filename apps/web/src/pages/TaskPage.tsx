@@ -13,7 +13,6 @@ import {
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
-import { ClampedSection } from "../components/ClampedSection.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
