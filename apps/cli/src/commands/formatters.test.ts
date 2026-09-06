@@ -31,6 +31,8 @@ const session: Session = {
   subagentType: null,
   agentId: null,
   createdAt: "2026-06-18T17:01:00.000Z",
+  updatedAt: "2026-06-18T17:01:00.000Z",
+  machineId: "machine-test",
   tokenTotals: {
     inputTokens: 0,
     outputTokens: 0,

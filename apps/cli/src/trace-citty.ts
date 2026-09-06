@@ -56,6 +56,7 @@ import {
 } from "./commands/state-operations.ts";
 import { keyShowOperation } from "./commands/key.ts";
 import { setupOperation } from "./commands/setup-operations.ts";
+import { exportOperation } from "./commands/export-operations.ts";
 
 // Builds the citty root command tree for a single invocation.
 // run() handlers return CommandResult directly; citty types run as `any`
@@ -99,6 +100,13 @@ export function buildTraceCittyRoot(
               process.exitCode = 1;
             });
           return success("");
+        },
+      }),
+
+      export: defineCommand({
+        meta: { description: "Export a task as a zip bundle" },
+        run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+          return exportOperation(args, { env, cwd, stdin });
         },
       }),
 

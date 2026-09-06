@@ -13,12 +13,12 @@ import {
   type TokenTotals,
 } from "@trace/core/browser";
 import { AppHeader } from "../components/AppHeader.tsx";
-import { ArchiveToggleButton } from "../components/ArchiveToggleButton.tsx";
 import { CopyChip } from "../components/CopyChip.tsx";
 import { CopyPromptButton } from "../components/CopyPromptButton.tsx";
 import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { useClipboardCopy } from "../components/useClipboardCopy.ts";
+import { TaskActionsMenu } from "../components/TaskActionsMenu.tsx";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
 import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import {
@@ -102,10 +102,10 @@ function TaskDetailSkeleton() {
       </div>
       {/* Description */}
       <span className="t-skel-bar h-4 w-72 max-w-full mt-3" />
-      {/* Re-enter / archive button row */}
+      {/* Re-enter / more-actions button row */}
       <div className="flex items-center gap-2 mt-5">
         <span className="t-skel-bar h-8 w-28 rounded-control" />
-        <span className="t-skel-bar h-8 w-24 rounded-control ml-auto" />
+        <span className="t-skel-bar h-8 w-8 rounded-control ml-auto" />
       </div>
       {/* "Where you left off" panel */}
       <div className="mt-8 pt-6 border-t border-border flex flex-col gap-2">
@@ -279,7 +279,6 @@ export function TaskTimelineView({
   const archivedAt =
     archivedAtProp !== undefined ? archivedAtProp : timeline.task.archivedAt;
   const isArchived = archivedAt !== null;
-  const onToggleArchive = isArchived ? onUnarchive : onArchive;
 
   const [timelineFilter, setTimelineFilter] = useState<
     "all" | "session" | "doc"
@@ -400,13 +399,13 @@ export function TaskTimelineView({
             title={timeline.task.title}
             slug={timeline.task.slug}
           />
-          {onToggleArchive ? (
-            <ArchiveToggleButton
-              isArchived={isArchived}
-              onToggle={onToggleArchive}
-              className="ml-auto"
-            />
-          ) : null}
+          <TaskActionsMenu
+            taskRef={timeline.task.slug}
+            isArchived={isArchived}
+            onArchive={onArchive}
+            onUnarchive={onUnarchive}
+            className="ml-auto"
+          />
         </div>
       </div>
       <LeftOffPanel

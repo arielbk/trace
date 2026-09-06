@@ -9,6 +9,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { discoverClaudeCodeSubagentSessions, openTraceStore } from "./index.ts";
+import type { Session } from "./types.ts";
+
+function omitUpdatedAt(session: Session): Omit<Session, "updatedAt"> {
+  return Object.fromEntries(
+    Object.entries(session).filter(([key]) => key !== "updatedAt"),
+  ) as Omit<Session, "updatedAt">;
+}
 
 test("discovers Claude Code subagent transcripts under a parent session", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-subagents-"));
@@ -101,7 +108,7 @@ test("discovers Claude Code subagent transcripts under a parent session", () => 
     });
 
     expect(discovered).toHaveLength(1);
-    expect(secondRun).toEqual(discovered);
+    expect(secondRun.map(omitUpdatedAt)).toEqual(discovered.map(omitUpdatedAt));
     expect(store.listSessionsForTask(task.id)).toEqual([
       expect.objectContaining({ id: parent.id, origin: "root" }),
       expect.objectContaining({

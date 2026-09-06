@@ -8,10 +8,40 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
-import { handleTraceApiRequest } from "./api-handler.ts";
+import {
+  handleTraceApiRequest,
+  writeTraceApiResponse,
+  type TraceApiResponse,
+  type TraceApiResponseSink,
+} from "./api-handler.ts";
+import { buildTaskExportZip } from "./export-input.ts";
+import { unzipExportBundle } from "./export-zip.ts";
 import { writeSyncStatusFile } from "./sync-status.ts";
+
+function jsonBody(response: TraceApiResponse | null) {
+  if (response === null || typeof response.body !== "string") {
+    throw new Error("expected JSON string body");
+  }
+  return JSON.parse(response.body);
+}
+
+function unzipTree(bytes: Uint8Array): Record<string, string> {
+  const files = unzipExportBundle(bytes);
+  const tree: Record<string, string> = {};
+  for (const [path, contents] of Object.entries(files)) {
+    tree[path] = new TextDecoder().decode(contents);
+  }
+  return tree;
+}
+
+function zipBytes(response: TraceApiResponse | null): Uint8Array {
+  if (response === null || !(response.body instanceof Uint8Array)) {
+    throw new Error("expected zip body");
+  }
+  return response.body;
+}
 
 function withSeededDatabase(
   seed: (store: ReturnType<typeof openTraceStore>) => void,
@@ -37,7 +67,7 @@ test("GET /api/tasks returns the live task summaries as JSON", () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    const summaries = JSON.parse(response!.body);
+    const summaries = jsonBody(response);
     expect(summaries).toHaveLength(1);
     expect(summaries[0].title).toBe("checkout");
   } finally {
@@ -63,7 +93,7 @@ test("GET /api/tasks/:id/timeline returns the live timeline as JSON", () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    const timeline = JSON.parse(response!.body);
+    const timeline = jsonBody(response);
     expect(timeline.task.id).toBe(timelineId);
     expect(timeline.lastActivityAt).toBe(createdAt);
     expect("state" in timeline).toBe(false);
@@ -105,7 +135,7 @@ test("GET /api/tasks/:id/timeline includes parsed state when state.md exists", (
       `/api/tasks/${timelineId}/timeline`,
     );
     expect(response!.status).toBe(200);
-    const timeline = JSON.parse(response!.body);
+    const timeline = jsonBody(response);
     expect(timeline.state).toEqual({
       summary: "Checkout is resumable",
       decisions: ["Keep parsing in <strong>core</strong>"],
@@ -138,7 +168,7 @@ test("GET /api/tasks/:id/timeline includes the task description when present", (
       "GET",
       `/api/tasks/${withId}/timeline`,
     );
-    const withTimeline = JSON.parse(withResponse!.body);
+    const withTimeline = jsonBody(withResponse);
     expect(withTimeline.task.description).toBe(
       "Rework the checkout into a multi-step wizard",
     );
@@ -149,7 +179,7 @@ test("GET /api/tasks/:id/timeline includes the task description when present", (
       "GET",
       `/api/tasks/${withoutId}/timeline`,
     );
-    const withoutTimeline = JSON.parse(withoutResponse!.body);
+    const withoutTimeline = jsonBody(withoutResponse);
     expect("description" in withoutTimeline.task).toBe(false);
   } finally {
     cleanup();
@@ -185,7 +215,7 @@ test("POST /api/tasks/:ref/archive archives the task and returns it", () => {
     );
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    const task = JSON.parse(response!.body);
+    const task = jsonBody(response);
     expect(task.id).toBe(taskId);
     expect(task.archivedAt).not.toBeNull();
   } finally {
@@ -207,7 +237,7 @@ test("POST /api/tasks/:ref/unarchive clears archivedAt", () => {
       `/api/tasks/${taskId}/unarchive`,
     );
     expect(response!.status).toBe(200);
-    const task = JSON.parse(response!.body);
+    const task = jsonBody(response);
     expect(task.archivedAt).toBeNull();
   } finally {
     cleanup();
@@ -261,7 +291,7 @@ test("POST /api/tasks/:ref/pin pins the task and returns it", () => {
     );
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    const task = JSON.parse(response!.body);
+    const task = jsonBody(response);
     expect(task.id).toBe(taskId);
     expect(task.pinnedAt).not.toBeNull();
   } finally {
@@ -283,7 +313,7 @@ test("POST /api/tasks/:ref/unpin clears pinnedAt", () => {
       `/api/tasks/${taskId}/unpin`,
     );
     expect(response!.status).toBe(200);
-    const task = JSON.parse(response!.body);
+    const task = jsonBody(response);
     expect(task.pinnedAt).toBeNull();
   } finally {
     cleanup();
@@ -331,7 +361,7 @@ test("GET /api/config returns { home } as JSON with status 200", () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    const config = JSON.parse(response!.body);
+    const config = jsonBody(response);
     expect(typeof config.home).toBe("string");
     expect(config.home.length).toBeGreaterThan(0);
   } finally {
@@ -654,7 +684,7 @@ test("GET /api/sync/status reports logged-out (server unconfigured) when no stat
     const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
-    expect(JSON.parse(response!.body)).toEqual({
+    expect(jsonBody(response)).toEqual({
       state: "logged-out",
       serverConfigured: false,
       autoSync: true,
@@ -675,7 +705,7 @@ test("GET /api/sync/status carries the host's server-configured flag on logged-o
       undefined,
       { syncServerConfigured: true },
     );
-    expect(JSON.parse(response!.body)).toEqual({
+    expect(jsonBody(response)).toEqual({
       state: "logged-out",
       serverConfigured: true,
       autoSync: true,
@@ -696,7 +726,7 @@ test("GET /api/sync/status reports the identity and last-sync time when logged i
   try {
     const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
     expect(response!.status).toBe(200);
-    expect(JSON.parse(response!.body)).toEqual({
+    expect(jsonBody(response)).toEqual({
       state: "synced",
       identity: "octocat <octocat@github.com>",
       lastSyncedAt: "2026-07-10T16:00:00.000Z",
@@ -718,7 +748,7 @@ test("GET /api/sync/status reports the last-sync failure when one is recorded", 
   try {
     const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
     expect(response!.status).toBe(200);
-    expect(JSON.parse(response!.body)).toMatchObject({
+    expect(jsonBody(response)).toMatchObject({
       state: "failed",
       identity: "octocat",
       lastError: "server returned 500",
@@ -736,17 +766,15 @@ test("GET /api/sync/status reports the host's effective AutoSync mode", () => {
     // The board reads the mode from the status API rather than reaching into
     // config.json itself.
     expect(
-      JSON.parse(
+      jsonBody(
         handleTraceApiRequest(databasePath, "GET", "/api/sync/status", undefined, {
           autoSyncEnabled: false,
-        })!.body,
+        }),
       ),
     ).toEqual({ state: "never-synced", identity: "octocat", autoSync: false });
     // A host that reports no mode falls back to the effective default, on.
     expect(
-      JSON.parse(
-        handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
-      ),
+      jsonBody(handleTraceApiRequest(databasePath, "GET", "/api/sync/status")),
     ).toMatchObject({ autoSync: true });
   } finally {
     cleanup();
@@ -765,8 +793,8 @@ test("GET /api/sync/status reports a run in flight without leaking credential ma
   });
 
   try {
-    const body: unknown = JSON.parse(
-      handleTraceApiRequest(databasePath, "GET", "/api/sync/status")!.body,
+    const body: unknown = jsonBody(
+      handleTraceApiRequest(databasePath, "GET", "/api/sync/status"),
     );
     expect(body).toMatchObject({
       state: "syncing",
@@ -851,7 +879,7 @@ test("POST /api/sync invokes the host requestSync hook", () => {
       requestSync: () => requests++,
     });
     expect(response!.status).toBe(200);
-    expect(JSON.parse(response!.body)).toEqual({ requested: true });
+    expect(jsonBody(response)).toEqual({ requested: true });
     expect(requests).toBe(1);
   } finally {
     cleanup();
@@ -864,7 +892,7 @@ test("POST /api/sync without a host hook reports requested: false, non-POST is 4
   try {
     const response = handleTraceApiRequest(databasePath, "POST", "/api/sync");
     expect(response!.status).toBe(200);
-    expect(JSON.parse(response!.body)).toEqual({ requested: false });
+    expect(jsonBody(response)).toEqual({ requested: false });
 
     expect(handleTraceApiRequest(databasePath, "GET", "/api/sync")!.status).toBe(405);
   } finally {
@@ -881,4 +909,152 @@ test("non-API requests return null so the host can fall through", () => {
   } finally {
     cleanup();
   }
+});
+
+test("GET /api/tasks/:ref/export returns zip bytes matching the CLI builder tree", () => {
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    taskSlug = store.createTask("checkout").slug;
+  });
+  const docsDir = resolveTaskDocsDir(databasePath, taskSlug);
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "state.md"), "# State\nWhere things stand.\n");
+  writeFileSync(join(docsDir, "notes.md"), "native notes\n");
+
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-19T12:00:00.000Z"));
+  try {
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export`,
+    );
+    expect(response!.status).toBe(200);
+    expect(response!.contentType).toBe("application/zip");
+    expect(response!.contentDisposition).toBe(
+      'attachment; filename="checkout-2026-08-19.zip"',
+    );
+    expect(response!.body).toBeInstanceOf(Uint8Array);
+
+    const store = openTraceStore(databasePath);
+    const expected = buildTaskExportZip(store, databasePath, taskSlug);
+    store.close();
+    expect(expected).not.toBeNull();
+    const tree = unzipTree(zipBytes(response));
+    expect(tree).toEqual(unzipTree(expected!.bytes));
+    expect(Object.keys(tree).sort()).toEqual([
+      "checkout-2026-08-19/README.md",
+      "checkout-2026-08-19/docs/notes.md",
+      "checkout-2026-08-19/docs/state.md",
+      "checkout-2026-08-19/manifest.json",
+    ]);
+    expect(Object.keys(tree).some((path) => path.includes("/transcripts/"))).toBe(
+      false,
+    );
+  } finally {
+    vi.useRealTimers();
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/export includes transcripts only when the query parameter is set", () => {
+  let taskId = "";
+  let taskSlug = "";
+  const { databasePath, cleanup } = withSeededDatabase((store) => {
+    const task = store.createTask("checkout");
+    taskId = task.id;
+    taskSlug = task.slug;
+  });
+  const transcriptPath = join(databasePath, "..", "root.jsonl");
+  writeFileSync(transcriptPath, "verbatim session bytes\n");
+  const store = openTraceStore(databasePath);
+  store.assignSession(
+    store.registerSession({
+      id: "root-1",
+      transcriptPath,
+      tool: "claude",
+    }).id,
+    taskId,
+  );
+  store.close();
+
+  try {
+    const off = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export`,
+    );
+    expect(off!.status).toBe(200);
+    const offTree = unzipTree(zipBytes(off));
+    expect(
+      Object.keys(offTree).some((path) => path.includes("/transcripts/")),
+    ).toBe(false);
+
+    const on = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      `/api/tasks/${taskSlug}/export?transcripts=1`,
+    );
+    expect(on!.status).toBe(200);
+    const onTree = unzipTree(zipBytes(on));
+    const transcriptPath = Object.keys(onTree).find((path) =>
+      path.endsWith("/transcripts/root-1.jsonl"),
+    );
+    expect(transcriptPath).toBeDefined();
+    expect(onTree[transcriptPath!]).toBe("verbatim session bytes\n");
+  } finally {
+    cleanup();
+  }
+});
+
+test("GET /api/tasks/:ref/export returns 404 for unknown tasks and 405 for non-GET", () => {
+  const { databasePath, cleanup } = withSeededDatabase(() => {});
+
+  try {
+    const missing = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/tasks/does-not-exist/export",
+    );
+    expect(missing!.status).toBe(404);
+
+    const post = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/tasks/does-not-exist/export",
+    );
+    expect(post!.status).toBe(405);
+  } finally {
+    cleanup();
+  }
+});
+
+test("writeTraceApiResponse passes Uint8Array through without stringification", () => {
+  const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
+  let ended: string | Uint8Array | undefined;
+  const headers: Record<string, string> = {};
+  const sink: TraceApiResponseSink = {
+    statusCode: 0,
+    setHeader(name, value) {
+      headers[name.toLowerCase()] = value;
+    },
+    end(chunk) {
+      ended = chunk;
+    },
+  };
+
+  writeTraceApiResponse(sink, {
+    status: 200,
+    body: bytes,
+    contentType: "application/zip",
+    contentDisposition: 'attachment; filename="checkout-2026-08-19.zip"',
+  });
+
+  expect(sink.statusCode).toBe(200);
+  expect(headers["content-type"]).toBe("application/zip");
+  expect(headers["content-disposition"]).toBe(
+    'attachment; filename="checkout-2026-08-19.zip"',
+  );
+  expect(ended).toBe(bytes);
+  expect(typeof ended).not.toBe("string");
 });

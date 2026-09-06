@@ -193,6 +193,13 @@
   --dropdown-closing-scale: 0.99;
   --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /* transitions-dev: modal open / close */
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
   /* transitions-dev: icon swap */
   --icon-swap-dur: 250ms;
   --icon-swap-blur: 2px;
@@ -335,6 +342,37 @@
   transform: scale(var(--icon-swap-start-scale));
 }
 
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-open-dur) var(--modal-ease),
+    opacity   var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity   var(--modal-close-dur) var(--modal-ease);
+}
+
+@starting-style {
+  .t-modal.is-open {
+    transform: scale(var(--modal-scale));
+    opacity: 0;
+  }
+}
+
 /* The sync spinner, on the account badge and in its popover. An inline SVG sits
    on the text baseline, so at 10px its box lands on a fractional pixel and the
    rotation reads as a wobble; blocking it out and pinning the origin keeps the
@@ -430,6 +468,7 @@
 @media (prefers-reduced-motion: reduce) {
   .t-text-swap { transition: none !important; }
   .t-dropdown { transition: none !important; }
+  .t-modal { transition: none !important; }
   .t-icon-swap .t-icon { transition: none !important; }
   .t-success-check { animation: none !important; opacity: 1; }
   .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }

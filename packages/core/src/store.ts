@@ -146,6 +146,10 @@ class NodeSqliteTaskStore implements TaskStore {
     this.#backfillProjects();
   }
 
+  getMachineId(): string {
+    return this.#machineId;
+  }
+
   createTask(title: string, projectRoot = "", description?: string): Task {
     const trimmedTitle = title.trim();
     // A title that reads as a slug ("break-stop-and-stale-expiry") becomes a
@@ -599,6 +603,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
       if (!changed) return existing;
 
+      const updatedAt = this.#updatedNow();
       this.#sqlite
         .prepare(
           `
@@ -634,14 +639,19 @@ class NodeSqliteTaskStore implements TaskStore {
           next.tokenTotals.cacheCreationInputTokens,
           next.tokenTotals.cacheReadInputTokens,
           next.tokenTotals.totalTokens,
-          this.#updatedNow(),
+          updatedAt,
           this.#machineId,
           id,
         );
 
-      return this.#refreshSession(next);
+      return this.#refreshSession({
+        ...next,
+        updatedAt,
+        machineId: this.#machineId,
+      });
     }
 
+    const createdAt = new Date().toISOString();
     const totals = tokenTotalsFromUsage(input.tokenTotals);
     const session: Session = {
       id,
@@ -654,7 +664,9 @@ class NodeSqliteTaskStore implements TaskStore {
       origin,
       subagentType,
       agentId,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      updatedAt: createdAt,
+      machineId: this.#machineId,
       tokenTotals: totals,
       contextTokens: null,
     };
@@ -746,14 +758,22 @@ class NodeSqliteTaskStore implements TaskStore {
     // Enrich, don't clobber: a supplied subagent type wins, but omitting one
     // leaves whatever a prior discovery already recorded.
     const subagentType = input.subagentType ?? existing.subagentType;
+    const updatedAt = this.#updatedNow();
     this.#sqlite
       .prepare(
         "UPDATE sessions SET parent_session_id = ?, origin = ?, subagent_type = ?, updated_at = ?, machine_id = ? WHERE id = ?",
       )
-      .run(parentSessionId, origin, subagentType, this.#updatedNow(), this.#machineId, id);
+      .run(parentSessionId, origin, subagentType, updatedAt, this.#machineId, id);
 
     if (parentTaskId === null) {
-      return { ...existing, parentSessionId, origin, subagentType };
+      return {
+        ...existing,
+        parentSessionId,
+        origin,
+        subagentType,
+        updatedAt,
+        machineId: this.#machineId,
+      };
     }
     this.#cascadeTaskIdToDescendants(parentSessionId, parentTaskId);
     return (
@@ -1560,13 +1580,15 @@ class NodeSqliteTaskStore implements TaskStore {
       contextTokens?.used !== session.contextTokens?.used ||
       contextTokens?.limit !== session.contextTokens?.limit;
 
-    if (
+    const didWrite =
       totalsChanged ||
       titleChanged ||
       modelChanged ||
       transcriptPathChanged ||
-      contextTokensChanged
-    ) {
+      contextTokensChanged;
+
+    if (didWrite) {
+      const updatedAt = this.#updatedNow();
       this.#sqlite
         .prepare(
           `
@@ -1598,10 +1620,24 @@ class NodeSqliteTaskStore implements TaskStore {
           totals.totalTokens,
           contextTokens?.used ?? null,
           contextTokens?.limit ?? null,
-          this.#updatedNow(),
+          updatedAt,
           this.#machineId,
           session.id,
         );
+
+      return {
+        session: {
+          ...session,
+          transcriptPath,
+          title,
+          model,
+          tokenTotals: totals,
+          contextTokens,
+          updatedAt,
+          machineId: this.#machineId,
+        },
+        parsed,
+      };
     }
 
     return {
@@ -1987,6 +2023,8 @@ type SessionRow = {
   subagent_type: string | null;
   agent_id: string | null;
   created_at: string;
+  updated_at: string;
+  machine_id: string;
   input_tokens: number;
   output_tokens: number;
   cache_creation_input_tokens: number;
@@ -2048,6 +2086,8 @@ function sessionFromRow(row: SessionRow): Session {
     subagentType: row.subagent_type,
     agentId: row.agent_id,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    machineId: row.machine_id,
     tokenTotals: {
       inputTokens: row.input_tokens,
       outputTokens: row.output_tokens,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { openTraceStore, updateConfigFile } from "@trace/core";
+import { openTraceStore, unzipExportBundle, updateConfigFile } from "@trace/core";
 import {
   createServeRequestListener,
   createSyncHooks,
@@ -110,6 +110,23 @@ test("trace serve responds to GET /api/tasks/:id/timeline with the live timeline
   expect(response.statusCode).toBe(200);
   const timeline = JSON.parse(response.body) as { task: { id: string } };
   expect(timeline.task.id).toBe(taskId);
+});
+
+test("trace serve returns zip bytes from GET /api/tasks/:ref/export", () => {
+  const response = dispatch("GET", `/api/tasks/${taskId}/export`);
+  const date = new Date().toISOString().slice(0, 10);
+
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["content-type"]).toBe("application/zip");
+  expect(response.headers["content-disposition"]).toBe(
+    `attachment; filename="checkout-${date}.zip"`,
+  );
+  expect(response.rawBody).toBeInstanceOf(Uint8Array);
+  expect(typeof response.rawBody).not.toBe("string");
+  const files = unzipExportBundle(response.rawBody as Uint8Array);
+  expect(
+    Object.keys(files).some((path) => path.endsWith("/manifest.json")),
+  ).toBe(true);
 });
 
 test("trace serve serves a known asset from the web assets directory", () => {

@@ -19,8 +19,15 @@ import {
   tailCopilotTranscript,
 } from "./copilot-adapter.ts";
 import { cursorTranscriptAdapter } from "./cursor-adapter.ts";
+import {
+  exportFileTranscript,
+  type ExportTranscriptInput,
+  type ExportedTranscript,
+} from "./export-transcript.ts";
 import type { TranscriptMessage } from "./transcript-messages.ts";
 import type { ContextTokens, SessionTool, TokenTotals } from "./types.ts";
+
+export type { ExportTranscriptInput, ExportedTranscript } from "./export-transcript.ts";
 
 export type ParsedTranscript = {
   id: string;
@@ -65,6 +72,8 @@ export type ReadTranscriptHeadInput = ReadTranscriptTailInput;
  * consult `getTranscriptAdapter(tool)` instead of importing per-tool free
  * functions and re-branching on the tool string. `head` surfaces the first user
  * messages in order (for session naming); `tail` surfaces the last messages.
+ * `exportTranscript` copies a file-backed transcript verbatim, extracts a
+ * Cursor composer into JSON, or reports why it cannot.
  */
 export type TranscriptAdapter = {
   readonly tool: SessionTool;
@@ -77,6 +86,7 @@ export type TranscriptAdapter = {
   readHead(input: ReadTranscriptHeadInput): TranscriptMessage[];
   tail(input: TranscriptTailInput): TranscriptMessage[];
   readTail(input: ReadTranscriptTailInput): TranscriptMessage[];
+  exportTranscript(input: ExportTranscriptInput): ExportedTranscript;
 };
 
 const claudeTranscriptAdapter: TranscriptAdapter = {
@@ -101,6 +111,9 @@ const claudeTranscriptAdapter: TranscriptAdapter = {
   },
   readTail(input) {
     return readFromFile(input, tailClaudeCodeTranscript);
+  },
+  exportTranscript(input) {
+    return exportFileTranscript(input, "claude-jsonl", "claude");
   },
 };
 
@@ -130,6 +143,9 @@ const codexTranscriptAdapter: TranscriptAdapter = {
   readTail(input) {
     return readFromFile(input, tailCodexTranscript);
   },
+  exportTranscript(input) {
+    return exportFileTranscript(input, "codex-jsonl", "codex");
+  },
 };
 
 const copilotTranscriptAdapter: TranscriptAdapter = {
@@ -151,6 +167,9 @@ const copilotTranscriptAdapter: TranscriptAdapter = {
   },
   readTail(input) {
     return readFromFile(input, tailCopilotTranscript);
+  },
+  exportTranscript(input) {
+    return exportFileTranscript(input, "copilot-jsonl", "copilot");
   },
 };
 

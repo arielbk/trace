@@ -8,6 +8,11 @@ import {
 import type { CursorMessage, CursorSession } from "@trace/cursor-reader";
 import { emptyTokenTotals } from "./token-totals.ts";
 import {
+  exportFileTranscript,
+  type ExportTranscriptInput,
+  type ExportedTranscript,
+} from "./export-transcript.ts";
+import {
   composerIdFromLocator,
   cursorLocatorFlavor,
 } from "./transcript-locator.ts";
@@ -177,4 +182,34 @@ export const cursorTranscriptAdapter: TranscriptAdapter = {
   readTail(input: ReadTranscriptTailInput): TranscriptMessage[] {
     return cursorTail(input.transcriptPath, input.limit);
   },
+  exportTranscript(input) {
+    if (cursorLocatorFlavor(input.transcriptPath) === "composer") {
+      return exportComposerTranscript(input);
+    }
+    return exportFileTranscript(input, "cursor-agent-jsonl", "cursor");
+  },
 };
+
+function exportComposerTranscript(
+  input: ExportTranscriptInput,
+): ExportedTranscript {
+  const composerId = composerIdFromLocator(input.transcriptPath);
+  const opts = input.storageRoot
+    ? { storageRoot: input.storageRoot }
+    : undefined;
+  try {
+    const session = readComposer(composerId, opts);
+    const messages = readComposerTail(composerId, session.messageCount, opts);
+    return {
+      status: "included",
+      bytes: new TextEncoder().encode(`${JSON.stringify(messages, null, 2)}\n`),
+      format: "cursor-composer-export",
+      extension: ".json",
+    };
+  } catch {
+    if (input.sessionMachineId !== input.localMachineId) {
+      return { status: "another-machine" };
+    }
+    return { status: "file-gone" };
+  }
+}

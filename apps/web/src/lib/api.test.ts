@@ -6,6 +6,7 @@ import React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TaskTimeline, TokenTotals } from "@trace/core";
 import {
+  downloadTaskExport,
   fetchDocContents,
   fetchTaskTimeline,
   fetchTasks,
@@ -765,5 +766,79 @@ describe("useServerSyncOnFocus", () => {
     expect(() => {
       renderHook(() => useServerSyncOnFocus());
     }).not.toThrow();
+  });
+});
+
+// ─── downloadTaskExport ───────────────────────────────────────────────────────
+
+function stubExportDownload() {
+  const createObjectURL = vi
+    .spyOn(URL, "createObjectURL")
+    .mockReturnValue("blob:task-export");
+  const revokeObjectURL = vi
+    .spyOn(URL, "revokeObjectURL")
+    .mockImplementation(() => {});
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  return { createObjectURL, revokeObjectURL, click };
+}
+
+describe("downloadTaskExport", () => {
+  test("fetches the export route without transcripts by default and downloads the zip", async () => {
+    const zip = new Blob(["PK zip bytes"], { type: "application/zip" });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(zip, {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition":
+            'attachment; filename="checkout-2026-08-19.zip"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { createObjectURL, revokeObjectURL, click } = stubExportDownload();
+
+    await downloadTaskExport("checkout");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/checkout/export");
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    const anchor = click.mock.instances[0] as HTMLAnchorElement;
+    expect(anchor.download).toBe("checkout-2026-08-19.zip");
+    expect(anchor.href).toContain("blob:task-export");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:task-export");
+  });
+
+  test("opts into transcripts with the transcripts query parameter", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(["PK"]), {
+        status: 200,
+        headers: {
+          "content-disposition": 'attachment; filename="checkout-2026-08-19.zip"',
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    stubExportDownload();
+
+    await downloadTaskExport("checkout", { includeTranscripts: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/checkout/export?transcripts=1",
+    );
+  });
+
+  test("throws HttpError on a non-OK response", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("missing", { status: 404 })),
+    );
+
+    const error = await downloadTaskExport("missing").catch((e) => e);
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error).toMatchObject({ status: 404 });
   });
 });

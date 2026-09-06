@@ -3,6 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { discoverCodexSubagentSessions, openTraceStore } from "./index.ts";
+import type { Session } from "./types.ts";
+
+function omitUpdatedAt(session: Session): Omit<Session, "updatedAt"> {
+  return Object.fromEntries(
+    Object.entries(session).filter(([key]) => key !== "updatedAt"),
+  ) as Omit<Session, "updatedAt">;
+}
 
 const PARENT_ID = "019dd000-0000-7000-8000-00000000aaaa";
 const CHILD_ON_DISK = "019dd000-0000-7000-8000-00000000bbbb";
@@ -104,7 +111,7 @@ test("discovers Codex subagent rollouts from the parent's spawn records", () => 
     });
 
     expect(discovered).toHaveLength(2);
-    expect(secondRun).toEqual(discovered);
+    expect(secondRun.map(omitUpdatedAt)).toEqual(discovered.map(omitUpdatedAt));
     expect(store.listSessionsForTask(task.id)).toEqual([
       expect.objectContaining({ id: parent.id, origin: "root" }),
       expect.objectContaining({
