@@ -36,6 +36,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.39.5",
     "tsup": "^8.5.1",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }
