@@ -1,8 +1,10 @@
 import { useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { TriangleAlert } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { ParsedStateMd } from "@trace/core";
 import {
+  costFromSessions,
   freshTokenTotal,
   resumeCommand,
   type LastWorkedOn,
@@ -33,6 +35,7 @@ import {
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  formatUsd,
   resolveDocDisplayTitle,
   truncatePath,
 } from "../format.ts";
@@ -115,7 +118,7 @@ function TaskDetailSkeleton() {
       </div>
       {/* Token summary */}
       <div className="mt-8 pt-6 flex gap-11">
-        {Array.from({ length: 3 }, (_, i) => (
+        {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <span className="t-skel-bar h-3 w-12" />
             <span className="t-skel-bar h-7 w-16" />
@@ -417,7 +420,12 @@ export function TaskTimelineView({
         now={now}
         onDocLinkClick={navigateStateDocLink}
       />
-      <TokenSummary totals={timeline.tokenTotals} />
+      <TokenSummary
+        totals={timeline.tokenTotals}
+        sessions={timeline.items.flatMap((item) =>
+          item.type === "session" ? [item.session] : [],
+        )}
+      />
       <section className="mt-8">
         <div className="flex items-baseline gap-5 pb-1.5">
           <h2 className="m-0 text-row-title font-bold tracking-tight">
@@ -635,20 +643,7 @@ function SessionRootRow({
               className="font-mono"
               title={formatTokenBreakdown(item.session.tokenTotals)}
             >
-              {hasCapturedTokens(item.session.tokenTotals) ? (
-                <>
-                  {formatTokensCompact(item.session.tokenTotals.inputTokens)} in
-                  {" · "}
-                  {formatTokensCompact(
-                    item.session.tokenTotals.outputTokens,
-                  )}{" "}
-                  out
-                </>
-              ) : item.session.contextTokens ? (
-                formatContextUsage(item.session.contextTokens)
-              ) : (
-                "tokens unavailable"
-              )}
+              <SessionTokenAndCost session={item.session} />
             </span>
           </p>
         </div>
@@ -766,12 +761,8 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
     item.sessionName ??
     sessionChildTitle(session) ??
     truncatePath(session.transcriptPath);
-  const tokenLine = hasCapturedTokens(session.tokenTotals)
-    ? `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`
-    : session.contextTokens
-      ? formatContextUsage(session.contextTokens)
-      : "tokens unavailable";
-  const meta = [
+  const tokenLine = sessionTokenLine(session);
+  const metaPrefix = [
     session.model ? formatModelName(session.model) : null,
     tokenLine,
   ]
@@ -804,7 +795,8 @@ function SubagentChildRow({ item }: { item: SessionTimelineItem }) {
           className="mt-1 font-mono text-[10.5px] text-text-muted tabular-nums wrap-anywhere"
           title={formatTokenBreakdown(session.tokenTotals)}
         >
-          {meta}
+          {metaPrefix}
+          <SessionCostSuffix session={session} />
         </div>
       </div>
     </li>
@@ -1350,7 +1342,65 @@ function hasCapturedTokens(totals: TokenTotals): boolean {
   );
 }
 
-function TokenSummary({ totals }: { totals: TokenTotals }) {
+function sessionTokenLine(session: SessionTimelineItem["session"]): string {
+  if (hasCapturedTokens(session.tokenTotals)) {
+    return `${formatTokensCompact(session.tokenTotals.inputTokens)} in · ${formatTokensCompact(session.tokenTotals.outputTokens)} out`;
+  }
+  if (session.contextTokens) {
+    return formatContextUsage(session.contextTokens);
+  }
+  return "tokens unavailable";
+}
+
+function sessionCostUsd(
+  session: Pick<
+    SessionTimelineItem["session"],
+    "tool" | "model" | "tokenTotals"
+  >,
+): number | null {
+  return costFromSessions([session]).totalUsd;
+}
+
+function SessionTokenAndCost({
+  session,
+}: {
+  session: SessionTimelineItem["session"];
+}) {
+  return (
+    <>
+      {sessionTokenLine(session)}
+      <SessionCostSuffix session={session} />
+    </>
+  );
+}
+
+function SessionCostSuffix({
+  session,
+}: {
+  session: Pick<
+    SessionTimelineItem["session"],
+    "tool" | "model" | "tokenTotals"
+  >;
+}) {
+  const totalUsd = sessionCostUsd(session);
+  if (totalUsd === null) return null;
+  return (
+    <>
+      {" · "}
+      <span data-testid="session-cost">{formatUsd(totalUsd)}</span>
+    </>
+  );
+}
+
+function TokenSummary({
+  totals,
+  sessions,
+}: {
+  totals: TokenTotals;
+  sessions: ReadonlyArray<
+    Pick<SessionTimelineItem["session"], "tool" | "model" | "tokenTotals">
+  >;
+}) {
   // "Total" is fresh spend — input + output — matching the figure on the main
   // task list so the number is consistent across both views. Cache reads are
   // cheap context replay, so they ride below as a separate, labeled stat.
@@ -1359,6 +1409,14 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
     { label: "Input", value: totals.inputTokens },
     { label: "Output", value: totals.outputTokens },
   ];
+  const rollup = costFromSessions(sessions);
+  const sessionCount = rollup.pricedSessions + rollup.unpricedSessions;
+  const costDisplay =
+    rollup.totalUsd === null ? "—" : formatUsd(rollup.totalUsd);
+  const partialLabel =
+    rollup.unpricedSessions > 0
+      ? `${rollup.pricedSessions} of ${sessionCount} sessions priced`
+      : null;
   return (
     <div className="mt-8 pt-6 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
       <dl
@@ -1378,6 +1436,30 @@ function TokenSummary({ totals }: { totals: TokenTotals }) {
             </dd>
           </div>
         ))}
+        <div className="min-w-16">
+          <dt className="flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-text-muted">
+            Cost
+            {partialLabel ? (
+              <span
+                data-testid="task-cost-partial"
+                className="inline-flex cursor-help text-text-muted"
+                title={partialLabel}
+                aria-label={partialLabel}
+              >
+                <TriangleAlert size={11} strokeWidth={2.4} aria-hidden="true" />
+              </span>
+            ) : null}
+          </dt>
+          <dd
+            data-testid="task-cost"
+            className="m-0 mt-1.5 font-mono text-2xl font-bold tabular-nums"
+            title={
+              rollup.totalUsd === null ? undefined : String(rollup.totalUsd)
+            }
+          >
+            {costDisplay}
+          </dd>
+        </div>
       </dl>
       <p
         data-testid="token-summary-cache"

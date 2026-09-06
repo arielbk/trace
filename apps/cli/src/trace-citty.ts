@@ -33,6 +33,7 @@ import {
   sessionAssignOperation,
   sessionDiscoverSubagentsOperation,
   sessionListOperation,
+  sessionRefreshTokensOperation,
   sessionRegisterOperation,
   sessionScanOperation,
   sessionSetParentOperation,
@@ -311,6 +312,16 @@ export function buildTraceCittyRoot(
             },
             run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
               return sessionDiscoverSubagentsOperation(args, { env, cwd, stdin });
+            },
+          }),
+
+          "refresh-tokens": defineCommand({
+            meta: {
+              description:
+                "Re-parse stored sessions and overwrite stale token totals",
+            },
+            run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
+              return sessionRefreshTokensOperation(args, { env, cwd, stdin });
             },
           }),
         },

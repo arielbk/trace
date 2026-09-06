@@ -7,10 +7,29 @@ import {
   formatRelativeTime,
   formatTokenBreakdown,
   formatTokensCompact,
+  formatUsd,
   resolveDocDisplayTitle,
   truncateId,
   truncatePath,
 } from "./format.ts";
+
+describe("formatUsd", () => {
+  test("renders dollars and cents", () => {
+    expect(formatUsd(1.5)).toBe("$1.50");
+  });
+
+  test("groups thousands", () => {
+    expect(formatUsd(1234.56)).toBe("$1,234.56");
+  });
+
+  test("renders a true zero as $0.00", () => {
+    expect(formatUsd(0)).toBe("$0.00");
+  });
+
+  test("keeps sub-cent precision so a tiny amount does not round to $0.00", () => {
+    expect(formatUsd(0.000175)).toBe("$0.0002");
+  });
+});
 
 describe("formatContextUsage", () => {
   test("renders used / limit with a rounded percent", () => {

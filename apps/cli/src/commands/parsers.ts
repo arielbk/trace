@@ -370,6 +370,39 @@ export function parseSessionTailLimit(args: string[]): number | undefined {
   return parseNonNegativeInteger(args[1] ?? "", "--limit");
 }
 
+export function sessionRefreshTokensUsage(): string {
+  return `Usage: trace session refresh-tokens [--tool <${SESSION_TOOL_CHOICES}>] [--dry-run]`;
+}
+
+export function parseSessionRefreshTokensArgs(args: string[]): {
+  tool?: SessionTool;
+  dryRun?: boolean;
+} {
+  let tool: string | undefined;
+  let dryRun = false;
+
+  let index = 0;
+  while (index < args.length) {
+    const flag = args[index];
+    if (flag === "--dry-run") {
+      dryRun = true;
+      index += 1;
+      continue;
+    }
+    const value = args[index + 1];
+    if (!flag || !value) throw new Error(sessionRefreshTokensUsage());
+    if (flag === "--tool") tool = value;
+    else throw new Error(`Unknown option: ${flag}`);
+    index += 2;
+  }
+
+  if (tool === undefined) {
+    return dryRun ? { dryRun: true } : {};
+  }
+  if (!isSessionTool(tool)) throw new Error(INVALID_SESSION_TOOL);
+  return { tool, ...(dryRun ? { dryRun: true } : {}) };
+}
+
 export function codexScanUsage(): string {
   return "Codex scan accepts --codex-home <path>";
 }

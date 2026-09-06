@@ -11,6 +11,7 @@ import {
   parseClaudeScanArgs,
   parseCodexScanArgs,
   parseSessionActiveTaskArgs,
+  parseSessionRefreshTokensArgs,
   parseSessionRegisterArgs,
   parseSessionSetParentArgs,
   parseSessionTailLimit,
@@ -233,4 +234,43 @@ export function sessionScanOperation(
   }
 
   return failure("Usage: trace session scan --codex | --claude");
+}
+
+export function sessionRefreshTokensOperation(
+  rawArgs: string[],
+  ctx: CommandContext,
+): CommandResult {
+  const parsedAttempt = attempt(() => parseSessionRefreshTokensArgs(rawArgs));
+  if (!parsedAttempt.ok) return parsedAttempt.result;
+  const parsed = parsedAttempt.value;
+
+  return withStore(ctx.env, (store) => {
+    const result = store.refreshSessionTokens({
+      ...(parsed.tool ? { tool: parsed.tool } : {}),
+      ...(parsed.dryRun ? { dryRun: true } : {}),
+    });
+    const counts =
+      `healed: ${result.healed}\n` +
+      `unchanged: ${result.unchanged}\n` +
+      `unhealable: ${result.unhealable}\n`;
+    if (!parsed.dryRun) return success(counts);
+
+    const diffs = result.changes
+      .map((change) => {
+        const beforeModel = change.before.model ?? "-";
+        const afterModel = change.after.model ?? "-";
+        return [
+          `${change.id}\t${change.tool}`,
+          `  input: ${change.before.tokenTotals.inputTokens} → ${change.after.tokenTotals.inputTokens}`,
+          `  output: ${change.before.tokenTotals.outputTokens} → ${change.after.tokenTotals.outputTokens}`,
+          `  cache-creation: ${change.before.tokenTotals.cacheCreationInputTokens} → ${change.after.tokenTotals.cacheCreationInputTokens}`,
+          `  cache-read: ${change.before.tokenTotals.cacheReadInputTokens} → ${change.after.tokenTotals.cacheReadInputTokens}`,
+          `  total: ${change.before.tokenTotals.totalTokens} → ${change.after.tokenTotals.totalTokens}`,
+          `  model: ${beforeModel} → ${afterModel}`,
+        ].join("\n");
+      })
+      .join("\n");
+    const body = diffs.length > 0 ? `${diffs}\n${counts}` : counts;
+    return success(`${body}dry-run: no changes written\n`);
+  });
 }

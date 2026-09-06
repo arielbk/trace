@@ -59,6 +59,7 @@ import type {
   Session,
   SessionOrigin,
   SetSessionParentInput,
+  SessionTokenRefreshCounts,
   SessionTool,
   Task,
   TaskDoc,
@@ -956,6 +957,64 @@ class NodeSqliteTaskStore implements TaskStore {
     );
   }
 
+  refreshSessionTokens(options?: {
+    tool?: SessionTool;
+    dryRun?: boolean;
+  }): SessionTokenRefreshCounts {
+    const persist = options?.dryRun !== true;
+    const rows = options?.tool
+      ? this.#sqlite
+          .prepare(
+            `
+              SELECT *
+              FROM sessions
+              WHERE tool = ?
+              ORDER BY created_at ASC, id ASC
+            `,
+          )
+          .all(options.tool)
+      : this.#sqlite
+          .prepare(
+            `
+              SELECT *
+              FROM sessions
+              ORDER BY created_at ASC, id ASC
+            `,
+          )
+          .all();
+
+    let healed = 0;
+    let unchanged = 0;
+    let unhealable = 0;
+    const changes: SessionTokenRefreshCounts["changes"] = [];
+
+    for (const row of rows) {
+      const original = sessionFromRow(row as SessionRow);
+      const { parsed } = this.#refreshSessionWithParse(original, persist);
+      if (parsed === null) {
+        unhealable += 1;
+        continue;
+      }
+
+      const totals = parsed.tokenTotals;
+      const stored = original.tokenTotals;
+      const model = parsed.model ?? original.model;
+      if (tokenTotalsDiffer(totals, stored) || model !== original.model) {
+        healed += 1;
+        changes.push({
+          id: original.id,
+          tool: original.tool,
+          before: { tokenTotals: stored, model: original.model },
+          after: { tokenTotals: totals, model },
+        });
+      } else {
+        unchanged += 1;
+      }
+    }
+
+    return { healed, unchanged, unhealable, changes };
+  }
+
   #taskSessionRows(taskId: string): Session[] {
     return this.#sqlite
       .prepare(
@@ -1525,7 +1584,10 @@ class NodeSqliteTaskStore implements TaskStore {
   // discovery can consume tool-specific fields (Codex spawn records) without
   // parsing the transcript a second time. `parsed` is null when the transcript
   // is missing or unparseable — the stored session values survive untouched.
-  #refreshSessionWithParse(session: Session): {
+  #refreshSessionWithParse(
+    session: Session,
+    persist = true,
+  ): {
     session: Session;
     parsed: ParsedTranscript | null;
   } {
@@ -1548,12 +1610,7 @@ class NodeSqliteTaskStore implements TaskStore {
 
     const totals = fresh.tokenTotals;
     const stored = session.tokenTotals;
-    const totalsChanged =
-      totals.inputTokens !== stored.inputTokens ||
-      totals.outputTokens !== stored.outputTokens ||
-      totals.cacheCreationInputTokens !== stored.cacheCreationInputTokens ||
-      totals.cacheReadInputTokens !== stored.cacheReadInputTokens ||
-      totals.totalTokens !== stored.totalTokens;
+    const totalsChanged = tokenTotalsDiffer(totals, stored);
 
     // Only adopt a freshly parsed title; a transcript that no longer reports a
     // title (e.g. a truncated tail) must not clobber a previously stored one.
@@ -1587,7 +1644,7 @@ class NodeSqliteTaskStore implements TaskStore {
       transcriptPathChanged ||
       contextTokensChanged;
 
-    if (didWrite) {
+    if (didWrite && persist) {
       const updatedAt = this.#updatedNow();
       this.#sqlite
         .prepare(
@@ -2111,6 +2168,16 @@ function sessionFromRow(row: SessionRow): Session {
 
 function isSessionOrigin(value: string): value is SessionOrigin {
   return value === "root" || value === "subagent" || value === "spawned";
+}
+
+function tokenTotalsDiffer(left: TokenTotals, right: TokenTotals): boolean {
+  return (
+    left.inputTokens !== right.inputTokens ||
+    left.outputTokens !== right.outputTokens ||
+    left.cacheCreationInputTokens !== right.cacheCreationInputTokens ||
+    left.cacheReadInputTokens !== right.cacheReadInputTokens ||
+    left.totalTokens !== right.totalTokens
+  );
 }
 
 function taskDocFromRow(row: TaskDocRow): TaskDoc {

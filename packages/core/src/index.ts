@@ -86,7 +86,9 @@ export type {
   ExportManifest,
   ExportManifestDoc,
   ExportManifestSession,
+  ExportManifestSessionCost,
   ExportManifestTokens,
+  ExportManifestTotalsCost,
   ExportSessionInput,
 } from "./export-bundle.ts";
 export { unzipExportBundle, zipExportBundle } from "./export-zip.ts";
@@ -147,6 +149,8 @@ export type {
   ReEntryManifestSession,
   Session,
   SessionOrigin,
+  SessionTokenRefreshChange,
+  SessionTokenRefreshCounts,
   SessionTool,
   SetSessionParentInput,
   StateAuthor,
@@ -208,6 +212,13 @@ export {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";
+export {
+  costFromSessions,
+  costFromTokenTotals,
+  pricedAt,
+  resolveRate,
+} from "./pricing.ts";
+export type { ModelRate, SessionCostRollup } from "./pricing.ts";
 export {
   deriveSessionName,
   readSessionName,

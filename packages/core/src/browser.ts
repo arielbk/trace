@@ -14,6 +14,13 @@ export {
   tokenTotalsFromUsage,
 } from "./token-totals.ts";
 export type { RawTokenUsage } from "./token-totals.ts";
+export {
+  costFromSessions,
+  costFromTokenTotals,
+  pricedAt,
+  resolveRate,
+} from "./pricing.ts";
+export type { ModelRate, SessionCostRollup } from "./pricing.ts";
 export type {
   ActiveTask,
   RegisterSessionInput,
@@ -23,6 +30,8 @@ export type {
   GitWorkContext,
   LastWorkedOn,
   Session,
+  SessionTokenRefreshChange,
+  SessionTokenRefreshCounts,
   SessionTool,
   StateAuthor,
   Task,

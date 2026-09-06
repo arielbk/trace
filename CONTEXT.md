@@ -31,6 +31,12 @@ docs, and architecture reviews so names stay consistent.
   just re-entered the task — never gets credited with words it did not write.
 - **Token Totals** — the value module owning token arithmetic (`empty`, `add`,
   `fromUsage`); consumed by adapters and the store instead of per-call copies.
+- **Pricing** — the value module owning list-price-equivalent cost
+  (`resolveRate`, `costFromTokenTotals`, `costFromSessions`); a pinned rate
+  table turns token totals into dollars. Cost is derived on read and never
+  stored. A session with no known rate is unpriced (`null`), never `$0.00`;
+  a rollup over a collection reports the amount alongside priced/unpriced
+  counts so callers can mark a total as partial.
 
 ## Session lineage & attribution
 

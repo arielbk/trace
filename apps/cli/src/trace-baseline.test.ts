@@ -761,6 +761,60 @@ test("session scan --claude with empty projects root exits 0 and outputs nothing
   }
 });
 
+// ─── session refresh-tokens ───────────────────────────────────────────────────
+
+test("session refresh-tokens on an empty store prints zero counts", () => {
+  const home = tmp("session-refresh-empty");
+  const sandbox = tmp("sandbox");
+  try {
+    const r = runTraceCli(["session", "refresh-tokens"], makeEnv(home), sandbox);
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toBe("healed: 0\nunchanged: 0\nunhealable: 0\n");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("session refresh-tokens --dry-run on an empty store writes nothing", () => {
+  const home = tmp("session-refresh-dry-run");
+  const sandbox = tmp("sandbox");
+  try {
+    const r = runTraceCli(
+      ["session", "refresh-tokens", "--dry-run"],
+      makeEnv(home),
+      sandbox,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout).toBe(
+      "healed: 0\nunchanged: 0\nunhealable: 0\ndry-run: no changes written\n",
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
+test("session refresh-tokens with an invalid --tool exits 2", () => {
+  const home = tmp("session-refresh-bad-tool");
+  const sandbox = tmp("sandbox");
+  try {
+    const r = runTraceCli(
+      ["session", "refresh-tokens", "--tool", "gemini"],
+      makeEnv(home),
+      sandbox,
+    );
+    expect(r.exitCode).toBe(2);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("Session tool must be");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+});
+
 // ─── session (no action) ──────────────────────────────────────────────────────
 
 test("session with no action exits non-zero with usage on stderr", () => {

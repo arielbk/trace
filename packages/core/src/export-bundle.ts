@@ -4,6 +4,7 @@ import type {
   TranscriptFormat,
 } from "./export-transcript.ts";
 import { addTokenTotals, emptyTokenTotals, freshTokenTotal } from "./token-totals.ts";
+import { costFromSessions, pricedAt } from "./pricing.ts";
 import type { SessionOrigin, SessionTool, TokenTotals } from "./types.ts";
 
 export type BundleFile = {
@@ -68,6 +69,10 @@ export type ExportManifestDoc = {
   sourcePath: string;
 };
 
+export type ExportManifestSessionCost = {
+  usd: number;
+};
+
 export type ExportManifestSession = {
   id: string;
   tool: SessionTool;
@@ -80,6 +85,7 @@ export type ExportManifestSession = {
   updatedAt: string;
   machineId: string;
   tokens: ExportManifestTokens;
+  cost?: ExportManifestSessionCost;
   transcript?: {
     status: TranscriptExportStatus;
     format?: TranscriptFormat;
@@ -87,10 +93,17 @@ export type ExportManifestSession = {
   };
 };
 
+export type ExportManifestTotalsCost = {
+  usd: number;
+  pricedSessions: number;
+  unpricedSessions: number;
+};
+
 export type ExportManifest = {
   formatVersion: 1;
   generator?: string;
   exportedAt: string;
+  pricedAt: string;
   task: ExportBundleInput["task"];
   project: {
     slug: string;
@@ -108,6 +121,7 @@ export type ExportManifest = {
     lastSessionAt?: string;
     tools: SessionTool[];
     models: string[];
+    cost?: ExportManifestTotalsCost;
   };
 };
 
@@ -178,10 +192,13 @@ function buildManifest(
   const project: ExportManifest["project"] = { slug: input.project.slug };
   if (input.project.remote) project.remote = input.project.remote;
 
+  const rollup = costFromSessions(input.sessions.map(sessionForCost));
+
   const manifest: ExportManifest = {
     formatVersion: 1,
     ...(input.generator ? { generator: input.generator } : {}),
     exportedAt: input.exportedAt,
+    pricedAt,
     task: input.task.description
       ? input.task
       : {
@@ -218,6 +235,8 @@ function buildManifest(
       if (session.transcript) {
         row.transcript = manifestTranscript(session.id, session.transcript);
       }
+      const usd = costFromSessions([sessionForCost(session)]).totalUsd;
+      if (usd != null) row.cost = { usd };
       return row;
     }),
     totals: {
@@ -230,6 +249,15 @@ function buildManifest(
       ...(timestamps.at(-1) ? { lastSessionAt: timestamps.at(-1) } : {}),
       tools,
       models,
+      ...(rollup.totalUsd != null
+        ? {
+            cost: {
+              usd: rollup.totalUsd,
+              pricedSessions: rollup.pricedSessions,
+              unpricedSessions: rollup.unpricedSessions,
+            },
+          }
+        : {}),
     },
   };
 
@@ -250,7 +278,11 @@ function renderReadme(manifest: ExportManifest): string {
   if (manifest.generator) {
     lines.push(`- Generator: ${manifest.generator}`);
   }
-  lines.push(`- Format version: ${manifest.formatVersion}`, "");
+  lines.push(
+    `- Format version: ${manifest.formatVersion}`,
+    `- Priced at: ${manifest.pricedAt}`,
+    "",
+  );
 
   const { totals } = manifest;
   lines.push(
@@ -274,6 +306,11 @@ function renderReadme(manifest: ExportManifest): string {
   if (totals.models.length > 0) {
     lines.push(`- Models: ${totals.models.join(", ")}`);
   }
+  if (totals.cost) {
+    lines.push(
+      `- Cost: ${totals.cost.usd} (${totals.cost.pricedSessions} priced, ${totals.cost.unpricedSessions} unpriced)`,
+    );
+  }
   lines.push("");
 
   if (manifest.sessions.length > 0) {
@@ -281,8 +318,9 @@ function renderReadme(manifest: ExportManifest): string {
     for (const session of manifest.sessions) {
       const model = session.model ? ` ${session.model}` : "";
       const title = session.title ? ` — ${session.title}` : "";
+      const cost = session.cost ? ` — ${session.cost.usd}` : "";
       lines.push(
-        `- ${session.id} — ${session.tool}${model} (${session.origin})${title}`,
+        `- ${session.id} — ${session.tool}${model} (${session.origin})${title}${cost}`,
       );
     }
     lines.push("");
@@ -363,6 +401,16 @@ function manifestTranscript(
     status: "included",
     format: transcript.format,
     path: transcriptBundlePath(sessionId, transcript.extension),
+  };
+}
+
+function sessionForCost(
+  session: ExportSessionInput,
+): Pick<ExportSessionInput, "tool" | "model"> & { tokenTotals: TokenTotals } {
+  return {
+    tool: session.tool,
+    model: session.model,
+    tokenTotals: session.tokens,
   };
 }
 

@@ -70,7 +70,9 @@ silent hole.
 ## `manifest.json`
 
 UTF-8 JSON, pretty-printed with a trailing newline. All timestamps are
-ISO-8601 strings. Token counts are numbers. No duration, cost, currency, or
+ISO-8601 strings. Token counts are numbers. Cost figures are optional
+list-price-equivalent USD amounts derived from a pinned rate table; they are
+never stored as a source of truth. No duration, currency-conversion, or
 author field is part of this version.
 
 ### Top level
@@ -80,11 +82,12 @@ author field is part of this version.
 | `formatVersion` | yes | integer | `1` for this specification |
 | `generator` | no | string | Trace version that produced the bundle. Absent when the producer is not Trace |
 | `exportedAt` | yes | string | ISO-8601 timestamp of the export |
+| `pricedAt` | no | string | Identifier of the rate table used to derive cost. Present on Trace-produced bundles so two bundles can be compared on basis |
 | `task` | yes | object | The exported task |
 | `project` | yes | object | The project the task is keyed to |
 | `docs` | yes | array | Bundle documents; empty array when there are none |
 | `sessions` | yes | array | Every session on the task, including subagents and spawned children |
-| `totals` | yes | object | Rolled-up counts, tokens, and timestamps |
+| `totals` | yes | object | Rolled-up counts, tokens, timestamps, and optional cost |
 
 ### `task`
 
@@ -137,6 +140,7 @@ across that fan-out.
 | `updatedAt` | yes | string | ISO-8601 |
 | `machineId` | yes | string | Machine that recorded the session |
 | `tokens` | yes | object | See [Tokens](#tokens) |
+| `cost` | no | object | List-price-equivalent USD for this session. Absent when the session is unpriced (unknown or missing model). See [Cost](#cost) |
 | `transcript` | no | object | Present only when transcripts were requested. See [Transcript object](#transcript-object) |
 
 ### Transcript object
@@ -197,7 +201,29 @@ Used on each session and on `totals.tokens`.
 | `cacheRead` | yes | number | |
 | `total` | yes | number | Recorded total for that row |
 
-No pricing or currency figures.
+Token objects do not carry a price. Cost lives on the sibling `cost` object
+(session row) or on `totals.cost`.
+
+### Cost
+
+Used on each session (`sessions[].cost`) and on `totals.cost`. Both are
+optional. A missing `cost` object means "unpriced", never "free" — do not
+emit `{ "usd": 0 }` to stand in for an unknown model.
+
+Session `cost`:
+
+| Key | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `usd` | yes | number | List-price-equivalent USD for that session. All four token buckets are priced |
+
+`totals.cost` is present when at least one session is priced, and absent when
+none are (including a bundle with no sessions):
+
+| Key | Required | Type | Notes |
+| --- | --- | --- | --- |
+| `usd` | yes | number | Sum of priced sessions. Never null; omit the whole object instead |
+| `pricedSessions` | yes | number | Sessions that resolved to a rate |
+| `unpricedSessions` | yes | number | Sessions that did not. A non-zero value means the total is partial |
 
 ### `totals`
 
@@ -212,6 +238,7 @@ No pricing or currency figures.
 | `lastSessionAt` | no | string | Latest session `createdAt`. Omitted when there are no sessions |
 | `tools` | yes | string[] | Distinct `tool` values, in first-seen order |
 | `models` | yes | string[] | Distinct non-empty `model` values, in first-seen order |
+| `cost` | no | object | Present when at least one session is priced. See [Cost](#cost) |
 
 There is no duration field. Consumers that want a span compute it from
 `firstSessionAt` and `lastSessionAt`.
@@ -230,8 +257,9 @@ GET /api/tasks/<ref>/export?transcripts=1
 ```
 
 A non-Trace producer is valid when the tree, `manifest.json` keys and types,
-and transcript rules above are satisfied. Omit `generator`. Do not invent
-duration, cost, or author fields.
+and transcript rules above are satisfied. Omit `generator`. Cost and
+`pricedAt` are optional; omit them when not pricing. Do not invent duration
+or author fields.
 
 `trace import` is not part of this version. The manifest carries real ids and
 full session rows so a future importer is not blocked by missing identity.

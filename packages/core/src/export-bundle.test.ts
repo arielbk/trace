@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { buildExportBundle, type ExportBundleInput } from "./export-bundle.ts";
+import { costFromTokenTotals, pricedAt, resolveRate } from "./pricing.ts";
 
 const exportedAt = "2026-08-19T16:00:00.000Z";
 const folder = "checkout-2026-08-19";
@@ -91,6 +92,7 @@ test("manifest.json carries formatVersion 1 and the documented top-level blocks"
   >;
 
   expect(manifest.formatVersion).toBe(1);
+  expect(manifest.pricedAt).toBe(pricedAt);
   expect(manifest.generator).toBe("0.19.0");
   expect(manifest.exportedAt).toBe(exportedAt);
   expect(manifest.task).toEqual({
@@ -372,6 +374,7 @@ test("every fact README.md states also appears in manifest.json", () => {
     "External notes",
     "2026-08-09T00:00:00.000Z",
     "2026-08-12T00:00:00.000Z",
+    pricedAt,
   ];
   for (const fact of facts) {
     expect(readme, `README missing fact: ${fact}`).toContain(fact);
@@ -469,6 +472,7 @@ test("emitted manifest key set matches the checked-in schema fixture", () => {
         sessions: [
           session({
             id: "root-1",
+            model: "claude-haiku-4-5",
             title: "Wire the cart",
             parentSessionId: null,
             subagentType: null,
@@ -507,6 +511,78 @@ function manifestKeySet(value: unknown): unknown {
   }
   return true;
 }
+
+test("priced sessions carry a cost object; unpriced sessions omit it", () => {
+  const priced = session({
+    id: "priced-1",
+    model: "claude-haiku-4-5",
+  });
+  const unpriced = session({
+    id: "unpriced-1",
+    model: "not-a-real-model",
+  });
+  const files = fileMap(
+    buildExportBundle(input({ sessions: [priced, unpriced] })),
+  );
+  const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!) as {
+    formatVersion: number;
+    sessions: Array<{ id: string; cost?: { usd: number } }>;
+  };
+
+  expect(manifest.formatVersion).toBe(1);
+  expect(manifest.sessions[0]?.cost).toEqual({
+    usd: costFromTokenTotals(
+      priced.tokens,
+      resolveRate(priced.tool, priced.model)!,
+    ),
+  });
+  expect(manifest.sessions[1]?.cost).toBeUndefined();
+  expect(Object.keys(manifest.sessions[1] ?? {})).not.toContain("cost");
+});
+
+test("totals.cost carries amount and coverage counts, and is absent when nothing is priced", () => {
+  const priced = session({
+    id: "priced-1",
+    model: "claude-haiku-4-5",
+  });
+  const unpriced = session({
+    id: "unpriced-1",
+    model: "not-a-real-model",
+  });
+
+  const mixed = JSON.parse(
+    fileMap(buildExportBundle(input({ sessions: [priced, unpriced] }))).get(
+      `${folder}/manifest.json`,
+    )!,
+  ) as {
+    formatVersion: number;
+    totals: {
+      cost?: { usd: number; pricedSessions: number; unpricedSessions: number };
+    };
+  };
+  expect(mixed.formatVersion).toBe(1);
+  expect(mixed.totals.cost).toEqual({
+    usd: costFromTokenTotals(
+      priced.tokens,
+      resolveRate(priced.tool, priced.model)!,
+    ),
+    pricedSessions: 1,
+    unpricedSessions: 1,
+  });
+
+  const none = JSON.parse(
+    fileMap(buildExportBundle(input({ sessions: [unpriced] }))).get(
+      `${folder}/manifest.json`,
+    )!,
+  ) as { totals: { cost?: unknown } };
+  expect(none.totals.cost).toBeUndefined();
+  expect(Object.keys(none.totals)).not.toContain("cost");
+
+  const empty = JSON.parse(
+    fileMap(buildExportBundle(input())).get(`${folder}/manifest.json`)!,
+  ) as { totals: { cost?: unknown } };
+  expect(empty.totals.cost).toBeUndefined();
+});
 
  test("transcript session IDs cannot escape the archive transcripts directory", () => {
   const id = "../../outside\\file";
