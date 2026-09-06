@@ -82,7 +82,7 @@ export interface SyncDocumentStore {
     manifests: SyncDocManifest[],
     wrappedKeys: SyncWrappedKey[],
     download: (hash: string) => Promise<Uint8Array | null>,
-  ): Promise<{ pulled: number; downloaded: number }>;
+  ): Promise<{ pulled: number; downloaded: number; deferred?: number }>;
 }
 
 /**
@@ -176,7 +176,7 @@ export async function synchronize(
     remote.wrappedKeys,
     (hash) => transport.downloadBlob!(hash),
   );
-  if (remote.cursor !== undefined) {
+  if (remote.cursor !== undefined && !pulledDocuments.deferred) {
     store.setSyncCursor("documents", remote.cursor);
   }
   return {

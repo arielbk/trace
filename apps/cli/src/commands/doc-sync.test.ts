@@ -523,3 +523,42 @@ test("converged duplicate-slug tasks decrypt under the surviving task id's key",
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a document arriving between row and manifest pulls is retried after its task arrives", async () => {
+  const root = mkdtempSync(join(tmpdir(), "trace-doc-cursor-race-"));
+  const sourceDb = join(root, "source", "trace.sqlite");
+  const targetDb = join(root, "target", "trace.sqlite");
+  const source = openTraceStore(sourceDb);
+  const target = openTraceStore(targetDb);
+  try {
+    const task = source.createTask("Arriving task");
+    const docsDir = resolveTaskDocsDir(sourceDb, task.slug);
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(join(docsDir, "state.md"), "must arrive");
+    const keyWrapper = createKeyWrapper("12".repeat(32));
+    const sourceDocs = new FileSystemDocumentStore(sourceDb, () => source.syncSnapshot().tasks, { keyWrapper });
+    const targetDocs = new FileSystemDocumentStore(targetDb, () => target.syncSnapshot().tasks, { keyWrapper });
+    const snapshot = await sourceDocs.snapshot();
+    let taskVisible = false;
+    const transport: SyncTransport = {
+      push: async () => ({ accepted: 0 }),
+      pull: async () => taskVisible ? source.syncSnapshot() : { tasks: [], sessions: [] },
+      pushDocuments: async () => ({ accepted: 0, uploaded: 0 }),
+      missingBlobs: async () => [],
+      pullDocumentManifests: async (since) => ({
+        manifests: since ? [] : snapshot.manifests,
+        wrappedKeys: snapshot.wrappedKeys,
+        cursor: "docs-1",
+      }),
+      downloadBlob: async (hash) => snapshot.blobs.find((blob) => blob.hash === hash)?.content ?? null,
+    };
+    await synchronize(target, transport, targetDocs);
+    expect(target.syncCursor("documents")).toBeNull();
+    taskVisible = true;
+    await synchronize(target, transport, targetDocs);
+    expect(readFileSync(join(resolveTaskDocsDir(targetDb, task.slug), "state.md"), "utf8")).toBe("must arrive");
+    expect(target.syncCursor("documents")).toBe("docs-1");
+  } finally {
+    source.close(); target.close(); rmSync(root, { recursive: true, force: true });
+  }
+});
