@@ -31,7 +31,11 @@ export const config = [
     },
     settings: { react: { version: "detect" } },
     rules: {
-      ...pluginReactHooks.configs.recommended.rules,
+      // Keep our Hooks policy stable across plugin upgrades. The v7
+      // recommended preset also opts into React Compiler diagnostics;
+      // adopting those is a separate change to the application lint policy.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       // React scope no longer necessary with new JSX transform.
       "react/react-in-jsx-scope": "off",
     },
