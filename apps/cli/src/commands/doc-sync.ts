@@ -145,7 +145,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     manifests: SyncDocManifest[],
     wrappedKeys: SyncWrappedKey[],
     download: (hash: string) => Promise<Uint8Array | null>,
-  ): Promise<{ pulled: number; downloaded: number }> {
+  ): Promise<{ pulled: number; downloaded: number; deferred?: number }> {
     const metadata = this.#readMetadata();
     const tasks = new Map(this.tasks().map((task) => [task.id, task]));
     const wrappedByTask = new Map(
@@ -153,11 +153,19 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     );
     let pulled = 0;
     let downloaded = 0;
+    let deferred = 0;
 
     for (const manifest of manifests) {
       const task = tasks.get(manifest.taskId);
       const tracked = metadata.tasks[manifest.taskId];
-      if (!task || (tracked && compareSyncRows(manifest, tracked.manifest) <= 0)) continue;
+      // Rows and manifests are separate requests. A task created between
+      // them will be available on the next row pull; retain the document
+      // cursor so its manifest is offered again then.
+      if (!task) {
+        deferred += 1;
+        continue;
+      }
+      if (tracked && compareSyncRows(manifest, tracked.manifest) <= 0) continue;
 
       const wrappedKey = wrappedByTask.get(manifest.taskId);
       if (!wrappedKey) {
@@ -240,7 +248,7 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
     }
 
     if (pulled > 0) this.#writeMetadata(metadata);
-    return { pulled, downloaded };
+    return { pulled, downloaded, ...(deferred > 0 ? { deferred } : {}) };
   }
 
   // Unwrap a stored/incoming wrapped DEK with the account master KEK and build

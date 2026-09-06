@@ -2,7 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
-import { openTraceStore, updateConfigFile, type SyncPayload } from "@trace/core";
+import {
+  compareSyncRows,
+  openTraceStore,
+  updateConfigFile,
+  type SyncPayload,
+  type SyncSessionRow,
+  type SyncTaskRow,
+} from "@trace/core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   taskAddDocOperation,
@@ -76,15 +83,72 @@ type RecordingSyncServer = {
   requests: string[];
   /** Bearer tokens presented, so "who reached the network" is answerable. */
   tokens: string[];
+  /**
+   * What the server has sent so far. `bytes` is the response-body total — the
+   * quantity a hosted server pays for — and the row counts say what those
+   * bytes carried. Read a copy before a sync and diff it after.
+   */
+  sent: { bytes: number; tasks: number; sessions: number };
+  /** The `since` each pull carried, in order; `null` for one that sent none. */
+  pullsSince: (string | null)[];
+  /** The cursor each pull was answered with, in the same order. */
+  pullCursors: (string | undefined)[];
+  /**
+   * Clone the rows already pushed until the server holds `count` tasks, so a
+   * pull can be measured against a realistic amount of history without paying
+   * to create it. Clones a genuinely pushed row, so the shape stays real.
+   */
+  inflate: (count: number) => void;
   close: () => Promise<void>;
 };
 
-async function startRecordingSyncServer(): Promise<RecordingSyncServer> {
+/** A stored row and the sequence number the server stamped it with. */
+type Versioned<T> = { row: T; seq: number };
+
+/**
+ * A stateful sync server that records every transport call made to it and
+ * models the cursor contract the deployed server implements: every row carries
+ * a server-assigned seq, a pull returns only rows past the client's `since`,
+ * and every response carries a fresh watermark — including an empty one, which
+ * still has to advance or a caught-up client would never stop asking.
+ *
+ * Pass `{ cursors: false }` for a server that predates incremental pull: it
+ * answers with full state and no cursor, which is what the client has to keep
+ * coping with.
+ */
+async function startRecordingSyncServer(
+  options: { cursors?: boolean } = {},
+): Promise<RecordingSyncServer> {
+  const emitsCursors = options.cursors ?? true;
   const requests: string[] = [];
   const tokens: string[] = [];
-  const stored: SyncPayload = { tasks: [], sessions: [] };
+  const sent = { bytes: 0, tasks: 0, sessions: 0 };
+  const pullsSince: (string | null)[] = [];
+  const pullCursors: (string | undefined)[] = [];
+  const tasks = new Map<string, Versioned<SyncTaskRow>>();
+  const sessions = new Map<string, Versioned<SyncSessionRow>>();
+  let seq = 0;
   const url = "https://sync.acceptance.test";
   const realFetch = globalThis.fetch;
+
+  /** Last-writer-wins, and only a winning write takes a fresh seq. */
+  const write = <T extends { updatedAt: string; machineId: string }>(
+    stored: Map<string, Versioned<T>>,
+    key: string,
+    row: T,
+  ): boolean => {
+    const existing = stored.get(key);
+    if (existing && compareSyncRows(row, existing.row) <= 0) return false;
+    stored.set(key, { row, seq: (seq += 1) });
+    return true;
+  };
+  const past = <T>(since: number | null, stored: Iterable<Versioned<T>>): T[] =>
+    [...stored].filter((entry) => since === null || entry.seq > since).map((entry) => entry.row);
+  const json = (body: Record<string, unknown> | unknown[]) => {
+    const text = JSON.stringify(body);
+    sent.bytes += Buffer.byteLength(text);
+    return new Response(text, { headers: { "content-type": "application/json" } });
+  };
 
   globalThis.fetch = (async (
     input: Parameters<typeof globalThis.fetch>[0],
@@ -92,24 +156,40 @@ async function startRecordingSyncServer(): Promise<RecordingSyncServer> {
   ) => {
     const target = String(input);
     if (!target.startsWith(url)) return realFetch(input as never, init);
-    const path = target.slice(url.length);
+    const [path, query] = target.slice(url.length).split("?");
     requests.push(`${init?.method ?? "GET"} ${path}`);
     const authorization = (init?.headers as Record<string, string> | undefined)
       ?.authorization;
     if (authorization) tokens.push(authorization);
+    const sinceParam = new URLSearchParams(query ?? "").get("since");
+    const since = sinceParam === null ? null : Number(sinceParam);
+    // The watermark is read before the rows are selected, so it never claims
+    // rows the response did not carry.
+    const cursor = emitsCursors ? { cursor: String(seq) } : {};
 
     if (path === "/api/sync/push") {
       const payload = JSON.parse(String(init?.body ?? "{}")) as Partial<SyncPayload>;
-      stored.tasks = [...stored.tasks, ...(payload.tasks ?? [])];
-      stored.sessions = [...stored.sessions, ...(payload.sessions ?? [])];
-      return Response.json({ accepted: payload.tasks?.length ?? 0 });
+      let accepted = 0;
+      for (const row of payload.tasks ?? []) if (write(tasks, row.id, row)) accepted += 1;
+      for (const row of payload.sessions ?? []) if (write(sessions, row.id, row)) accepted += 1;
+      return json({ accepted });
     }
-    if (path === "/api/sync/pull") return Response.json(stored);
-    if (path === "/api/sync/docs/push")
-      return Response.json({ accepted: 0, uploaded: 0 });
+    if (path === "/api/sync/pull") {
+      pullsSince.push(sinceParam);
+      pullCursors.push(cursor.cursor);
+      const payload = {
+        tasks: past(since, tasks.values()),
+        sessions: past(since, sessions.values()),
+        ...cursor,
+      };
+      sent.tasks += payload.tasks.length;
+      sent.sessions += payload.sessions.length;
+      return json(payload);
+    }
+    if (path === "/api/sync/docs/push") return json({ accepted: 0, uploaded: 0 });
     if (path === "/api/sync/docs/manifests")
-      return Response.json({ manifests: [], wrappedKeys: [] });
-    if (path === "/api/sync/blobs/missing") return Response.json([]);
+      return json({ manifests: [], wrappedKeys: [], ...cursor });
+    if (path === "/api/sync/blobs/missing") return json([]);
     return Response.json({}, { status: 404 });
   }) as typeof globalThis.fetch;
 
@@ -117,6 +197,17 @@ async function startRecordingSyncServer(): Promise<RecordingSyncServer> {
     url,
     requests,
     tokens,
+    sent,
+    pullsSince,
+    pullCursors,
+    inflate: (count: number) => {
+      const template = [...tasks.values()][0]?.row;
+      if (!template) throw new Error("inflate needs a pushed task to clone");
+      for (let index = tasks.size; index < count; index += 1) {
+        const id = `inflated-${index}`;
+        write(tasks, id, { ...template, id, slug: `${template.slug}-${index}` });
+      }
+    },
     close: async () => {
       globalThis.fetch = realFetch;
     },
@@ -284,6 +375,137 @@ describe("two machines hand work over through the sync server", () => {
     }
   });
 });
+
+/**
+ * What a machine with nothing to learn may transfer. Syncs are frequent and
+ * mostly uneventful, so this is the number that decides how much data an idle
+ * client moves; the first sync of a populated account has to blow past it for
+ * the second one's staying under to mean anything.
+ */
+const NO_CHANGE_SYNC_BUDGET_BYTES = 50 * 1024;
+
+describe("a machine with nothing to learn costs almost nothing to sync", () => {
+  test("its second sync is sent no rows, and a fraction of the budget in bytes", async () => {
+    const server = await startRecordingSyncServer();
+    try {
+      await seedServerHistory(server, 250);
+
+      await withMachine(server.url, undefined, async (ctx) => {
+        const first = await measureSync(server, ctx);
+        const second = await measureSync(server, ctx);
+
+        expect(first.tasks).toBe(250);
+        expect(first.bytes).toBeGreaterThan(NO_CHANGE_SYNC_BUDGET_BYTES);
+        expect(second.tasks).toBe(0);
+        expect(second.bytes).toBeLessThan(NO_CHANGE_SYNC_BUDGET_BYTES);
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("it asks with the watermark its last pull handed it", async () => {
+    const server = await startRecordingSyncServer();
+    try {
+      await seedServerHistory(server, 5);
+
+      await withMachine(server.url, undefined, async (ctx) => {
+        await measureSync(server, ctx);
+        const handedOut = server.pullCursors.at(-1);
+        await measureSync(server, ctx);
+
+        expect(handedOut).toEqual(expect.any(String));
+        expect(server.pullsSince.at(-2)).toBeNull();
+        expect(server.pullsSince.at(-1)).toBe(handedOut);
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("a change made elsewhere still reaches it on the next sync", async () => {
+    const server = await startRecordingSyncServer();
+    try {
+      await seedServerHistory(server, 5);
+
+      await withMachine(server.url, undefined, async (ctx) => {
+        await measureSync(server, ctx);
+        await withMachine(server.url, undefined, async (other) => {
+          expect(taskCreateOperation(["Elsewhere task"], other).exitCode).toBe(0);
+          expect((await runSyncCommand(other.env)).exitCode).toBe(0);
+        });
+
+        const catchUp = await measureSync(server, ctx);
+        expect(catchUp.tasks).toBe(1);
+        expect(catchUp.bytes).toBeLessThan(NO_CHANGE_SYNC_BUDGET_BYTES);
+        expect(titlesOn(ctx)).toContain("Elsewhere task");
+      });
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+// A server that predates incremental pull sends no cursor, so the client keeps
+// no watermark and asks for everything, every time. Expensive, but a machine
+// that cannot upgrade in step with the server must still end up correct.
+test("a server that answers without a cursor still gets the machine in sync", async () => {
+  const server = await startRecordingSyncServer({ cursors: false });
+  try {
+    await seedServerHistory(server, 5);
+
+    await withMachine(server.url, undefined, async (ctx) => {
+      const first = await measureSync(server, ctx);
+      const second = await measureSync(server, ctx);
+
+      expect(first.tasks).toBe(5);
+      expect(second.tasks).toBe(5);
+      expect(server.pullsSince).toEqual([null, null, null]);
+      expect(titlesOn(ctx)).toContain("Seed task");
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+/**
+ * Give the server a history to serve: one machine pushes a real task, which is
+ * then cloned up to `count` rows. Cloning beats creating — the shape is a row
+ * the CLI genuinely produced, without paying to create hundreds of them.
+ */
+async function seedServerHistory(
+  server: RecordingSyncServer,
+  count: number,
+): Promise<void> {
+  await withMachine(server.url, undefined, async (ctx) => {
+    expect(taskCreateOperation(["Seed task"], ctx).exitCode).toBe(0);
+    expect((await runSyncCommand(ctx.env)).exitCode).toBe(0);
+  });
+  server.inflate(count);
+}
+
+/** One explicit sync, weighed by what the server had to send to serve it. */
+async function measureSync(
+  server: RecordingSyncServer,
+  ctx: TriggerContext,
+): Promise<{ bytes: number; tasks: number; sessions: number }> {
+  const before = { ...server.sent };
+  expect((await runSyncCommand(ctx.env)).exitCode).toBe(0);
+  return {
+    bytes: server.sent.bytes - before.bytes,
+    tasks: server.sent.tasks - before.tasks,
+    sessions: server.sent.sessions - before.sessions,
+  };
+}
+
+function titlesOn(ctx: TriggerContext): string[] {
+  const store = openTraceStore(ctx.env.TRACE_DB as string);
+  try {
+    return store.syncSnapshot().tasks.map((task) => task.title);
+  } finally {
+    store.close();
+  }
+}
 
 /** Let every sync process this trigger started finish before asserting. */
 async function settleSyncRuns(): Promise<void> {

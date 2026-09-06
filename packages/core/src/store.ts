@@ -70,7 +70,11 @@ import type {
   TokenTotals,
   UpdateTaskDocOptions,
 } from "./types.ts";
-import { compareSyncRows, type SyncPayload } from "./sync.ts";
+import {
+  compareSyncRows,
+  type SyncCursorScope,
+  type SyncPayload,
+} from "./sync.ts";
 
 // Filesystem roots read-time subagent discovery resolves against; both default
 // to the tools' real homes and exist as options so tests can point the store at
@@ -113,6 +117,12 @@ const LAST_ACTIVITY_EXPR = `MAX(
 // Pinned tasks lead (pinned_at IS NULL sorts pinned rows' 0 before 1), then
 // each partition orders by recency. rowid breaks same-millisecond ties.
 const AGENT_ORDER_BY = `ORDER BY t.pinned_at IS NULL, ${LAST_ACTIVITY_EXPR} DESC, t.rowid DESC`;
+
+// Watermarks live beside `machine_id` in sync_meta. Spelled out per scope
+// rather than templated so a grep for the key finds this line.
+function syncCursorKey(scope: SyncCursorScope): string {
+  return scope === "rows" ? "sync_cursor" : "sync_docs_cursor";
+}
 
 class NodeSqliteTaskStore implements TaskStore {
   readonly #sqlite: DatabaseSync;
@@ -1379,6 +1389,46 @@ class NodeSqliteTaskStore implements TaskStore {
       )
       .all() as SyncPayload["sessions"];
     return { tasks, sessions };
+  }
+
+  syncCursor(scope: SyncCursorScope): string | null {
+    const row = this.#sqlite
+      .prepare("SELECT value FROM sync_meta WHERE key = ?")
+      .get(syncCursorKey(scope)) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setSyncCursor(scope: SyncCursorScope, cursor: string): void {
+    this.#sqlite
+      .prepare(
+        `INSERT INTO sync_meta (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(syncCursorKey(scope), cursor);
+  }
+
+  syncFingerprint(): string {
+    // Row counts as well as MAX(updated_at), so a row appearing or disappearing
+    // moves the fingerprint even when it is older than everything already here.
+    const row = this.#sqlite
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM tasks) AS taskCount,
+                (SELECT MAX(updated_at) FROM tasks) AS taskUpdatedAt,
+                (SELECT COUNT(*) FROM sessions) AS sessionCount,
+                (SELECT MAX(updated_at) FROM sessions) AS sessionUpdatedAt`,
+      )
+      .get() as {
+      taskCount: number;
+      taskUpdatedAt: string | null;
+      sessionCount: number;
+      sessionUpdatedAt: string | null;
+    };
+    return [
+      row.taskCount,
+      row.taskUpdatedAt ?? "",
+      row.sessionCount,
+      row.sessionUpdatedAt ?? "",
+    ].join("/");
   }
 
   mergeSyncPayload(payload: SyncPayload): { pulled: number } {

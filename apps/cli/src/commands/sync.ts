@@ -16,6 +16,12 @@ import {
 import { spawn as nodeSpawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { NO_SERVER_CONFIGURED_MESSAGE, readAuthToken } from "./auth.ts";
+import {
+  localSyncFingerprint,
+  readAutomaticSyncState,
+  shouldRequestAutomaticSync,
+  updateAutomaticSyncState,
+} from "./automatic-sync-policy.ts";
 import { FileSystemDocumentStore } from "./doc-sync.ts";
 import { readStoredDocCryptoKey } from "./key.ts";
 import type { CommandResult, Env } from "./seam.ts";
@@ -62,6 +68,20 @@ export function requestAutomaticSync(
   if (!readAuthToken(env)) return;
   const executable = dependencies.executable ?? process.argv[1];
   if (!executable) return;
+
+  const databasePath = resolveDatabasePath(env);
+  if (
+    !shouldRequestAutomaticSync({
+      state: readAutomaticSyncState(databasePath),
+      fingerprint: localSyncFingerprint(databasePath),
+      now: Date.now(),
+    })
+  ) {
+    return;
+  }
+  updateAutomaticSyncState(databasePath, {
+    lastRequestedAt: new Date().toISOString(),
+  });
 
   try {
     const child = (dependencies.spawn ?? nodeSpawn)(
@@ -137,12 +157,18 @@ export async function runSyncCommand(
         },
       }),
     );
+    const syncedAt = new Date().toISOString();
     recordSyncStatus(databasePath, (path) =>
-      finalizeSyncRun(path, runId, {
-        lastSyncedAt: new Date().toISOString(),
-        lastError: undefined,
-      }),
+      finalizeSyncRun(path, runId, { lastSyncedAt: syncedAt, lastError: undefined }),
     );
+    // What the machine looks like now that server and local state agree — the
+    // baseline the next automatic trigger compares itself against. Taken after
+    // the merge and after the document push rewrote `doc-sync.json`, so a sync
+    // that changed nothing leaves a fingerprint the next request matches.
+    updateAutomaticSyncState(databasePath, {
+      lastSyncedAt: syncedAt,
+      fingerprint: localSyncFingerprint(databasePath),
+    });
     const documentChanges =
       (result.pushedManifests ?? 0) +
       (result.pulledManifests ?? 0) +
@@ -189,6 +215,18 @@ function recordSyncStatus(
   }
 }
 
+/**
+ * Attach a watermark to a pull path. Omitting it entirely — rather than
+ * sending an empty one — is what asks the server for full state, so a machine
+ * that has never pulled and a server that has never heard of cursors both land
+ * on the same request the client has always sent.
+ */
+function withSince(path: string, since?: string): string {
+  return since === undefined
+    ? path
+    : `${path}?since=${encodeURIComponent(since)}`;
+}
+
 class HttpSyncTransport implements SyncTransport {
   private readonly serverUrl: string;
   private readonly token: string;
@@ -212,8 +250,8 @@ class HttpSyncTransport implements SyncTransport {
     });
   }
 
-  async pull(): Promise<SyncPayload> {
-    return this.request<SyncPayload>("/api/sync/pull");
+  async pull(since?: string): Promise<SyncPayload> {
+    return this.request<SyncPayload>(withSince("/api/sync/pull", since));
   }
 
   async pushDocuments(
@@ -235,11 +273,12 @@ class HttpSyncTransport implements SyncTransport {
     });
   }
 
-  async pullDocumentManifests(): Promise<{
+  async pullDocumentManifests(since?: string): Promise<{
     manifests: SyncDocManifest[];
     wrappedKeys: SyncWrappedKey[];
+    cursor?: string;
   }> {
-    return this.request("/api/sync/docs/manifests");
+    return this.request(withSince("/api/sync/docs/manifests", since));
   }
 
   async missingBlobs(hashes: string[]): Promise<string[]> {

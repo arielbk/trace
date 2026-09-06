@@ -12,7 +12,12 @@ import {
 } from "./commands/task-operations.ts";
 import { skillWorkOnTaskOperation } from "./commands/skill-operations.ts";
 import { createSyncHooks, startTraceServe } from "./serve.ts";
-import { requestAutomaticSync } from "./commands/sync.ts";
+import { requestAutomaticSync, runSyncCommand } from "./commands/sync.ts";
+import {
+  AUTOMATIC_SYNC_QUIET_MS,
+  resolveAutomaticSyncStatePath,
+  updateAutomaticSyncState,
+} from "./commands/automatic-sync-policy.ts";
 import type { Env } from "./commands/seam.ts";
 
 /**
@@ -55,6 +60,7 @@ const TRIGGERS: Trigger[] = [
     name: "task mutation (task add-doc)",
     fire: (ctx) => {
       const slug = taskCreateOperation(["Doc task"], ctx).stdout.trim();
+      forgetPreviousSyncRequest(ctx);
       spawnMock.mockClear();
       const docPath = join(ctx.cwd, "notes.md");
       writeFileSync(docPath, "# Notes\n");
@@ -68,6 +74,7 @@ const TRIGGERS: Trigger[] = [
       const docPath = join(ctx.cwd, "notes.md");
       writeFileSync(docPath, "# Notes\n");
       taskAddDocOperation([slug, docPath], ctx);
+      forgetPreviousSyncRequest(ctx);
       spawnMock.mockClear();
       expect(
         taskUpdateDocOperation([slug, docPath, "--title", "Notes"], ctx).exitCode,
@@ -151,6 +158,88 @@ describe("the AutoSync policy governs every implicit sync trigger", () => {
     });
   }
 });
+
+describe("an automatic sync that would learn nothing never leaves the machine", () => {
+  test("a clean machine that synced moments ago stays off the network", async () => {
+    await withSyncedMachine((ctx) => {
+      requestAutomaticSync(ctx.env);
+      expect(spawnMock).not.toHaveBeenCalled();
+    });
+  });
+
+  test("a clean machine whose last sync has gone stale syncs anyway, so another machine's pushes still arrive", async () => {
+    await withSyncedMachine((ctx) => {
+      backdateLastSync(ctx, AUTOMATIC_SYNC_QUIET_MS + 60_000);
+      requestAutomaticSync(ctx.env);
+      expect(spawnMock).toHaveBeenCalled();
+    });
+  });
+
+  test("a local change since the last sync syncs immediately", async () => {
+    await withSyncedMachine((ctx) => {
+      expect(taskCreateOperation(["Later task"], ctx).exitCode).toBe(0);
+      requestAutomaticSync(ctx.env);
+      expect(spawnMock).toHaveBeenCalled();
+    });
+  });
+
+  test("a burst of triggers inside the floor spawns a single sync", async () => {
+    await withTriggerContext(true, (ctx) => {
+      requestAutomaticSync(ctx.env);
+      requestAutomaticSync(ctx.env);
+      expect(spawnMock).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+/**
+ * Forget that a setup mutation already requested a sync. The rows above assert
+ * that a trigger site still *routes through* the policy — how the policy paces
+ * a burst is its own test below — so the floor must not swallow the trigger
+ * actually under measurement.
+ */
+function forgetPreviousSyncRequest(ctx: TriggerContext): void {
+  rmSync(resolveAutomaticSyncStatePath(join(ctx.cwd, "trace.sqlite")), {
+    force: true,
+  });
+}
+
+/** Age the recorded successful sync by `elapsedMs`, as the clock would. */
+function backdateLastSync(ctx: TriggerContext, elapsedMs: number): void {
+  updateAutomaticSyncState(join(ctx.cwd, "trace.sqlite"), {
+    lastSyncedAt: new Date(Date.now() - elapsedMs).toISOString(),
+  });
+}
+
+/**
+ * A machine one successful sync in, with nothing changed since: the state a
+ * burst of automatic triggers finds when it has nothing to say and nothing new
+ * to hear.
+ */
+async function withSyncedMachine(
+  run: (ctx: TriggerContext) => void | Promise<void>,
+): Promise<void> {
+  await withTriggerContext(true, async (ctx) => {
+    expect(taskCreateOperation(["Synced task"], ctx).exitCode).toBe(0);
+    const result = await runSyncCommand(ctx.env, { fetch: stubSyncServer() });
+    expect(result.exitCode).toBe(0);
+    spawnMock.mockClear();
+    await run(ctx);
+  });
+}
+
+/** A server that accepts everything and has nothing of its own to send back. */
+function stubSyncServer(): typeof globalThis.fetch {
+  return vi.fn<typeof globalThis.fetch>(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/blobs/missing")) return Response.json([]);
+    if (url.endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
+    if (url.endsWith("/docs/manifests"))
+      return Response.json({ manifests: [], wrappedKeys: [] });
+    if (url.endsWith("/sync/push")) return Response.json({ accepted: 1 });
+    return Response.json({ tasks: [], sessions: [] });
+  });
+}
 
 /**
  * A logged-in machine with a configured sync server, so the only thing standing
