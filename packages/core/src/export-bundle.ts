@@ -387,7 +387,7 @@ function basename(path: string): string {
 }
 
 function transcriptBundlePath(sessionId: string, extension: ".jsonl" | ".json"): string {
-  return `transcripts/${sessionId}${extension}`;
+  return `transcripts/${encodeURIComponent(sessionId)}${extension}`;
 }
 
 function manifestTranscript(

@@ -583,3 +583,16 @@ test("totals.cost carries amount and coverage counts, and is absent when nothing
   ) as { totals: { cost?: unknown } };
   expect(empty.totals.cost).toBeUndefined();
 });
+
+ test("transcript session IDs cannot escape the archive transcripts directory", () => {
+  const id = "../../outside\\file";
+  const files = fileMap(buildExportBundle(input({ sessions: [session({
+    id,
+    transcript: { status: "included", bytes: new Uint8Array([65]), format: "codex-jsonl", extension: ".jsonl" },
+  })] })));
+  const path = `transcripts/${encodeURIComponent(id)}.jsonl`;
+  expect(files.get(`${folder}/${path}`)).toBe("A");
+  const manifest = JSON.parse(files.get(`${folder}/manifest.json`)!);
+  expect(manifest.sessions[0].id).toBe(id);
+  expect(manifest.sessions[0].transcript.path).toBe(path);
+});

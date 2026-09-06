@@ -263,3 +263,5 @@ or author fields.
 
 `trace import` is not part of this version. The manifest carries real ids and
 full session rows so a future importer is not blocked by missing identity.
+
+Transcript filenames percent-encode the session ID as one path component; the manifest preserves the original session ID.
