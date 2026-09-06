@@ -3,6 +3,20 @@
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 
+## 0.21.0
+
+- Export tasks as zip bundles from `trace export` or the board, with task docs,
+  session summaries, and optional transcripts. Transcript filenames stay
+  within the archive directory.
+- Show list-price token cost estimates for sessions and tasks, including
+  partial pricing coverage, and include cost metadata in export manifests.
+- Repair stored token totals with `trace session refresh-tokens`.
+- Pull sync changes incrementally using separate server cursors for rows and
+  documents. Automatic sync avoids redundant runs, and document manifests
+  arriving before their tasks are retried safely.
+- Update dependencies, including Motion and the React Hooks lint plugin,
+  while preserving the existing Hooks lint policy.
+
 ## 0.20.0
 
 Trace task state is now concise, attributable, and progressively disclosed when
