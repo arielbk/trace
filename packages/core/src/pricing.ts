@@ -30,7 +30,8 @@ export function resolveRate(
   model: string | null,
 ): ModelRate | null {
   if (!model) return null;
-  return table.models[normalizeModelId(model)] ?? null;
+  const key = normalizeModelId(model);
+  return Object.hasOwn(table.models, key) ? table.models[key]! : null;
 }
 
 export function costFromTokenTotals(

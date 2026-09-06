@@ -13,6 +13,8 @@ test("resolveRate returns null for an unknown model, not zero or a fallback", ()
   expect(resolveRate("codex", "codex-auto-review")).toBeNull();
   expect(resolveRate("claude", "<synthetic>")).toBeNull();
   expect(resolveRate("claude", null)).toBeNull();
+  expect(resolveRate("claude", "constructor")).toBeNull();
+  expect(resolveRate("claude", "__proto__")).toBeNull();
 });
 
 test("resolveRate normalizes dot-vs-dash and date-suffix variants onto one rate", () => {

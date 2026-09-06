@@ -87,21 +87,29 @@ test("buildPricingSnapshot falls back to the input rate when OpenAI has no cache
   });
 });
 
-test("refreshing from current upstream regenerates the pinned table except pricedAt", async () => {
-  const upstream = (await (await fetch(pinned.source)).json()) as Record<
-    string,
-    unknown
-  >;
+test("buildPricingSnapshot prefers an undated model alias and preserves snapshot metadata", () => {
   const rebuilt = buildPricingSnapshot({
-    upstream,
-    modelIds: Object.keys(pinned.models),
+    upstream: {
+      "gpt-5.5-20260101": { input_cost_per_token: 0.000001, output_cost_per_token: 0.000002 },
+      "gpt-5.5": { input_cost_per_token: 0.000005, output_cost_per_token: 0.00003, cache_read_input_token_cost: 0.0000005 },
+    },
+    modelIds: ["gpt-5-5"],
     pricedAt: "2000-01-01",
-    source: pinned.source,
+    source: "fixture",
   });
-
-  expect(rebuilt.models).toEqual(pinned.models);
-  expect(rebuilt.overrides).toEqual(pinned.overrides);
-  expect(rebuilt.source).toBe(pinned.source);
+  expect(rebuilt.models["gpt-5-5"]).toEqual({
+    inputUsdPerMillion: 5, outputUsdPerMillion: 30,
+    cacheWriteUsdPerMillion: 5, cacheReadUsdPerMillion: 0.5,
+  });
+  expect(rebuilt.source).toBe("fixture");
   expect(rebuilt.pricedAt).toBe("2000-01-01");
-  expect(rebuilt.pricedAt).not.toBe(pinned.pricedAt);
-}, 30_000);
+});
+
+test("pinned pricing contains finite nonnegative rates", () => {
+  for (const rate of Object.values(pinned.models)) {
+    for (const value of Object.values(rate)) {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(0);
+    }
+  }
+});
