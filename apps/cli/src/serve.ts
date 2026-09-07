@@ -38,6 +38,9 @@ export type StartTraceServeOptions = {
   triggerSync?: (env: Record<string, string | undefined>) => void;
 };
 
+/** Hosted origin allowed to read this loopback API during the connection spike. */
+export const TRACE_WEB_ORIGIN_ENV_VAR = "TRACE_WEB_ORIGIN";
+
 /** How many consecutive ports to try when the preferred one is taken. */
 const PORT_FALLBACK_ATTEMPTS = 10;
 
@@ -163,10 +166,14 @@ export function createServeRequestListener(
   /** Runs board-initiated login/logout. Absent means this host serves no
    * `/api/local-auth` routes. */
   localAuth?: LocalAuthService,
+  /** Exact HTTPS origin allowed to call the local API cross-origin. */
+  allowedWebOrigin?: string,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
+
+    if (applyHostedApiCors(req, res, url, method, allowedWebOrigin)) return;
 
     const dispatch = (body?: string): void => {
       // Auth routes are asynchronous (they reach the hosted server), so they
@@ -204,6 +211,95 @@ export function createServeRequestListener(
       dispatch();
     }
   };
+}
+
+/**
+ * Grant browser access only to the configured hosted board. CORS is a browser
+ * permission rather than authentication; pairing and request authorization are
+ * intentionally left for the security slice after this connectivity spike.
+ */
+function applyHostedApiCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  allowedWebOrigin?: string,
+): boolean {
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  if (!path.startsWith("/api/")) return false;
+
+  const requestOrigin = req.headers?.origin;
+  if (!requestOrigin || isSameOriginRequest(req, requestOrigin)) return false;
+
+  const isHostedRead =
+    requestOrigin === allowedWebOrigin &&
+    (path === "/api/connection" ||
+      path === "/api/connection/" ||
+      path === "/api/tasks" ||
+      path === "/api/tasks/");
+
+  // CORS alone does not prevent a cross-origin request from reaching the
+  // server. Reject every non-local browser origin outside this deliberately
+  // tiny read-only surface so the spike cannot become a CSRF path.
+  if (!isHostedRead) {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
+  res.setHeader("access-control-allow-origin", requestOrigin);
+  res.setHeader("vary", "Origin");
+  if (method !== "OPTIONS") return false;
+
+  if (req.headers["access-control-request-method"] !== "GET") {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
+  res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+  res.setHeader("access-control-max-age", "600");
+  if (req.headers["access-control-request-private-network"] === "true") {
+    res.setHeader("access-control-allow-private-network", "true");
+  }
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
+
+function isSameOriginRequest(
+  req: IncomingMessage,
+  requestOrigin: string,
+): boolean {
+  const host = req.headers?.host;
+  return Boolean(
+    host &&
+    (requestOrigin === `http://${host}` || requestOrigin === `https://${host}`),
+  );
+}
+
+/** Return one canonical origin, or undefined when hosted access is disabled. */
+export function resolveAllowedWebOrigin(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  const configured = env[TRACE_WEB_ORIGIN_ENV_VAR]?.trim();
+  if (!configured) return undefined;
+  try {
+    const url = new URL(configured);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 /** HTTP methods whose request body the API may need to read. */
@@ -279,7 +375,10 @@ export function createTraceServeServer(
       () => resolveAutoSyncEnabled(env),
       // Signing in is a mutation of what this machine can see, so it belongs on
       // the same sync trigger the board's mutations already use.
-      createLocalAuthService(env, { onLoginComplete: syncHooks?.onLoginComplete }),
+      createLocalAuthService(env, {
+        onLoginComplete: syncHooks?.onLoginComplete,
+      }),
+      resolveAllowedWebOrigin(env),
     ),
   );
 }
@@ -298,7 +397,11 @@ export function startTraceServe(
   const triggerSync = options.triggerSync ?? requestAutomaticSync;
   const server =
     options.server ??
-    createTraceServeServer(env, undefined, createSyncHooks(() => triggerSync(env)));
+    createTraceServeServer(
+      env,
+      undefined,
+      createSyncHooks(() => triggerSync(env)),
+    );
 
   // Fire-and-forget a sync as the board starts, so a freshly opened board
   // reflects other machines. No-ops instantly when logged out or offline.

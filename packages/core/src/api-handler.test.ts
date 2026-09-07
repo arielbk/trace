@@ -54,8 +54,37 @@ function withSeededDatabase(
   } finally {
     store.close();
   }
-  return { databasePath, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return {
+    databasePath,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
 }
+
+test("GET /api/connection identifies the local Trace API without opening the database", () => {
+  const response = handleTraceApiRequest(
+    "/path/that/does/not/exist.sqlite",
+    "GET",
+    "/api/connection",
+  );
+
+  expect(response).not.toBeNull();
+  expect(response!.status).toBe(200);
+  expect(response!.contentType).toBe("application/json");
+  expect(jsonBody(response)).toEqual({
+    service: "trace",
+    protocolVersion: 1,
+  });
+});
+
+test("/api/connection is read-only", () => {
+  const response = handleTraceApiRequest(
+    "/path/that/does/not/exist.sqlite",
+    "POST",
+    "/api/connection",
+  );
+
+  expect(response!.status).toBe(405);
+});
 
 test("GET /api/tasks returns the live task summaries as JSON", () => {
   const { databasePath, cleanup } = withSeededDatabase((store) => {
@@ -373,11 +402,7 @@ test("non-GET /api/config is rejected with 405", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 
   try {
-    const response = handleTraceApiRequest(
-      databasePath,
-      "POST",
-      "/api/config",
-    );
+    const response = handleTraceApiRequest(databasePath, "POST", "/api/config");
     expect(response).not.toBeNull();
     expect(response!.status).toBe(405);
   } finally {
@@ -681,7 +706,11 @@ test("GET /api/sync/status reports logged-out (server unconfigured) when no stat
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 
   try {
-    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/sync/status",
+    );
     expect(response!.status).toBe(200);
     expect(response!.contentType).toBe("application/json");
     expect(jsonBody(response)).toEqual({
@@ -724,7 +753,11 @@ test("GET /api/sync/status reports the identity and last-sync time when logged i
   });
 
   try {
-    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/sync/status",
+    );
     expect(response!.status).toBe(200);
     expect(jsonBody(response)).toEqual({
       state: "synced",
@@ -746,7 +779,11 @@ test("GET /api/sync/status reports the last-sync failure when one is recorded", 
   });
 
   try {
-    const response = handleTraceApiRequest(databasePath, "GET", "/api/sync/status");
+    const response = handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/sync/status",
+    );
     expect(response!.status).toBe(200);
     expect(jsonBody(response)).toMatchObject({
       state: "failed",
@@ -767,9 +804,15 @@ test("GET /api/sync/status reports the host's effective AutoSync mode", () => {
     // config.json itself.
     expect(
       jsonBody(
-        handleTraceApiRequest(databasePath, "GET", "/api/sync/status", undefined, {
-          autoSyncEnabled: false,
-        }),
+        handleTraceApiRequest(
+          databasePath,
+          "GET",
+          "/api/sync/status",
+          undefined,
+          {
+            autoSyncEnabled: false,
+          },
+        ),
       ),
     ).toEqual({ state: "never-synced", identity: "octocat", autoSync: false });
     // A host that reports no mode falls back to the effective default, on.
@@ -811,7 +854,11 @@ test("non-GET /api/sync/status is rejected with 405", () => {
   const { databasePath, cleanup } = withSeededDatabase(() => {});
 
   try {
-    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync/status");
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/sync/status",
+    );
     expect(response!.status).toBe(405);
   } finally {
     cleanup();
@@ -831,8 +878,20 @@ test("successful mutations invoke the host onMutation hook", () => {
   const options = { onMutation: () => mutations++ };
 
   try {
-    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/pin`, undefined, options);
-    handleTraceApiRequest(databasePath, "POST", `/api/tasks/${taskSlug}/archive`, undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/pin`,
+      undefined,
+      options,
+    );
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      `/api/tasks/${taskSlug}/archive`,
+      undefined,
+      options,
+    );
     handleTraceApiRequest(
       databasePath,
       "POST",
@@ -855,8 +914,20 @@ test("reads and failed mutations never invoke onMutation", () => {
   const options = { onMutation: () => mutations++ };
 
   try {
-    handleTraceApiRequest(databasePath, "GET", "/api/tasks", undefined, options);
-    handleTraceApiRequest(databasePath, "POST", "/api/tasks/no-such-task/pin", undefined, options);
+    handleTraceApiRequest(
+      databasePath,
+      "GET",
+      "/api/tasks",
+      undefined,
+      options,
+    );
+    handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/tasks/no-such-task/pin",
+      undefined,
+      options,
+    );
     handleTraceApiRequest(
       databasePath,
       "POST",
@@ -875,9 +946,15 @@ test("POST /api/sync invokes the host requestSync hook", () => {
   let requests = 0;
 
   try {
-    const response = handleTraceApiRequest(databasePath, "POST", "/api/sync", undefined, {
-      requestSync: () => requests++,
-    });
+    const response = handleTraceApiRequest(
+      databasePath,
+      "POST",
+      "/api/sync",
+      undefined,
+      {
+        requestSync: () => requests++,
+      },
+    );
     expect(response!.status).toBe(200);
     expect(jsonBody(response)).toEqual({ requested: true });
     expect(requests).toBe(1);
@@ -894,7 +971,9 @@ test("POST /api/sync without a host hook reports requested: false, non-POST is 4
     expect(response!.status).toBe(200);
     expect(jsonBody(response)).toEqual({ requested: false });
 
-    expect(handleTraceApiRequest(databasePath, "GET", "/api/sync")!.status).toBe(405);
+    expect(
+      handleTraceApiRequest(databasePath, "GET", "/api/sync")!.status,
+    ).toBe(405);
   } finally {
     cleanup();
   }
@@ -948,9 +1027,9 @@ test("GET /api/tasks/:ref/export returns zip bytes matching the CLI builder tree
       "checkout-2026-08-19/docs/state.md",
       "checkout-2026-08-19/manifest.json",
     ]);
-    expect(Object.keys(tree).some((path) => path.includes("/transcripts/"))).toBe(
-      false,
-    );
+    expect(
+      Object.keys(tree).some((path) => path.includes("/transcripts/")),
+    ).toBe(false);
   } finally {
     vi.useRealTimers();
     cleanup();

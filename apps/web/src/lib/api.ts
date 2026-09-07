@@ -6,7 +6,9 @@ import type {
   SyncStatusResponse,
   TaskSummary,
   TaskTimeline,
+  TraceConnection,
 } from "@trace/core/browser";
+import { traceApiFetch } from "./api-origin.ts";
 
 export class HttpError extends Error {
   constructor(
@@ -19,14 +21,19 @@ export class HttpError extends Error {
 }
 
 export async function fetchTasks(): Promise<TaskSummary[]> {
-  const res = await fetch("/api/tasks");
-  if (!res.ok) throw new HttpError(res.status, `GET /api/tasks failed: ${res.status}`);
+  const res = await traceApiFetch("/api/tasks");
+  if (!res.ok)
+    throw new HttpError(res.status, `GET /api/tasks failed: ${res.status}`);
   return res.json() as Promise<TaskSummary[]>;
 }
 
 export async function fetchTaskTimeline(id: string): Promise<TaskTimeline> {
-  const res = await fetch(`/api/tasks/${id}/timeline`);
-  if (!res.ok) throw new HttpError(res.status, `GET /api/tasks/${id}/timeline failed: ${res.status}`);
+  const res = await traceApiFetch(`/api/tasks/${id}/timeline`);
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `GET /api/tasks/${id}/timeline failed: ${res.status}`,
+    );
   return res.json() as Promise<TaskTimeline>;
 }
 
@@ -35,21 +42,31 @@ export type DocContents = {
   body: string;
 };
 
-export async function fetchDocContents(ref: string, docPath: string): Promise<DocContents> {
-  const res = await fetch(
+export async function fetchDocContents(
+  ref: string,
+  docPath: string,
+): Promise<DocContents> {
+  const res = await traceApiFetch(
     `/api/tasks/${encodeURIComponent(ref)}/docs?path=${encodeURIComponent(docPath)}`,
   );
   const contentType = res.headers.get("content-type") ?? "text/plain";
   const body = await res.text();
   if (!res.ok) {
-    throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      body || `GET docs for ${docPath} failed: ${res.status}`,
+    );
   }
   return { contentType, body };
 }
 
 export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
-  const res = await fetch("/api/sync/status");
-  if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
+  const res = await traceApiFetch("/api/sync/status");
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `GET /api/sync/status failed: ${res.status}`,
+    );
   return res.json() as Promise<SyncStatusResponse>;
 }
 
@@ -57,7 +74,18 @@ export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
  * The server throttles repeat requests, so callers can fire freely; failures
  * (a dev server with no sync trigger, a network hiccup) never surface. */
 export function requestServerSync(): void {
-  void fetch("/api/sync", { method: "POST" }).catch(() => {});
+  void traceApiFetch("/api/sync", { method: "POST" }).catch(() => {});
+}
+
+export async function fetchTraceConnection(): Promise<TraceConnection> {
+  const res = await traceApiFetch("/api/connection");
+  if (!res.ok) {
+    throw new HttpError(
+      res.status,
+      `GET /api/connection failed: ${res.status}`,
+    );
+  }
+  return res.json() as Promise<TraceConnection>;
 }
 
 /**
@@ -67,12 +95,13 @@ export function requestServerSync(): void {
  * just-focused board (pin, archive) starts from fresh rows instead of stale
  * ones — shrinking the cross-machine last-write-wins clobber window.
  */
-export function useServerSyncOnFocus(): void {
+export function useServerSyncOnFocus(enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     requestServerSync();
     window.addEventListener("focus", requestServerSync);
     return () => window.removeEventListener("focus", requestServerSync);
-  }, []);
+  }, [enabled]);
 }
 
 /**
@@ -80,14 +109,14 @@ export function useServerSyncOnFocus(): void {
  * watches, and settles a login attempt — the serving process holds the bearer
  * token, and no response here carries it.
  */
-async function localAuth<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
-  const res = await fetch(`/api/local-auth${path}`, init);
+async function localAuth<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await traceApiFetch(`/api/local-auth${path}`, init);
   if (!res.ok) {
     const detail = await res.text();
-    throw new HttpError(res.status, detail || `local-auth ${path} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      detail || `local-auth ${path} failed: ${res.status}`,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -100,7 +129,9 @@ export function startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
   });
 }
 
-export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> {
+export function fetchLoginAttempt(
+  attemptId: string,
+): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(`/login/${encodeURIComponent(attemptId)}`);
 }
 
@@ -115,7 +146,9 @@ export function fetchCurrentLogin(): Promise<LoginAttemptView | null> {
   return localAuth<LoginAttemptView | null>("/login/current");
 }
 
-export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttemptView> {
+export function acknowledgeGeneratedKey(
+  attemptId: string,
+): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/acknowledge-key`,
     { method: "POST" },
@@ -212,8 +245,9 @@ export async function downloadTaskExport(
   options: { includeTranscripts?: boolean } = {},
 ): Promise<void> {
   const query = options.includeTranscripts === true ? "?transcripts=1" : "";
-  const url = `/api/tasks/${encodeURIComponent(ref)}/export${query}`;
-  const res = await fetch(url);
+  const res = await traceApiFetch(
+    `/api/tasks/${encodeURIComponent(ref)}/export${query}`,
+  );
   if (!res.ok) {
     throw new HttpError(res.status, `GET export ${ref} failed: ${res.status}`);
   }
@@ -242,27 +276,56 @@ function filenameFromContentDisposition(header: string | null): string | null {
   return unquoted?.[1]?.trim() ?? null;
 }
 
-export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/archive`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST archive ${ref} failed: ${res.status}`);
+export async function postArchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const res = await traceApiFetch(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `POST archive ${ref} failed: ${res.status}`,
+    );
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
-export async function postUnarchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/unarchive`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST unarchive ${ref} failed: ${res.status}`);
+export async function postUnarchive(
+  ref: string,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const res = await traceApiFetch(
+    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `POST unarchive ${ref} failed: ${res.status}`,
+    );
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
-export async function postPin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/pin`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST pin ${ref} failed: ${res.status}`);
+export async function postPin(
+  ref: string,
+): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await traceApiFetch(`/api/tasks/${encodeURIComponent(ref)}/pin`, {
+    method: "POST",
+  });
+  if (!res.ok)
+    throw new HttpError(res.status, `POST pin ${ref} failed: ${res.status}`);
   return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
 }
 
-export async function postUnpin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/unpin`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST unpin ${ref} failed: ${res.status}`);
+export async function postUnpin(
+  ref: string,
+): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await traceApiFetch(
+    `/api/tasks/${encodeURIComponent(ref)}/unpin`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(res.status, `POST unpin ${ref} failed: ${res.status}`);
   return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
 }
 
@@ -272,13 +335,19 @@ export async function postToggleCheckbox(
   index: number,
   checked: boolean,
 ): Promise<{ ok: true }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/docs/checkbox`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, index, checked }),
-  });
+  const res = await traceApiFetch(
+    `/api/tasks/${encodeURIComponent(ref)}/docs/checkbox`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, index, checked }),
+    },
+  );
   if (!res.ok) {
-    throw new HttpError(res.status, `POST checkbox ${ref} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      `POST checkbox ${ref} failed: ${res.status}`,
+    );
   }
   return res.json() as Promise<{ ok: true }>;
 }
@@ -292,7 +361,11 @@ const LIVE_REFRESH = {
 } as const;
 
 export function useTasks() {
-  return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...LIVE_REFRESH });
+  return useQuery({
+    queryKey: ["tasks"],
+    queryFn: fetchTasks,
+    ...LIVE_REFRESH,
+  });
 }
 
 export function useSyncStatus() {

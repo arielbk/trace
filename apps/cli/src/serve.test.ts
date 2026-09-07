@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { openTraceStore, unzipExportBundle, updateConfigFile } from "@trace/core";
+import {
+  openTraceStore,
+  unzipExportBundle,
+  updateConfigFile,
+} from "@trace/core";
 import {
   createServeRequestListener,
   createSyncHooks,
@@ -65,6 +69,8 @@ function dispatch(
   url: string,
   assetsDir?: string,
   syncHooks?: ServeSyncHooks,
+  requestHeaders: Record<string, string> = {},
+  allowedWebOrigin?: string,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -88,12 +94,118 @@ function dispatch(
     },
   } as unknown as ServerResponse;
 
-  createServeRequestListener(databasePath, assetsDir, undefined, syncHooks)(
-    { method, url } as IncomingMessage,
+  createServeRequestListener(
+    databasePath,
+    assetsDir,
+    undefined,
+    syncHooks,
+    undefined,
+    undefined,
+    allowedWebOrigin,
+  )(
+    { method, url, headers: requestHeaders } as unknown as IncomingMessage,
     res,
   );
   return captured;
 }
+
+test("trace serve exposes a read-only connection handshake", () => {
+  const response = dispatch("GET", "/api/connection");
+
+  expect(response.statusCode).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({
+    service: "trace",
+    protocolVersion: 1,
+  });
+});
+
+test("trace serve grants API reads only to the configured hosted origin", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const allowed = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin },
+    allowedOrigin,
+  );
+  const other = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: "https://unrelated.example" },
+    allowedOrigin,
+  );
+
+  expect(allowed.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(allowed.headers.vary).toBe("Origin");
+  expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+});
+
+test("trace serve answers a hosted-origin API preflight", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const response = dispatch(
+    "OPTIONS",
+    "/api/tasks",
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "GET",
+      "access-control-request-private-network": "true",
+    },
+    allowedOrigin,
+  );
+
+  expect(response.statusCode).toBe(204);
+  expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(response.headers["access-control-allow-methods"]).toContain("GET");
+  expect(response.headers["access-control-allow-private-network"]).toBe("true");
+});
+
+test("trace serve rejects hosted-origin mutations before dispatch", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const response = dispatch(
+    "POST",
+    "/api/tasks/checkout/archive",
+    undefined,
+    undefined,
+    { origin: allowedOrigin },
+    allowedOrigin,
+  );
+
+  expect(response.statusCode).toBe(403);
+  expect(response.body).toBe("Cross-origin API access denied");
+});
+
+test("trace serve rejects reads outside the hosted spike allowlist", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const response = dispatch(
+    "GET",
+    `/api/tasks/${taskId}/timeline`,
+    undefined,
+    undefined,
+    { origin: allowedOrigin },
+    allowedOrigin,
+  );
+
+  expect(response.statusCode).toBe(403);
+  expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+});
+
+test("trace serve keeps same-origin board mutations working", () => {
+  const response = dispatch(
+    "POST",
+    `/api/tasks/${taskId}/archive`,
+    undefined,
+    undefined,
+    { origin: "http://127.0.0.1:4317", host: "127.0.0.1:4317" },
+    "https://trace-hosted.example",
+  );
+
+  expect(response.statusCode).toBe(200);
+});
 
 test("trace serve responds to GET /api/tasks with live summaries", () => {
   const response = dispatch("GET", "/api/tasks");
@@ -141,7 +253,9 @@ test("trace serve serves binary assets byte-for-byte", () => {
   const assetsDir = makeAssetsDir();
   // A minimal PNG header: bytes outside valid UTF-8, which a text read mangles
   // into replacement characters.
-  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const pngBytes = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
   writeFileSync(join(assetsDir, "assets", "icon.png"), pngBytes);
 
   const response = dispatch("GET", "/assets/icon.png", assetsDir);

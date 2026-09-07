@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:hosted": "vite build --mode hosted",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",

@@ -742,6 +742,16 @@ describe("useUnpinTask", () => {
 // ─── useServerSyncOnFocus ────────────────────────────────────────────────────
 
 describe("useServerSyncOnFocus", () => {
+  test("does not request sync when the hosted read-only bridge disables it", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() => useServerSyncOnFocus(false));
+    window.dispatchEvent(new Event("focus"));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("posts /api/sync on mount and again when the window regains focus", () => {
     const fetchMock = vi
       .fn()

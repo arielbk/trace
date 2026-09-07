@@ -21,6 +21,8 @@ export type {
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
+export { TRACE_PROTOCOL_VERSION, traceConnection } from "./connection.ts";
+export type { TraceConnection } from "./connection.ts";
 export {
   handleLocalAuthRequest,
   REPLACEMENT_KEY_CONFIRMATION,
@@ -98,10 +100,7 @@ export type {
   GatherExportInputOptions,
   TaskExportZip,
 } from "./export-input.ts";
-export {
-  renderManifest,
-  stripFence,
-} from "./state-manifest.ts";
+export { renderManifest, stripFence } from "./state-manifest.ts";
 export type { ManifestEntry } from "./state-manifest.ts";
 export {
   STATE_DOCUMENT_FILENAME,
@@ -117,7 +116,12 @@ export {
 export type { StateDocument } from "./state-document.ts";
 export { computeStateFreshness } from "./state-freshness.ts";
 export type { StateFreshness } from "./state-freshness.ts";
-export { SESSION_TOOLS, SESSION_TOOL_CHOICES, INVALID_SESSION_TOOL, isSessionTool } from "./types.ts";
+export {
+  SESSION_TOOLS,
+  SESSION_TOOL_CHOICES,
+  INVALID_SESSION_TOOL,
+  isSessionTool,
+} from "./types.ts";
 export {
   composerIdFromLocator,
   cursorLocatorFlavor,
