@@ -1,6 +1,7 @@
 import { FileWarning, Loader2, RotateCcw, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { downloadTaskExport } from "../lib/api.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import { cn } from "../lib/utils.ts";
 import {
   ArchiveIcon,
@@ -50,6 +51,7 @@ export function TaskActionsMenu({
   onUnarchive?: () => void | Promise<void>;
   className?: string;
 }) {
+  const source = useTraceDataSource();
   const exportLabelId = useId();
   const exportDescriptionId = useId();
   const transcriptLabelId = useId();
@@ -84,6 +86,7 @@ export function TaskActionsMenu({
       await downloadTaskExport(
         taskRef,
         kind === "transcripts" ? { includeTranscripts: true } : undefined,
+        source,
       );
       setExportStatus({ phase: "success", kind });
       successTimer.current = window.setTimeout(() => {

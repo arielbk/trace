@@ -30,6 +30,7 @@ import {
 } from "../components/ui/Dropdown.tsx";
 import { Switch } from "../components/ui/Switch.tsx";
 import { cn } from "../lib/utils.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import {
   buildSubtitle,
   filterByProjectSlug,
@@ -39,7 +40,9 @@ import {
   visibleTasks,
 } from "../lib/task-list.ts";
 
-export function TasksPage({ readOnly = false }: { readOnly?: boolean }) {
+export function TasksPage() {
+  const source = useTraceDataSource();
+  const readOnly = !source.capabilities.taskMutations;
   const tasksQuery = useTasks();
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();

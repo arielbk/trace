@@ -4,7 +4,7 @@ import {
   TRACE_PROTOCOL_VERSION,
   type TraceConnection,
 } from "@trace/core/browser";
-import { fetchTraceConnection, HttpError } from "../lib/api.ts";
+import { HttpError, useTraceDataSource } from "../lib/trace-data-source.ts";
 import { AppHeader } from "./AppHeader.tsx";
 
 type ConnectionState =
@@ -76,13 +76,14 @@ export function connectionFailure(error: unknown): ConnectionFailure {
 
 export function LocalTraceConnection({
   children,
-  connect = fetchTraceConnection,
+  connect,
   userAgent = navigator.userAgent,
 }: {
   children: ReactNode;
   connect?: () => Promise<TraceConnection>;
   userAgent?: string;
 }) {
+  const source = useTraceDataSource();
   const supported = supportsLocalTraceBridge(userAgent);
   const [state, setState] = useState<ConnectionState>({ phase: "idle" });
 
@@ -91,7 +92,7 @@ export function LocalTraceConnection({
   async function handleConnect() {
     setState({ phase: "connecting" });
     try {
-      const connection = await connect();
+      const connection = await (connect ? connect() : source.connect());
       const failure = validateTraceConnection(connection);
       setState(failure ? { phase: "failed", failure } : { phase: "connected" });
     } catch (error) {

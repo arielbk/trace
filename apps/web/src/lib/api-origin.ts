@@ -28,8 +28,6 @@ export const traceApiOrigin = resolveTraceApiOrigin(
   import.meta.env.VITE_TRACE_API_ORIGIN,
 );
 
-export const usesRemoteTraceApi = traceApiOrigin !== "";
-
 export function traceApiUrl(
   path: string,
   origin: string = traceApiOrigin,
