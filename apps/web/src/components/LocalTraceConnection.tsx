@@ -147,7 +147,7 @@ export function LocalTraceConnection({
         <div aria-live="polite" aria-atomic="true">
           <p className="mt-3 mb-0 max-w-[58ch] text-caption leading-relaxed text-text-muted">
             {failure?.description ??
-              "Trace keeps your tasks and files on this device. Connect to let this site read your local task list."}
+              "Trace keeps your tasks and files on this device. Connect to view your tasks and documents."}
           </p>
         </div>
 
@@ -160,8 +160,10 @@ export function LocalTraceConnection({
             />
             <p className="m-0">
               Your browser may ask for permission to reach your local network.
-              Allow it to continue. This preview is read-only: it can list task
-              summaries, but it cannot change them or open local files.
+              Allow it to continue.{" "}
+              {source.capabilities.taskMutations
+                ? "You can pin, unpin, archive, and restore tasks from this site."
+                : "You can browse your tasks and documents without changing them."}
             </p>
           </div>
         ) : null}
@@ -191,13 +193,16 @@ export function LocalTraceConnection({
 }
 
 export function LocalConnectionBadge() {
+  const source = useTraceDataSource();
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap font-mono text-crumb text-text-muted">
       <span className="size-2 rounded-full bg-accent" aria-hidden="true" />
       <span>This device · Connected locally</span>
-      <span className="rounded border border-border px-1.5 py-px text-badge font-bold uppercase text-text-muted">
-        Read-only
-      </span>
+      {!source.capabilities.taskMutations ? (
+        <span className="rounded border border-border px-1.5 py-px text-badge font-bold uppercase text-text-muted">
+          Read-only
+        </span>
+      ) : null}
     </span>
   );
 }
