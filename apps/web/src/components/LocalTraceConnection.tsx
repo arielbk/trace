@@ -20,7 +20,7 @@ type ConnectionState =
   | { phase: "failed"; failure: ConnectionFailure };
 
 export type ConnectionFailure = {
-  kind: "unavailable" | "blocked" | "incompatible";
+  kind: "unavailable" | "unpaired" | "blocked" | "incompatible";
   title: string;
   description: string;
 };
@@ -63,6 +63,18 @@ export function validateTraceConnection(
 }
 
 export function connectionFailure(error: unknown): ConnectionFailure {
+  // A 401 is Trace answering, so it is the one failure the viewer cannot fix by
+  // starting Trace or granting network access — this browser simply holds no
+  // bridge credential, and only a fresh pairing link mints one.
+  if (error instanceof HttpError && error.status === 401) {
+    return {
+      kind: "unpaired",
+      title: "This browser isn’t paired with Trace",
+      description:
+        "Trace is running on this device but has not given this browser access. Restart Trace on this device and open the pairing link it prints to connect.",
+    };
+  }
+
   if (error instanceof HttpError && error.status === 403) {
     return {
       kind: "blocked",

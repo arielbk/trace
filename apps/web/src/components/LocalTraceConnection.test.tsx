@@ -6,11 +6,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { TRACE_PROTOCOL_VERSION } from "@trace/core/browser";
 import {
+  HttpError,
   LocalTraceSource,
   TraceDataSourceProvider,
 } from "../lib/trace-data-source.ts";
 import {
   LocalTraceConnection,
+  connectionFailure,
   supportsLocalTraceBridge,
   validateTraceConnection,
 } from "./LocalTraceConnection.tsx";
@@ -105,6 +107,31 @@ describe("LocalTraceConnection", () => {
 
     expect(await screen.findByText("Local tasks")).toBeVisible();
     expect(connect).toHaveBeenCalledOnce();
+  });
+
+  test("tells an unpaired browser to pair rather than to start Trace", async () => {
+    const connect = vi
+      .fn()
+      .mockRejectedValue(new HttpError(401, "Authorization required"));
+    renderConnection(connect);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect to Trace" }),
+    );
+
+    expect(
+      await screen.findByText("This browser isn’t paired with Trace"),
+    ).toBeVisible();
+    expect(screen.getByText(/open the pairing link/i)).toBeVisible();
+  });
+
+  test("keeps a refused origin distinct from an unpaired browser", () => {
+    expect(connectionFailure(new HttpError(403, "Forbidden"))).toMatchObject({
+      kind: "blocked",
+    });
+    expect(connectionFailure(new TypeError("Failed to fetch"))).toMatchObject({
+      kind: "unavailable",
+    });
   });
 
   test("reports an incompatible installed Trace version", () => {
