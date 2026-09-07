@@ -7,6 +7,7 @@ import {
 } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual } from "node:crypto";
 import {
   handleLocalAuthRequest,
   handleTraceApiRequest,
@@ -18,6 +19,7 @@ import {
 } from "@trace/core";
 import { requestAutomaticSync } from "./commands/sync.ts";
 import { createLocalAuthService } from "./local-auth.ts";
+import { readOrCreateBridgeCredential } from "./bridge-credential.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -168,12 +170,26 @@ export function createServeRequestListener(
   localAuth?: LocalAuthService,
   /** Exact HTTPS origin allowed to call the local API cross-origin. */
   allowedWebOrigin?: string,
+  /** Installation-scoped bearer token required by the hosted origin. */
+  bridgeCredential?: string,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
     if (applyHostedApiCors(req, res, url, method, allowedWebOrigin)) return;
+    if (
+      rejectUnauthorizedHostedRequest(
+        req,
+        res,
+        url,
+        method,
+        allowedWebOrigin,
+        bridgeCredential,
+      )
+    ) {
+      return;
+    }
 
     const dispatch = (body?: string): void => {
       // Auth routes are asynchronous (they reach the hosted server), so they
@@ -258,6 +274,7 @@ function applyHostedApiCors(
   }
 
   res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+  res.setHeader("access-control-allow-headers", "authorization");
   res.setHeader("access-control-max-age", "600");
   if (req.headers["access-control-request-private-network"] === "true") {
     res.setHeader("access-control-allow-private-network", "true");
@@ -265,6 +282,49 @@ function applyHostedApiCors(
   res.statusCode = 204;
   res.end();
   return true;
+}
+
+function rejectUnauthorizedHostedRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  allowedWebOrigin?: string,
+  bridgeCredential?: string,
+): boolean {
+  if (!bridgeCredential || method === "OPTIONS") return false;
+
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  const requestOrigin = req.headers?.origin;
+  if (
+    !path.startsWith("/api/") ||
+    !requestOrigin ||
+    requestOrigin !== allowedWebOrigin ||
+    isSameOriginRequest(req, requestOrigin)
+  ) {
+    return false;
+  }
+
+  const authorization = req.headers?.authorization;
+  const supplied =
+    typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : "";
+  if (credentialsMatch(supplied, bridgeCredential)) return false;
+
+  res.statusCode = 401;
+  res.setHeader("www-authenticate", "Bearer");
+  res.end("Authorization required");
+  return true;
+}
+
+function credentialsMatch(supplied: string, expected: string): boolean {
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    suppliedBytes.length === expectedBytes.length &&
+    timingSafeEqual(suppliedBytes, expectedBytes)
+  );
 }
 
 function isSameOriginRequest(
@@ -366,6 +426,7 @@ export function createTraceServeServer(
   assetsDir: string | undefined = resolveWebAssetsDir(),
   syncHooks?: ServeSyncHooks,
 ): Server {
+  const allowedWebOrigin = resolveAllowedWebOrigin(env);
   return createServer(
     createServeRequestListener(
       resolveDatabasePath(env),
@@ -378,7 +439,8 @@ export function createTraceServeServer(
       createLocalAuthService(env, {
         onLoginComplete: syncHooks?.onLoginComplete,
       }),
-      resolveAllowedWebOrigin(env),
+      allowedWebOrigin,
+      allowedWebOrigin ? readOrCreateBridgeCredential(env) : undefined,
     ),
   );
 }

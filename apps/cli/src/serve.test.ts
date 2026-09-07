@@ -71,6 +71,7 @@ function dispatch(
   syncHooks?: ServeSyncHooks,
   requestHeaders: Record<string, string> = {},
   allowedWebOrigin?: string,
+  bridgeCredential?: string,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -102,6 +103,7 @@ function dispatch(
     undefined,
     undefined,
     allowedWebOrigin,
+    bridgeCredential,
   )(
     { method, url, headers: requestHeaders } as unknown as IncomingMessage,
     res,
@@ -141,6 +143,44 @@ test("trace serve grants API reads only to the configured hosted origin", () => 
   expect(allowed.headers["access-control-allow-origin"]).toBe(allowedOrigin);
   expect(allowed.headers.vary).toBe("Origin");
   expect(other.headers["access-control-allow-origin"]).toBeUndefined();
+});
+
+test("trace serve requires the installation credential for hosted API reads", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const missing = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin },
+    allowedOrigin,
+    credential,
+  );
+  const wrong = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: "Bearer wrong-secret" },
+    allowedOrigin,
+    credential,
+  );
+  const authenticated = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+  );
+
+  expect(missing.statusCode).toBe(401);
+  expect(missing.body).toBe("Authorization required");
+  expect(wrong.statusCode).toBe(401);
+  expect(authenticated.statusCode).toBe(200);
+  expect(JSON.parse(authenticated.body)).toMatchObject({ service: "trace" });
 });
 
 test("trace serve answers a hosted-origin API preflight", () => {
