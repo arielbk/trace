@@ -101,6 +101,35 @@ function makeQueryWrapper(initialEntries: string[] = ["/"]) {
 }
 
 describe("TasksPage", () => {
+  test("read-only mode removes task navigation and mutation controls", () => {
+    const task = summary({
+      id: "task-1",
+      slug: "cli-work",
+      title: "CLI work",
+    });
+
+    render(
+      <TaskList
+        tasks={[task]}
+        readOnly
+        onArchive={() => undefined}
+        onPin={() => undefined}
+      />,
+      { wrapper: makeQueryWrapper() },
+    );
+
+    expect(screen.getByText("CLI work").closest("a")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Archive CLI work" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pin CLI work" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Copy re-enter prompt" }),
+    ).toBeVisible();
+  });
+
   test("renders a pulsing row skeleton once a slow tasks query outlasts the delay, not a bare Loading string", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
     const { container } = render(<TasksPage />, {
