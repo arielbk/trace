@@ -14,6 +14,9 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins,
+    build: {
+      outDir: mode === "hosted" ? "dist-hosted" : "dist",
+    },
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "./src"),

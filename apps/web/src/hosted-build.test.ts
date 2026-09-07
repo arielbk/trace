@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -56,3 +56,64 @@ test("hosted production build emits a strict CSP for the local Trace bridge", as
   expect(html).not.toContain("fonts.googleapis.com");
   expect(html).not.toContain("fonts.gstatic.com");
 });
+
+test("local and hosted builds keep independent output directories", async () => {
+  const projectRoot = path.resolve(import.meta.dirname, "..");
+  const isolatedRoot = await mkdtemp(
+    path.join(tmpdir(), "trace-isolated-builds-"),
+  );
+  buildDirectories.push(isolatedRoot);
+
+  await cp(
+    path.join(projectRoot, "index.html"),
+    path.join(isolatedRoot, "index.html"),
+  );
+  await symlink(path.join(projectRoot, "src"), path.join(isolatedRoot, "src"));
+
+  const runBuild = (mode: "production" | "hosted") =>
+    build({
+      root: isolatedRoot,
+      configFile: path.join(projectRoot, "vite.config.ts"),
+      mode,
+      logLevel: "silent",
+    });
+
+  await runBuild("production");
+  const localBeforeHosted = await readBuildOutput(
+    path.join(isolatedRoot, "dist"),
+  );
+
+  await runBuild("hosted");
+  const localAfterHosted = await readBuildOutput(
+    path.join(isolatedRoot, "dist"),
+  );
+  const hostedBeforeLocal = await readBuildOutput(
+    path.join(isolatedRoot, "dist-hosted"),
+  );
+
+  expect(localAfterHosted).toEqual(localBeforeHosted);
+  expect(localAfterHosted).not.toContain("Content-Security-Policy");
+  expect(localAfterHosted).not.toContain("http://127.0.0.1:4317");
+  expect(hostedBeforeLocal).toContain("Content-Security-Policy");
+  expect(hostedBeforeLocal).toContain("http://127.0.0.1:4317");
+
+  await runBuild("production");
+  expect(await readBuildOutput(path.join(isolatedRoot, "dist-hosted"))).toEqual(
+    hostedBeforeLocal,
+  );
+});
+
+async function readBuildOutput(directory: string): Promise<string> {
+  const entries = await readdir(directory, { recursive: true });
+  const files = await Promise.all(
+    entries.sort().map(async (entry) => {
+      const filePath = path.join(directory, entry);
+      try {
+        return `${entry}\n${await readFile(filePath, "utf8")}`;
+      } catch {
+        return "";
+      }
+    }),
+  );
+  return files.join("\n");
+}

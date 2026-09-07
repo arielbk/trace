@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:hosted": "vite build --mode hosted",
     "preview": "vite preview",
+    "preview:hosted": "vite preview --mode hosted",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"

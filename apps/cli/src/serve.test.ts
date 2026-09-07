@@ -677,7 +677,10 @@ test("resolveWebAssetsDir finds web assets beside the built CLI bundle", () => {
 
 test("resolveWebAssetsDir returns undefined when no built web app exists", () => {
   const moduleDir = join(dir, "apps", "cli", "src");
+  const hostedWebDist = join(dir, "apps", "web", "dist-hosted");
   mkdirSync(moduleDir, { recursive: true });
+  mkdirSync(hostedWebDist, { recursive: true });
+  writeFileSync(join(hostedWebDist, "index.html"), "<!doctype html>");
 
   expect(resolveWebAssetsDir(moduleDir)).toBeUndefined();
 });
