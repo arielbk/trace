@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { TRACE_PROTOCOL_VERSION } from "@trace/core/browser";
 import {
+  LocalTraceSource,
+  TraceDataSourceProvider,
+} from "../lib/trace-data-source.ts";
+import {
   LocalTraceConnection,
   supportsLocalTraceBridge,
   validateTraceConnection,
@@ -29,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  localStorage.clear();
   cleanup();
 });
 
@@ -77,6 +82,29 @@ describe("LocalTraceConnection", () => {
 
     expect(await screen.findByText("Trace isn’t reachable")).toBeVisible();
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+  });
+
+  test("reconnects automatically when the browser already has a pairing credential", async () => {
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+    localStorage.setItem(source.credentialStorageKey, "c".repeat(43));
+    const returningSource = new LocalTraceSource("http://127.0.0.1:4317");
+    const connect = vi.fn().mockResolvedValue({
+      service: "trace",
+      protocolVersion: TRACE_PROTOCOL_VERSION,
+    });
+
+    render(
+      <MemoryRouter>
+        <TraceDataSourceProvider source={returningSource}>
+          <LocalTraceConnection connect={connect}>
+            <p>Local tasks</p>
+          </LocalTraceConnection>
+        </TraceDataSourceProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Local tasks")).toBeVisible();
+    expect(connect).toHaveBeenCalledOnce();
   });
 
   test("reports an incompatible installed Trace version", () => {

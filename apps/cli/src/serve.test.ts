@@ -6,6 +6,11 @@ import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
+  createBridgePairing,
+  createBridgePairingUrl,
+  type BridgePairing,
+} from "./bridge-pairing.ts";
+import {
   openTraceStore,
   unzipExportBundle,
   updateConfigFile,
@@ -72,6 +77,8 @@ function dispatch(
   requestHeaders: Record<string, string> = {},
   allowedWebOrigin?: string,
   bridgeCredential?: string,
+  bridgePairing?: BridgePairing,
+  requestBody?: string,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -95,6 +102,14 @@ function dispatch(
     },
   } as unknown as ServerResponse;
 
+  const request = new EventEmitter() as unknown as IncomingMessage &
+    EventEmitter;
+  Object.assign(request, {
+    method,
+    url,
+    headers: { host: "127.0.0.1:4317", ...requestHeaders },
+  });
+
   createServeRequestListener(
     databasePath,
     assetsDir,
@@ -104,14 +119,12 @@ function dispatch(
     undefined,
     allowedWebOrigin,
     bridgeCredential,
-  )(
-    {
-      method,
-      url,
-      headers: { host: "127.0.0.1:4317", ...requestHeaders },
-    } as unknown as IncomingMessage,
-    res,
-  );
+    bridgePairing,
+  )(request, res);
+  if (requestBody !== undefined) request.emit("data", Buffer.from(requestBody));
+  if (method === "POST" || method === "PUT" || method === "PATCH") {
+    request.emit("end");
+  }
   return captured;
 }
 
@@ -186,6 +199,105 @@ test("trace serve requires the installation credential for hosted API reads", ()
   expect(wrong.statusCode).toBe(401);
   expect(authenticated.statusCode).toBe(200);
   expect(JSON.parse(authenticated.body)).toMatchObject({ service: "trace" });
+});
+
+test("a browser pairing secret exchanges the installation credential only once", () => {
+  const credential = "installation-secret";
+  const pairing = createBridgePairing(credential);
+
+  expect(pairing.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  expect(pairing.exchange("wrong-secret")).toBeNull();
+  expect(pairing.exchange(pairing.secret)).toBe(credential);
+  expect(pairing.exchange(pairing.secret)).toBeNull();
+});
+
+test("the pairing URL keeps its one-time secret in the fragment", () => {
+  const url = createBridgePairingUrl(
+    "https://trace-hosted.example",
+    "one-time-secret",
+  );
+
+  expect(url).toBe("https://trace-hosted.example/#trace-pair=one-time-secret");
+  expect(new URL(url).search).toBe("");
+});
+
+test("trace serve exchanges a pairing secret once without bearer authorization", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const pairing = createBridgePairing(credential);
+  const headers = { origin: allowedOrigin, "content-type": "application/json" };
+  const body = JSON.stringify({ secret: pairing.secret });
+
+  const paired = dispatch(
+    "POST",
+    "/api/pairing",
+    undefined,
+    undefined,
+    headers,
+    allowedOrigin,
+    credential,
+    pairing,
+    body,
+  );
+  const replay = dispatch(
+    "POST",
+    "/api/pairing",
+    undefined,
+    undefined,
+    headers,
+    allowedOrigin,
+    credential,
+    pairing,
+    body,
+  );
+
+  expect(paired.statusCode).toBe(200);
+  expect(paired.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(paired.headers["cache-control"]).toBe("no-store");
+  expect(JSON.parse(paired.body)).toEqual({ token: credential });
+  expect(replay.statusCode).toBe(401);
+});
+
+test("trace serve grants pairing preflight only to the configured origin", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const response = dispatch(
+    "OPTIONS",
+    "/api/pairing",
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type",
+    },
+    allowedOrigin,
+  );
+
+  expect(response.statusCode).toBe(204);
+  expect(response.headers["access-control-allow-methods"]).toBe(
+    "POST, OPTIONS",
+  );
+  expect(response.headers["access-control-allow-headers"]).toBe("content-type");
+});
+
+test("trace serve does not expose pairing to any other browser origin", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const pairing = createBridgePairing(credential);
+  const response = dispatch(
+    "POST",
+    "/api/pairing",
+    undefined,
+    undefined,
+    { origin: "https://attacker.example", "content-type": "application/json" },
+    allowedOrigin,
+    credential,
+    pairing,
+    JSON.stringify({ secret: pairing.secret }),
+  );
+
+  expect(response.statusCode).toBe(403);
+  expect(pairing.exchange(pairing.secret)).toBe(credential);
 });
 
 test("trace serve rejects requests with a non-loopback Host header", () => {
@@ -401,6 +513,20 @@ test("trace serve falls back to the next port when the default is taken", async 
 
   expect(running.port).toBe(DEFAULT_SERVE_PORT + 1);
   expect(running.url).toBe(`http://127.0.0.1:${DEFAULT_SERVE_PORT + 1}/`);
+  await running.close();
+});
+
+test("trace serve returns a hosted pairing URL with no query secret", async () => {
+  const server = fakeServerWithTakenPorts(new Set());
+  const running = await startTraceServe(
+    { HOME: dir, TRACE_WEB_ORIGIN: "https://trace-hosted.example" },
+    { server, triggerSync: () => {} },
+  );
+
+  expect(running.pairingUrl).toMatch(
+    /^https:\/\/trace-hosted\.example\/#trace-pair=[A-Za-z0-9_-]{43}$/,
+  );
+  expect(new URL(running.pairingUrl as string).search).toBe("");
   await running.close();
 });
 

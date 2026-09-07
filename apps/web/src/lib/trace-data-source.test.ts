@@ -11,7 +11,11 @@ import {
   useTraceDataSource,
 } from "./trace-data-source.ts";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+  window.history.replaceState({}, "", "/");
+});
 
 describe("TraceDataSource", () => {
   test("the same-origin source preserves the bundled board API", async () => {
@@ -92,6 +96,89 @@ describe("TraceDataSource", () => {
 
     await expect(source.connect()).rejects.toBeInstanceOf(HttpError);
     await expect(source.connect()).rejects.toMatchObject({ status: 403 });
+  });
+
+  test("exchanges a fragment pairing secret, stores the credential, and removes the fragment", async () => {
+    const pairingSecret = "p".repeat(43);
+    const credential = "c".repeat(43);
+    window.history.replaceState({}, "", `/#trace-pair=${pairingSecret}`);
+    localStorage.clear();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({ token: credential }, { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            service: "trace",
+            protocolVersion: 1,
+          },
+          { status: 200 },
+        ),
+      );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await source.connect();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:4317/api/pairing",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ secret: pairingSecret }),
+        targetAddressSpace: "loopback",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:4317/api/connection",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        targetAddressSpace: "loopback",
+      }),
+    );
+    expect(
+      (fetchMock.mock.calls[1]?.[1]?.headers as Headers).get("authorization"),
+    ).toBe(`Bearer ${credential}`);
+    expect(localStorage.getItem(source.credentialStorageKey)).toBe(credential);
+    expect(window.location.hash).toBe("");
+  });
+
+  test("reconnects with the stored credential on a later visit", async () => {
+    const origin = "http://127.0.0.1:4317";
+    const credential = "c".repeat(43);
+    const initial = new LocalTraceSource(origin);
+    localStorage.setItem(initial.credentialStorageKey, credential);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        Response.json(
+          { service: "trace", protocolVersion: 1 },
+          { status: 200 },
+        ),
+      );
+
+    const returning = new LocalTraceSource(origin);
+    await returning.connect();
+
+    expect(returning.connectAutomatically).toBe(true);
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("authorization")).toBe(`Bearer ${credential}`);
+  });
+
+  test("removes a rejected pairing secret from the address bar", async () => {
+    const pairingSecret = "p".repeat(43);
+    window.history.replaceState({}, "", `/#trace-pair=${pairingSecret}`);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 401 }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await expect(source.connect()).rejects.toMatchObject({ status: 401 });
+
+    expect(window.location.hash).toBe("");
+    expect(localStorage.getItem(source.credentialStorageKey)).toBeNull();
   });
 
   test("provides the selected source to data hooks and UI capabilities", () => {

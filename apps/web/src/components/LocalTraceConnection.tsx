@@ -1,5 +1,11 @@
 import { AlertTriangle, Cable, Loader2, ShieldCheck } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   TRACE_PROTOCOL_VERSION,
   type TraceConnection,
@@ -87,9 +93,7 @@ export function LocalTraceConnection({
   const supported = supportsLocalTraceBridge(userAgent);
   const [state, setState] = useState<ConnectionState>({ phase: "idle" });
 
-  if (state.phase === "connected") return children;
-
-  async function handleConnect() {
+  const handleConnect = useCallback(async () => {
     setState({ phase: "connecting" });
     try {
       const connection = await (connect ? connect() : source.connect());
@@ -98,7 +102,21 @@ export function LocalTraceConnection({
     } catch (error) {
       setState({ phase: "failed", failure: connectionFailure(error) });
     }
-  }
+  }, [connect, source]);
+
+  const attemptedAutomaticConnection = useRef(false);
+  useEffect(() => {
+    if (
+      supported &&
+      source.connectAutomatically &&
+      !attemptedAutomaticConnection.current
+    ) {
+      attemptedAutomaticConnection.current = true;
+      void handleConnect();
+    }
+  }, [handleConnect, source.connectAutomatically, supported]);
+
+  if (state.phase === "connected") return children;
 
   const failure =
     !supported && state.phase === "idle"

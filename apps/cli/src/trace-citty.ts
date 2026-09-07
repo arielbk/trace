@@ -88,9 +88,12 @@ export function buildTraceCittyRoot(
         meta: { description: "Start the Trace web UI" },
         run(): CommandResult {
           startTraceServe(env)
-            .then(({ url }) => {
+            .then(({ url, pairingUrl }) => {
               process.stdout.write(`trace serve listening on ${url}\n`);
-              openBrowser(url);
+              if (pairingUrl) {
+                process.stdout.write(`trace serve pairing at ${pairingUrl}\n`);
+              }
+              openBrowser(pairingUrl ?? url);
             })
             .catch((error: unknown) => {
               process.stderr.write(
