@@ -95,6 +95,19 @@ export function TaskRow({
     setArchivePhase("idle");
   }
 
+  /**
+   * A refused write (a hosted board reaching past the bridge's allowlist, most
+   * of all) must leave the row as it was rather than surface as an unhandled
+   * rejection; the mutation's own error state is the record of the failure.
+   */
+  function runRowAction(
+    action: ((task: TaskSummary) => void | Promise<void>) | undefined,
+    task: TaskSummary,
+  ): void {
+    if (!action) return;
+    void Promise.resolve(action(task)).catch(() => {});
+  }
+
   function handleArchiveClick() {
     if (archivePhase !== "idle") {
       cancelPendingArchive();
@@ -199,7 +212,7 @@ export function TaskRow({
               pinned && "text-accent",
             )}
             aria-label={pinned ? unpinLabel : pinLabel}
-            onClick={() => void (pinned ? onUnpin?.(task) : onPin?.(task))}
+            onClick={() => runRowAction(pinned ? onUnpin : onPin, task)}
           >
             {pinned ? <UnpinIcon /> : <PinIcon />}
           </button>
@@ -209,7 +222,7 @@ export function TaskRow({
             type="button"
             className="task-row-action inline-flex items-center justify-center size-row-action p-0 rounded-lg border border-border bg-surface text-text-muted cursor-pointer hover:text-accent hover:border-border-strong pointer-events-auto"
             aria-label={unarchiveLabel}
-            onClick={() => void onUnarchive(task)}
+            onClick={() => runRowAction(onUnarchive, task)}
           >
             <UnarchiveIcon />
           </button>

@@ -266,16 +266,24 @@ function applyHostedApiCors(
   if (!requestOrigin || isSameOriginRequest(req, requestOrigin)) return false;
 
   const isPairing = isPairingPath(path);
-  const isHostedRead =
-    requestOrigin === allowedWebOrigin &&
-    (method === "GET" || method === "OPTIONS") &&
-    isHostedReadPath(path);
+  // The one method each hosted path answers; anything unlisted has none, and
+  // a hosted request using the other method is refused as if the path were.
+  const hostedMethod = isPairing
+    ? "POST"
+    : isHostedReadPath(path)
+      ? "GET"
+      : isHostedActionPath(path)
+        ? "POST"
+        : undefined;
 
   // CORS alone does not prevent a cross-origin request from reaching the
   // server. Reject every non-local browser origin outside this deliberately
-  // tiny read-only surface so the spike cannot become a CSRF path.
-  const isHostedPairing = requestOrigin === allowedWebOrigin && isPairing;
-  if (!isHostedRead && !isHostedPairing) {
+  // tiny method-and-path allowlist so the bridge cannot become a CSRF path.
+  if (
+    requestOrigin !== allowedWebOrigin ||
+    !hostedMethod ||
+    (method !== hostedMethod && method !== "OPTIONS")
+  ) {
     res.statusCode = 403;
     res.end("Cross-origin API access denied");
     return true;
@@ -285,7 +293,7 @@ function applyHostedApiCors(
   res.setHeader("vary", "Origin");
   if (method !== "OPTIONS") return false;
 
-  const allowedMethod = isPairing ? "POST" : "GET";
+  const allowedMethod = hostedMethod;
   const allowedHeaders = isPairing ? ["content-type"] : ["authorization"];
   if (req.headers["access-control-request-method"] !== allowedMethod) {
     res.statusCode = 403;
@@ -369,6 +377,20 @@ function isHostedReadPath(path: string): boolean {
     normalized === "/api/connection" ||
     normalized === "/api/tasks" ||
     /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized)
+  );
+}
+
+/**
+ * The mutations the hosted board may perform cross-origin: archiving and
+ * pinning a task. Each is reversible, carries no request body, and touches only
+ * the task's own board metadata. Doc-checkbox writes, exports, sync, and
+ * machine authentication stay local-only.
+ */
+function isHostedActionPath(path: string): boolean {
+  const normalized =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(
+    normalized,
   );
 }
 

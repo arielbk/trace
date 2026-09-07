@@ -2425,7 +2425,7 @@ function renderHostedTaskPage(slug: string) {
 }
 
 describe("TaskPage", () => {
-  test("the hosted board reads a task over the local bridge with no mutations offered", async () => {
+  test("the hosted board reads a task over the local bridge and offers only the allowlisted actions", async () => {
     const timeline = makeTimeline("my-task");
     const fetchMock = routedFetch([
       [
@@ -2448,8 +2448,14 @@ describe("TaskPage", () => {
       "http://127.0.0.1:4317/api/tasks/my-task/timeline",
       expect.anything(),
     );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
     expect(
-      screen.queryByRole("button", { name: "More actions" }),
+      await screen.findByRole("button", { name: "Archive task" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Export task")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Export with transcripts"),
     ).not.toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).includes("/api/sync")),

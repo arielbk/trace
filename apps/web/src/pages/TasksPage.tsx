@@ -43,6 +43,7 @@ import {
 export function TasksPage() {
   const source = useTraceDataSource();
   const readOnly = !source.capabilities.taskMutations;
+  const showAccount = source.capabilities.account;
   const tasksQuery = useTasks();
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
@@ -102,8 +103,8 @@ export function TasksPage() {
       <AppHeader
         project={crumb}
         bordered={false}
-        aside={readOnly ? <LocalConnectionBadge /> : undefined}
-        showAccount={!readOnly}
+        aside={showAccount ? undefined : <LocalConnectionBadge />}
+        showAccount={showAccount}
       />
       <div className="pt-7 pb-header-y">
         <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>

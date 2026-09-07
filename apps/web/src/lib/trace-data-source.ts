@@ -27,7 +27,12 @@ export class HttpError extends Error {
 export type TraceDataSourceCapabilities = Readonly<{
   requiresConnection: boolean;
   taskDetails: boolean;
+  /** Archive, unarchive, pin, and unpin — a task's own board metadata. */
   taskMutations: boolean;
+  /** Doc checkbox writes, which change files on the machine's disk. */
+  docEdits: boolean;
+  /** Export downloads, which pull whole tasks and transcripts out at once. */
+  taskExports: boolean;
   account: boolean;
   sync: boolean;
 }>;
@@ -45,14 +50,21 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
   requiresConnection: false,
   taskDetails: true,
   taskMutations: true,
+  docEdits: true,
+  taskExports: true,
   account: true,
   sync: true,
 };
 
+// The bridge's cross-origin allowlist is narrower than the bundled board's:
+// tasks can be archived and pinned, but doc edits and exports stay local-only,
+// so the hosted UI must not offer affordances the loopback API would refuse.
 const LOCAL_CAPABILITIES: TraceDataSourceCapabilities = {
   requiresConnection: true,
   taskDetails: true,
-  taskMutations: false,
+  taskMutations: true,
+  docEdits: false,
+  taskExports: false,
   account: false,
   sync: false,
 };

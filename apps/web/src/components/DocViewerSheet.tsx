@@ -34,7 +34,7 @@ export function DocViewerSheet({
 }) {
   const query = useDocContents(taskRef, docPath);
   const toggleCheckbox = useToggleCheckbox();
-  const canEditDoc = useTraceDataSource().capabilities.taskMutations;
+  const canEditDoc = useTraceDataSource().capabilities.docEdits;
 
   return (
     <Sheet

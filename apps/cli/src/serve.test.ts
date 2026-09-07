@@ -354,19 +354,155 @@ test("trace serve rejects hosted preflights that request other headers", () => {
   expect(response.body).toBe("Cross-origin API access denied");
 });
 
-test("trace serve rejects hosted-origin mutations before dispatch", () => {
+test("trace serve rejects hosted-origin mutations outside the action allowlist", () => {
   const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const outside = [
+    "/api/tasks/checkout/docs/checkbox",
+    "/api/sync",
+    "/api/auth/logout",
+  ];
+
+  for (const path of outside) {
+    const response = dispatch(
+      "POST",
+      path,
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+      allowedOrigin,
+      credential,
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toBe("Cross-origin API access denied");
+  }
+});
+
+test("trace serve accepts authorized hosted task actions", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
   const response = dispatch(
     "POST",
-    "/api/tasks/checkout/archive",
+    `/api/tasks/${taskId}/archive`,
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+  );
+
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(JSON.parse(response.body).archivedAt).not.toBeNull();
+});
+
+test("trace serve applies every enabled hosted task action to the store", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const act = (action: string) =>
+    dispatch(
+      "POST",
+      `/api/tasks/${taskId}/${action}`,
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+      allowedOrigin,
+      credential,
+    );
+
+  expect(JSON.parse(act("archive").body).archivedAt).not.toBeNull();
+  expect(JSON.parse(act("unarchive").body).archivedAt).toBeNull();
+  expect(JSON.parse(act("pin").body).pinnedAt).not.toBeNull();
+  expect(JSON.parse(act("unpin").body).pinnedAt).toBeNull();
+});
+
+test("trace serve guards hosted task actions by origin, credential, and method", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const hostile = dispatch(
+    "POST",
+    `/api/tasks/${taskId}/archive`,
+    undefined,
+    undefined,
+    {
+      origin: "https://trace-hosted.example.attacker.example",
+      authorization: `Bearer ${credential}`,
+    },
+    allowedOrigin,
+    credential,
+  );
+  const unauthenticated = dispatch(
+    "POST",
+    `/api/tasks/${taskId}/archive`,
     undefined,
     undefined,
     { origin: allowedOrigin },
     allowedOrigin,
+    credential,
+  );
+  const wrongMethod = dispatch(
+    "GET",
+    `/api/tasks/${taskId}/archive`,
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+  );
+  const readPathPreflight = dispatch(
+    "OPTIONS",
+    `/api/tasks/${taskId}/timeline`,
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization",
+    },
+    allowedOrigin,
+    credential,
   );
 
-  expect(response.statusCode).toBe(403);
-  expect(response.body).toBe("Cross-origin API access denied");
+  expect(hostile.statusCode).toBe(403);
+  expect(hostile.headers["access-control-allow-origin"]).toBeUndefined();
+  expect(unauthenticated.statusCode).toBe(401);
+  expect(wrongMethod.statusCode).toBe(403);
+  expect(readPathPreflight.statusCode).toBe(403);
+
+  const store = openTraceStore(databasePath);
+  try {
+    expect(store.listTaskSummaries()[0]?.archivedAt ?? null).toBeNull();
+  } finally {
+    store.close();
+  }
+});
+
+test("trace serve answers a hosted task-action preflight with POST only", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const response = dispatch(
+    "OPTIONS",
+    `/api/tasks/${taskId}/pin`,
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization",
+    },
+    allowedOrigin,
+    credential,
+  );
+
+  expect(response.statusCode).toBe(204);
+  expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(response.headers["access-control-allow-methods"]).toBe(
+    "POST, OPTIONS",
+  );
+  expect(response.headers["access-control-allow-headers"]).toBe(
+    "authorization",
+  );
 });
 
 test("trace serve serves task timeline reads to the authenticated hosted origin", () => {

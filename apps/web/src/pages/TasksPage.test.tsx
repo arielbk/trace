@@ -14,6 +14,10 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TokenTotals } from "@trace/core";
 import { FilterBar, TaskList, TasksPage } from "./TasksPage.tsx";
+import {
+  LocalTraceSource,
+  TraceDataSourceProvider,
+} from "../lib/trace-data-source.ts";
 
 beforeAll(() => {
   Object.defineProperty(navigator, "clipboard", {
@@ -101,6 +105,97 @@ function makeQueryWrapper(initialEntries: string[] = ["/"]) {
 }
 
 describe("TasksPage", () => {
+  test("a paired hosted board archives and pins over the bridge without an account menu", async () => {
+    const origin = "http://127.0.0.1:4317";
+    localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));
+    const task = summary({ id: "task-1", slug: "cli-work", title: "CLI work" });
+    const fetchMock = vi.fn().mockImplementation(async (input: unknown) => {
+      const url = String(input);
+      const body = url.includes("/api/tasks/") ? task : [task];
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <TraceDataSourceProvider source={new LocalTraceSource(origin)}>
+        <TasksPage />
+      </TraceDataSourceProvider>,
+      { wrapper: makeQueryWrapper() },
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pin CLI work" }));
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).endsWith("/api/tasks/cli-work/pin"),
+        ),
+      ).toBe(true),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Archive CLI work" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Account" }),
+    ).not.toBeInTheDocument();
+  });
+
+
+  test("a hosted pin refreshes the cached task list on success and leaves it intact on failure", async () => {
+    const origin = "http://127.0.0.1:4317";
+    localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));
+    const task = summary({ id: "task-1", slug: "cli-work", title: "CLI work" });
+    let pinOk = true;
+    const fetchMock = vi.fn().mockImplementation(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/pin")) {
+        return pinOk
+          ? new Response(JSON.stringify({ id: task.id, pinnedAt: "now" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            })
+          : new Response("Cross-origin API access denied", { status: 403 });
+      }
+      return new Response(JSON.stringify([task]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const listCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/tasks"))
+        .length;
+    const pinCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/pin"))
+        .length;
+
+    render(
+      <TraceDataSourceProvider source={new LocalTraceSource(origin)}>
+        <TasksPage />
+      </TraceDataSourceProvider>,
+      { wrapper: makeQueryWrapper() },
+    );
+
+    const listsBeforeSuccess = listCalls();
+    fireEvent.click(await screen.findByRole("button", { name: "Pin CLI work" }));
+    await waitFor(() =>
+      expect(listCalls()).toBeGreaterThan(listsBeforeSuccess),
+    );
+
+    pinOk = false;
+    const listsBeforeFailure = listCalls();
+    fireEvent.click(await screen.findByRole("button", { name: "Pin CLI work" }));
+    await waitFor(() => expect(pinCalls()).toBe(2));
+
+    expect(listCalls()).toBe(listsBeforeFailure);
+    expect(
+      await screen.findByRole("button", { name: "Pin CLI work" }),
+    ).toBeVisible();
+  });
+
   test("read-only mode keeps task navigation but removes mutation controls", () => {
     const task = summary({
       id: "task-1",

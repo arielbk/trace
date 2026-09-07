@@ -30,6 +30,8 @@ describe("TraceDataSource", () => {
       requiresConnection: false,
       taskDetails: true,
       taskMutations: true,
+      docEdits: true,
+      taskExports: true,
       account: true,
       sync: true,
     });
@@ -47,7 +49,9 @@ describe("TraceDataSource", () => {
     expect(source.capabilities).toMatchObject({
       requiresConnection: true,
       taskDetails: true,
-      taskMutations: false,
+      taskMutations: true,
+      docEdits: false,
+      taskExports: false,
       account: false,
       sync: false,
     });
