@@ -268,10 +268,8 @@ function applyHostedApiCors(
   const isPairing = isPairingPath(path);
   const isHostedRead =
     requestOrigin === allowedWebOrigin &&
-    (path === "/api/connection" ||
-      path === "/api/connection/" ||
-      path === "/api/tasks" ||
-      path === "/api/tasks/");
+    (method === "GET" || method === "OPTIONS") &&
+    isHostedReadPath(path);
 
   // CORS alone does not prevent a cross-origin request from reaching the
   // server. Reject every non-local browser origin outside this deliberately
@@ -356,6 +354,22 @@ function rejectUnauthorizedHostedRequest(
   res.setHeader("www-authenticate", "Bearer");
   res.end("Authorization required");
   return true;
+}
+
+/**
+ * The read-only surface the hosted board may reach cross-origin: the connection
+ * handshake, the task list, and one task's timeline and docs. Everything else —
+ * exports, mutations, sync, machine authentication — stays local-only, so the
+ * hosted spike can render a task without widening the bridge.
+ */
+function isHostedReadPath(path: string): boolean {
+  const normalized =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return (
+    normalized === "/api/connection" ||
+    normalized === "/api/tasks" ||
+    /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized)
+  );
 }
 
 function isPairingPath(path: string): boolean {

@@ -32,14 +32,15 @@ export function TaskRow({
   onUnarchive,
   onPin,
   onUnpin,
-  readOnly = false,
+  linkToDetail = true,
 }: {
   task: TaskSummary;
   onArchive?: (task: TaskSummary) => void | Promise<void>;
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
   onPin?: (task: TaskSummary) => void | Promise<void>;
   onUnpin?: (task: TaskSummary) => void | Promise<void>;
-  readOnly?: boolean;
+  /** False where the data source exposes no task detail view to link into. */
+  linkToDetail?: boolean;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [archivePhase, setArchivePhase] = useState<
@@ -55,6 +56,17 @@ export function TaskRow({
   const unarchiveLabel = `Unarchive ${untitled ? "untitled task" : task.title}`;
   const pinLabel = `Pin ${untitled ? "untitled task" : task.title}`;
   const unpinLabel = `Unpin ${untitled ? "untitled task" : task.title}`;
+  const title = (
+    <span
+      className={cn(
+        "task-row-title block text-row-title font-semibold overflow-hidden whitespace-nowrap text-ellipsis",
+        archived ? "text-text-muted" : "text-text",
+        untitled && "task-row-untitled text-text-muted font-normal italic",
+      )}
+    >
+      {untitled ? "Untitled task" : task.title}
+    </span>
+  );
 
   useEffect(() => {
     return () => {
@@ -117,33 +129,15 @@ export function TaskRow({
       {/* Left: title row + description */}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-chip-gap flex-wrap">
-          {readOnly ? (
-            <span
-              className={cn(
-                "task-row-title block text-row-title font-semibold overflow-hidden whitespace-nowrap text-ellipsis",
-                archived ? "text-text-muted" : "text-text",
-                untitled &&
-                  "task-row-untitled text-text-muted font-normal italic",
-              )}
-            >
-              {untitled ? "Untitled task" : task.title}
-            </span>
-          ) : (
+          {linkToDetail ? (
             <Link
               to={`/task/${task.slug}`}
               className="no-underline text-inherit hover:text-accent min-w-0"
             >
-              <span
-                className={cn(
-                  "task-row-title block text-row-title font-semibold overflow-hidden whitespace-nowrap text-ellipsis",
-                  archived ? "text-text-muted" : "text-text",
-                  untitled &&
-                    "task-row-untitled text-text-muted font-normal italic",
-                )}
-              >
-                {untitled ? "Untitled task" : task.title}
-              </span>
+              {title}
             </Link>
+          ) : (
+            title
           )}
           <span className="task-row-project flex-shrink-0 font-mono text-chip px-1.5 py-px rounded bg-chip-bg text-chip-text border border-border whitespace-nowrap">
             {projectName}

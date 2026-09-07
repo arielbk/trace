@@ -21,6 +21,7 @@ import { DocViewerSheet } from "../components/DocViewerSheet.tsx";
 import { ReEnterButton } from "../components/ReEnterButton.tsx";
 import { useClipboardCopy } from "../components/useClipboardCopy.ts";
 import { TaskActionsMenu } from "../components/TaskActionsMenu.tsx";
+import { LocalConnectionBadge } from "../components/LocalTraceConnection.tsx";
 import cursorIconDarkUrl from "../assets/cursor-icon-dark.png";
 import cursorIconLightUrl from "../assets/cursor-icon-light.png";
 import {
@@ -46,6 +47,7 @@ import {
   useUnarchiveTask,
 } from "../lib/api.ts";
 import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 
 export function TaskPage() {
   const { id = "", "*": routeDocPath } = useParams();
@@ -279,6 +281,7 @@ export function TaskTimelineView({
   onArchive?: () => void | Promise<void>;
   onUnarchive?: () => void | Promise<void>;
 }) {
+  const source = useTraceDataSource();
   const archivedAt =
     archivedAtProp !== undefined ? archivedAtProp : timeline.task.archivedAt;
   const isArchived = archivedAt !== null;
@@ -364,6 +367,10 @@ export function TaskTimelineView({
         projectHref={`/?project=${encodeURIComponent(timeline.task.projectSlug)}`}
         context={timeline.task.slug}
         bordered={false}
+        aside={
+          source.capabilities.account ? undefined : <LocalConnectionBadge />
+        }
+        showAccount={source.capabilities.account}
       />
       <div className="pt-3">
         <Link
@@ -402,13 +409,15 @@ export function TaskTimelineView({
             title={timeline.task.title}
             slug={timeline.task.slug}
           />
-          <TaskActionsMenu
-            taskRef={timeline.task.slug}
-            isArchived={isArchived}
-            onArchive={onArchive}
-            onUnarchive={onUnarchive}
-            className="ml-auto"
-          />
+          {source.capabilities.taskMutations ? (
+            <TaskActionsMenu
+              taskRef={timeline.task.slug}
+              isArchived={isArchived}
+              onArchive={onArchive}
+              onUnarchive={onUnarchive}
+              className="ml-auto"
+            />
+          ) : null}
         </div>
       </div>
       <LeftOffPanel

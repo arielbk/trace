@@ -35,6 +35,7 @@ export const config = [
     },
   },
   {
-    ignores: ["dist/**"],
+    // Build outputs, including the hosted web app's separate directory.
+    ignores: ["dist/**", "dist-hosted/**"],
   },
 ];

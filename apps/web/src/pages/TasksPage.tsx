@@ -144,6 +144,7 @@ export function TasksPage() {
           onPin={readOnly ? undefined : handlePin}
           onUnpin={readOnly ? undefined : handleUnpin}
           readOnly={readOnly}
+          linkToDetail={source.capabilities.taskDetails}
           hiddenArchivedCount={archivedHidden}
         />
       </SkeletonReveal>
@@ -180,6 +181,7 @@ export function TaskList({
   onPin,
   onUnpin,
   readOnly = false,
+  linkToDetail = true,
   hiddenArchivedCount = 0,
 }: {
   tasks: TaskSummary[];
@@ -188,6 +190,7 @@ export function TaskList({
   onPin?: (task: TaskSummary) => void | Promise<void>;
   onUnpin?: (task: TaskSummary) => void | Promise<void>;
   readOnly?: boolean;
+  linkToDetail?: boolean;
   hiddenArchivedCount?: number;
 }) {
   const { pinned, rest } = partitionPinned(tasks);
@@ -213,7 +216,7 @@ export function TaskList({
         onUnarchive={readOnly ? undefined : onUnarchive}
         onPin={readOnly ? undefined : onPin}
         onUnpin={readOnly ? undefined : onUnpin}
-        readOnly={readOnly}
+        linkToDetail={linkToDetail}
       />
     ));
   }

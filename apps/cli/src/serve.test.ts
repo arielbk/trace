@@ -12,6 +12,7 @@ import {
 } from "./bridge-pairing.ts";
 import {
   openTraceStore,
+  resolveTaskDocsDir,
   unzipExportBundle,
   updateConfigFile,
 } from "@trace/core";
@@ -368,19 +369,113 @@ test("trace serve rejects hosted-origin mutations before dispatch", () => {
   expect(response.body).toBe("Cross-origin API access denied");
 });
 
-test("trace serve rejects reads outside the hosted spike allowlist", () => {
+test("trace serve serves task timeline reads to the authenticated hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
   const response = dispatch(
+    "GET",
+    `/api/tasks/${taskId}/timeline`,
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+  );
+
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(JSON.parse(response.body).task.slug).toBe("checkout");
+});
+
+test("trace serve serves task doc reads to the authenticated hosted origin", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const docsDir = resolveTaskDocsDir(databasePath, "checkout");
+  mkdirSync(docsDir, { recursive: true });
+  writeFileSync(join(docsDir, "notes.md"), "# Notes\n\nSome content.");
+
+  const response = dispatch(
+    "GET",
+    `/api/tasks/checkout/docs?path=${encodeURIComponent("notes.md")}`,
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+  );
+
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(response.body).toContain("<h1>Notes</h1>");
+});
+
+test("trace serve guards task detail reads by origin and credential", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const hostile = dispatch(
+    "GET",
+    `/api/tasks/${taskId}/timeline`,
+    undefined,
+    undefined,
+    {
+      origin: "https://trace-hosted.example.attacker.example",
+      authorization: `Bearer ${credential}`,
+    },
+    allowedOrigin,
+    credential,
+  );
+  const unauthenticated = dispatch(
     "GET",
     `/api/tasks/${taskId}/timeline`,
     undefined,
     undefined,
     { origin: allowedOrigin },
     allowedOrigin,
+    credential,
+  );
+  const preflight = dispatch(
+    "OPTIONS",
+    `/api/tasks/${taskId}/timeline`,
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "GET",
+      "access-control-request-headers": "authorization",
+    },
+    allowedOrigin,
+    credential,
   );
 
-  expect(response.statusCode).toBe(403);
-  expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  expect(hostile.statusCode).toBe(403);
+  expect(hostile.headers["access-control-allow-origin"]).toBeUndefined();
+  expect(unauthenticated.statusCode).toBe(401);
+  expect(preflight.statusCode).toBe(204);
+  expect(preflight.headers["access-control-allow-origin"]).toBe(allowedOrigin);
+  expect(preflight.headers["access-control-allow-methods"]).toBe("GET, OPTIONS");
+});
+
+test("trace serve rejects reads outside the hosted spike allowlist", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const outside = [
+    `/api/tasks/${taskId}/export`,
+    `/api/tasks/${taskId}/docs/checkbox`,
+    "/api/sync/status",
+  ];
+
+  for (const path of outside) {
+    const response = dispatch(
+      "GET",
+      path,
+      undefined,
+      undefined,
+      { origin: allowedOrigin },
+      allowedOrigin,
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  }
 });
 
 test("trace serve keeps same-origin board mutations working", () => {

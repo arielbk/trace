@@ -101,7 +101,7 @@ function makeQueryWrapper(initialEntries: string[] = ["/"]) {
 }
 
 describe("TasksPage", () => {
-  test("read-only mode removes task navigation and mutation controls", () => {
+  test("read-only mode keeps task navigation but removes mutation controls", () => {
     const task = summary({
       id: "task-1",
       slug: "cli-work",
@@ -118,7 +118,10 @@ describe("TasksPage", () => {
       { wrapper: makeQueryWrapper() },
     );
 
-    expect(screen.getByText("CLI work").closest("a")).toBeNull();
+    expect(screen.getByText("CLI work").closest("a")).toHaveAttribute(
+      "href",
+      "/task/cli-work",
+    );
     expect(
       screen.queryByRole("button", { name: "Archive CLI work" }),
     ).not.toBeInTheDocument();

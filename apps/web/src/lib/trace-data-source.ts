@@ -51,7 +51,7 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
 
 const LOCAL_CAPABILITIES: TraceDataSourceCapabilities = {
   requiresConnection: true,
-  taskDetails: false,
+  taskDetails: true,
   taskMutations: false,
   account: false,
   sync: false,

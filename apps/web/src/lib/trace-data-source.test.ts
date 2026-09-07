@@ -46,7 +46,7 @@ describe("TraceDataSource", () => {
 
     expect(source.capabilities).toMatchObject({
       requiresConnection: true,
-      taskDetails: false,
+      taskDetails: true,
       taskMutations: false,
       account: false,
       sync: false,

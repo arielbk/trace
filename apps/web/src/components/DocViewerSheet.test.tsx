@@ -11,6 +11,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRef } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { DocViewerSheet } from "./DocViewerSheet.tsx";
+import {
+  LocalTraceSource,
+  TraceDataSourceProvider,
+} from "../lib/trace-data-source.ts";
 
 function makeQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -173,6 +177,38 @@ function checkboxFetchMock() {
     );
   });
 }
+
+test("a read-only source renders the doc but never writes a checkbox back", async () => {
+  const fetchMock = checkboxFetchMock();
+  vi.stubGlobal("fetch", fetchMock);
+  const triggerRef = createRef<HTMLElement>();
+
+  render(
+    <QueryClientProvider client={makeQueryClient()}>
+      <TraceDataSourceProvider
+        source={new LocalTraceSource("http://127.0.0.1:4317")}
+      >
+        <DocViewerSheet
+          taskRef="my-task"
+          docPath="/work/docs/plan.md"
+          triggerRef={triggerRef}
+          onOpenChange={() => {}}
+        />
+      </TraceDataSourceProvider>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("First");
+
+  const [firstBox] = screen.getAllByRole("checkbox") as HTMLInputElement[];
+  fireEvent.click(firstBox!);
+
+  expect(firstBox!.checked).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes("/docs/checkbox"),
+    ),
+  ).toBe(false);
+});
 
 test("clicking a checkbox persists the new state to the checkbox endpoint", async () => {
   const fetchMock = checkboxFetchMock();
