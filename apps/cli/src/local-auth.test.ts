@@ -155,6 +155,7 @@ function request(
     const req = Object.assign(new EventEmitter(), {
       method,
       url,
+      headers: { host: "127.0.0.1:4317" },
     }) as unknown as IncomingMessage;
     listener(req, res);
     if (method === "POST") {

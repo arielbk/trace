@@ -105,7 +105,11 @@ function dispatch(
     allowedWebOrigin,
     bridgeCredential,
   )(
-    { method, url, headers: requestHeaders } as unknown as IncomingMessage,
+    {
+      method,
+      url,
+      headers: { host: "127.0.0.1:4317", ...requestHeaders },
+    } as unknown as IncomingMessage,
     res,
   );
   return captured;
@@ -136,12 +140,13 @@ test("trace serve grants API reads only to the configured hosted origin", () => 
     "/api/connection",
     undefined,
     undefined,
-    { origin: "https://unrelated.example" },
+    { origin: "https://trace-hosted.example.attacker.example" },
     allowedOrigin,
   );
 
   expect(allowed.headers["access-control-allow-origin"]).toBe(allowedOrigin);
   expect(allowed.headers.vary).toBe("Origin");
+  expect(other.statusCode).toBe(403);
   expect(other.headers["access-control-allow-origin"]).toBeUndefined();
 });
 
@@ -183,6 +188,15 @@ test("trace serve requires the installation credential for hosted API reads", ()
   expect(JSON.parse(authenticated.body)).toMatchObject({ service: "trace" });
 });
 
+test("trace serve rejects requests with a non-loopback Host header", () => {
+  const response = dispatch("GET", "/api/connection", undefined, undefined, {
+    host: "attacker.example",
+  });
+
+  expect(response.statusCode).toBe(421);
+  expect(response.body).toBe("Loopback Host required");
+});
+
 test("trace serve answers a hosted-origin API preflight", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const response = dispatch(
@@ -193,6 +207,7 @@ test("trace serve answers a hosted-origin API preflight", () => {
     {
       origin: allowedOrigin,
       "access-control-request-method": "GET",
+      "access-control-request-headers": "Authorization",
       "access-control-request-private-network": "true",
     },
     allowedOrigin,
@@ -201,7 +216,29 @@ test("trace serve answers a hosted-origin API preflight", () => {
   expect(response.statusCode).toBe(204);
   expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
   expect(response.headers["access-control-allow-methods"]).toContain("GET");
+  expect(response.headers["access-control-allow-headers"]).toBe(
+    "authorization",
+  );
   expect(response.headers["access-control-allow-private-network"]).toBe("true");
+});
+
+test("trace serve rejects hosted preflights that request other headers", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const response = dispatch(
+    "OPTIONS",
+    "/api/tasks",
+    undefined,
+    undefined,
+    {
+      origin: allowedOrigin,
+      "access-control-request-method": "GET",
+      "access-control-request-headers": "authorization, x-untrusted",
+    },
+    allowedOrigin,
+  );
+
+  expect(response.statusCode).toBe(403);
+  expect(response.body).toBe("Cross-origin API access denied");
 });
 
 test("trace serve rejects hosted-origin mutations before dispatch", () => {
@@ -365,6 +402,14 @@ test("trace serve falls back to the next port when the default is taken", async 
   expect(running.port).toBe(DEFAULT_SERVE_PORT + 1);
   expect(running.url).toBe(`http://127.0.0.1:${DEFAULT_SERVE_PORT + 1}/`);
   await running.close();
+});
+
+test("trace serve refuses to bind beyond the loopback interface", async () => {
+  const server = fakeServerWithTakenPorts(new Set());
+
+  await expect(
+    startTraceServe({}, { host: "0.0.0.0", server, triggerSync: () => {} }),
+  ).rejects.toThrow("loopback");
 });
 
 test("trace serve fires a background sync on start", async () => {
@@ -534,7 +579,11 @@ test("the board's sync status reports the machine's AutoSync mode as it changes"
     const captured: { body: string } = { body: "" };
     server.emit(
       "request",
-      { method: "GET", url: "/api/sync/status" } as IncomingMessage,
+      {
+        method: "GET",
+        url: "/api/sync/status",
+        headers: { host: "127.0.0.1:4317" },
+      } as IncomingMessage,
       {
         statusCode: 200,
         setHeader: () => {},

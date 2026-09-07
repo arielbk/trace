@@ -177,6 +177,12 @@ export function createServeRequestListener(
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
+    if (!isLoopbackHostHeader(req.headers?.host)) {
+      res.statusCode = 421;
+      res.end("Loopback Host required");
+      return;
+    }
+
     if (applyHostedApiCors(req, res, url, method, allowedWebOrigin)) return;
     if (
       rejectUnauthorizedHostedRequest(
@@ -273,6 +279,23 @@ function applyHostedApiCors(
     return true;
   }
 
+  const requestedHeaders = req.headers["access-control-request-headers"];
+  const normalizedHeaders =
+    typeof requestedHeaders === "string"
+      ? requestedHeaders
+          .split(",")
+          .map((header) => header.trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+  if (
+    normalizedHeaders.length !== 1 ||
+    normalizedHeaders[0] !== "authorization"
+  ) {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
   res.setHeader("access-control-allow-methods", "GET, OPTIONS");
   res.setHeader("access-control-allow-headers", "authorization");
   res.setHeader("access-control-max-age", "600");
@@ -336,6 +359,21 @@ function isSameOriginRequest(
     host &&
     (requestOrigin === `http://${host}` || requestOrigin === `https://${host}`),
   );
+}
+
+function isLoopbackHostHeader(host: string | undefined): boolean {
+  if (!host) return false;
+  const match = /^(localhost|127\.0\.0\.1|\[::1\])(?::([0-9]{1,5}))?$/i.exec(
+    host,
+  );
+  if (!match) return false;
+  if (!match[2]) return true;
+  const port = Number(match[2]);
+  return port > 0 && port <= 65_535;
+}
+
+function isLoopbackBindHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
 /** Return one canonical origin, or undefined when hosted access is disabled. */
@@ -455,6 +493,11 @@ export function startTraceServe(
   options: StartTraceServeOptions = {},
 ): Promise<TraceServer> {
   const host = options.host ?? "127.0.0.1";
+  if (!isLoopbackBindHost(host)) {
+    return Promise.reject(
+      new Error("trace serve must bind to a loopback host"),
+    );
+  }
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const triggerSync = options.triggerSync ?? requestAutomaticSync;
   const server =
@@ -493,7 +536,7 @@ export function startTraceServe(
         const boundPort =
           typeof address === "object" && address ? address.port : port;
         resolve({
-          url: `http://${host}:${boundPort}/`,
+          url: `http://${host === "::1" ? `[${host}]` : host}:${boundPort}/`,
           port: boundPort,
           close: () =>
             new Promise<void>((resolveClose, rejectClose) => {
