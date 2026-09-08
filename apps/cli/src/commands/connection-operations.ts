@@ -21,6 +21,7 @@ import {
   type ConnectionServiceDependencies,
   type ConnectionServiceState,
 } from "../connection-service.ts";
+import { openBrowser } from "../open-browser.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
 /** Where the local connection always listens. */
@@ -35,6 +36,8 @@ export type ConnectionDependencies = ManagedConnectionDependencies & {
   onShutdownSignal?: (shutDown: () => void) => void;
   /** launchd boundary for the login service, injected by tests. */
   service?: ConnectionServiceDependencies;
+  /** Browser launch is injected in tests; pairing without --open only prints. */
+  open?: (url: string) => void;
 };
 
 /**
@@ -75,12 +78,36 @@ export async function connectionOperation(
   }
 
   if (subcommand === "pair") {
+    if (args.length === 2 && /^[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}$/.test(args[1]!)) {
+      const code = args[1]!.toUpperCase();
+      const response = await request(
+        "POST",
+        `/api/management/pairings/${code}/approve`,
+      );
+      if (!response.ok) {
+        return failure(
+          "This pairing code could not be approved. Get a fresh command from the page and check that Trace is running.",
+        );
+      }
+      return success(
+        "Browser approved. Return to the page—it will connect automatically.\n",
+      );
+    }
+    if (args.slice(1).some((arg) => arg !== "--open")) {
+      return failure("Usage: trace connection pair [<code>|--open]");
+    }
     const response = await request("POST", "/api/management/pairings");
     if (!response.ok) return response.result;
     const link = response.payload as { url?: string };
     if (!link.url) {
       return failure(
         "No hosted board origin is configured, so there is nothing to pair with.",
+      );
+    }
+    if (args.includes("--open")) {
+      (dependencies.open ?? openBrowser)(link.url);
+      return success(
+        `Opening Trace in your browser.\nIf it did not open, use this link within 5 minutes:\n${link.url}\n`,
       );
     }
     return success(
@@ -129,7 +156,7 @@ export async function connectionOperation(
 }
 
 const USAGE =
-  "Usage: trace connection <install|status|restart|uninstall|run|pair|browsers|revoke <id>|reset>";
+  "Usage: trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>";
 
 /**
  * A lifecycle command is an explicit request, so every reason it did not
@@ -268,8 +295,7 @@ function onProcessTermination(shutDown: () => void): void {
 }
 
 export type ManagementResponse =
-  | { ok: true; payload: unknown }
-  | { ok: false; result: CommandResult };
+  { ok: true; payload: unknown } | { ok: false; result: CommandResult };
 
 /**
  * A caller for the local management surface, carrying this installation's

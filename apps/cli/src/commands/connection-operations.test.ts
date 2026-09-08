@@ -97,6 +97,36 @@ test("trace connection pair prints a single-use link for another browser", async
   );
 });
 
+test("pair --open opens the single-use link and keeps a fallback", async () => {
+  const { fetch } = runningService();
+  const open = vi.fn();
+  const result = await connectionOperation(
+    ["pair", "--open"],
+    { env },
+    { fetch, open },
+  );
+  expect(result.exitCode).toBe(0);
+  expect(open).toHaveBeenCalledOnce();
+  expect(open.mock.calls[0]?.[0]).toMatch(
+    /^https:\/\/trace-hosted\.example\/#trace-pair=/,
+  );
+  expect(result.stdout).toContain("Opening Trace in your browser");
+  expect(result.stdout).toContain(open.mock.calls[0]?.[0]);
+  expect(result.stdout).not.toContain("Device paired");
+});
+
+test("pair rejects unknown options without issuing a link", async () => {
+  const fetch = vi.fn();
+  const result = await connectionOperation(
+    ["pair", "--opne"],
+    { env },
+    { fetch },
+  );
+  expect(result.exitCode).toBe(2);
+  expect(result.stderr).toContain("pair [<code>|--open]");
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test("trace connection pair says how to start a connection that is not running", async () => {
   const fetch = (async () => {
     throw new TypeError("fetch failed");
@@ -274,10 +304,19 @@ test("trace connection install starts the login service without any integration"
 
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("Local connection installed");
-  expect(calls.map(([verb]) => verb)).toEqual(["print", "bootstrap", "kickstart"]);
+  expect(calls.map(([verb]) => verb)).toEqual([
+    "print",
+    "bootstrap",
+    "kickstart",
+  ]);
   expect(
     existsSync(
-      join(home, "Library", "LaunchAgents", `${MANAGED_CONNECTION_LABEL}.plist`),
+      join(
+        home,
+        "Library",
+        "LaunchAgents",
+        `${MANAGED_CONNECTION_LABEL}.plist`,
+      ),
     ),
   ).toBe(true);
   // The integration registry is untouched: this path is the connection alone.
@@ -347,12 +386,18 @@ test("trace connection status reports a healthy connection and where its logs ar
 
   const { fetch } = runningService();
   const { service } = fakeLaunchd(loadedJob);
-  const result = await connectionOperation(["status"], { env: cliEnv }, { fetch, service });
+  const result = await connectionOperation(
+    ["status"],
+    { env: cliEnv },
+    { fetch, service },
+  );
 
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
   expect(result.stdout).toMatch(/running/i);
-  expect(result.stdout).toContain(join(home, ".trace", "logs", "connection.log"));
+  expect(result.stdout).toContain(
+    join(home, ".trace", "logs", "connection.log"),
+  );
 });
 
 test("trace connection status distinguishes an installed service that is not running", async () => {
@@ -417,7 +462,11 @@ test("trace connection status names an unrelated process holding the endpoint", 
     new Response("not trace", { status: 200 })) as typeof globalThis.fetch;
   const { service } = fakeLaunchd();
 
-  const result = await connectionOperation(["status"], { env }, { fetch, service });
+  const result = await connectionOperation(
+    ["status"],
+    { env },
+    { fetch, service },
+  );
 
   expect(result.stdout).toContain("another process is listening");
   expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
@@ -482,7 +531,11 @@ test("trace connection restart loads a service launchd is not holding", async ()
   );
 
   expect(result.exitCode).toBe(0);
-  expect(calls.map(([verb]) => verb)).toEqual(["print", "bootstrap", "kickstart"]);
+  expect(calls.map(([verb]) => verb)).toEqual([
+    "print",
+    "bootstrap",
+    "kickstart",
+  ]);
 });
 
 test("trace connection uninstall removes the service and revokes every browser", async () => {
@@ -575,7 +628,9 @@ test("trace connection uninstall reports a job launchd refused to stop", async (
   expect(result.exitCode).not.toBe(0);
   // A partial failure says what did land before naming the manual recovery.
   expect(result.stderr).toContain("plist was removed");
-  expect(result.stderr).toContain(`launchctl bootout gui/501/${MANAGED_CONNECTION_LABEL}`);
+  expect(result.stderr).toContain(
+    `launchctl bootout gui/501/${MANAGED_CONNECTION_LABEL}`,
+  );
 });
 
 test("trace connection usage names the lifecycle subcommands", async () => {
@@ -621,7 +676,11 @@ test("nothing the connection prints into its log is a credential", async () => {
   const printed = (
     await Promise.all(
       [["run"], ["status"], ["browsers"], ["pair"]].map((args) =>
-        connectionOperation(args, { env }, { fetch, start, service: fakeLaunchd().service }),
+        connectionOperation(
+          args,
+          { env },
+          { fetch, start, service: fakeLaunchd().service },
+        ),
       ),
     )
   )

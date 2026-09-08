@@ -173,7 +173,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 const COMPACT_USAGE =
-  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace board [--local] | trace serve | trace connection <install|status|restart|uninstall|run|pair|browsers|revoke <id>|reset> | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
+  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace board [--local] | trace serve | trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
 
 function usage(): CommandResult {
   return failure(COMPACT_USAGE);
@@ -212,6 +212,10 @@ function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
       `\n${style.heading("Keep Trace current")}\n` +
       row("trace update", "Update Trace and refresh integrations") +
       row("trace update --yes", "Update without asking first") +
+      `\n${style.heading("The local connection")}\n` +
+      row("trace connection status", "Check the connection behind the board") +
+      row("trace connection pair <code>", "Approve the browser waiting for Trace") +
+      row("trace connection restart", "Restart it after a failure") +
       `\n${style.heading("Cloud")}\n` +
       row("trace login", "Connect your Trace account") +
       row("trace sync", "Sync local work") +

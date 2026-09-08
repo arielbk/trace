@@ -1,5 +1,5 @@
 import { TRACE_PROTOCOL_VERSION, type TraceConnection } from "@trace/core/browser";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import { HttpError } from "./trace-data-source.ts";
 
 /**
@@ -43,6 +43,14 @@ export type ConnectionRecoveryState = {
   /** Probe now, at the viewer's request. */
   retry: () => void;
 };
+
+export const ConnectionHealthContext = createContext<
+  Pick<ConnectionRecoveryState, "status" | "loss">
+>({ status: "healthy", loss: null });
+
+export function useConnectionHealth() {
+  return useContext(ConnectionHealthContext);
+}
 
 /**
  * Classify a failed handshake. Only an answer from Trace itself is treated as

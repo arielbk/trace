@@ -59,6 +59,10 @@ export interface TraceDataSource {
   readonly connectAutomatically: boolean;
   request(path: string, init?: RequestInit): Promise<Response>;
   connect(): Promise<TraceConnection>;
+  beginPairing?(
+    signal: AbortSignal,
+  ): Promise<{ code: string; secret: string; expiresAt: number }>;
+  pollPairing?(secret: string, signal: AbortSignal): Promise<boolean>;
 }
 
 const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
@@ -211,7 +215,11 @@ export class LocalTraceSource extends HttpTraceDataSource {
   }
 
   get connectAutomatically(): boolean {
-    return Boolean(this.#credential || readPairingSecret());
+    return Boolean(
+      this.#credential ||
+      readStoredCredential(this.credentialStorageKey) ||
+      readPairingSecret(),
+    );
   }
 
   /** What the connected runtime granted; the conservative legacy set until a
@@ -221,6 +229,9 @@ export class LocalTraceSource extends HttpTraceDataSource {
   }
 
   override async connect(): Promise<TraceConnection> {
+    // Another tab may have completed pairing while this source stayed mounted.
+    this.#credential =
+      readStoredCredential(this.credentialStorageKey) ?? this.#credential;
     const pairingSecret = readPairingSecret();
     if (pairingSecret) {
       try {
@@ -235,6 +246,55 @@ export class LocalTraceSource extends HttpTraceDataSource {
       ? localCapabilities(advertised)
       : LEGACY_LOCAL_CAPABILITIES;
     return connection;
+  }
+
+  async beginPairing(signal: AbortSignal) {
+    const response = await traceApiFetch(
+      "/api/pairing/requests",
+      { method: "POST", signal },
+      this.origin,
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Could not prepare pairing");
+    const payload = await response.json();
+    if (
+      !/^[A-F0-9]{4}-[A-F0-9]{4}$/.test(payload.code) ||
+      typeof payload.secret !== "string" ||
+      !TOKEN_PATTERN.test(payload.secret) ||
+      typeof payload.expiresAt !== "number" ||
+      !Number.isFinite(payload.expiresAt)
+    ) {
+      throw new Error("Trace returned an invalid pairing request");
+    }
+    return payload as { code: string; secret: string; expiresAt: number };
+  }
+
+  async pollPairing(secret: string, signal: AbortSignal): Promise<boolean> {
+    const response = await traceApiFetch(
+      "/api/pairing/requests/poll",
+      {
+        method: "POST",
+        signal,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ secret }),
+      },
+      this.origin,
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Could not complete pairing");
+    const payload = await response.json();
+    if (response.status === 202 && payload.status === "pending") return false;
+    if (
+      payload.status !== "approved" ||
+      typeof payload.token !== "string" ||
+      !TOKEN_PATTERN.test(payload.token)
+    ) {
+      throw new Error("Trace returned an invalid bridge credential");
+    }
+    if (signal.aborted) return false;
+    this.#credential = payload.token;
+    writeStoredCredential(this.credentialStorageKey, payload.token);
+    return true;
   }
 
   async #pair(secret: string): Promise<void> {

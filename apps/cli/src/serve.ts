@@ -248,7 +248,17 @@ export function createServeRequestListener(
     }
 
     const dispatch = (body?: string): void => {
-      if (handleBridgePairingRequest(res, url, method, body, pairing)) {
+      if (
+        handleBridgePairingRequest(
+          res,
+          url,
+          method,
+          body,
+          pairing,
+          req.headers?.origin,
+          allowedWebOrigin,
+        )
+      ) {
         return;
       }
 
@@ -489,7 +499,7 @@ function handleManagementRequest(
   // A browser announces itself with Origin (and browsers are the one client
   // this surface excludes), so its presence is disqualifying on its own — the
   // hosted origin and the bundled board included.
-  if (req.headers?.origin) {
+  if (req.headers?.origin !== undefined) {
     return endManagement(res, 403, "Management is local-only");
   }
 
@@ -534,9 +544,19 @@ function handleManagementRequest(
     });
   }
 
+  const approving = /^pairings\/([A-F0-9]{4}-[A-F0-9]{4})\/approve$/.exec(
+    route,
+  );
+  if (approving && method === "POST") {
+    return pairing?.approve(approving[1]!)
+      ? endManagementJson(res, 200, { approved: true })
+      : endManagementJson(res, 410, { approved: false });
+  }
+
   if (route === "reset" && method === "POST") {
     const revoked = connection.listBrowsers().length;
     connection.reset();
+    pairing?.clear();
     return endManagementJson(res, 200, { revoked });
   }
 
@@ -573,7 +593,12 @@ function endManagementJson(
 }
 
 function isPairingPath(path: string): boolean {
-  return path === "/api/pairing" || path === "/api/pairing/";
+  return (
+    path === "/api/pairing" ||
+    path === "/api/pairing/" ||
+    path === "/api/pairing/requests" ||
+    path === "/api/pairing/requests/poll"
+  );
 }
 
 function handleBridgePairingRequest(
@@ -582,9 +607,40 @@ function handleBridgePairingRequest(
   method: string,
   body: string | undefined,
   pairing?: PairingLinks,
+  requestOrigin?: string,
+  allowedWebOrigin?: string,
 ): boolean {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
   if (!isPairingPath(path) || method !== "POST") return false;
+
+  if (path.startsWith("/api/pairing/requests")) {
+    res.setHeader("cache-control", "no-store");
+    if (!allowedWebOrigin || requestOrigin !== allowedWebOrigin) {
+      return endManagement(res, 403, "Hosted origin required");
+    }
+    if (!pairing) return endManagement(res, 409, "Pairing unavailable");
+    if (path === "/api/pairing/requests") {
+      const request = pairing.request();
+      return request
+        ? endManagementJson(res, 201, request)
+        : endManagement(
+            res,
+            429,
+            "Too many pending requests. Try again in a few minutes.",
+          );
+    }
+    let secret = "";
+    try {
+      const payload = JSON.parse(body ?? "") as { secret?: unknown };
+      if (typeof payload.secret === "string") secret = payload.secret;
+    } catch {
+      /* Invalid and expired requests have the same response. */
+    }
+    const result = pairing.poll(secret);
+    return result
+      ? endManagementJson(res, result.status === "pending" ? 202 : 200, result)
+      : endManagement(res, 410, "Pairing request expired or already used");
+  }
 
   let secret = "";
   try {

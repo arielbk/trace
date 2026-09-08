@@ -54,7 +54,10 @@ test("source capabilities select the explicit local connection flow", () => {
   expect(
     screen.getByRole("heading", { name: "Connect to Trace on this device" }),
   ).toBeInTheDocument();
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalledWith(
+    "http://127.0.0.1:4317/api/pairing/requests",
+    expect.objectContaining({ method: "POST" }),
+  );
 });
 
 test("a paired hosted board routes into a task's detail view", async () => {
@@ -120,11 +123,13 @@ test("a connected board reports a connection that stops answering", async () => 
       status: 200,
       headers: { "content-type": "application/json" },
     });
-  const connected = vi.fn().mockImplementation(async (input: unknown) =>
-    String(input).endsWith("/api/connection")
-      ? json({ service: "trace", protocolVersion: TRACE_PROTOCOL_VERSION })
-      : json([]),
-  );
+  const connected = vi
+    .fn()
+    .mockImplementation(async (input: unknown) =>
+      String(input).endsWith("/api/connection")
+        ? json({ service: "trace", protocolVersion: TRACE_PROTOCOL_VERSION })
+        : json([]),
+    );
   vi.stubGlobal("fetch", connected);
 
   render(<App source={new LocalTraceSource(origin)} />);

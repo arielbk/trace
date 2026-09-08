@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { TraceConnection } from "@trace/core/browser";
 import {
   useConnectionRecovery,
+  ConnectionHealthContext,
   type ConnectionLoss,
 } from "../lib/connection-recovery.ts";
 import { useTraceDataSource } from "../lib/trace-data-source.ts";
@@ -70,7 +71,7 @@ export function ConnectionRecovery({
   });
 
   return (
-    <>
+    <ConnectionHealthContext.Provider value={{ status, loss }}>
       {status === "healthy" || !loss ? null : (
         <div
           role="status"
@@ -94,7 +95,7 @@ export function ConnectionRecovery({
         </div>
       )}
       {children}
-    </>
+    </ConnectionHealthContext.Provider>
   );
 }
 

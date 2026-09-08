@@ -42,8 +42,9 @@ test("a pairing link stops working five minutes after it was created", () => {
 test("outstanding pairing links are capped, retiring the oldest first", () => {
   const links = createPairingLinks(fakeIssuer());
 
-  const created = Array.from({ length: MAX_OUTSTANDING_PAIRING_LINKS + 1 }, () =>
-    links.create(),
+  const created = Array.from(
+    { length: MAX_OUTSTANDING_PAIRING_LINKS + 1 },
+    () => links.create(),
   );
 
   expect(links.exchange(created[0]!.secret)).toBeNull();
@@ -97,4 +98,47 @@ test("a restart drops outstanding links but keeps the browsers already paired", 
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("browser requests need local approval and a separate secret to claim access", () => {
+  const links = createPairingLinks(fakeIssuer());
+  const request = links.request();
+  expect(request).not.toBeNull();
+  expect(request!.code).toMatch(/^[A-F0-9]{4}-[A-F0-9]{4}$/);
+  expect(links.poll(request!.secret)).toEqual({ status: "pending" });
+  expect(links.poll(request!.code)).toBeNull();
+  expect(links.approve("FFFF-NOPE")).toBe(false);
+  expect(links.approve(request!.code)).toBe(true);
+  expect(links.approve(request!.code)).toBe(false);
+  expect(links.poll(request!.code)).toBeNull();
+  expect(links.poll(request!.secret)).toEqual({
+    status: "approved",
+    token: "Paired browser-token-1",
+  });
+  expect(links.poll(request!.secret)).toBeNull();
+});
+
+test("request expiry and reset invalidate even approved requests and legacy links", () => {
+  let now = 1000;
+  const links = createPairingLinks(fakeIssuer(), { now: () => now });
+  const request = links.request()!;
+  links.approve(request.code);
+  now += PAIRING_LINK_TTL_MS;
+  expect(links.poll(request.secret)).toBeNull();
+  const next = links.request()!;
+  const legacy = links.create();
+  links.approve(next.code);
+  links.clear();
+  expect(links.poll(next.secret)).toBeNull();
+  expect(links.exchange(legacy.secret)).toBeNull();
+});
+
+test("request capacity refuses excess requests without displacing a waiting browser", () => {
+  const links = createPairingLinks(fakeIssuer());
+  const first = links.request()!;
+  for (let i = 1; i < 10; i++) expect(links.request()).not.toBeNull();
+  expect(links.request()).toBeNull();
+  expect(links.approve(first.code)).toBe(true);
+  expect(links.poll(first.secret)?.status).toBe("approved");
+  expect(links.request()).not.toBeNull();
 });

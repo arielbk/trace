@@ -1144,6 +1144,6 @@ test("the compact usage names the connection lifecycle subcommands", () => {
   const result = runTraceCli(["frobnicate"], { HOME: "/tmp" });
 
   expect(result.stderr).toContain(
-    "trace connection <install|status|restart|uninstall|run|pair|browsers|revoke <id>|reset>",
+    "trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>",
   );
 });

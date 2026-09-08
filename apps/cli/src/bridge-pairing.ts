@@ -19,7 +19,17 @@ export type PairingLink = {
   readonly expiresAt: number;
 };
 
+export type BrowserPairingRequest = PairingLink & { readonly code: string };
+
+export const MAX_BROWSER_PAIRING_REQUESTS = 10;
+
 export type PairingLinks = {
+  request(): BrowserPairingRequest | null;
+  approve(code: string): boolean;
+  poll(
+    secret: string,
+  ): { status: "pending" } | { status: "approved"; token: string } | null;
+  clear(): void;
   /** Mint a single-use link. Never restarts or otherwise disturbs the process. */
   create(): PairingLink;
   /** Exchange a link for one browser's persistent credential, or null. */
@@ -39,11 +49,53 @@ export function createPairingLinks(
 ): PairingLinks {
   const now = options.now ?? Date.now;
   let outstanding: PairingLink[] = [];
+  let requests: (BrowserPairingRequest & { approved: boolean })[] = [];
+  const pruneRequests = () => {
+    requests = requests.filter((request) => request.expiresAt > now());
+  };
 
   const live = (): PairingLink[] =>
     outstanding.filter((link) => link.expiresAt > now());
 
   return {
+    request() {
+      pruneRequests();
+      if (requests.length >= MAX_BROWSER_PAIRING_REQUESTS) return null;
+      let code: string;
+      do {
+        const digits = randomBytes(4).toString("hex").toUpperCase();
+        code = `${digits.slice(0, 4)}-${digits.slice(4)}`;
+      } while (requests.some((request) => request.code === code));
+      const request = {
+        code,
+        secret: randomBytes(SECRET_BYTES).toString("base64url"),
+        expiresAt: now() + PAIRING_LINK_TTL_MS,
+      };
+      requests.push({ ...request, approved: false });
+      return request;
+    },
+    approve(code) {
+      pruneRequests();
+      const request = requests.find((request) => request.code === code);
+      if (!request || request.approved) return false;
+      request.approved = true;
+      return true;
+    },
+    poll(secret) {
+      pruneRequests();
+      const request = requests.find((request) =>
+        secretsMatch(secret, request.secret),
+      );
+      if (!request) return null;
+      if (!request.approved) return { status: "pending" };
+      const { token } = issueBrowserToken(PAIRED_BROWSER_LABEL);
+      requests = requests.filter((candidate) => candidate !== request);
+      return { status: "approved", token };
+    },
+    clear() {
+      outstanding = [];
+      requests = [];
+    },
     create(): PairingLink {
       const link: PairingLink = {
         secret: randomBytes(SECRET_BYTES).toString("base64url"),
@@ -54,7 +106,9 @@ export function createPairingLinks(
     },
 
     exchange(supplied: string): string | null {
-      const matched = live().find((link) => secretsMatch(supplied, link.secret));
+      const matched = live().find((link) =>
+        secretsMatch(supplied, link.secret),
+      );
       if (!matched) return null;
       outstanding = live().filter((link) => link !== matched);
       return issueBrowserToken(PAIRED_BROWSER_LABEL).token;

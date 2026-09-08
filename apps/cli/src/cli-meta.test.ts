@@ -122,3 +122,17 @@ test("trace board is routed and offered as the way to open the board", async () 
   );
   expect(humanReadableHelp.stdout).toContain("trace board");
 });
+
+test("terminal help points at the connection commands that recover a board", async () => {
+  const result = await runTraceCliAsync(
+    ["--help"],
+    { TRACE_CURRENT_VERSION: "1.2.3" },
+    process.cwd(),
+    "",
+    { humanReadable: true },
+  );
+
+  // Someone whose hosted board stopped connecting has one question — what do I
+  // run? — and `trace --help` is where they ask it.
+  expect(result.stdout).toContain("trace connection status");
+});

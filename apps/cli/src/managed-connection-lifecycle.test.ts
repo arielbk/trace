@@ -588,3 +588,71 @@ test("with no hosted board configured, trace board reuses the connection it has"
   );
   expect(status.stdout).toContain("Connection: running");
 });
+
+test("a waiting browser connects after terminal approval without opening another tab", async () => {
+  const box = machine();
+  await connectionOperation(["install"], { env: box.env }, box.dependencies);
+  const post = (
+    path: string,
+    body?: unknown,
+    origin: string | undefined = HOSTED_ORIGIN,
+  ) =>
+    box.fetch(`${CONNECTION_ENDPOINT_ORIGIN}${path}`, {
+      method: "POST",
+      headers: {
+        ...(origin ? { origin } : {}),
+        "content-type": "application/json",
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  expect(
+    (await post("/api/pairing/requests", undefined, "https://evil.example"))
+      .status,
+  ).toBe(403);
+  expect((await post("/api/pairing/requests", undefined, "")).status).toBe(403);
+  const response = await post("/api/pairing/requests");
+  expect(response.status).toBe(201);
+  const request = (await response.json()) as { code: string; secret: string };
+  expect(
+    (await post("/api/pairing/requests/poll", { secret: request.code })).status,
+  ).toBe(410);
+  expect(
+    (await post("/api/pairing/requests/poll", { secret: request.secret }))
+      .status,
+  ).toBe(202);
+  expect(
+    (await post(`/api/management/pairings/${request.code}/approve`)).status,
+  ).toBe(403);
+  const opened: string[] = [];
+  const result = await connectionOperation(
+    ["pair", request.code.toLowerCase()],
+    { env: box.env },
+    { ...box.dependencies, open: (url) => opened.push(url) },
+  );
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("Return to the page");
+  expect(opened).toEqual([]);
+  const claimed = await post("/api/pairing/requests/poll", {
+    secret: request.secret,
+  });
+  expect(claimed.status).toBe(200);
+  const { token } = (await claimed.json()) as { token: string };
+  expect((await hostedRead(box, token)).status).toBe(200);
+  expect(
+    (await post("/api/pairing/requests/poll", { secret: request.secret }))
+      .status,
+  ).toBe(410);
+  const next = (await (await post("/api/pairing/requests")).json()) as {
+    code: string;
+    secret: string;
+  };
+  await connectionOperation(
+    ["pair", next.code],
+    { env: box.env },
+    box.dependencies,
+  );
+  await connectionOperation(["reset"], { env: box.env }, box.dependencies);
+  expect(
+    (await post("/api/pairing/requests/poll", { secret: next.secret })).status,
+  ).toBe(410);
+});
