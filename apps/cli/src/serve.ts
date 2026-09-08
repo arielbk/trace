@@ -58,6 +58,14 @@ export type StartTraceServeOptions = {
    * board converging. Defaults to true; the managed connection turns it off in
    * a foreground serve so there is only ever one periodic sync owner. */
   periodicSync?: boolean;
+  /**
+   * Whether this process answers `/api/management/*` — how `trace connection
+   * …` administers it, and how a probe recognises it as this installation's
+   * own. The managed connection always sets it, because being administrable
+   * must not depend on a hosted board being configured. Off by default, so a
+   * bare `trace serve` creates no credential it will never use.
+   */
+  localManagement?: boolean;
 };
 
 /** Exact hosted origin allowed to pair with and read this loopback API. */
@@ -764,7 +772,10 @@ export function startTraceServe(
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const triggerSync = options.triggerSync ?? requestAutomaticSync;
   const allowedWebOrigin = resolveAllowedWebOrigin(env);
-  const bridgeAccess = allowedWebOrigin ? createBridgeAccess(env) : undefined;
+  const bridgeAccess =
+    allowedWebOrigin || options.localManagement
+      ? createBridgeAccess(env)
+      : undefined;
   // Foreground serve opens with one link in hand, the way it always has; the
   // running service can mint more on request without restarting.
   const pairingUrl =

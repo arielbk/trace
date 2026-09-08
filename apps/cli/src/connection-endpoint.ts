@@ -93,6 +93,10 @@ export async function startManagedConnection(
       server: await start(env, {
         port: DEFAULT_SERVE_PORT,
         allowPortFallback: false,
+        // `trace connection …` administers this process over loopback, and a
+        // probe proves the endpoint is ours the same way — neither may depend
+        // on whether a hosted board happens to be configured.
+        localManagement: true,
       }),
     };
   } catch (error) {

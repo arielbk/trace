@@ -12,7 +12,11 @@ import {
   startForegroundServe,
   startManagedConnection,
 } from "./connection-endpoint.ts";
-import { createServeRequestListener, DEFAULT_SERVE_PORT } from "./serve.ts";
+import {
+  createServeRequestListener,
+  DEFAULT_SERVE_PORT,
+  startTraceServe,
+} from "./serve.ts";
 
 let home: string;
 let env: Record<string, string | undefined>;
@@ -218,4 +222,38 @@ test("foreground serve owns periodic sync when no managed connection runs", asyn
     env,
     expect.not.objectContaining({ periodicSync: false }),
   );
+});
+
+test("the managed connection is administrable with no hosted board configured", async () => {
+  // A machine that only ever opens the bundled board still installs the login
+  // service, and `trace connection …` still has to be able to talk to it.
+  const local = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+
+  const outcome = await startManagedConnection(local, {
+    fetch: refusing,
+    // The real runtime, on a port this test can have to itself.
+    start: (serveEnv, options) =>
+      startTraceServe(serveEnv, {
+        ...options,
+        port: 0,
+        allowPortFallback: true,
+        triggerSync: () => {},
+      }),
+  });
+
+  expect(outcome.kind).toBe("started");
+  if (outcome.kind !== "started") return;
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${outcome.server.port}/api/management/status`,
+      {
+        headers: {
+          authorization: `Bearer ${openConnectionCredentials(local).managementToken}`,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+  } finally {
+    await outcome.server.close();
+  }
 });
