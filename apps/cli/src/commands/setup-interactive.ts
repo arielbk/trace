@@ -1,3 +1,4 @@
+import type { ConnectionServiceDependencies } from "../connection-service.ts";
 import { IntegrationRegistry } from "./integration-registry.ts";
 import {
   discoverTargetCandidates,
@@ -23,7 +24,13 @@ const CANCELLED = "Setup cancelled; no changes made.\n";
  * deterministic path for flags and non-interactive callers.
  */
 export async function interactiveSetupOperation(
-  ctx: { env: Env; cwd: string; stdin: string },
+  ctx: {
+    env: Env;
+    cwd: string;
+    stdin: string;
+    /** launchd boundary for the managed connection, injected by tests. */
+    service?: ConnectionServiceDependencies;
+  },
   prompt: SetupPrompt,
 ): Promise<CommandResult> {
   let registry: IntegrationRegistry;
@@ -61,6 +68,7 @@ export async function interactiveSetupOperation(
     env: ctx.env,
     registry,
     format,
+    service: ctx.service,
   });
   if (preview.exitCode !== 0) return preview;
   prompt.note(preview.stdout.trimEnd(), "Setup plan");
@@ -86,5 +94,6 @@ export async function interactiveSetupOperation(
     env: ctx.env,
     registry,
     format,
+    service: ctx.service,
   });
 }

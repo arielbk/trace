@@ -7,6 +7,11 @@ import {
   startManagedConnection,
   type ManagedConnectionDependencies,
 } from "../connection-endpoint.ts";
+import {
+  describeConnectionServiceOutcome,
+  installConnectionService,
+  type ConnectionServiceDependencies,
+} from "../connection-service.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
 /** Where the local connection always listens. */
@@ -19,6 +24,8 @@ export type ConnectionDependencies = ManagedConnectionDependencies & {
   /** Registers the graceful-shutdown handler. Injectable so tests never touch
    * this process's real signal handlers. */
   onShutdownSignal?: (shutDown: () => void) => void;
+  /** launchd boundary for the login service, injected by tests. */
+  service?: ConnectionServiceDependencies;
 };
 
 /**
@@ -36,6 +43,10 @@ export async function connectionOperation(
 
   if (subcommand === "run") {
     return runManagedConnection(context.env, dependencies);
+  }
+
+  if (subcommand === "install") {
+    return installLoginService(context.env, dependencies);
   }
 
   if (subcommand === "pair") {
@@ -90,8 +101,28 @@ export async function connectionOperation(
   }
 
   return failure(
-    "Usage: trace connection <run|pair|browsers|revoke <id>|reset>",
+    "Usage: trace connection <install|run|pair|browsers|revoke <id>|reset>",
   );
+}
+
+/**
+ * `trace connection install` — the deterministic path to a background
+ * connection for someone who wants no agent integrations at all. `trace setup`
+ * reconciles the same service; this is the same reconciliation on its own.
+ */
+function installLoginService(
+  env: Env,
+  dependencies: ConnectionDependencies,
+): CommandResult {
+  const outcome = installConnectionService(env, dependencies.service);
+  const described = describeConnectionServiceOutcome(outcome);
+  // An explicit install is a request, so every reason it did not happen is an
+  // error here, including the ones `trace setup` passes over in silence.
+  return outcome.kind === "installed" ||
+    outcome.kind === "reconciled" ||
+    outcome.kind === "unchanged"
+    ? success(described)
+    : failure(outcome.reason);
 }
 
 /**

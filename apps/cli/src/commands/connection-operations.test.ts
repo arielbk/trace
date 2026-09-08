@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createPairingLinks } from "../bridge-pairing.ts";
 import { openConnectionCredentials } from "../connection-credentials.ts";
 import { CONNECTION_ENDPOINT_ORIGIN } from "../connection-endpoint.ts";
+import {
+  MANAGED_CONNECTION_LABEL,
+  type ConnectionServiceDependencies,
+} from "../connection-service.ts";
 import { createServeRequestListener, DEFAULT_SERVE_PORT } from "../serve.ts";
 import { connectionOperation } from "./connection-operations.ts";
 
@@ -225,4 +229,86 @@ test("trace connection run reuses the connection already running here", async ()
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("already running");
   expect(start).not.toHaveBeenCalled();
+});
+
+/** Records launchctl instead of touching real launchd. */
+function fakeLaunchd(
+  answer: (args: string[]) => { status: number | null; stderr: string } = (
+    args,
+  ) =>
+    args[0] === "print"
+      ? { status: 113, stderr: "Could not find service\n" }
+      : { status: 0, stderr: "" },
+): { calls: string[][]; service: ConnectionServiceDependencies } {
+  const calls: string[][] = [];
+  return {
+    calls,
+    service: {
+      platform: "darwin",
+      uid: 501,
+      nodePath: "/opt/homebrew/bin/node",
+      launchctl: (args) => {
+        calls.push(args);
+        return answer(args);
+      },
+    },
+  };
+}
+
+test("trace connection install starts the login service without any integration", async () => {
+  const { calls, service } = fakeLaunchd();
+
+  const result = await connectionOperation(
+    ["install"],
+    { env: { ...env, TRACE_CLI_PATH: "/opt/global/bin/trace" } },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("Local connection installed");
+  expect(calls.map(([verb]) => verb)).toEqual(["print", "bootstrap", "kickstart"]);
+  expect(
+    existsSync(
+      join(home, "Library", "LaunchAgents", `${MANAGED_CONNECTION_LABEL}.plist`),
+    ),
+  ).toBe(true);
+  // The integration registry is untouched: this path is the connection alone.
+  expect(existsSync(join(home, ".trace", "integrations.json"))).toBe(false);
+});
+
+test("trace connection install fails loudly when launchd refuses the job", async () => {
+  const { service } = fakeLaunchd((args) =>
+    args[0] === "bootstrap"
+      ? { status: 5, stderr: "Input/output error\n" }
+      : { status: args[0] === "print" ? 113 : 0, stderr: "" },
+  );
+
+  const result = await connectionOperation(
+    ["install"],
+    { env: { ...env, TRACE_CLI_PATH: "/opt/global/bin/trace" } },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("launchctl bootstrap gui/501");
+});
+
+test("trace connection install says what to do on a platform without launchd", async () => {
+  const { calls, service } = fakeLaunchd();
+
+  const result = await connectionOperation(
+    ["install"],
+    { env: { ...env, TRACE_CLI_PATH: "/opt/global/bin/trace" } },
+    { fetch: refusing, service: { ...service, platform: "win32" } },
+  );
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("trace serve");
+  expect(calls).toEqual([]);
+});
+
+test("trace connection usage names install", async () => {
+  const result = await connectionOperation([], { env }, { fetch: refusing });
+
+  expect(result.stderr).toContain("install");
 });
