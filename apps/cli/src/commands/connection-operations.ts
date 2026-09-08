@@ -4,13 +4,22 @@ import {
 } from "../connection-credentials.ts";
 import {
   CONNECTION_ENDPOINT_ORIGIN,
+  probeConnectionEndpoint,
   startManagedConnection,
+  type EndpointOccupant,
   type ManagedConnectionDependencies,
 } from "../connection-endpoint.ts";
 import {
   describeConnectionServiceOutcome,
   installConnectionService,
+  readConnectionServiceState,
+  resolveConnectionLogPaths,
+  restartConnectionService,
+  rotateConnectionLogs,
+  uninstallConnectionService,
+  type ConnectionLifecycleOutcome,
   type ConnectionServiceDependencies,
+  type ConnectionServiceState,
 } from "../connection-service.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
@@ -47,6 +56,22 @@ export async function connectionOperation(
 
   if (subcommand === "install") {
     return installLoginService(context.env, dependencies);
+  }
+
+  if (subcommand === "status") {
+    return reportConnectionStatus(context.env, dependencies);
+  }
+
+  if (subcommand === "restart") {
+    return reportLifecycle(
+      restartConnectionService(context.env, dependencies.service),
+    );
+  }
+
+  if (subcommand === "uninstall") {
+    return reportLifecycle(
+      uninstallConnectionService(context.env, dependencies.service),
+    );
   }
 
   if (subcommand === "pair") {
@@ -100,9 +125,89 @@ export async function connectionOperation(
     );
   }
 
-  return failure(
-    "Usage: trace connection <install|run|pair|browsers|revoke <id>|reset>",
-  );
+  return failure(USAGE);
+}
+
+const USAGE =
+  "Usage: trace connection <install|status|restart|uninstall|run|pair|browsers|revoke <id>|reset>";
+
+/**
+ * A lifecycle command is an explicit request, so every reason it did not
+ * happen — including the ones `trace setup` passes over in silence — is an
+ * error here.
+ */
+function reportLifecycle(outcome: ConnectionLifecycleOutcome): CommandResult {
+  return outcome.kind === "ok"
+    ? success(outcome.message)
+    : failure(outcome.reason);
+}
+
+/**
+ * `trace connection status` — one report of everything that decides whether
+ * the board can reach this machine: what holds the endpoint, what launchd
+ * thinks of the job, and where to read its logs. It only observes, so it
+ * always succeeds; what it found is in the report, not the exit code.
+ */
+async function reportConnectionStatus(
+  env: Env,
+  dependencies: ConnectionDependencies,
+): Promise<CommandResult> {
+  const occupant = await probeConnectionEndpoint(env, dependencies);
+  const state = readConnectionServiceState(env, dependencies.service);
+  const logs = resolveConnectionLogPaths(env);
+
+  const lines = [describeEndpoint(occupant), describeServiceState(state)];
+  if (state.kind === "installed") {
+    lines.push(`Logs: ${logs.out}`, `      ${logs.error}`);
+  }
+  return success(`${lines.join("\n")}\n`);
+}
+
+function describeEndpoint(occupant: EndpointOccupant): string {
+  switch (occupant.kind) {
+    case "own":
+      return `Connection: running on ${SERVICE_ORIGIN} (Trace ${occupant.runtimeVersion}, pid ${occupant.pid}).`;
+    case "free":
+      return `Connection: not running — nothing is listening on ${SERVICE_ORIGIN}.`;
+    case "incompatible":
+      return (
+        `Connection: a Trace ${occupant.runtimeVersion} runtime on ${SERVICE_ORIGIN} speaks protocol ${occupant.protocolVersion}, which this version does not.\n` +
+        "  Recover with: trace connection restart"
+      );
+    case "foreign-trace":
+      return (
+        `Connection: another Trace installation holds ${SERVICE_ORIGIN}.\n` +
+        "  Stop that connection before starting this one."
+      );
+    case "occupied":
+      return (
+        `Connection: another process is listening on ${SERVICE_ORIGIN}.\n` +
+        "  Free that port, then run: trace connection restart"
+      );
+  }
+}
+
+function describeServiceState(state: ConnectionServiceState): string {
+  switch (state.kind) {
+    case "unsupported":
+      return `Login service: ${state.reason}`;
+    case "missing":
+      return (
+        "Login service: not installed.\n" +
+        "  Install it with: trace connection install"
+      );
+    case "installed":
+      if (state.stale) {
+        return (
+          `Login service: installed at ${state.plistPath}, but it runs ${state.cliPath}, which is no longer on disk.\n` +
+          "  Recover with: trace connection install"
+        );
+      }
+      return state.loaded
+        ? `Login service: loaded from ${state.plistPath}.`
+        : `Login service: installed at ${state.plistPath}, but launchd is not running it.\n` +
+            "  Start it with: trace connection restart";
+  }
 }
 
 /**
@@ -134,6 +239,10 @@ async function runManagedConnection(
   env: Env,
   dependencies: ConnectionDependencies,
 ): Promise<CommandResult> {
+  // launchd appends to the same log across every restart, so the moment
+  // before this process starts writing is the one moment it can be bounded.
+  rotateConnectionLogs(env);
+
   const outcome = await startManagedConnection(env, dependencies);
 
   if (outcome.kind === "conflict") return failure(outcome.reason);

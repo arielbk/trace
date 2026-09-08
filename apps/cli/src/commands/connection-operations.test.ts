@@ -1,14 +1,22 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createPairingLinks } from "../bridge-pairing.ts";
 import { openConnectionCredentials } from "../connection-credentials.ts";
 import { CONNECTION_ENDPOINT_ORIGIN } from "../connection-endpoint.ts";
 import {
   MANAGED_CONNECTION_LABEL,
+  resolveConnectionLogPaths,
   type ConnectionServiceDependencies,
 } from "../connection-service.ts";
 import { createServeRequestListener, DEFAULT_SERVE_PORT } from "../serve.ts";
@@ -311,4 +319,315 @@ test("trace connection usage names install", async () => {
   const result = await connectionOperation([], { env }, { fetch: refusing });
 
   expect(result.stderr).toContain("install");
+});
+
+/** A CLI executable that actually exists, so the staleness check has something
+ * real to look at. */
+function installedCli(): string {
+  const path = join(home, "bin", "trace");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, "#!/bin/sh\n");
+  return path;
+}
+
+/** launchd answers `print` for a job it has loaded. */
+const loadedJob = (): { status: number | null; stderr: string } => ({
+  status: 0,
+  stderr: "",
+});
+
+test("trace connection status reports a healthy connection and where its logs are", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+
+  const { fetch } = runningService();
+  const { service } = fakeLaunchd(loadedJob);
+  const result = await connectionOperation(["status"], { env: cliEnv }, { fetch, service });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
+  expect(result.stdout).toMatch(/running/i);
+  expect(result.stdout).toContain(join(home, ".trace", "logs", "connection.log"));
+});
+
+test("trace connection status distinguishes an installed service that is not running", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+
+  const { service } = fakeLaunchd();
+  const result = await connectionOperation(
+    ["status"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toMatch(/not running/i);
+  expect(result.stdout).toContain("trace connection restart");
+});
+
+test("trace connection status says the service is not installed at all", async () => {
+  const { service } = fakeLaunchd();
+
+  const result = await connectionOperation(
+    ["status"],
+    { env },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toMatch(/not installed/i);
+  expect(result.stdout).toContain("trace connection install");
+});
+
+test("trace connection status flags a service whose executable is gone", async () => {
+  const cli = installedCli();
+  const cliEnv = { ...env, TRACE_CLI_PATH: cli };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+  rmSync(cli);
+
+  const { service } = fakeLaunchd(loadedJob);
+  const result = await connectionOperation(
+    ["status"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.stdout).toContain(cli);
+  expect(result.stdout).toMatch(/no longer on disk/i);
+});
+
+test("trace connection status names an unrelated process holding the endpoint", async () => {
+  const fetch = (async () =>
+    new Response("not trace", { status: 200 })) as typeof globalThis.fetch;
+  const { service } = fakeLaunchd();
+
+  const result = await connectionOperation(["status"], { env }, { fetch, service });
+
+  expect(result.stdout).toContain("another process is listening");
+  expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
+});
+
+test("trace connection restart restarts the job and keeps paired browsers", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+  const connection = openConnectionCredentials(env);
+  const laptop = connection.issueBrowserToken("Safari");
+
+  const { calls, service } = fakeLaunchd(loadedJob);
+  const result = await connectionOperation(
+    ["restart"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(calls).toContainEqual([
+    "kickstart",
+    "-k",
+    `gui/501/${MANAGED_CONNECTION_LABEL}`,
+  ]);
+  // A restart is not a revocation: the browser paired before it still works.
+  expect(connection.verifyBrowserToken(laptop.token)).not.toBeNull();
+});
+
+test("trace connection restart says what to install when nothing is", async () => {
+  const { calls, service } = fakeLaunchd();
+
+  const result = await connectionOperation(
+    ["restart"],
+    { env },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("trace connection install");
+  expect(calls.some(([verb]) => verb === "kickstart")).toBe(false);
+});
+
+test("trace connection restart loads a service launchd is not holding", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+
+  const { calls, service } = fakeLaunchd();
+  const result = await connectionOperation(
+    ["restart"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(calls.map(([verb]) => verb)).toEqual(["print", "bootstrap", "kickstart"]);
+});
+
+test("trace connection uninstall removes the service and revokes every browser", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+  const connection = openConnectionCredentials(env);
+  const laptop = connection.issueBrowserToken("Safari");
+  const plistPath = join(
+    home,
+    "Library",
+    "LaunchAgents",
+    `${MANAGED_CONNECTION_LABEL}.plist`,
+  );
+  writeFileSync(join(home, "trace.sqlite"), "task data");
+
+  const { calls, service } = fakeLaunchd(loadedJob);
+  const result = await connectionOperation(
+    ["uninstall"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(calls).toContainEqual([
+    "bootout",
+    `gui/501/${MANAGED_CONNECTION_LABEL}`,
+  ]);
+  expect(existsSync(plistPath)).toBe(false);
+  // Browser access goes; the tasks and the local management credential stay.
+  expect(connection.verifyBrowserToken(laptop.token)).toBeNull();
+  expect(existsSync(join(home, "trace.sqlite"))).toBe(true);
+  expect(openConnectionCredentials(env).managementToken).toBe(
+    connection.managementToken,
+  );
+});
+
+test("trace connection uninstall is idempotent and leaves integrations alone", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  const installer = fakeLaunchd();
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: installer.service },
+  );
+  const registryPath = join(home, ".trace", "integrations.json");
+  mkdirSync(dirname(registryPath), { recursive: true });
+  writeFileSync(registryPath, '{"packageManager":"npm","targets":[]}');
+
+  const first = await connectionOperation(
+    ["uninstall"],
+    { env: cliEnv },
+    { fetch: refusing, service: fakeLaunchd(loadedJob).service },
+  );
+  const second = await connectionOperation(
+    ["uninstall"],
+    { env: cliEnv },
+    { fetch: refusing, service: fakeLaunchd().service },
+  );
+
+  expect(first.exitCode).toBe(0);
+  expect(second.exitCode).toBe(0);
+  expect(second.stdout).toMatch(/no trace login service is installed/i);
+  expect(existsSync(registryPath)).toBe(true);
+});
+
+test("trace connection uninstall reports a job launchd refused to stop", async () => {
+  const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
+  await connectionOperation(
+    ["install"],
+    { env: cliEnv },
+    { fetch: refusing, service: fakeLaunchd().service },
+  );
+
+  const { service } = fakeLaunchd((args) =>
+    args[0] === "bootout"
+      ? { status: 5, stderr: "Operation not permitted\n" }
+      : { status: 0, stderr: "" },
+  );
+  const result = await connectionOperation(
+    ["uninstall"],
+    { env: cliEnv },
+    { fetch: refusing, service },
+  );
+
+  expect(result.exitCode).not.toBe(0);
+  // A partial failure says what did land before naming the manual recovery.
+  expect(result.stderr).toContain("plist was removed");
+  expect(result.stderr).toContain(`launchctl bootout gui/501/${MANAGED_CONNECTION_LABEL}`);
+});
+
+test("trace connection usage names the lifecycle subcommands", async () => {
+  const result = await connectionOperation([], { env }, { fetch: refusing });
+
+  for (const subcommand of ["install", "status", "restart", "uninstall"]) {
+    expect(result.stderr).toContain(subcommand);
+  }
+});
+
+test("trace connection run bounds the log it is about to append to", async () => {
+  const logs = resolveConnectionLogPaths(env);
+  mkdirSync(logs.directory, { recursive: true, mode: 0o700 });
+  writeFileSync(logs.out, "x".repeat(1024 * 1024 + 1));
+  const start = async () => ({
+    url: `${CONNECTION_ENDPOINT_ORIGIN}/`,
+    port: DEFAULT_SERVE_PORT,
+    close: async () => {},
+  });
+
+  const result = await connectionOperation(
+    ["run"],
+    { env },
+    { fetch: refusing, start },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(existsSync(`${logs.out}.1`)).toBe(true);
+  expect(readFileSync(logs.out, "utf8")).toBe("");
+});
+
+test("nothing the connection prints into its log is a credential", async () => {
+  const { fetch, connection } = runningService();
+  const browser = connection.issueBrowserToken("Safari");
+  const start = async () => ({
+    url: `${CONNECTION_ENDPOINT_ORIGIN}/`,
+    port: DEFAULT_SERVE_PORT,
+    close: async () => {},
+  });
+
+  // Everything the managed process and its administration commands write to
+  // the streams launchd copies into `connection.log`.
+  const printed = (
+    await Promise.all(
+      [["run"], ["status"], ["browsers"], ["pair"]].map((args) =>
+        connectionOperation(args, { env }, { fetch, start, service: fakeLaunchd().service }),
+      ),
+    )
+  )
+    .map(({ stdout, stderr }) => stdout + stderr)
+    .join("");
+
+  expect(printed).not.toContain(connection.managementToken);
+  expect(printed).not.toContain(browser.token);
 });

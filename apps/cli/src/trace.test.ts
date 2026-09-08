@@ -1139,3 +1139,11 @@ test("skill re-enter output includes taskDocsDir even when the task has no docs"
     rmSync(repoParent, { recursive: true, force: true });
   }
 });
+
+test("the compact usage names the connection lifecycle subcommands", () => {
+  const result = runTraceCli(["frobnicate"], { HOME: "/tmp" });
+
+  expect(result.stderr).toContain(
+    "trace connection <install|status|restart|uninstall|run|pair|browsers|revoke <id>|reset>",
+  );
+});

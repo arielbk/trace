@@ -1,10 +1,12 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +14,11 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   installConnectionService,
   MANAGED_CONNECTION_LABEL,
+  readConnectionServiceState,
+  readInstalledConnectionCli,
+  resolveConnectionLogPaths,
   resolveLaunchAgentPath,
+  rotateConnectionLogs,
   type ConnectionServiceDependencies,
   type LaunchctlResult,
 } from "./connection-service.ts";
@@ -342,4 +348,76 @@ test("without an injected launchd, a home that is not the login session's is lef
 
   expect(outcome.kind).toBe("skipped");
   expect(existsSync(resolveLaunchAgentPath(env()))).toBe(false);
+});
+
+test("the connection's logs are bounded, rotated once, and owner-only", () => {
+  const logs = resolveConnectionLogPaths(env());
+  mkdirSync(logs.directory, { recursive: true, mode: 0o700 });
+  writeFileSync(logs.out, "old ".repeat(600));
+  writeFileSync(logs.error, "boom\n");
+
+  rotateConnectionLogs(env(), { maxBytes: 1024 });
+
+  // Over the cap: the live file starts empty and the previous run is kept once.
+  expect(readFileSync(logs.out, "utf8")).toBe("");
+  expect(readFileSync(`${logs.out}.1`, "utf8")).toContain("old");
+  expect(statSync(logs.out).mode & 0o777).toBe(0o600);
+  expect(statSync(`${logs.out}.1`).mode & 0o777).toBe(0o600);
+  // Under the cap: left exactly as it was, and no rotation kept.
+  expect(readFileSync(logs.error, "utf8")).toBe("boom\n");
+  expect(existsSync(`${logs.error}.1`)).toBe(false);
+
+  writeFileSync(logs.out, "new ".repeat(600));
+  rotateConnectionLogs(env(), { maxBytes: 1024 });
+
+  // A second rotation replaces the kept copy rather than accumulating.
+  expect(readFileSync(`${logs.out}.1`, "utf8")).toContain("new");
+  expect(existsSync(`${logs.out}.2`)).toBe(false);
+});
+
+test("a crashed connection is respawned by launchd, not by reinstalling", () => {
+  installConnectionService(env(), dependencies(fakeLaunchctl(notLoaded).run));
+
+  const parsed = parsePlist(resolveLaunchAgentPath(env()));
+  if (!parsed) return;
+
+  // Unconditional KeepAlive is what brings a *crashed* process back; the
+  // conditional form would only respawn on a clean exit. The throttle is what
+  // stops a job that crashes at startup from spinning.
+  expect(parsed.KeepAlive).toBe(true);
+  expect(parsed.ThrottleInterval).toBe(10);
+});
+
+test("the state of the installed service is read back from the plist launchd runs", () => {
+  const awkward = join(home, "bin", "trace & <co>");
+  installConnectionService(
+    env({ TRACE_CLI_PATH: awkward }),
+    dependencies(fakeLaunchctl(notLoaded).run),
+  );
+
+  const stopped = readConnectionServiceState(
+    env(),
+    dependencies(fakeLaunchctl(notLoaded).run),
+  );
+  const running = readConnectionServiceState(
+    env(),
+    dependencies(fakeLaunchctl().run),
+  );
+
+  expect(stopped).toMatchObject({ kind: "installed", loaded: false });
+  // The path survives XML escaping intact, and its absence is what "stale"
+  // means — the executable the job runs is gone.
+  expect(running).toMatchObject({
+    kind: "installed",
+    loaded: true,
+    cliPath: awkward,
+    stale: true,
+  });
+});
+
+test("nothing is installed, and nothing to read, before the first install", () => {
+  expect(
+    readConnectionServiceState(env(), dependencies(fakeLaunchctl().run)),
+  ).toMatchObject({ kind: "missing" });
+  expect(readInstalledConnectionCli(env())).toBeUndefined();
 });

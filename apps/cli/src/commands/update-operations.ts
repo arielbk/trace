@@ -6,7 +6,15 @@ import {
 } from "./integration-registry.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 import { spawnInvocation } from "./spawn-invocation.ts";
-import { resolvePackagedVersion } from "./setup-operations.ts";
+import {
+  detectPackageManager,
+  resolvePackagedVersion,
+} from "./setup-operations.ts";
+import {
+  readInstalledConnectionCli,
+  restartConnectionService,
+  type ConnectionLifecycleOutcome,
+} from "../connection-service.ts";
 
 export type SpawnResult = { status: number | null; stderr: string };
 
@@ -28,6 +36,12 @@ export type UpdateDeps = {
    * Spawns the newly installed CLI to reconcile every registered target.
    */
   spawnReconcile: (cliPath: string) => SpawnResult;
+  /**
+   * Restarts the managed login service onto the executable just installed. A
+   * same-path upgrade leaves the old process holding the endpoint, so nothing
+   * but an explicit restart moves the connection onto the new version.
+   */
+  restartConnection: (env: Env) => ConnectionLifecycleOutcome;
 };
 
 /** Returns the install args for the given package manager. */
@@ -76,6 +90,9 @@ export function createDefaultDeps(
     spawnReconcile(cliPath) {
       return run(cliPath, ["setup", "--registered", "--yes"]);
     },
+    restartConnection(env) {
+      return restartConnectionService(env);
+    },
   };
 }
 
@@ -99,13 +116,19 @@ export async function updateOperation(
   } catch (err) {
     return failure(err instanceof Error ? err.message : String(err));
   }
-  if (!registry) {
+  // A machine can carry the managed connection and no agent integration at
+  // all, and that install still has to be updatable.
+  const serviceCliPath = readInstalledConnectionCli(ctx.env);
+  if (!registry && serviceCliPath === undefined) {
     return failure(
       "No Trace integrations registered. Run `trace setup` first.",
     );
   }
 
-  const { packageManager, cliPath } = registry;
+  const cliPath = registry?.cliPath ?? serviceCliPath;
+  const packageManager =
+    registry?.packageManager ??
+    detectPackageManager(ctx.env, serviceCliPath ?? "");
 
   // Fetch latest version.
   let latestVersion: string;
@@ -165,6 +188,24 @@ export async function updateOperation(
           `${indented}\n` +
           `Your integrations are still on the previous version. ` +
           `Once the above is resolved, run \`trace setup --yes\` to finish.`,
+      );
+    }
+  }
+
+  // The upgrade replaced the executable underneath a login service that is
+  // still running the previous one, and launchd will not notice on its own.
+  if (serviceCliPath !== undefined) {
+    const restarted = deps.restartConnection(ctx.env);
+    if (restarted.kind === "failed") {
+      const indented = restarted.reason
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n");
+      return failure(
+        `Trace was upgraded to v${latestVersion}, but the local connection would not restart:\n` +
+          `${indented}\n` +
+          `The previous connection is still running. Once the above is resolved, ` +
+          `run \`trace connection restart\` to finish.`,
       );
     }
   }

@@ -479,7 +479,7 @@ export function resolvePackagedVersion(): string {
  * later reinstall through the same tool. Prefers the running invocation's
  * `npm_config_user_agent`, then falls back to path-based heuristics.
  */
-function detectPackageManager(env: Env, cliPath: string): PackageManager {
+export function detectPackageManager(env: Env, cliPath: string): PackageManager {
   const agent = env.npm_config_user_agent;
   if (agent) {
     const name = agent.split("/", 1)[0];
