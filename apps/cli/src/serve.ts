@@ -16,8 +16,10 @@ import {
   resolveDatabasePath,
   writeTraceApiResponse,
   type LocalAuthService,
+  type TraceClientScope,
 } from "@trace/core";
 import { requestAutomaticSync } from "./commands/sync.ts";
+import { resolvePackagedVersion } from "./commands/setup-operations.ts";
 import { createLocalAuthService } from "./local-auth.ts";
 import { readOrCreateBridgeCredential } from "./bridge-credential.ts";
 import {
@@ -180,6 +182,8 @@ export function createServeRequestListener(
   bridgeCredential?: string,
   /** Process-local, one-use exchange for the installation credential. */
   bridgePairing?: BridgePairing,
+  /** The Trace version this process is running, reported by the handshake. */
+  runtimeVersion?: string,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
@@ -227,6 +231,8 @@ export function createServeRequestListener(
         autoSyncEnabled: resolveAutoSync?.(),
         onMutation: syncHooks?.onMutation,
         requestSync: syncHooks?.requestSync,
+        runtimeVersion,
+        clientScope: hostedRequestScope(req, allowedWebOrigin),
       });
 
       if (response) {
@@ -245,6 +251,25 @@ export function createServeRequestListener(
       dispatch();
     }
   };
+}
+
+/**
+ * The authority a request carries, as the handshake should describe it. A
+ * request that reached here bearing the hosted origin passed the cross-origin
+ * allowlist and the bearer check, so it holds hosted authority and nothing
+ * wider — the same-origin bundled board's own requests carry no Origin, or
+ * carry this server's.
+ */
+function hostedRequestScope(
+  req: IncomingMessage,
+  allowedWebOrigin?: string,
+): TraceClientScope {
+  const requestOrigin = req.headers?.origin;
+  return requestOrigin &&
+    requestOrigin === allowedWebOrigin &&
+    !isSameOriginRequest(req, requestOrigin)
+    ? "hosted"
+    : "same-origin";
 }
 
 /**
@@ -574,6 +599,7 @@ export function createTraceServeServer(
       allowedWebOrigin,
       access?.credential,
       access?.pairing,
+      env.TRACE_CURRENT_VERSION ?? resolvePackagedVersion(),
     ),
   );
 }

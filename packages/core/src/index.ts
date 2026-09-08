@@ -21,8 +21,17 @@ export type {
 export type { TraceStoreOptions } from "./store.ts";
 export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
-export { TRACE_PROTOCOL_VERSION, traceConnection } from "./connection.ts";
-export type { TraceConnection } from "./connection.ts";
+export {
+  HOSTED_CAPABILITIES,
+  SAME_ORIGIN_CAPABILITIES,
+  TRACE_PROTOCOL_VERSION,
+  traceConnection,
+} from "./connection.ts";
+export type {
+  TraceCapability,
+  TraceClientScope,
+  TraceConnection,
+} from "./connection.ts";
 export {
   handleLocalAuthRequest,
   REPLACEMENT_KEY_CONFIRMATION,

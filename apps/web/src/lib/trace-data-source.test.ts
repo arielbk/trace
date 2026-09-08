@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
+import { TRACE_PROTOCOL_VERSION } from "@trace/core/browser";
 import { createElement, type ReactNode } from "react";
 import {
   HttpError,
   LocalTraceSource,
   SameOriginTraceSource,
   TraceDataSourceProvider,
+  UnsupportedOperationError,
   createTraceDataSource,
   useTraceDataSource,
 } from "./trace-data-source.ts";
@@ -36,6 +38,155 @@ describe("TraceDataSource", () => {
       sync: true,
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/tasks");
+  });
+
+  test("the local source adopts the capabilities the runtime advertises", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: 1,
+        runtimeVersion: "9.8.7",
+        capabilities: ["taskDetails"],
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await source.connect();
+
+    expect(source.capabilities).toMatchObject({
+      requiresConnection: true,
+      taskDetails: true,
+      taskMutations: false,
+      docEdits: false,
+      taskExports: false,
+      account: false,
+      sync: false,
+    });
+  });
+
+  test("a legacy handshake without capabilities keeps the protocol-1 hosted allowlist", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ service: "trace", protocolVersion: 1 }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await source.connect();
+
+    expect(source.capabilities).toMatchObject({
+      taskDetails: true,
+      taskMutations: true,
+      docEdits: false,
+      taskExports: false,
+      account: false,
+      sync: false,
+    });
+  });
+
+  test("a malformed capability list falls back to the conservative allowlist", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: 1,
+        capabilities: "docEdits,taskExports",
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await source.connect();
+
+    expect(source.capabilities).toMatchObject({
+      taskDetails: true,
+      taskMutations: true,
+      docEdits: false,
+      taskExports: false,
+    });
+  });
+
+  test("capability names this board does not know are ignored, not trusted", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: 1,
+        capabilities: ["taskDetails", "teleport", 7, null],
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    await source.connect();
+
+    expect(source.capabilities).toMatchObject({
+      taskDetails: true,
+      taskMutations: false,
+      docEdits: false,
+    });
+  });
+
+  test("an ungranted operation never leaves the browser", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: 1,
+        capabilities: ["taskDetails"],
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+    await source.connect();
+    fetchMock.mockClear();
+
+    await expect(
+      source.request("/api/tasks/checkout/pin", { method: "POST" }),
+    ).rejects.toBeInstanceOf(UnsupportedOperationError);
+    await expect(
+      source.request("/api/tasks/checkout/export"),
+    ).rejects.toBeInstanceOf(UnsupportedOperationError);
+    await expect(source.request("/api/sync/status")).rejects.toBeInstanceOf(
+      UnsupportedOperationError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // The reads it did grant still go out.
+    await source.request("/api/tasks/checkout/timeline");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a granted operation stays callable after the handshake widens it", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: 1,
+        capabilities: ["taskDetails", "taskMutations"],
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+    await source.connect();
+    fetchMock.mockClear();
+
+    await source.request("/api/tasks/checkout/pin", { method: "POST" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a handshake from an incompatible protocol grants nothing new", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        service: "trace",
+        protocolVersion: TRACE_PROTOCOL_VERSION + 1,
+        runtimeVersion: "99.0.0",
+        capabilities: ["taskDetails", "docEdits", "taskExports", "account"],
+      }),
+    );
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    // The handshake still reaches the caller, which reports the mismatch; the
+    // capability names in it belong to a protocol this board does not speak.
+    await expect(source.connect()).resolves.toMatchObject({
+      protocolVersion: TRACE_PROTOCOL_VERSION + 1,
+    });
+    expect(source.capabilities).toMatchObject({
+      docEdits: false,
+      taskExports: false,
+      account: false,
+    });
   });
 
   test("the local source targets loopback and exposes only its supported surface", async () => {

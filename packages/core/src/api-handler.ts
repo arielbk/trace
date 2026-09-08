@@ -5,7 +5,7 @@ import { buildTaskExportZip } from "./export-input.ts";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { readSyncStatus } from "./sync-status.ts";
-import { traceConnection } from "./connection.ts";
+import { traceConnection, type TraceClientScope } from "./connection.ts";
 
 export type TraceApiResponse = {
   status: number;
@@ -37,6 +37,13 @@ const JSON_CONTENT_TYPE = "application/json";
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;
+  /** The version of the Trace runtime serving this request, reported by the
+   * connection handshake. The host resolves it, since only it knows whether it
+   * is a packaged CLI, a dev server, or a pinned test double. */
+  runtimeVersion?: string;
+  /** The authority this request arrived with, which decides the capabilities
+   * the handshake advertises. Absent means the bundled same-origin board. */
+  clientScope?: TraceClientScope;
   /** The effective `auto-sync` policy for the serving process
    * (`resolveAutoSyncEnabled`), reported with the sync status so the board can
    * show the mode without reading `config.json` itself. Resolved per request,
@@ -70,7 +77,12 @@ export function handleTraceApiRequest(
 
   if (path === "/api/connection" || path === "/api/connection/") {
     if (method !== "GET") return methodNotAllowed();
-    return json(traceConnection());
+    return json(
+      traceConnection({
+        runtimeVersion: options?.runtimeVersion,
+        scope: options?.clientScope,
+      }),
+    );
   }
 
   if (path === "/api/config") {

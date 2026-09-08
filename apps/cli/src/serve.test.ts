@@ -80,6 +80,7 @@ function dispatch(
   bridgeCredential?: string,
   bridgePairing?: BridgePairing,
   requestBody?: string,
+  runtimeVersion?: string,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -121,6 +122,7 @@ function dispatch(
     allowedWebOrigin,
     bridgeCredential,
     bridgePairing,
+    runtimeVersion,
   )(request, res);
   if (requestBody !== undefined) request.emit("data", Buffer.from(requestBody));
   if (method === "POST" || method === "PUT" || method === "PATCH") {
@@ -130,12 +132,58 @@ function dispatch(
 }
 
 test("trace serve exposes a read-only connection handshake", () => {
-  const response = dispatch("GET", "/api/connection");
+  const response = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "9.8.7",
+  );
 
   expect(response.statusCode).toBe(200);
   expect(JSON.parse(response.body)).toEqual({
     service: "trace",
     protocolVersion: 1,
+    runtimeVersion: "9.8.7",
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "docEdits",
+      "taskExports",
+      "account",
+      "sync",
+    ],
+  });
+});
+
+test("trace serve advertises only the hosted allowlist to the hosted board", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+
+  const response = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    allowedOrigin,
+    credential,
+    undefined,
+    undefined,
+    "9.8.7",
+  );
+
+  expect(response.statusCode).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({
+    service: "trace",
+    protocolVersion: 1,
+    runtimeVersion: "9.8.7",
+    capabilities: ["taskDetails", "taskMutations"],
   });
 });
 
@@ -614,6 +662,52 @@ test("trace serve rejects reads outside the hosted spike allowlist", () => {
   }
 });
 
+test("what the hosted handshake advertises is exactly what the bridge allows", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const credential = "installation-secret";
+  const hosted = (method: string, path: string) =>
+    dispatch(
+      method,
+      path,
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+      allowedOrigin,
+      credential,
+    );
+
+  // One representative request per capability the handshake can name.
+  const probes: Record<string, () => CapturedResponse> = {
+    taskDetails: () => hosted("GET", `/api/tasks/${taskId}/timeline`),
+    taskMutations: () => hosted("POST", `/api/tasks/${taskId}/pin`),
+    docEdits: () => hosted("POST", `/api/tasks/${taskId}/docs/checkbox`),
+    taskExports: () => hosted("GET", `/api/tasks/${taskId}/export`),
+    account: () => hosted("POST", "/api/local-auth/login"),
+    sync: () => hosted("POST", "/api/sync"),
+  };
+
+  const advertised = new Set(
+    (
+      JSON.parse(hosted("GET", "/api/connection").body) as {
+        capabilities: string[];
+      }
+    ).capabilities,
+  );
+
+  for (const [capability, probe] of Object.entries(probes)) {
+    // A capability the runtime advertises but refuses is a broken affordance;
+    // one it grants without advertising is authority nobody reviewed.
+    expect([capability, probe().statusCode === 403]).toEqual([
+      capability,
+      !advertised.has(capability),
+    ]);
+  }
+
+  // The same-origin board still does every one of them; the narrowing is the
+  // hosted client's authority, not a missing feature.
+  expect(dispatch("GET", `/api/tasks/${taskId}/export`).statusCode).toBe(200);
+});
+
 test("trace serve keeps same-origin board mutations working", () => {
   const response = dispatch(
     "POST",
@@ -930,6 +1024,35 @@ test("openBrowser launches the platform opener with the url", () => {
     { command: "open", args: ["http://127.0.0.1:4317/"] },
     { command: "xdg-open", args: ["http://127.0.0.1:4317/"] },
   ]);
+});
+
+test("the serve process reports the Trace version it is actually running", () => {
+  const env = {
+    HOME: dir,
+    TRACE_DB: databasePath,
+    TRACE_CURRENT_VERSION: "4.5.6",
+  };
+  const server = createTraceServeServer(env, undefined);
+  const captured: { body: string } = { body: "" };
+
+  server.emit(
+    "request",
+    {
+      method: "GET",
+      url: "/api/connection",
+      headers: { host: "127.0.0.1:4317" },
+    } as IncomingMessage,
+    {
+      statusCode: 200,
+      setHeader: () => {},
+      end: (chunk?: string) => (captured.body = chunk ?? ""),
+    } as unknown as ServerResponse,
+  );
+
+  expect(JSON.parse(captured.body)).toMatchObject({
+    service: "trace",
+    runtimeVersion: "4.5.6",
+  });
 });
 
 test("the board's sync status reports the machine's AutoSync mode as it changes", () => {
