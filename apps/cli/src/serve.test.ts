@@ -870,6 +870,38 @@ test("trace serve falls back to the next port when the default is taken", async 
   await running.close();
 });
 
+test("the managed connection reports a taken port rather than moving to another", async () => {
+  const server = fakeServerWithTakenPorts(new Set([DEFAULT_SERVE_PORT]));
+
+  await expect(
+    startTraceServe(
+      {},
+      { server, triggerSync: () => {}, allowPortFallback: false },
+    ),
+  ).rejects.toThrow("EADDRINUSE");
+});
+
+test("a serve that does not own periodic sync schedules none", async () => {
+  vi.useFakeTimers();
+  try {
+    const server = fakeServerWithTakenPorts(new Set());
+    const triggerSync = vi.fn();
+
+    const running = await startTraceServe(
+      {},
+      { server, triggerSync, periodicSync: false },
+    );
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS * 3);
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    await running.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("trace serve returns a hosted pairing URL with no query secret", async () => {
   const server = fakeServerWithTakenPorts(new Set());
   const running = await startTraceServe(

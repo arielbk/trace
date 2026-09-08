@@ -2,17 +2,23 @@ import {
   openConnectionCredentials,
   type PairedBrowser,
 } from "../connection-credentials.ts";
-import { DEFAULT_SERVE_PORT } from "../serve.ts";
+import {
+  CONNECTION_ENDPOINT_ORIGIN,
+  startManagedConnection,
+  type ManagedConnectionDependencies,
+} from "../connection-endpoint.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
 /** Where the local connection always listens. */
-const SERVICE_ORIGIN = `http://127.0.0.1:${DEFAULT_SERVE_PORT}`;
+const SERVICE_ORIGIN = CONNECTION_ENDPOINT_ORIGIN;
 
 const NOT_RUNNING =
   "The Trace connection is not running. Start it with `trace serve`.";
 
-export type ConnectionDependencies = {
-  fetch: typeof globalThis.fetch;
+export type ConnectionDependencies = ManagedConnectionDependencies & {
+  /** Registers the graceful-shutdown handler. Injectable so tests never touch
+   * this process's real signal handlers. */
+  onShutdownSignal?: (shutDown: () => void) => void;
 };
 
 /**
@@ -27,6 +33,10 @@ export async function connectionOperation(
 ): Promise<CommandResult> {
   const [subcommand] = args;
   const request = managementRequest(context.env, dependencies);
+
+  if (subcommand === "run") {
+    return runManagedConnection(context.env, dependencies);
+  }
 
   if (subcommand === "pair") {
     const response = await request("POST", "/api/management/pairings");
@@ -79,7 +89,42 @@ export async function connectionOperation(
     );
   }
 
-  return failure("Usage: trace connection <pair|browsers|revoke <id>|reset>");
+  return failure(
+    "Usage: trace connection <run|pair|browsers|revoke <id>|reset>",
+  );
+}
+
+/**
+ * `trace connection run` — the managed connection's own process, and what the
+ * login service executes. It resolves once the endpoint is owned; the running
+ * server is what keeps the process alive afterwards.
+ */
+async function runManagedConnection(
+  env: Env,
+  dependencies: ConnectionDependencies,
+): Promise<CommandResult> {
+  const outcome = await startManagedConnection(env, dependencies);
+
+  if (outcome.kind === "conflict") return failure(outcome.reason);
+
+  if (outcome.kind === "reused") {
+    return success(
+      `The Trace connection is already running on ${SERVICE_ORIGIN} (version ${outcome.runtimeVersion}, pid ${outcome.pid}).\n`,
+    );
+  }
+
+  const { server } = outcome;
+  (dependencies.onShutdownSignal ?? onProcessTermination)(() => {
+    void server.close();
+  });
+  return success(`Trace connection listening on ${server.url}\n`);
+}
+
+/** launchd stops the service with SIGTERM; a developer running it in a
+ * terminal uses SIGINT. Both mean: stop listening and let the process end. */
+function onProcessTermination(shutDown: () => void): void {
+  process.once("SIGTERM", shutDown);
+  process.once("SIGINT", shutDown);
 }
 
 type ManagementResponse =

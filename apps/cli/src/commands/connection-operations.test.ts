@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createPairingLinks } from "../bridge-pairing.ts";
 import { openConnectionCredentials } from "../connection-credentials.ts";
-import { createServeRequestListener } from "../serve.ts";
+import { CONNECTION_ENDPOINT_ORIGIN } from "../connection-endpoint.ts";
+import { createServeRequestListener, DEFAULT_SERVE_PORT } from "../serve.ts";
 import { connectionOperation } from "./connection-operations.ts";
 
 let home: string;
@@ -148,4 +149,80 @@ test("trace connection needs a subcommand it recognises", async () => {
 
   expect(result.exitCode).toBe(2);
   expect(result.stderr).toContain("Usage: trace connection");
+});
+
+test("trace connection run takes the fixed endpoint and says where it listens", async () => {
+  const closed = { count: 0 };
+  const start = async () => ({
+    url: `${CONNECTION_ENDPOINT_ORIGIN}/`,
+    port: DEFAULT_SERVE_PORT,
+    close: async () => {
+      closed.count += 1;
+    },
+  });
+
+  const result = await connectionOperation(
+    ["run"],
+    { env },
+    { fetch: refusing, start },
+  );
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
+});
+
+/** A `fetch` that behaves like nothing is listening on the endpoint. */
+const refusing = (async () => {
+  throw new TypeError("fetch failed");
+}) as typeof globalThis.fetch;
+
+test("a shutdown signal closes the connection's server", async () => {
+  const closed = { count: 0 };
+  const start = async () => ({
+    url: `${CONNECTION_ENDPOINT_ORIGIN}/`,
+    port: DEFAULT_SERVE_PORT,
+    close: async () => {
+      closed.count += 1;
+    },
+  });
+  let shutDown = (): void => {};
+
+  await connectionOperation(
+    ["run"],
+    { env },
+    {
+      fetch: refusing,
+      start,
+      onShutdownSignal: (handler) => {
+        shutDown = handler;
+      },
+    },
+  );
+  expect(closed.count).toBe(0);
+
+  shutDown();
+  await vi.waitFor(() => expect(closed.count).toBe(1));
+});
+
+test("trace connection run reports a busy endpoint instead of taking it", async () => {
+  const fetch = (async () =>
+    new Response("not trace", { status: 200 })) as typeof globalThis.fetch;
+  const start = vi.fn();
+
+  const result = await connectionOperation(["run"], { env }, { fetch, start });
+
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain(CONNECTION_ENDPOINT_ORIGIN);
+  expect(start).not.toHaveBeenCalled();
+});
+
+test("trace connection run reuses the connection already running here", async () => {
+  const { fetch } = runningService();
+  const start = vi.fn();
+
+  const result = await connectionOperation(["run"], { env }, { fetch, start });
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout).toContain("already running");
+  expect(start).not.toHaveBeenCalled();
 });

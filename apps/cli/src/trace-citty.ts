@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import { runInit } from "./installer.ts";
 import { openBrowser } from "./open-browser.ts";
-import { startTraceServe } from "./serve.ts";
+import { startForegroundServe } from "./connection-endpoint.ts";
 import { runClaudeSessionStartHook } from "./claude-session-start-hook-runner.ts";
 import { runClaudeStopHook } from "./claude-stop-hook-runner.ts";
 import { runClaudeSubagentStopHook } from "./claude-subagent-stop-hook-runner.ts";
@@ -87,7 +87,7 @@ export function buildTraceCittyRoot(
       serve: defineCommand({
         meta: { description: "Start the Trace web UI" },
         run(): CommandResult {
-          startTraceServe(env)
+          startForegroundServe(env, { fetch: globalThis.fetch })
             .then(({ url, pairingUrl }) => {
               process.stdout.write(`trace serve listening on ${url}\n`);
               if (pairingUrl) {

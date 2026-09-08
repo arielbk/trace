@@ -15,6 +15,7 @@ import {
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
+  TRACE_PROTOCOL_VERSION,
   type LocalAuthService,
   type TraceClientScope,
 } from "@trace/core";
@@ -49,6 +50,14 @@ export type StartTraceServeOptions = {
   /** Injectable background-sync trigger; defaults to the real fire-and-forget
    * spawn. Overridden by tests. */
   triggerSync?: (env: Record<string, string | undefined>) => void;
+  /** Foreground serve may move to the next free port; the managed connection
+   * may not, because the hosted board is configured against one address.
+   * Defaults to true. */
+  allowPortFallback?: boolean;
+  /** Whether this process schedules the background sync that keeps an idle
+   * board converging. Defaults to true; the managed connection turns it off in
+   * a foreground serve so there is only ever one periodic sync owner. */
+  periodicSync?: boolean;
 };
 
 /** Exact hosted origin allowed to pair with and read this loopback API. */
@@ -210,6 +219,7 @@ export function createServeRequestListener(
         connection,
         pairing,
         allowedWebOrigin,
+        runtimeVersion,
       )
     ) {
       return;
@@ -460,6 +470,7 @@ function handleManagementRequest(
   connection?: ConnectionCredentials,
   pairing?: PairingLinks,
   allowedWebOrigin?: string,
+  runtimeVersion?: string,
 ): boolean {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
   if (!path.startsWith(MANAGEMENT_PREFIX)) return false;
@@ -487,6 +498,18 @@ function handleManagementRequest(
   }
 
   const route = path.slice(MANAGEMENT_PREFIX.length);
+  // Answering this at all is the proof of ownership: only the holder of this
+  // installation's management credential gets here, so a reply means the
+  // process on the endpoint is *ours*, not merely some Trace.
+  if (route === "status" && method === "GET") {
+    return endManagementJson(res, 200, {
+      service: "trace",
+      protocolVersion: TRACE_PROTOCOL_VERSION,
+      runtimeVersion: runtimeVersion ?? "0.0.0",
+      pid: process.pid,
+    });
+  }
+
   if (route === "browsers" && method === "GET") {
     return endManagementJson(res, 200, { browsers: connection.listBrowsers() });
   }
@@ -766,11 +789,13 @@ export function startTraceServe(
 
   // Between mutations, keep an idle-but-open board converging with other
   // machines. unref'd so the timer never holds the process alive on its own.
-  const periodicSync = setInterval(
-    () => triggerSync(env),
-    PERIODIC_SYNC_INTERVAL_MS,
-  );
-  periodicSync.unref?.();
+  // Skipped when another process already owns periodic sync, so coexisting
+  // runtimes never double the sync rate.
+  const periodicSync =
+    options.periodicSync === false
+      ? undefined
+      : setInterval(() => triggerSync(env), PERIODIC_SYNC_INTERVAL_MS);
+  periodicSync?.unref?.();
 
   return new Promise((resolve, reject) => {
     const listenOn = (port: number, attemptsLeft: number): void => {
@@ -793,7 +818,7 @@ export function startTraceServe(
           port: boundPort,
           close: () =>
             new Promise<void>((resolveClose, rejectClose) => {
-              clearInterval(periodicSync);
+              if (periodicSync) clearInterval(periodicSync);
               server.close((error) =>
                 error ? rejectClose(error) : resolveClose(),
               );
@@ -802,7 +827,10 @@ export function startTraceServe(
       });
     };
 
-    listenOn(preferredPort, PORT_FALLBACK_ATTEMPTS);
+    listenOn(
+      preferredPort,
+      options.allowPortFallback === false ? 0 : PORT_FALLBACK_ATTEMPTS,
+    );
   });
 }
 
