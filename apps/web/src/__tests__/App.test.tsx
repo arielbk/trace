@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { vi, test, expect, beforeEach, afterEach } from "vitest";
-import { render, cleanup, screen } from "@testing-library/react";
+import { render, cleanup, fireEvent, screen } from "@testing-library/react";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
@@ -110,4 +110,29 @@ test("a paired hosted board routes into a task's detail view", async () => {
     `${origin}/api/tasks/my-task/timeline`,
     expect.anything(),
   );
+});
+
+test("a connected board reports a connection that stops answering", async () => {
+  const origin = "http://127.0.0.1:4317";
+  localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));
+  const json = (value: unknown) =>
+    new Response(JSON.stringify(value), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  const connected = vi.fn().mockImplementation(async (input: unknown) =>
+    String(input).endsWith("/api/connection")
+      ? json({ service: "trace", protocolVersion: TRACE_PROTOCOL_VERSION })
+      : json([]),
+  );
+  vi.stubGlobal("fetch", connected);
+
+  render(<App source={new LocalTraceSource(origin)} />);
+  expect(await screen.findByRole("heading", { name: "Tasks" })).toBeVisible();
+
+  // Trace goes away underneath the open board.
+  connected.mockRejectedValue(new TypeError("Failed to fetch"));
+  fireEvent(window, new Event("focus"));
+
+  expect(await screen.findByRole("status")).toHaveTextContent(/reconnecting/i);
 });

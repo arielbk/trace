@@ -254,25 +254,23 @@ describe("skills scaffold", () => {
     assert.match(meta as string, /^description:\s*.+$/m);
     assert.match(meta as string, /board/i);
 
-    // It starts the web UI via the persistent CLI's serve verb.
+    // It opens the web UI via the persistent CLI's board verb, which reuses a
+    // running connection rather than starting a second one.
     assert.equal(source.includes(bareTraceCommand()), true);
-    assert.match(source, /\bserve\b/);
+    assert.match(source, /^trace board$/m);
+    assert.match(source, /trace board --local/);
 
-    // The agent opens the board itself rather than instructing the user: it
-    // starts serve as a background process and never asks them to run a command.
+    // The agent opens the board itself rather than instructing the user.
     assert.match(source, /open the board for the user yourself/i);
     assert.match(source, /never ask them to run a command/i);
-    assert.match(source, /background/i);
 
-    // Before spawning it checks the default port so a running board is reused
-    // instead of duplicated.
-    assert.match(source, /127\.0\.0\.1:4317/);
-
-    // It still reads the URL off stdout and reports it to the user.
-    assert.match(source, /trace serve listening on http:\/\//);
-    assert.match(source, /next available port/i);
+    // It reads the URL the command printed and reports it to the user.
     assert.match(source, /tell the user the URL/i);
-    assert.match(source, /stops the server with Ctrl-C/);
+
+    // `trace serve` stays the foreground development runtime, not the way to
+    // open a board.
+    assert.match(source, /trace serve/);
+    assert.match(source, /foreground/i);
   });
 
   it("ships a state skill that authors a concise snapshot without empty placeholders", () => {

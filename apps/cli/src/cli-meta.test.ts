@@ -98,3 +98,27 @@ test("trace connection is routed and listed among the commands", async () => {
       .stdout,
   ).toContain("trace connection");
 });
+
+test("trace board is routed and offered as the way to open the board", async () => {
+  const result = await runTraceCliAsync(
+    ["board", "--hosted"],
+    { TRACE_CURRENT_VERSION: "1.2.3" },
+    process.cwd(),
+  );
+
+  expect(result.exitCode).toBe(2);
+  expect(result.stderr).toContain("Usage: trace board [--local]");
+  expect(
+    runTraceCli(["--help"], { TRACE_CURRENT_VERSION: "1.2.3" }, process.cwd())
+      .stdout,
+  ).toContain("trace board");
+
+  const humanReadableHelp = await runTraceCliAsync(
+    ["--help"],
+    { TRACE_CURRENT_VERSION: "1.2.3" },
+    process.cwd(),
+    "",
+    { humanReadable: true },
+  );
+  expect(humanReadableHelp.stdout).toContain("trace board");
+});

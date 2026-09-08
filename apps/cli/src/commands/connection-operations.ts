@@ -267,13 +267,18 @@ function onProcessTermination(shutDown: () => void): void {
   process.once("SIGINT", shutDown);
 }
 
-type ManagementResponse =
+export type ManagementResponse =
   | { ok: true; payload: unknown }
   | { ok: false; result: CommandResult };
 
-function managementRequest(
+/**
+ * A caller for the local management surface, carrying this installation's
+ * management credential. Exported so `trace board` can mint a pairing link
+ * through the same authority rather than opening a second one.
+ */
+export function managementRequest(
   env: Env,
-  { fetch }: ConnectionDependencies,
+  { fetch }: Pick<ConnectionDependencies, "fetch">,
 ): (method: string, path: string) => Promise<ManagementResponse> {
   return async (method, path) => {
     let response: Response;

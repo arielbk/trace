@@ -31,9 +31,9 @@ import {
   openConnectionCredentials,
   type ConnectionCredentials,
 } from "./connection-credentials.ts";
+import { DEFAULT_SERVE_PORT } from "./connection-address.ts";
 
-/** Default port `trace serve` listens on. */
-export const DEFAULT_SERVE_PORT = 4317;
+export { DEFAULT_SERVE_PORT } from "./connection-address.ts";
 
 export type TraceServer = {
   url: string;

@@ -1,20 +1,18 @@
 import { TRACE_PROTOCOL_VERSION } from "@trace/core";
 import { openConnectionCredentials } from "./connection-credentials.ts";
 import {
-  DEFAULT_SERVE_PORT,
   startTraceServe,
   type StartTraceServeOptions,
   type TraceServer,
 } from "./serve.ts";
+import {
+  CONNECTION_ENDPOINT_ORIGIN,
+  DEFAULT_SERVE_PORT,
+} from "./connection-address.ts";
 
 type Env = Record<string, string | undefined>;
 
-/**
- * The one address the managed connection ever listens on. Hosted boards are
- * configured against it, so the managed runtime never moves to another port:
- * it either owns this endpoint or reports what is holding it.
- */
-export const CONNECTION_ENDPOINT_ORIGIN = `http://127.0.0.1:${DEFAULT_SERVE_PORT}`;
+export { CONNECTION_ENDPOINT_ORIGIN };
 
 /** What is currently holding {@link CONNECTION_ENDPOINT_ORIGIN}. */
 export type EndpointOccupant =
