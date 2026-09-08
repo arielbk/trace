@@ -83,3 +83,18 @@ test("bare terminal invocation shows human help successfully", async () => {
   expect(result.stdout).toContain("Get started");
   expect(result.stderr).toBe("");
 });
+
+test("trace connection is routed and listed among the commands", async () => {
+  const result = await runTraceCliAsync(
+    ["connection"],
+    { TRACE_CURRENT_VERSION: "1.2.3" },
+    process.cwd(),
+  );
+
+  expect(result.exitCode).toBe(2);
+  expect(result.stderr).toContain("Usage: trace connection");
+  expect(
+    runTraceCli(["--help"], { TRACE_CURRENT_VERSION: "1.2.3" }, process.cwd())
+      .stdout,
+  ).toContain("trace connection");
+});

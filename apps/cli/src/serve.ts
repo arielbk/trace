@@ -21,12 +21,15 @@ import {
 import { requestAutomaticSync } from "./commands/sync.ts";
 import { resolvePackagedVersion } from "./commands/setup-operations.ts";
 import { createLocalAuthService } from "./local-auth.ts";
-import { readOrCreateBridgeCredential } from "./bridge-credential.ts";
 import {
-  createBridgePairing,
   createBridgePairingUrl,
-  type BridgePairing,
+  createPairingLinks,
+  type PairingLinks,
 } from "./bridge-pairing.ts";
+import {
+  openConnectionCredentials,
+  type ConnectionCredentials,
+} from "./connection-credentials.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
@@ -178,10 +181,11 @@ export function createServeRequestListener(
   localAuth?: LocalAuthService,
   /** Exact HTTPS origin allowed to call the local API cross-origin. */
   allowedWebOrigin?: string,
-  /** Installation-scoped bearer token required by the hosted origin. */
-  bridgeCredential?: string,
-  /** Process-local, one-use exchange for the installation credential. */
-  bridgePairing?: BridgePairing,
+  /** This installation's credential store: the local management credential and
+   * the per-browser credentials the hosted origin authenticates with. */
+  connection?: ConnectionCredentials,
+  /** Process-local, single-use exchanges that mint browser credentials. */
+  pairing?: PairingLinks,
   /** The Trace version this process is running, reported by the handshake. */
   runtimeVersion?: string,
 ): (req: IncomingMessage, res: ServerResponse) => void {
@@ -195,6 +199,22 @@ export function createServeRequestListener(
       return;
     }
 
+    // Local management is answered ahead of the browser gates: it is not a
+    // browser surface at all, and its own guard is stricter than theirs.
+    if (
+      handleManagementRequest(
+        req,
+        res,
+        url,
+        method,
+        connection,
+        pairing,
+        allowedWebOrigin,
+      )
+    ) {
+      return;
+    }
+
     if (applyHostedApiCors(req, res, url, method, allowedWebOrigin)) return;
     if (
       rejectUnauthorizedHostedRequest(
@@ -203,14 +223,14 @@ export function createServeRequestListener(
         url,
         method,
         allowedWebOrigin,
-        bridgeCredential,
+        connection,
       )
     ) {
       return;
     }
 
     const dispatch = (body?: string): void => {
-      if (handleBridgePairingRequest(res, url, method, body, bridgePairing)) {
+      if (handleBridgePairingRequest(res, url, method, body, pairing)) {
         return;
       }
 
@@ -360,9 +380,9 @@ function rejectUnauthorizedHostedRequest(
   rawUrl: string,
   method: string,
   allowedWebOrigin?: string,
-  bridgeCredential?: string,
+  connection?: ConnectionCredentials,
 ): boolean {
-  if (!bridgeCredential || method === "OPTIONS") return false;
+  if (!connection || method === "OPTIONS") return false;
 
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
   const requestOrigin = req.headers?.origin;
@@ -381,7 +401,9 @@ function rejectUnauthorizedHostedRequest(
     typeof authorization === "string" && authorization.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length)
       : "";
-  if (credentialsMatch(supplied, bridgeCredential)) return false;
+  // Read through to the credential store on every request, so a revoked
+  // browser loses access immediately rather than at the next restart.
+  if (supplied && connection.verifyBrowserToken(supplied)) return false;
 
   res.statusCode = 401;
   res.setHeader("www-authenticate", "Bearer");
@@ -419,6 +441,106 @@ function isHostedActionPath(path: string): boolean {
   );
 }
 
+/** Local management lives under one prefix so the browser gates below can stay
+ * ignorant of it — nothing here is ever reachable from a page. */
+const MANAGEMENT_PREFIX = "/api/management/";
+
+/**
+ * The local administration surface: issue a pairing link, list paired
+ * browsers, revoke one, or revoke them all. It answers only to a request that
+ * carries the local management credential and no browser origin at all, so a
+ * paired browser — including the hosted board holding a valid browser
+ * credential — can never administer this installation.
+ */
+function handleManagementRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  connection?: ConnectionCredentials,
+  pairing?: PairingLinks,
+  allowedWebOrigin?: string,
+): boolean {
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  if (!path.startsWith(MANAGEMENT_PREFIX)) return false;
+
+  res.setHeader("cache-control", "no-store");
+  if (!connection) return endManagement(res, 404, "Management unavailable");
+
+  // A browser announces itself with Origin (and browsers are the one client
+  // this surface excludes), so its presence is disqualifying on its own — the
+  // hosted origin and the bundled board included.
+  if (req.headers?.origin) {
+    return endManagement(res, 403, "Management is local-only");
+  }
+
+  const authorization = req.headers?.authorization;
+  const supplied =
+    typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : "";
+  if (!credentialsMatch(supplied, connection.managementToken)) {
+    res.statusCode = 401;
+    res.setHeader("www-authenticate", "Bearer");
+    res.end("Local management authorization required");
+    return true;
+  }
+
+  const route = path.slice(MANAGEMENT_PREFIX.length);
+  if (route === "browsers" && method === "GET") {
+    return endManagementJson(res, 200, { browsers: connection.listBrowsers() });
+  }
+
+  if (route === "pairings" && method === "POST") {
+    if (!pairing) return endManagement(res, 409, "Pairing unavailable");
+    const link = pairing.create();
+    return endManagementJson(res, 200, {
+      secret: link.secret,
+      expiresAt: link.expiresAt,
+      url: allowedWebOrigin
+        ? createBridgePairingUrl(allowedWebOrigin, link.secret)
+        : undefined,
+    });
+  }
+
+  if (route === "reset" && method === "POST") {
+    const revoked = connection.listBrowsers().length;
+    connection.reset();
+    return endManagementJson(res, 200, { revoked });
+  }
+
+  const revoking = /^browsers\/([^/]+)\/revoke$/.exec(route);
+  if (revoking && method === "POST") {
+    const id = decodeURIComponent(revoking[1] as string);
+    return connection.revokeBrowser(id)
+      ? endManagementJson(res, 200, { revoked: true })
+      : endManagementJson(res, 404, { revoked: false });
+  }
+
+  return endManagement(res, 404, "No such management route");
+}
+
+function endManagement(
+  res: ServerResponse,
+  statusCode: number,
+  message: string,
+): true {
+  res.statusCode = statusCode;
+  res.end(message);
+  return true;
+}
+
+function endManagementJson(
+  res: ServerResponse,
+  statusCode: number,
+  payload: unknown,
+): true {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(payload));
+  return true;
+}
+
 function isPairingPath(path: string): boolean {
   return path === "/api/pairing" || path === "/api/pairing/";
 }
@@ -428,7 +550,7 @@ function handleBridgePairingRequest(
   rawUrl: string,
   method: string,
   body: string | undefined,
-  pairing?: BridgePairing,
+  pairing?: PairingLinks,
 ): boolean {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
   if (!isPairingPath(path) || method !== "POST") return false;
@@ -576,14 +698,11 @@ export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
   syncHooks?: ServeSyncHooks,
-  bridgeAccess?: { credential: string; pairing: BridgePairing },
+  bridgeAccess?: BridgeAccess,
 ): Server {
   const allowedWebOrigin = resolveAllowedWebOrigin(env);
   const access =
-    bridgeAccess ??
-    (allowedWebOrigin
-      ? createBridgeAccess(readOrCreateBridgeCredential(env))
-      : undefined);
+    bridgeAccess ?? (allowedWebOrigin ? createBridgeAccess(env) : undefined);
   return createServer(
     createServeRequestListener(
       resolveDatabasePath(env),
@@ -597,7 +716,7 @@ export function createTraceServeServer(
         onLoginComplete: syncHooks?.onLoginComplete,
       }),
       allowedWebOrigin,
-      access?.credential,
+      access?.connection,
       access?.pairing,
       env.TRACE_CURRENT_VERSION ?? resolvePackagedVersion(),
     ),
@@ -622,12 +741,15 @@ export function startTraceServe(
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const triggerSync = options.triggerSync ?? requestAutomaticSync;
   const allowedWebOrigin = resolveAllowedWebOrigin(env);
-  const bridgeAccess = allowedWebOrigin
-    ? createBridgeAccess(readOrCreateBridgeCredential(env))
-    : undefined;
+  const bridgeAccess = allowedWebOrigin ? createBridgeAccess(env) : undefined;
+  // Foreground serve opens with one link in hand, the way it always has; the
+  // running service can mint more on request without restarting.
   const pairingUrl =
     allowedWebOrigin && bridgeAccess
-      ? createBridgePairingUrl(allowedWebOrigin, bridgeAccess.pairing.secret)
+      ? createBridgePairingUrl(
+          allowedWebOrigin,
+          bridgeAccess.pairing.create().secret,
+        )
       : undefined;
   const server =
     options.server ??
@@ -684,9 +806,18 @@ export function startTraceServe(
   });
 }
 
-function createBridgeAccess(credential: string): {
-  credential: string;
-  pairing: BridgePairing;
-} {
-  return { credential, pairing: createBridgePairing(credential) };
+/** The credential store plus this process's outstanding pairing links. */
+export type BridgeAccess = {
+  connection: ConnectionCredentials;
+  pairing: PairingLinks;
+};
+
+function createBridgeAccess(
+  env: Record<string, string | undefined>,
+): BridgeAccess {
+  const connection = openConnectionCredentials(env);
+  return {
+    connection,
+    pairing: createPairingLinks((label) => connection.issueBrowserToken(label)),
+  };
 }

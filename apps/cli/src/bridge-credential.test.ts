@@ -1,13 +1,23 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import {
-  readOrCreateBridgeCredential,
+  readBridgeCredential,
   resolveBridgeCredentialPath,
 } from "./bridge-credential.ts";
 
 const homes: string[] = [];
+
+function homeWithBridgeFile(contents?: string): { HOME: string } {
+  const home = mkdtempSync(join(tmpdir(), "trace-bridge-credential-"));
+  homes.push(home);
+  if (contents !== undefined) {
+    mkdirSync(join(home, ".trace"), { recursive: true });
+    writeFileSync(resolveBridgeCredentialPath({ HOME: home }), contents);
+  }
+  return { HOME: home };
+}
 
 afterEach(() => {
   for (const home of homes.splice(0)) {
@@ -15,18 +25,16 @@ afterEach(() => {
   }
 });
 
-test("the installation credential is generated once and stored owner-only", () => {
-  const home = mkdtempSync(join(tmpdir(), "trace-bridge-credential-"));
-  homes.push(home);
-  const env = { HOME: home };
+test("a previous installation's bridge credential is readable for migration", () => {
+  const token = "a".repeat(43);
 
-  const first = readOrCreateBridgeCredential(env);
-  const second = readOrCreateBridgeCredential(env);
-  const path = resolveBridgeCredentialPath(env);
+  expect(readBridgeCredential(homeWithBridgeFile(`{"token":"${token}"}`))).toBe(
+    token,
+  );
+});
 
-  expect(first).toBe(second);
-  expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ token: first });
-  expect(statSync(join(home, ".trace")).mode & 0o777).toBe(0o700);
-  expect(statSync(path).mode & 0o777).toBe(0o600);
+test("an absent or unusable bridge file yields no credential to migrate", () => {
+  expect(readBridgeCredential(homeWithBridgeFile())).toBeNull();
+  expect(readBridgeCredential(homeWithBridgeFile("{ not json"))).toBeNull();
+  expect(readBridgeCredential(homeWithBridgeFile('{"token":"short"}'))).toBeNull();
 });

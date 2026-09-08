@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
+import { connectionOperation } from "./commands/connection-operations.ts";
 import { createClackPrompt } from "./commands/setup-clack-prompt.ts";
 import { interactiveSetupOperation } from "./commands/setup-interactive.ts";
 import type { SetupPrompt } from "./commands/setup-prompt.ts";
@@ -123,6 +124,11 @@ export async function runTraceCliAsync(
   if (command === "sync" && argv.length === 1) {
     return runSyncCommand(env);
   }
+  if (command === "connection") {
+    // Every subcommand talks to the running service over loopback, so this
+    // dispatch is asynchronous and never goes through the citty tree.
+    return connectionOperation(argv.slice(1), { env });
+  }
   if (
     (command === "login" || command === "logout" || command === "whoami") &&
     argv.length === 1
@@ -161,7 +167,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 const COMPACT_USAGE =
-  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace serve | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
+  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace serve | trace connection <pair|browsers|revoke <id>|reset> | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
 
 function usage(): CommandResult {
   return failure(COMPACT_USAGE);
