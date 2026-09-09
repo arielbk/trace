@@ -15,6 +15,7 @@ import {
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
+  DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
   type LocalAuthService,
   type TraceClientScope,
@@ -62,8 +63,8 @@ export type StartTraceServeOptions = {
    * Whether this process answers `/api/management/*` — how `trace connection
    * …` administers it, and how a probe recognises it as this installation's
    * own. The managed connection always sets it, because being administrable
-   * must not depend on a hosted board being configured. Off by default, so a
-   * bare `trace serve` creates no credential it will never use.
+   * must not depend on a hosted board being configured. Off by default, so
+   * `trace serve` with hosted access disabled creates no unused credential.
    */
   localManagement?: boolean;
 };
@@ -702,7 +703,9 @@ function isLoopbackBindHost(host: string): boolean {
 export function resolveAllowedWebOrigin(
   env: Record<string, string | undefined>,
 ): string | undefined {
-  const configured = env[TRACE_WEB_ORIGIN_ENV_VAR]?.trim();
+  const configured = (
+    env[TRACE_WEB_ORIGIN_ENV_VAR] ?? DEFAULT_HOSTED_WEB_ORIGIN
+  ).trim();
   if (!configured) return undefined;
   try {
     const url = new URL(configured);

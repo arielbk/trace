@@ -467,7 +467,8 @@ export function renderLaunchAgentPlist(options: {
   // Only an origin the API would actually honor is worth persisting; anything
   // else would bake a value into the job that the running server rejects.
   const hostedOrigin = resolveAllowedWebOrigin(env);
-  if (hostedOrigin) environment.TRACE_WEB_ORIGIN = hostedOrigin;
+  // Preserve explicit opt-out and invalid overrides across service restarts.
+  environment.TRACE_WEB_ORIGIN = hostedOrigin ?? "";
 
   const lines = [
     `<?xml version="1.0" encoding="UTF-8"?>`,

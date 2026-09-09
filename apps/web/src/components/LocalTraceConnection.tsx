@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
   type TraceConnection,
 } from "@trace/core/browser";
@@ -135,6 +136,10 @@ export function LocalTraceConnection({
   const supported = supportsLocalTraceBridge(userAgent);
   const [state, setState] = useState<ConnectionState>({ phase: "idle" });
   const origin = bridgeOrigin(source);
+  const setupCommand =
+    window.location.origin === DEFAULT_HOSTED_WEB_ORIGIN
+      ? "trace setup"
+      : `TRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' trace setup`;
 
   const attemptedAutomaticConnection = useRef(false);
   const handleConnect = useCallback(async () => {
@@ -274,7 +279,7 @@ export function LocalTraceConnection({
                   return here to get your pairing command.
                 </p>
                 <pre className="overflow-x-auto rounded-control border border-border bg-surface p-3 text-crumb">
-                  <code>{`npm install -g @arielbk/trace\nTRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' trace setup`}</code>
+                  <code>{`npm install -g @arielbk/trace\n${setupCommand}`}</code>
                 </pre>
               </details>
             </>

@@ -26,7 +26,7 @@ afterEach(() => {
 
 /** A `fetch` that drives the real serve listener, so the opener is exercised
  * against the handler the managed connection actually runs. */
-function runningService(): typeof globalThis.fetch {
+function runningService(hostedOrigin = HOSTED_ORIGIN): typeof globalThis.fetch {
   const connection = openConnectionCredentials(env);
   const listener = createServeRequestListener(
     join(home, "trace.sqlite"),
@@ -35,7 +35,7 @@ function runningService(): typeof globalThis.fetch {
     undefined,
     undefined,
     undefined,
-    HOSTED_ORIGIN,
+    hostedOrigin,
     connection,
     createPairingLinks((label) => connection.issueBrowserToken(label)),
     "9.9.9",
@@ -92,7 +92,7 @@ test("trace board opens the hosted board through a fresh pairing link", async ()
   expect(start).not.toHaveBeenCalled();
 });
 
-test("trace board falls back to the bundled board when no hosted origin is configured", async () => {
+test("trace board falls back to the bundled board when hosted access is explicitly disabled", async () => {
   const opened: string[] = [];
   const start = vi.fn().mockResolvedValue({
     url: "http://127.0.0.1:4317/",
@@ -102,7 +102,7 @@ test("trace board falls back to the bundled board when no hosted origin is confi
 
   const result = await boardOperation(
     [],
-    { env },
+    { env: { ...env, TRACE_WEB_ORIGIN: "" } },
     { fetch: noService, open: (url) => opened.push(url), start },
   );
 
@@ -174,4 +174,15 @@ test("trace board rejects an option it does not know", async () => {
 
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain("Usage: trace board [--local]");
+});
+
+
+test("trace board uses the official hosted origin without configuration", async () => {
+  const opened: string[] = [];
+  const result = await boardOperation([], { env }, {
+    fetch: runningService("https://app.eqnx.ai"),
+    open: (url) => opened.push(url),
+  });
+  expect(result.exitCode).toBe(0);
+  expect(new URL(opened[0]!).origin).toBe("https://app.eqnx.ai");
 });

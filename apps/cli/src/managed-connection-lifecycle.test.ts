@@ -49,7 +49,7 @@ afterEach(async () => {
 
 /**
  * A machine with launchd modelled and no connection running yet. Without
- * `hosted`, nothing has configured a hosted board — the bundled-board machine.
+ * `hosted`, hosted access is explicitly disabled — the bundled-board machine.
  */
 function machine(options: { hosted?: boolean } = {}): Machine {
   current = new Machine(
@@ -77,7 +77,7 @@ class Machine {
       HOME: this.home,
       TRACE_CLI_PATH: CLI_PATH,
       TRACE_CURRENT_VERSION: this.installedVersion,
-      ...(this.hostedOrigin ? { TRACE_WEB_ORIGIN: this.hostedOrigin } : {}),
+      TRACE_WEB_ORIGIN: this.hostedOrigin ?? "",
     };
   }
 
@@ -547,7 +547,7 @@ test("uninstalling twice is a no-op, not a failure", async () => {
   expect(again.exitCode).toBe(0);
 });
 
-test("with no hosted board configured, trace board reuses the connection it has", async () => {
+test("with hosted access disabled, trace board reuses the connection it has", async () => {
   const box = machine({ hosted: false });
   setupOperation(["--target", `codex=${join(home, "codex")}`, "--yes"], {
     env: box.env,
@@ -557,7 +557,7 @@ test("with no hosted board configured, trace board reuses the connection it has"
   });
 
   // Nothing hosted was configured, so nothing hosted was baked into the job.
-  expect(readFileSync(box.plistPath, "utf8")).not.toContain("TRACE_WEB_ORIGIN");
+  expect(readFileSync(box.plistPath, "utf8")).toContain("<key>TRACE_WEB_ORIGIN</key>\n    <string></string>");
 
   const opened: string[] = [];
   const started: string[] = [];

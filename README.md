@@ -97,9 +97,9 @@ trace board
 
 `trace setup` also installs a small background connection that starts at login
 and serves the board from your own machine, so opening it is never "first,
-start a server". `trace board` opens the board against that connection —
-hosted when you have configured one, and the board Trace bundles with itself
-otherwise (`trace board --local` forces the bundled one). A browser is let in
+start a server". `trace board` opens `https://app.eqnx.ai` against that connection
+(`trace board --local` opens the bundled board). Custom hosting can override
+the exact allowed origin with `TRACE_WEB_ORIGIN`. A browser is let in
 one at a time by running the pairing command shown on the hosted page; that
 same page then connects automatically. A browser is shut out again with
 `trace connection revoke`; `trace connection status` says what is holding the

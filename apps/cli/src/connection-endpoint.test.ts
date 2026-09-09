@@ -224,10 +224,10 @@ test("foreground serve owns periodic sync when no managed connection runs", asyn
   );
 });
 
-test("the managed connection is administrable with no hosted board configured", async () => {
+test("the managed connection is administrable with hosted access disabled", async () => {
   // A machine that only ever opens the bundled board still installs the login
   // service, and `trace connection …` still has to be able to talk to it.
-  const local = { HOME: home, TRACE_DB: join(home, "trace.sqlite") };
+  const local = { HOME: home, TRACE_DB: join(home, "trace.sqlite"), TRACE_WEB_ORIGIN: "" };
 
   const outcome = await startManagedConnection(local, {
     fetch: refusing,

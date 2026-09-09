@@ -1,3 +1,5 @@
+export const DEFAULT_HOSTED_WEB_ORIGIN = "https://app.eqnx.ai";
+
 export const TRACE_PROTOCOL_VERSION = 1;
 
 /**

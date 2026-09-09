@@ -36,12 +36,12 @@ not remove the connection.
 ## Open the board
 
 ```sh
-trace board            # the hosted board, if one is configured
+trace board            # https://app.eqnx.ai
 trace board --local    # the board Trace ships with itself
 ```
 
-With a hosted board configured, `trace board` mints a fresh, single-use pairing
-link and opens it. Without one — or with `--local` — it opens the bundled
+`trace board` mints a fresh, single-use pairing link for `https://app.eqnx.ai`
+and opens it. With hosted access disabled — or with `--local` — it opens the bundled
 board. A healthy connection belonging to this installation is reused. The bundled
 fallback starts a foreground server if it cannot reuse one, and tells you to
 keep that terminal open.
@@ -52,7 +52,9 @@ troubleshooting. It is not needed day to day.
 
 ### Configuring the hosted origin
 
-The hosted board is allowed to read this machine only if you name it exactly:
+The default allowed origin is `https://app.eqnx.ai`. Ordinary installation needs
+only `npm install -g @arielbk/trace` followed by `trace setup`.
+For development or custom hosting, replace that origin explicitly:
 
 ```sh
 export TRACE_WEB_ORIGIN=https://your-board.example
@@ -61,11 +63,12 @@ trace setup
 
 `TRACE_WEB_ORIGIN` must be an `https://` origin with no path. It is written
 into the launchd job when the connection is installed, because a login service
-inherits nothing from your shell — which also means **changing it means
-reinstalling**:
+inherits nothing from your shell. Keep the override exported for later setup,
+update, and board commands. To change it, run setup again with the new value.
+An empty override disables hosted access; invalid overrides also fail closed:
 
 ```sh
-export TRACE_WEB_ORIGIN=https://your-board.example
+export TRACE_WEB_ORIGIN=''
 trace setup
 ```
 

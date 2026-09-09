@@ -339,3 +339,16 @@ describe("LocalConnectionBadge", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+
+test.each([
+  ["https://app.eqnx.ai", "trace setup"],
+  ["https://preview.example", "TRACE_WEB_ORIGIN='https://preview.example' trace setup"],
+])("setup instructions match the hosted origin %s", (origin, command) => {
+  vi.stubGlobal("location", new URL(origin));
+  renderConnection(vi.fn());
+  const instructions = screen.getByText((_, element) =>
+    element?.tagName === "CODE" && element.textContent === `npm install -g @arielbk/trace\n${command}`,
+  );
+  expect(instructions).toBeInTheDocument();
+});

@@ -176,7 +176,7 @@ test("an origin the API would refuse is not written into the job", () => {
   );
 
   const xml = readFileSync(resolveLaunchAgentPath(env()), "utf8");
-  expect(xml).not.toContain("TRACE_WEB_ORIGIN");
+  expect(xml).toContain("<key>TRACE_WEB_ORIGIN</key>\n    <string></string>");
   expect(xml).not.toContain("insecure.example");
 });
 
@@ -420,4 +420,11 @@ test("nothing is installed, and nothing to read, before the first install", () =
     readConnectionServiceState(env(), dependencies(fakeLaunchctl().run)),
   ).toMatchObject({ kind: "missing" });
   expect(readInstalledConnectionCli(env())).toBeUndefined();
+});
+
+
+test("setup persists the official hosted origin without a shell override", () => {
+  installConnectionService(env(), dependencies(fakeLaunchctl(notLoaded).run));
+  const xml = readFileSync(resolveLaunchAgentPath(env()), "utf8");
+  expect(xml).toContain("<string>https://app.eqnx.ai</string>");
 });
