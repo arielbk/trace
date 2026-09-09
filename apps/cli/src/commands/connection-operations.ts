@@ -94,7 +94,7 @@ export async function connectionOperation(
       );
     }
     if (args.slice(1).some((arg) => arg !== "--open")) {
-      return failure("Usage: eqnx connection pair [<code>|--open]");
+      return failure("Usage: eqnx pair [<code>|--open]");
     }
     const response = await request("POST", "/api/management/pairings");
     if (!response.ok) return response.result;

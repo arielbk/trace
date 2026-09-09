@@ -80,7 +80,7 @@ export function connectionFailure(error: unknown): ConnectionFailure {
       eyebrow: "Not paired",
       title: "This browser isn’t paired with EQNX",
       description:
-        "EQNX is running on this device but has not given this browser access. Run `eqnx connection pair` on this device and open the pairing link it prints to connect.",
+        "EQNX is running on this device but has not given this browser access. Run `eqnx pair` on this device and open the pairing link it prints to connect.",
     };
   }
 

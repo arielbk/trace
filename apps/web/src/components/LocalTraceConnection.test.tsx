@@ -23,11 +23,11 @@ vi.mock("./BrowserPairing.tsx", async () => {
   return {
     BrowserPairing: () => (
       <>
-        <code>eqnx connection pair ABCD-1234</code>
+        <code>eqnx pair ABCD-1234</code>
         <CopyPromptButton
           label="Copy command"
           copyLabel="Copy command"
-          value="eqnx connection pair ABCD-1234"
+          value="eqnx pair ABCD-1234"
         />
       </>
     ),
@@ -77,7 +77,7 @@ describe("LocalTraceConnection", () => {
     const user = userEvent.setup();
     const connect = vi.fn();
     renderConnection(connect);
-    expect(screen.getByText("eqnx connection pair ABCD-1234")).toBeVisible();
+    expect(screen.getByText("eqnx pair ABCD-1234")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Connect to EQNX" }),
     ).not.toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("LocalTraceConnection", () => {
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Copy command" }));
     expect(await navigator.clipboard.readText()).toBe(
-      "eqnx connection pair ABCD-1234",
+      "eqnx pair ABCD-1234",
     );
     expect(connect).not.toHaveBeenCalled();
   });
@@ -152,7 +152,7 @@ describe("LocalTraceConnection", () => {
         </TraceDataSourceProvider>
       </MemoryRouter>,
     );
-    await screen.findByText("eqnx connection pair ABCD-1234");
+    await screen.findByText("eqnx pair ABCD-1234");
     expect(screen.queryByText("Not paired")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Try again" }),
@@ -214,7 +214,7 @@ describe("LocalTraceConnection", () => {
         </TraceDataSourceProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByText("eqnx connection pair ABCD-1234")).toBeVisible();
+    expect(screen.getByText("eqnx pair ABCD-1234")).toBeVisible();
     try {
       await act(async () => {
         window.history.replaceState(null, "", `/#trace-pair=${"s".repeat(43)}`);

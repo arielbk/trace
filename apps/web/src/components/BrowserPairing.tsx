@@ -93,7 +93,7 @@ export function BrowserPairing({
         </button>
       </div>
     );
-  const command = `eqnx connection pair ${state.code}`;
+  const command = `eqnx pair ${state.code}`;
   return (
     <>
       <div className="flex max-w-full flex-wrap items-center gap-4 rounded-control border border-border bg-surface px-4 py-3">

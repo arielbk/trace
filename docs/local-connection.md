@@ -81,7 +81,7 @@ Each browser gets its own credential. The first page prepares a command with a
 short code, for example:
 
 ```sh
-eqnx connection pair ABCD-1234
+eqnx pair ABCD-1234
 ```
 
 Run the exact command shown on your page in Terminal, then return to that page.
@@ -93,8 +93,10 @@ can approve it. A separate random secret stays in the requesting tab and claims
 its browser credential after approval. Requests are single-use, held in memory,
 and cleared by a restart or connection reset. Up to ten may wait at once.
 
-For a terminal-first flow, `eqnx connection pair --open` still opens a pairing
-link in your default browser and prints a fallback. `eqnx connection pair`
+`eqnx connection pair` remains available as a compatible alias.
+
+For a terminal-first flow, `eqnx pair --open` still opens a pairing
+link in your default browser and prints a fallback. `eqnx pair`
 prints that link without opening it. These links also expire after five minutes
 and one use; their secrets are carried in the URL fragment.
 
@@ -108,7 +110,7 @@ persisted, and the board re-handshakes when the tab regains focus.
 
 Pairing links are the exception: they live only in the process that minted
 them, so an unclaimed link stops working after a restart. Run
-`eqnx connection pair` again.
+`eqnx pair` again.
 
 If a visit to the hosted board finds the connection gone, the board says so and
 retries with a backoff rather than dropping what you were looking at. It
@@ -122,7 +124,7 @@ one link each. This connection listens only on this machine’s loopback address
 a phone or another laptop cannot use it to read this computer’s tasks.
 
 ```sh
-eqnx connection pair
+eqnx pair
 eqnx connection browsers
 ```
 

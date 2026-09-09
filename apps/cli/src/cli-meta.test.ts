@@ -136,3 +136,13 @@ test("terminal help points at the connection commands that recover a board", asy
   // run? — and `eqnx --help` is where they ask it.
   expect(result.stdout).toContain("eqnx connection status");
 });
+
+
+test("pair help and invalid arguments use the short command without contacting a service", async () => {
+  const help = await runTraceCliAsync(["pair", "--help"], {});
+  expect(help.exitCode).toBe(0);
+  expect(help.stdout).toContain("Usage: eqnx pair [<code>|--open]");
+  const invalid = await runTraceCliAsync(["pair", "--unknown"], {});
+  expect(invalid.exitCode).toBe(2);
+  expect(invalid.stderr).toContain("Usage: eqnx pair [<code>|--open]");
+});

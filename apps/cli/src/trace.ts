@@ -130,6 +130,12 @@ export async function runTraceCliAsync(
     // is asynchronous for the same reason `eqnx connection` is.
     return boardOperation(argv.slice(1), { env });
   }
+  if (command === "pair") {
+    if (argv.length === 2 && ["--help", "-h"].includes(argv[1]!)) {
+      return { exitCode: 0, stdout: "Usage: eqnx pair [<code>|--open]\n", stderr: "" };
+    }
+    return connectionOperation(["pair", ...argv.slice(1)], { env });
+  }
   if (command === "connection") {
     // Every subcommand talks to the running service over loopback, so this
     // dispatch is asynchronous and never goes through the citty tree.
@@ -173,7 +179,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 const COMPACT_USAGE =
-  "Usage: eqnx init | eqnx setup --tool claude [--yes] | eqnx update [--yes] | eqnx board [--local] | eqnx serve | eqnx connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | eqnx export [task] [--include-transcripts] [--out <path>] | eqnx login | eqnx logout | eqnx whoami | eqnx sync | eqnx key show | eqnx config <get|set|unset> <server-url|auto-sync> ... | eqnx hook <session-start|subagent-stop> | eqnx task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | eqnx project merge <duplicate-slug> <canonical-slug> | eqnx session <register|assign|active-task|list|scan> ... | eqnx skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
+  "Usage: eqnx init | eqnx setup --tool claude [--yes] | eqnx update [--yes] | eqnx board [--local] | eqnx serve | eqnx pair [<code>|--open] | eqnx connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | eqnx export [task] [--include-transcripts] [--out <path>] | eqnx login | eqnx logout | eqnx whoami | eqnx sync | eqnx key show | eqnx config <get|set|unset> <server-url|auto-sync> ... | eqnx hook <session-start|subagent-stop> | eqnx task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | eqnx project merge <duplicate-slug> <canonical-slug> | eqnx session <register|assign|active-task|list|scan> ... | eqnx skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
 
 function usage(): CommandResult {
   return failure(COMPACT_USAGE);
@@ -214,7 +220,7 @@ function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
       row("eqnx update --yes", "Update without asking first") +
       `\n${style.heading("The local connection")}\n` +
       row("eqnx connection status", "Check the connection behind the board") +
-      row("eqnx connection pair <code>", "Approve the browser waiting for EQNX") +
+      row("eqnx pair <code>", "Approve the browser waiting for EQNX") +
       row("eqnx connection restart", "Restart it after a failure") +
       `\n${style.heading("Cloud")}\n` +
       row("eqnx login", "Connect your EQNX account") +

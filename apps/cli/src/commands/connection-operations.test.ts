@@ -20,6 +20,7 @@ import {
   type ConnectionServiceDependencies,
 } from "../connection-service.ts";
 import { createServeRequestListener, DEFAULT_SERVE_PORT } from "../serve.ts";
+import { runTraceCliAsync } from "../trace.ts";
 import { connectionOperation } from "./connection-operations.ts";
 
 let home: string;
@@ -31,6 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -39,8 +41,10 @@ afterEach(() => {
 function runningService(): {
   fetch: typeof globalThis.fetch;
   connection: ReturnType<typeof openConnectionCredentials>;
+  pairing: ReturnType<typeof createPairingLinks>;
 } {
   const connection = openConnectionCredentials(env);
+  const pairing = createPairingLinks((label) => connection.issueBrowserToken(label));
   const listener = createServeRequestListener(
     join(home, "trace.sqlite"),
     undefined,
@@ -50,7 +54,7 @@ function runningService(): {
     undefined,
     "https://trace-hosted.example",
     connection,
-    createPairingLinks((label) => connection.issueBrowserToken(label)),
+    pairing,
   );
 
   const fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -78,7 +82,7 @@ function runningService(): {
     return new Response(captured.body, { status: captured.statusCode });
   }) as typeof globalThis.fetch;
 
-  return { fetch, connection };
+  return { fetch, connection, pairing };
 }
 
 test("eqnx connection pair prints a single-use link for another browser", async () => {
@@ -690,3 +694,17 @@ test("nothing the connection prints into its log is a credential", async () => {
   expect(printed).not.toContain(connection.managementToken);
   expect(printed).not.toContain(browser.token);
 });
+
+
+test.each([["pair"], ["connection", "pair"]])(
+  "CLI pairing route %j approves the browser through the running service",
+  async (...command) => {
+    const { fetch, pairing } = runningService();
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetch);
+    const pending = pairing.request()!;
+    const result = await runTraceCliAsync([...command, pending.code], env);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Browser approved");
+    expect(pairing.poll(pending.secret)?.status).toBe("approved");
+  },
+);

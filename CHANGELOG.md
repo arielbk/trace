@@ -1,5 +1,10 @@
 # Changelog
 
+## @eqnx/cli 0.1.1
+
+- Add `eqnx pair [<code>|--open]` and advertise it in the hosted pairing flow.
+- Keep `eqnx connection pair` compatible.
+
 ## @eqnx/cli 0.1.0
 
 First release under the EQNX npm organization, continuing the Trace codebase.
