@@ -56,7 +56,7 @@ The hosted board is allowed to read this machine only if you name it exactly:
 
 ```sh
 export TRACE_WEB_ORIGIN=https://your-board.example
-trace connection install
+trace setup
 ```
 
 `TRACE_WEB_ORIGIN` must be an `https://` origin with no path. It is written
@@ -65,7 +65,8 @@ inherits nothing from your shell — which also means **changing it means
 reinstalling**:
 
 ```sh
-TRACE_WEB_ORIGIN=https://your-board.example trace connection install
+export TRACE_WEB_ORIGIN=https://your-board.example
+trace setup
 ```
 
 Requests from any other origin are refused, and so is any origin at all on the

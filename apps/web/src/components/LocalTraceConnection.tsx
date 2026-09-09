@@ -270,11 +270,11 @@ export function LocalTraceConnection({
                   Need to set up Trace?
                 </summary>
                 <p>
-                  On macOS, install Trace and start the connection once, then
-                  run the command above.
+                  On macOS, install Trace and run setup once. After setup,
+                  return here to get your pairing command.
                 </p>
                 <pre className="overflow-x-auto rounded-control border border-border bg-surface p-3 text-crumb">
-                  <code>{`npm install -g @arielbk/trace\nTRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' trace connection install`}</code>
+                  <code>{`npm install -g @arielbk/trace\nTRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' trace setup`}</code>
                 </pre>
               </details>
             </>
