@@ -106,6 +106,29 @@ test("warning lists all stale tool names deduplicated", () => {
   }
 });
 
+test("names the command that reconciles every registered target", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    // A target installed somewhere other than the tool's default root — an old
+    // worktree scratchpad, a second config home. Plain `eqnx setup` reconciles
+    // the default roots it offers, so it would never reach this one and the
+    // warning would stand forever. `--registered` is the run that clears it.
+    const registryPath = join(dir, "integrations.json");
+    writeRegistry(registryPath, [
+      { tool: "copilot", version: "1.0.0", root: "/tmp/old-scratchpad/copilot-home" },
+    ]);
+
+    const result = checkUpdateWarning({
+      TRACE_REGISTRY_PATH: registryPath,
+      TRACE_CURRENT_VERSION: "2.0.0",
+    });
+
+    expect(result).toContain("eqnx setup --registered");
+  } finally {
+    cleanup();
+  }
+});
+
 // ─── behavior 5: malformed registry JSON → no warning ────────────────────────
 
 test("returns empty string when registry contains malformed JSON", () => {

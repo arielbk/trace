@@ -1,5 +1,15 @@
 # Changelog
 
+## @eqnx/cli 0.21.1
+
+Resume the Trace version sequence after the initial EQNX 0.1.x releases.
+
+- Use Standard launchd scheduling so the local connection starts reliably at login.
+- Check the OS account home before managing launchd, preventing temporary-HOME
+  installs and cleanup from touching the real user's service.
+- Point stale-integration warnings to `eqnx setup --registered`, which updates
+  every registered integration root.
+
 ## @eqnx/cli 0.1.1
 
 - Add `eqnx pair [<code>|--open]` and advertise it in the hosted pairing flow.

@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { checkManagedCliPath, resolveTraceCliPath } from "./cli-path.ts";
 import { openConnectionCredentials } from "./connection-credentials.ts";
@@ -44,6 +44,9 @@ export type ConnectionServiceDependencies = {
   uid?: number;
   /** The Node binary the job execs. Absolute, because there is no PATH yet. */
   nodePath?: string;
+  /** The login account's home, for the foreign-home guard. Injectable so a
+   * test can pose as a different account without moving the real one. */
+  accountHome?: string;
 };
 
 /** What installing the managed connection did, or why it did nothing. */
@@ -131,12 +134,14 @@ export function installConnectionService(
     return { kind: "unsupported", reason: unsupportedReason(platform) };
   }
 
-  // launchd's `gui/<uid>` domain belongs to the logged-in user, whose home is
-  // `homedir()`. A run pointed at some other HOME — a test fixture, a sandbox —
-  // has no login session to install into, and must never reach the real
-  // launchd on its behalf. Only an injected boundary crosses that line.
-  if (!dependencies.launchctl && userHome(env) !== homedir()) {
-    return { kind: "skipped", reason: foreignHomeReason(env) };
+  // launchd's `gui/<uid>` domain belongs to the logged-in account, whose home
+  // comes from the passwd database. A run pointed at some other HOME — a test
+  // fixture, a sandbox, an installer — has no login session to install into,
+  // and must never reach the real launchd on its behalf. Only an injected
+  // boundary crosses that line.
+  const account = accountHome(dependencies);
+  if (!dependencies.launchctl && userHome(env) !== account) {
+    return { kind: "skipped", reason: foreignHomeReason(env, account) };
   }
 
   const cliPath = resolveTraceCliPath(env, platform);
@@ -339,8 +344,9 @@ function guardLifecycle(
   if (platform !== "darwin") {
     return { kind: "unsupported", reason: unsupportedReason(platform) };
   }
-  if (!dependencies.launchctl && userHome(env) !== homedir()) {
-    return { kind: "skipped", reason: foreignHomeReason(env) };
+  const account = accountHome(dependencies);
+  if (!dependencies.launchctl && userHome(env) !== account) {
+    return { kind: "skipped", reason: foreignHomeReason(env, account) };
   }
   return undefined;
 }
@@ -499,7 +505,9 @@ export function renderLaunchAgentPlist(options: {
     `  <key>ThrottleInterval</key>`,
     `  <integer>${RESTART_THROTTLE_SECONDS}</integer>`,
     `  <key>ProcessType</key>`,
-    `  <string>Background</string>`,
+    // The browser waits on this service. Background scheduling can starve Node
+    // startup at login for minutes, even before application code executes.
+    `  <string>Standard</string>`,
     `  <key>StandardOutPath</key>`,
     `  <string>${escapeXml(logs.out)}</string>`,
     `  <key>StandardErrorPath</key>`,
@@ -510,10 +518,10 @@ export function renderLaunchAgentPlist(options: {
   return `${lines.join("\n")}\n`;
 }
 
-function foreignHomeReason(env: Env): string {
+function foreignHomeReason(env: Env, account: string): string {
   return (
     `A managed background connection lives in this login session's home ` +
-    `(${homedir()}), but HOME points at ${userHome(env)}.\n` +
+    `(${account}), but HOME points at ${userHome(env)}.\n` +
     `  Run \`eqnx serve\` to connect a board from here.`
   );
 }
@@ -527,6 +535,22 @@ function unsupportedReason(platform: NodeJS.Platform): string {
 
 function userHome(env: Env): string {
   return env.HOME ?? homedir();
+}
+
+/**
+ * The login account's own home, read from the passwd database rather than the
+ * environment. `homedir()` follows $HOME on POSIX, so it agrees with any run
+ * that was pointed elsewhere — which is precisely the case the guard exists to
+ * catch. Falls back to `homedir()` only if the account cannot be looked up at
+ * all, where refusing to install would be worse than trusting the environment.
+ */
+function accountHome(dependencies: ConnectionServiceDependencies): string {
+  if (dependencies.accountHome) return dependencies.accountHome;
+  try {
+    return userInfo().homedir;
+  } catch {
+    return homedir();
+  }
 }
 
 /** Writes the job atomically, so launchd never reads a half-written plist. */

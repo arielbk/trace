@@ -123,6 +123,12 @@ test("an applied install writes the user LaunchAgent, then hands it to launchd",
   ]);
 });
 
+test("the connection avoids background scheduling that can stall Node at login", () => {
+  installConnectionService(env(), dependencies(fakeLaunchctl(notLoaded).run));
+  const xml = readFileSync(resolveLaunchAgentPath(env()), "utf8");
+  expect(xml).toContain("<key>ProcessType</key>\n  <string>Standard</string>");
+});
+
 test("the LaunchAgent runs the connection from absolute Node and CLI paths", () => {
   installConnectionService(env(), dependencies(fakeLaunchctl(notLoaded).run));
 
@@ -348,6 +354,36 @@ test("without an injected launchd, a home that is not the login session's is lef
 
   expect(outcome.kind).toBe("skipped");
   expect(existsSync(resolveLaunchAgentPath(env()))).toBe(false);
+});
+
+test("a run under a foreign HOME is left alone even when it is the process's own", () => {
+  // The defect this covers: `os.homedir()` follows $HOME on POSIX, so a run
+  // whose own environment was pointed at a fixture — a spawned test, an
+  // installer sandbox — used to look indistinguishable from the login session
+  // and reach real launchd on its behalf. The account's home comes from the
+  // passwd database instead, which no environment can move.
+  const realHome = process.env.HOME;
+  const realPath = process.env.PATH;
+  // Belt and braces: were the guard to fail open, the production path resolves
+  // `launchctl` through PATH, and this one does nothing.
+  const shim = mkdtempSync(join(tmpdir(), "trace-launchctl-shim-"));
+  writeFileSync(join(shim, "launchctl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  process.env.HOME = home;
+  process.env.PATH = `${shim}:${realPath ?? ""}`;
+
+  try {
+    const outcome = installConnectionService(env(), {
+      platform: "darwin",
+      accountHome: "/Users/someone-else",
+    });
+
+    expect(outcome.kind).toBe("skipped");
+    expect(existsSync(resolveLaunchAgentPath(env()))).toBe(false);
+  } finally {
+    process.env.HOME = realHome;
+    process.env.PATH = realPath;
+    rmSync(shim, { recursive: true, force: true });
+  }
 });
 
 test("the connection's logs are bounded, rotated once, and owner-only", () => {
