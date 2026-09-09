@@ -202,7 +202,7 @@ test("Codex Desktop transcript: parses session_meta id and token_count totals", 
     subagentSource: null,
     tokenTotals: {
       // OpenAI's input_tokens includes cached input (42028 with 24320
-      // cached); Trace's inputTokens is the fresh remainder.
+      // cached); EQNX's inputTokens is the fresh remainder.
       inputTokens: 17708,
       outputTokens: 725,
       cacheCreationInputTokens: 0,

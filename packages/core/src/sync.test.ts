@@ -206,7 +206,7 @@ function createRepository(root: string, remoteUrl?: string): void {
   mkdirSync(root, { recursive: true });
   git(root, "init", "--quiet");
   git(root, "config", "user.email", "trace@example.com");
-  git(root, "config", "user.name", "Trace Tests");
+  git(root, "config", "user.name", "EQNX Tests");
   writeFileSync(join(root, "README.md"), "trace\n");
   git(root, "add", "README.md");
   git(root, "commit", "--quiet", "-m", "initial");

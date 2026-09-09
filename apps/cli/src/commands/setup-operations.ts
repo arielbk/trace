@@ -54,14 +54,14 @@ const TRACE_SKILLS = [
   "trace",
 ] as const;
 
-/** The Claude Code hook events Trace registers, with their settings matchers. */
+/** The Claude Code hook events EQNX registers, with their settings matchers. */
 const TRACE_CLAUDE_HOOKS = [
   { event: "SessionStart", command: "hook session-start", matcher: "startup|resume|clear|compact" },
   { event: "SubagentStop", command: "hook subagent-stop" },
   { event: "Stop", command: "hook stop" },
 ] as const;
 
-/** The Copilot CLI hook events Trace registers. */
+/** The Copilot CLI hook events EQNX registers. */
 const TRACE_COPILOT_HOOKS = [
   { event: "sessionStart", command: "hook session-start" },
   { event: "agentStop", command: "hook stop" },
@@ -74,12 +74,12 @@ const TRACE_COPILOT_HOOKS = [
  * output the way Claude's does.
  */
 const COPILOT_BINDING_NUDGE =
-  "Consult the installed Trace skill before beginning work. " +
-  "If this session is not bound, use Trace to bind or re-enter the task.";
+  "Consult the installed EQNX skill before beginning work. " +
+  "If this session is not bound, use EQNX to bind or re-enter the task.";
 
 /**
- * The single Copilot hooks file Trace owns end to end. Copilot reads every
- * `.json` under `<root>/hooks/`, so Trace writes its own file rather than
+ * The single Copilot hooks file EQNX owns end to end. Copilot reads every
+ * `.json` under `<root>/hooks/`, so EQNX writes its own file rather than
  * merging into a shared one — removal is then a whole-file delete.
  */
 const COPILOT_HOOKS_FILE = "trace.json";
@@ -90,11 +90,11 @@ type GuardrailsResult = { ok: true } | { ok: false; error: string };
 type AgentSetupOptions = {
   /** The agent config root to install into (e.g. `~/.claude`, `~/.codex`, `~/.cursor`). */
   configRoot: string;
-  /** Registered Trace integration targets and their owned artifacts. */
+  /** Registered EQNX integration targets and their owned artifacts. */
   registry: IntegrationRegistry;
   /** Directory holding the packaged skill templates (`skills/`). */
   skillsSourceDir: string;
-  /** Absolute path to the persistent Trace CLI used for hook commands. */
+  /** Absolute path to the persistent EQNX CLI used for hook commands. */
   cliPath: string;
   /** The CLI version being installed. */
   version: string;
@@ -179,7 +179,7 @@ function windowsCommand(tokens: readonly string[]): string {
 }
 
 /**
- * The tokens that invoke the Trace CLI, ahead of any subcommand.
+ * The tokens that invoke the EQNX CLI, ahead of any subcommand.
  *
  * On Windows a `.js` path is not executable: PowerShell hands it to Windows
  * Script Host, which parses the `#!/usr/bin/env node` shebang as JScript and
@@ -193,7 +193,7 @@ function cliInvocation(cliPath: string, platform: NodeJS.Platform): string[] {
   return [cliPath];
 }
 
-/** Builds the Trace-owned hook entries keyed by Claude hook event. */
+/** Builds the EQNX-owned hook entries keyed by Claude hook event. */
 function traceHookEntries(
   cliPath: string,
   platform: NodeJS.Platform,
@@ -232,7 +232,7 @@ function copilotHooksPath(configRoot: string): string {
 }
 
 /**
- * Builds Trace's Copilot hooks file. Every command hook carries both a `bash`
+ * Builds EQNX's Copilot hooks file. Every command hook carries both a `bash`
  * and a `powershell` invocation of the same absolute CLI path, which is how
  * Copilot dispatches per platform.
  */
@@ -266,7 +266,7 @@ function installCopilotHooks(options: AgentSetupOptions): void {
   );
 }
 
-/** Refuses a Copilot setup that would clobber a hooks file Trace does not own. */
+/** Refuses a Copilot setup that would clobber a hooks file EQNX does not own. */
 function checkCopilotConfig(options: AgentSetupOptions): GuardrailsResult {
   const hooksPath = copilotHooksPath(options.configRoot);
   const owned = options.registry
@@ -277,8 +277,8 @@ function checkCopilotConfig(options: AgentSetupOptions): GuardrailsResult {
       ok: false,
       error:
         `Unowned Copilot hooks file at ${hooksPath}.\n` +
-        `  Trace cannot overwrite a hooks file it did not install.\n` +
-        `  Remediation: remove or back up ${COPILOT_HOOKS_FILE}, then re-run trace setup.`,
+        `  EQNX cannot overwrite a hooks file it did not install.\n` +
+        `  Remediation: remove or back up ${COPILOT_HOOKS_FILE}, then re-run eqnx setup.`,
     };
   }
 
@@ -307,7 +307,7 @@ function installSkills(
 
 /**
  * Recursively mirrors `source` to `destination`, writing only files whose
- * bytes differ and removing Trace-owned files that no longer exist in source.
+ * bytes differ and removing EQNX-owned files that no longer exist in source.
  */
 function copyTreeIfChanged(source: string, destination: string): void {
   mkdirSync(destination, { recursive: true });
@@ -373,13 +373,13 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
       return {
         ok: false,
         error:
-          `${settingsPath} contains malformed JSON. Fix or remove it before running trace setup.`,
+          `${settingsPath} contains malformed JSON. Fix or remove it before running eqnx setup.`,
       };
     }
     if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
       return {
         ok: false,
-        error: `${settingsPath} must contain a JSON object before running trace setup.`,
+        error: `${settingsPath} must contain a JSON object before running eqnx setup.`,
       };
     }
 
@@ -393,7 +393,7 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
         ok: false,
         error:
           `Detected legacy @arielbk/trace plugin in ${settingsPath}.\n` +
-          `  Remediation: remove the "@arielbk/trace" entry from the "plugins" array, then re-run trace setup.`,
+          `  Remediation: remove the "@arielbk/trace" entry from the "plugins" array, then re-run eqnx setup.`,
       };
     }
 
@@ -406,7 +406,7 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
     ) {
       return {
         ok: false,
-        error: `${settingsPath} "hooks" must contain a JSON object before running trace setup.`,
+        error: `${settingsPath} "hooks" must contain a JSON object before running eqnx setup.`,
       };
     }
     const hooks = hooksValue as Record<string, unknown> | undefined;
@@ -428,9 +428,9 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
               return {
                 ok: false,
                 error:
-                  `Detected pinned npx trace hook in ${settingsPath} (event "${event}"):\n` +
+                  `Detected pinned npx eqnx hook in ${settingsPath} (event "${event}"):\n` +
                   `  "${command}"\n` +
-                  `  Remediation: remove this hook entry, then re-run trace setup.`,
+                  `  Remediation: remove this hook entry, then re-run eqnx setup.`,
               };
             }
           }
@@ -447,8 +447,8 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
             ok: false,
             error:
               `Unowned "${event}" hook detected in ${settingsPath}.\n` +
-              `  Trace cannot overwrite a hook it did not install.\n` +
-              `  Remediation: remove or back up the "${event}" hook entry, then re-run trace setup.`,
+              `  EQNX cannot overwrite a hook it did not install.\n` +
+              `  Remediation: remove or back up the "${event}" hook entry, then re-run eqnx setup.`,
           };
         }
       }
@@ -475,7 +475,7 @@ export function resolvePackagedVersion(): string {
 }
 
 /**
- * Determines which package manager owns the CLI install so `trace update` can
+ * Determines which package manager owns the CLI install so `eqnx update` can
  * later reinstall through the same tool. Prefers the running invocation's
  * `npm_config_user_agent`, then falls back to path-based heuristics.
  */
@@ -503,7 +503,7 @@ function parseTargetFlag(
   const value = args[index + 1];
   const separator = value?.indexOf("=") ?? -1;
   if (!value || separator <= 0 || separator === value.length - 1) {
-    throw new Error("Usage: trace setup --target <tool>=<path> [--yes]");
+    throw new Error("Usage: eqnx setup --target <tool>=<path> [--yes]");
   }
   return { tool: value.slice(0, separator), root: value.slice(separator + 1) };
 }
@@ -556,7 +556,7 @@ function planInstalledTarget(
   adapter: SetupAdapter,
 ): string {
   const lines = [
-    `Trace setup plan for ${adapter.label} (v${options.version}, via ${options.packageManager})`,
+    `EQNX setup plan for ${adapter.label} (v${options.version}, via ${options.packageManager})`,
     `  target root: ${options.configRoot}`,
     `  CLI command: ${options.cliPath}`,
     `  skills: ${TRACE_SKILLS.join(", ")}`,
@@ -584,8 +584,8 @@ function checkInstalledTarget(
         ok: false,
         error:
           `Unowned skill directory at ${skillPath}.\n` +
-          `  Trace cannot overwrite a skill it did not install.\n` +
-          `  Remediation: remove or back up the "${skill}" directory, then re-run trace setup.`,
+          `  EQNX cannot overwrite a skill it did not install.\n` +
+          `  Remediation: remove or back up the "${skill}" directory, then re-run eqnx setup.`,
       };
     }
   }
@@ -682,7 +682,7 @@ function reconcileInstalledTargets(
   const format = options.format ?? {};
   const platform = options.platform ?? process.platform;
   const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
-  // Reconciling no integration at all is still a request to have Trace working
+  // Reconciling no integration at all is still a request to have EQNX working
   // on this machine, so an applied run installs the connection either way.
   if (targets.length === 0) {
     return success(
@@ -753,7 +753,7 @@ function reconcileInstalledTargets(
           "Skipped targets (guardrail checks failed):",
           skipLines,
           "",
-          "Fix each skipped target, then run `trace setup` again.",
+          "Fix each skipped target, then run `eqnx setup` again.",
           "",
         ].join("\n")
       : "";
@@ -794,13 +794,13 @@ function reconcileInstalledTargets(
   if (format.planInSummary === false) {
     // The caller already displayed this plan for review; only report the outcome.
     return {
-      ...success(`Installed Trace into ${roots}.\n${connection}${skippedBlock}`),
+      ...success(`Installed EQNX into ${roots}.\n${connection}${skippedBlock}`),
       skippedTargets: skipped,
     };
   }
   return {
     ...success(
-      `${plan}\nInstalled Trace into ${roots}.\n${connection}${skippedBlock}`,
+      `${plan}\nInstalled EQNX into ${roots}.\n${connection}${skippedBlock}`,
     ),
     skippedTargets: skipped,
   };
@@ -942,7 +942,7 @@ function planInstalledTargetRemoval(
   adapter: SetupAdapter,
 ): string {
   const lines = [
-    `Trace removal plan for ${adapter.label}`,
+    `EQNX removal plan for ${adapter.label}`,
     `  target root: ${target.root}`,
     `  skills: ${target.skills.join(", ")}`,
     ...(target.hooks.length > 0 ? [`  hooks: ${target.hooks.join(", ")}`] : []),
@@ -1051,5 +1051,5 @@ function removeOperation(
   }
 
   const roots = targetsToRemove.map((t) => t.root).join(", ");
-  return success(`${plan}\nRemoved Trace from ${roots}.\n`);
+  return success(`${plan}\nRemoved EQNX from ${roots}.\n`);
 }

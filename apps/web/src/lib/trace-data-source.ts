@@ -34,7 +34,7 @@ export class HttpError extends Error {
  */
 export class UnsupportedOperationError extends Error {
   constructor(public readonly capability: TraceCapability) {
-    super(`Trace on this device did not grant "${capability}"`);
+    super(`EQNX on this device did not grant "${capability}"`);
     this.name = "UnsupportedOperationError";
   }
 }
@@ -264,7 +264,7 @@ export class LocalTraceSource extends HttpTraceDataSource {
       typeof payload.expiresAt !== "number" ||
       !Number.isFinite(payload.expiresAt)
     ) {
-      throw new Error("Trace returned an invalid pairing request");
+      throw new Error("EQNX returned an invalid pairing request");
     }
     return payload as { code: string; secret: string; expiresAt: number };
   }
@@ -289,7 +289,7 @@ export class LocalTraceSource extends HttpTraceDataSource {
       typeof payload.token !== "string" ||
       !TOKEN_PATTERN.test(payload.token)
     ) {
-      throw new Error("Trace returned an invalid bridge credential");
+      throw new Error("EQNX returned an invalid bridge credential");
     }
     if (signal.aborted) return false;
     this.#credential = payload.token;
@@ -319,7 +319,7 @@ export class LocalTraceSource extends HttpTraceDataSource {
       typeof payload.token !== "string" ||
       !TOKEN_PATTERN.test(payload.token)
     ) {
-      throw new Error("Trace returned an invalid bridge credential");
+      throw new Error("EQNX returned an invalid bridge credential");
     }
     this.#credential = payload.token;
     writeStoredCredential(this.credentialStorageKey, payload.token);

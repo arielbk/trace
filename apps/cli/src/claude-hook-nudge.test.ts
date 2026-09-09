@@ -64,7 +64,7 @@ test("a bound session gets a quiet tracking confirmation", () => {
     );
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("✓ Trace tracking: Checkout flow\n");
+    expect(result.stdout).toBe("✓ EQNX tracking: Checkout flow\n");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

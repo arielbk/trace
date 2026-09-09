@@ -1,9 +1,9 @@
 ---
 name: trace-reenter
-description: Re-enter a Trace task the user names by its exact slug or title — bind the current session to it and load its context back from the re-entry manifest (state file, docs, prior session tail). Use when the user asks to re-enter, resume, reopen, or get back into a task and gives an exact slug or exact title; not for vague references (that is trace-recall) and not for starting or binding new work (that is trace).
+description: Re-enter a EQNX task the user names by its exact slug or title — bind the current session to it and load its context back from the re-entry manifest (state file, docs, prior session tail). Use when the user asks to re-enter, resume, reopen, or get back into a task and gives an exact slug or exact title; not for vague references (that is trace-recall) and not for starting or binding new work (that is trace).
 ---
 
-# Trace re-enter
+# EQNX re-enter
 
 Use this skill when the user names an **exact** task slug or title to go back
 into — "re-enter `break-stop-and-stale-expiry`", "reopen the Archive tasks
@@ -27,7 +27,7 @@ case-insensitive) also resolves — then bind the current session and print the
 manifest:
 
 ```sh
-trace skill re-enter "break-stop-and-stale-expiry"
+eqnx skill re-enter "break-stop-and-stale-expiry"
 ```
 
 This **one command both fetches the re-entry manifest and binds the current
@@ -67,9 +67,9 @@ Treat the command's output as a manifest and consume it in this order:
    read every sibling doc by default.
 5. When **no** `state:` field is present, read the decision docs first, in the
    listed order, then fall back to the transcript tail for the `lastSession:`
-   pointer with `trace session tail <session-id>` **only if** those docs do not
+   pointer with `eqnx session tail <session-id>` **only if** those docs do not
    cover the current state. Older sessions are deliberately absent from the
-   manifest; reach for them with `trace task show <slug>` only if the latest
+   manifest; reach for them with `eqnx task show <slug>` only if the latest
    transcript genuinely does not cover the ground.
 6. **Never paste raw transcripts** into the chat, and **never re-ask** the user
    to re-explain context that the manifest, docs, or transcript tail already
@@ -77,7 +77,7 @@ Treat the command's output as a manifest and consume it in this order:
 
 ## State freshness
 
-The manifest may end with a `stateFreshness:` block — Trace's signal that
+The manifest may end with a `stateFreshness:` block — EQNX's signal that
 `state.md`'s prose no longer reflects the task's docs (`mode: refresh`) or was
 never written (`mode: seed`). It appears only when there is real drift; most
 re-entries won't carry it.
@@ -85,7 +85,7 @@ re-entries won't carry it.
 When it is present: **orient first, then repair.** Finish consuming the
 manifest as above — re-entry stays a read — and open with your recap. Then, in
 the same turn, invoke the `trace-state` skill to write or refresh the prose
-(it stamps the pass via `trace state reflect <slug>` when done). Do not ask
+(it stamps the pass via `eqnx state reflect <slug>` when done). Do not ask
 the user for permission to do this; the block is the instruction.
 
 This is the portable fallback for drift that survived a session boundary —
@@ -101,7 +101,7 @@ captures — **offer** to update it, with the new text you'd write, and apply it
 only if the user agrees. Never silently rewrite it.
 
 ```sh
-trace task update "X" --description "new one-line summary"
+eqnx task update "X" --description "new one-line summary"
 ```
 
 Most re-entries need no such update — only offer when the drift is obvious, not

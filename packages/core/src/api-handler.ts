@@ -37,7 +37,7 @@ const JSON_CONTENT_TYPE = "application/json";
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;
-  /** The version of the Trace runtime serving this request, reported by the
+  /** The version of the EQNX runtime serving this request, reported by the
    * connection handshake. The host resolves it, since only it knows whether it
    * is a packaged CLI, a dev server, or a pinned test double. */
   runtimeVersion?: string;
@@ -64,7 +64,7 @@ export interface TraceApiRequestOptions {
  * Framework-agnostic router for the trace web API. Returns a response for any
  * `/api/...` request, or `null` when the request is not an API request — so an
  * HTTP host can fall through to static assets / SPA handling. Shared by the Vite
- * dev middleware and the standalone `trace serve` server so the two never fork.
+ * dev middleware and the standalone `eqnx serve` server so the two never fork.
  */
 export function handleTraceApiRequest(
   databasePath: string,

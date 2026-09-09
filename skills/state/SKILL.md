@@ -1,17 +1,17 @@
 ---
 name: trace-state
-description: Distill the current session into the bound task's living state file (`state.md`) — its prose sections, in the structure the board and re-entry read. Use when the user signals they are wrapping up, moving to a new chat, handing off, or says phrases like "let's hand this off", "hand off", "wrap this up", "new chat", "end of session", or "save state"; and whenever a Trace trigger (the `Stop` hook or `trace state check`) reports that `state.md`'s prose has drifted from — or is missing for — the task's current docs.
+description: Distill the current session into the bound task's living state file (`state.md`) — its prose sections, in the structure the board and re-entry read. Use when the user signals they are wrapping up, moving to a new chat, handing off, or says phrases like "let's hand this off", "hand off", "wrap this up", "new chat", "end of session", or "save state"; and whenever a EQNX trigger (the `Stop` hook or `eqnx state check`) reports that `state.md`'s prose has drifted from — or is missing for — the task's current docs.
 ---
 
-# Trace state
+# EQNX state
 
 Use this skill to bring the bound task's living `state.md` up to date. It has
 two triggers, the same operation either way:
 
 - **The user is wrapping up** — "let's hand this off", "hand off", "new chat",
   "wrap this up", "save state", or any equivalent. The classic handoff.
-- **The prose has drifted** — a Trace trigger (the main-agent `Stop` hook,
-  `trace state check`, or a `stateFreshness:` block in a re-entry manifest)
+- **The prose has drifted** — a EQNX trigger (the main-agent `Stop` hook,
+  `eqnx state check`, or a `stateFreshness:` block in a re-entry manifest)
   reports the task's docs have moved ahead of `state.md`'s prose, or that
   `state.md` has no prose yet. When the trigger is the `Stop` hook, the agent
   is still warm from the doc work and writes the prose from this session's
@@ -35,7 +35,7 @@ verb. Write `state.md` whenever a trigger above asks for it.
 Follow the `trace-doc-placement` skill's resolution flow verbatim:
 
 ```sh
-trace skill docs-dir
+eqnx skill docs-dir
 ```
 
 **Exit 0 — session is bound.** stdout contains `taskDocsDir: <path>`. Extract
@@ -114,7 +114,7 @@ must be answered before work can continue. Not a list.>
 ```
 
 **Do not write a docs footer.** The list of other docs in this task is a
-machine-owned region rendered automatically by `trace task add-doc` (and
+machine-owned region rendered automatically by `eqnx task add-doc` (and
 `update-doc`). It is delimited by HTML-comment fence markers:
 
 ```
@@ -132,15 +132,15 @@ rendered manifest.
 
 ### 5. Stamp the fingerprint
 
-After writing the prose, stamp `state.md` so Trace records that the prose now
+After writing the prose, stamp `state.md` so EQNX records that the prose now
 reflects the current docs:
 
 ```sh
-trace state reflect <slug>
+eqnx state reflect <slug>
 ```
 
 This advances the prose-fingerprint marker. Skipping it leaves the marker stale,
-so the next session's `Stop` hook (or `trace state check`) would block again for
+so the next session's `Stop` hook (or `eqnx state check`) would block again for
 drift even though the prose is fresh. Always run it after a prose write —
 whether you got here from a wrap-up or from a drift trigger.
 

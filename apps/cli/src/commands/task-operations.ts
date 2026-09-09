@@ -113,7 +113,7 @@ export function renderTaskDocManifest(
 
 // Reconcile the task's state.md footer, but only once the task has at least one
 // non-state doc — an empty task should not sprout a bare manifest (mirroring the
-// guard in `trace state check`). Idempotent (write-if-changed in
+// guard in `eqnx state check`). Idempotent (write-if-changed in
 // the State Document module), so calling it on every bind is a safe no-op when the
 // footer is already current.
 export function reconcileStateFooter(

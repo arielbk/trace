@@ -271,7 +271,7 @@ test("platforms without launchd keep foreground serve and get no job", () => {
 
   expect(outcome.kind).toBe("unsupported");
   expect(outcome.kind === "unsupported" && outcome.reason).toContain(
-    "trace serve",
+    "eqnx serve",
   );
   expect(launchctl.calls).toEqual([]);
   expect(existsSync(join(home, "Library", "LaunchAgents"))).toBe(false);

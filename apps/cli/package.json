@@ -1,10 +1,10 @@
 {
-  "name": "@arielbk/trace",
-  "version": "0.21.0",
+  "name": "@eqnx/cli",
+  "version": "0.1.0",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "trace": "dist/trace.js"
+    "eqnx": "dist/trace.js"
   },
   "files": [
     "dist/trace.js",
@@ -37,5 +37,14 @@
     "eslint": "^9.39.5",
     "tsup": "^8.5.1",
     "vitest": "^4.1.11"
+  },
+  "description": "Keep agent work organized across sessions with a local task board.",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arielbk/trace.git",
+    "directory": "apps/cli"
   }
 }

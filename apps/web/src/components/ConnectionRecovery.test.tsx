@@ -79,7 +79,7 @@ describe("ConnectionRecovery", () => {
     await loseTheConnection();
 
     const banner = screen.getByRole("status");
-    expect(banner).toHaveTextContent("Trace isn’t responding");
+    expect(banner).toHaveTextContent("EQNX isn’t responding");
     expect(banner).toHaveTextContent(/local-network access/i);
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeVisible();
   });
@@ -93,7 +93,7 @@ describe("ConnectionRecovery", () => {
 
     const banner = screen.getByRole("status");
     expect(banner).toHaveTextContent("This browser’s access was revoked");
-    expect(banner).toHaveTextContent(/trace board/);
+    expect(banner).toHaveTextContent(/eqnx board/);
   });
 
   test("the header badge agrees with connection loss and recovery", async () => {
@@ -103,12 +103,12 @@ describe("ConnectionRecovery", () => {
         <LocalConnectionBadge />
       </ConnectionRecovery>,
     );
-    expect(screen.getByRole("button", {name: "Connection — connected to Trace on this device"})).toBeVisible();
+    expect(screen.getByRole("button", {name: "Connection — connected to EQNX on this device"})).toBeVisible();
     await act(async () => { await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS); });
     expect(screen.getByRole("button", {name: "Connection — access revoked"})).toBeVisible();
     probe.mockResolvedValue(healthy);
     await act(async () => { window.dispatchEvent(new Event("focus")); });
-    expect(screen.getByRole("button", {name: "Connection — connected to Trace on this device"})).toBeVisible();
+    expect(screen.getByRole("button", {name: "Connection — connected to EQNX on this device"})).toBeVisible();
   });
 
   test("tells a board whose runtime changed protocol to reload", async () => {
@@ -124,7 +124,7 @@ describe("ConnectionRecovery", () => {
     });
 
     const banner = screen.getByRole("status");
-    expect(banner).toHaveTextContent("Trace on this device changed version");
+    expect(banner).toHaveTextContent("EQNX on this device changed version");
     expect(banner).toHaveTextContent(/reload/i);
   });
 

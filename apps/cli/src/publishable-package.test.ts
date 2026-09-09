@@ -8,7 +8,7 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const packageJsonPath = join(appRoot, "package.json");
 
 describe("publishable CLI package", () => {
-  it("declares @arielbk/trace as a public package with the built CLI bin", () => {
+  it("declares @eqnx/cli as a public package with the built CLI bin", () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       name?: string;
       version?: string;
@@ -19,10 +19,10 @@ describe("publishable CLI package", () => {
       dependencies?: Record<string, string>;
     };
 
-    assert.equal(packageJson.name, "@arielbk/trace");
+    assert.equal(packageJson.name, "@eqnx/cli");
     assert.match(packageJson.version ?? "", /^\d+\.\d+\.\d+(-[\w.]+)?$/);
     assert.notEqual(packageJson.private, true);
-    assert.equal(packageJson.bin?.trace, "dist/trace.js");
+    assert.equal(packageJson.bin?.eqnx, "dist/trace.js");
     assert.equal(packageJson.publishConfig?.access, "public");
     assert.deepEqual(packageJson.files, [
       "dist/trace.js",

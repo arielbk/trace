@@ -64,7 +64,7 @@ function displayRoot(root: string, env: Env): string {
 /**
  * Renders a candidate's provenance as a hint: how it was discovered, and
  * whether the Integration Registry already knows it (and at which version).
- * Deliberately built from data Trace already holds — the picker never inspects
+ * Deliberately built from data EQNX already holds — the picker never inspects
  * installed artifacts or computes reconciliation status.
  */
 function candidateHint(candidate: TargetCandidate): string {

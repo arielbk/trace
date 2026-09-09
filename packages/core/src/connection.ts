@@ -44,11 +44,11 @@ export const HOSTED_CAPABILITIES: readonly TraceCapability[] = [
   "taskMutations",
 ];
 
-/** The deliberately small, database-free handshake exposed by local Trace. */
+/** The deliberately small, database-free handshake exposed by local EQNX. */
 export type TraceConnection = {
   service: "trace";
   protocolVersion: typeof TRACE_PROTOCOL_VERSION;
-  /** The Trace runtime answering, so a client can name it when reporting a
+  /** The EQNX runtime answering, so a client can name it when reporting a
    * mismatch. Informational: the protocol version is the compatibility gate.
    * Optional on the wire, because a runtime predating capability negotiation
    * sends neither field and a client must still read what it did send. */

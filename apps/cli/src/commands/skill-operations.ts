@@ -143,7 +143,7 @@ export function skillReEnterOperation(
 
     // Codex and Cursor have no live stop hook (Claude's SubagentStop covers
     // claude), so their in-process subagents are swept up here — re-entry is
-    // the next Trace touchpoint after the session that spawned them.
+    // the next EQNX touchpoint after the session that spawned them.
     sweepSubagentSessions(store, resolved.id, ctx.env.CODEX_HOME);
 
     // Re-entry is a bind seam like work-on-task: materialize the docs-manifest
@@ -176,7 +176,7 @@ export function skillReEnterOperation(
     }
 
     // The portable prose-freshness trigger: platforms without a live Stop hook
-    // (Codex, Cursor) get the drift verdict at their next Trace touchpoint —
+    // (Codex, Cursor) get the drift verdict at their next EQNX touchpoint —
     // here. On Claude the warm Stop hook usually reconciled already, so this
     // block only appears when drift survived a session boundary. Gated on an
     // actual bind (a bare terminal reading the manifest is never directed to
@@ -254,13 +254,13 @@ export function skillDocsDirOperation(
 
     if (activeTask.kind === "re-enter") {
       return failure(
-        `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
+        `Session is not bound to a task. Re-enter the most recent task with: eqnx skill re-enter ${activeTask.task.slug}`,
         1,
       );
     }
 
     return failure(
-      "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
+      "Session is not bound to a task and the project has no task to re-enter. Bind one first with: eqnx skill work-on-task <title>",
       1,
     );
   });

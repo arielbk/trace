@@ -692,7 +692,7 @@ test("TaskTimelineView header has a copy re-enter prompt button, no slug text, n
 
   // Copy re-enter prompt button is present; title attribute HTML-encodes the inner quotes.
   expect(html).toContain(
-    'title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"',
+    'title="Re-enter the eqnx task &quot;usable v1&quot; (usable-v1)"',
   );
   expect(html).toContain("Copy re-enter prompt");
   // No raw UUID chip in the header.
@@ -1577,7 +1577,7 @@ test("TaskTimelineView header shows Re-enter button with prompt as title", () =>
   expect(html).toContain("Re-enter");
   // The full prompt is available on the button for accessibility/hover
   expect(html).toContain(
-    'title="Re-enter the trace task &quot;usable v1&quot; (usable-v1)"',
+    'title="Re-enter the eqnx task &quot;usable v1&quot; (usable-v1)"',
   );
 });
 
@@ -1677,7 +1677,7 @@ test("TaskTimelineView Re-enter button copies re-enter prompt to clipboard on cl
   fireEvent.click(screen.getByLabelText("Copy re-enter prompt"));
   await waitFor(() =>
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      'Re-enter the trace task "usable v1" (usable-v1)',
+      'Re-enter the eqnx task "usable v1" (usable-v1)',
     ),
   );
 });

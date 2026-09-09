@@ -23,7 +23,7 @@ import {
 
 export type CommandContext = { env: Env; cwd: string; stdin: string };
 
-// `trace state check` and the re-entry manifest share one freshness verdict,
+// `eqnx state check` and the re-entry manifest share one freshness verdict,
 // owned by `computeStateFreshness` in core. Re-exported here so CLI callers keep
 // importing it from the module that uses it.
 export type { StateFreshness };
@@ -40,7 +40,7 @@ export function computeTaskStateFreshness(
   );
 }
 
-// `trace state check <task>` — reconcile the docs-manifest footer of the task's
+// `eqnx state check <task>` — reconcile the docs-manifest footer of the task's
 // state.md and report a neutral JSON verdict. The footer is rendered (creating
 // state.md from a scaffold) only when the task has at least one non-state doc;
 // the reconcile is write-if-changed, so a repeat run is a byte-identical no-op.
@@ -54,7 +54,7 @@ export function stateCheckOperation(
   rawArgs: string[],
   ctx: CommandContext,
 ): CommandResult {
-  if (isHelpFlag(rawArgs[0])) return success("Usage: trace state check <task>\n");
+  if (isHelpFlag(rawArgs[0])) return success("Usage: eqnx state check <task>\n");
   const ref = rawArgs[0];
   if (!ref) return failure("Task id is required");
 
@@ -116,21 +116,21 @@ export function proseDriftReason(
   slug: string,
 ): string {
   return mode === "seed"
-    ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`trace state reflect ${slug}\` when done).`
-    : `state.md prose may be stale — the docs changed since it was last written. Use your judgment: if the changes carry meaningful new context (not just routine appends like logs), invoke the \`trace-state\` skill to refresh it (it stamps via \`trace state reflect ${slug}\` when done); otherwise no refresh is needed.`;
+    ? `state.md has no prose yet — invoke the \`trace-state\` skill to write the living-state prose (it stamps via \`eqnx state reflect ${slug}\` when done).`
+    : `state.md prose may be stale — the docs changed since it was last written. Use your judgment: if the changes carry meaningful new context (not just routine appends like logs), invoke the \`trace-state\` skill to refresh it (it stamps via \`eqnx state reflect ${slug}\` when done); otherwise no refresh is needed.`;
 }
 
-// `trace state reflect <task>` — recompute the current docs fingerprint and
+// `eqnx state reflect <task>` — recompute the current docs fingerprint and
 // stamp it into state.md's machine-owned prose marker, preserving the prose
 // above the docs-manifest fence and the fence itself. Run by a human (or hook)
 // after the living-state prose has been written/updated, so a subsequent
-// `trace state check` sees the prose as reconciled with the current docs.
+// `eqnx state check` sees the prose as reconciled with the current docs.
 export function stateReflectOperation(
   rawArgs: string[],
   ctx: CommandContext,
 ): CommandResult {
   if (isHelpFlag(rawArgs[0]))
-    return success("Usage: trace state reflect <task>\n");
+    return success("Usage: eqnx state reflect <task>\n");
   const ref = rawArgs[0];
   if (!ref) return failure("Task id is required");
 

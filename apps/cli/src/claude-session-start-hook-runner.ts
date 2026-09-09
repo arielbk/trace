@@ -138,12 +138,12 @@ function resolveSessionNudge(
   const active = JSON.parse(result.stdout) as ActiveTaskResult;
 
   if (active.kind === "bound") {
-    return `✓ Trace tracking: ${active.task.title}\n`;
+    return `✓ EQNX tracking: ${active.task.title}\n`;
   }
   if (active.kind === "re-enter") {
-    return `Trace: no task is bound to this session yet — the most recent task in this project is "${active.task.title}". If this session continues that work, offer to re-enter it.\n`;
+    return `EQNX: no task is bound to this session yet — the most recent task in this project is "${active.task.title}". If this session continues that work, offer to re-enter it.\n`;
   }
-  return "Trace: no task is bound to this session and this project has none yet. If the user is doing real project work, offer to start tracking it.\n";
+  return "EQNX: no task is bound to this session and this project has none yet. If the user is doing real project work, offer to start tracking it.\n";
 }
 
 function recordHookFailure(

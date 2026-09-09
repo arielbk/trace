@@ -10,7 +10,7 @@ import {
 type ProjectCommandContext = { env: Env };
 
 function projectMergeUsage(): string {
-  return "Usage: trace project merge <duplicate-slug> <canonical-slug>";
+  return "Usage: eqnx project merge <duplicate-slug> <canonical-slug>";
 }
 
 function countLabel(count: number, singular: string): string {

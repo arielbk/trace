@@ -3,8 +3,8 @@ import { dirname, join, resolve } from "node:path";
 import { resolveDatabasePath } from "./db-path.ts";
 
 /**
- * Persisted beside the Trace database as `config.json`. Machine-local client
- * settings written by `trace config set` — never synced. Living beside the
+ * Persisted beside the EQNX database as `config.json`. Machine-local client
+ * settings written by `eqnx config set` — never synced. Living beside the
  * database means a `TRACE_DB` sandbox carries its own config, so a demo or QA
  * store can't accidentally point at the real sync server.
  */
@@ -12,7 +12,7 @@ export interface TraceConfigFile {
   /** Base URL of the cloud sync server, e.g. `https://trace.example.com`. */
   serverUrl?: string;
   /**
-   * Whether Trace may synchronize task data without being asked. Absent means
+   * Whether EQNX may synchronize task data without being asked. Absent means
    * the default, `true` — see {@link resolveAutoSyncEnabled}. Machine-local
    * like the rest of this file: each database decides for itself, and the
    * choice is never synced.
@@ -61,7 +61,7 @@ export function writeConfigFile(
  * Merge a partial patch into the current config file (or an empty base when
  * none exists). `undefined` values in the patch clear the corresponding field,
  * since `JSON.stringify` drops undefined keys — this is how
- * `trace config unset` removes a key.
+ * `eqnx config unset` removes a key.
  */
 export function updateConfigFile(
   databasePath: string,
@@ -74,7 +74,7 @@ export function updateConfigFile(
 /**
  * The sync server URL the client should talk to, or `undefined` when none is
  * configured. `TRACE_SERVER_URL` is the explicit env override; otherwise the
- * `config.json` beside the database supplies it (`trace config set
+ * `config.json` beside the database supplies it (`eqnx config set
  * server-url`). Trailing slashes are stripped so callers can append `/api/...`
  * paths directly. Resolution never throws: with no usable database path there
  * is simply no config file to read.
@@ -96,8 +96,8 @@ export function resolveConfiguredServerUrl(
  * database this env resolves to. The effective value is `true` whenever the
  * `autoSync` key is absent — or the config file is missing or malformed — so
  * ordinary machines keep syncing without configuration and a broken file never
- * silently strands task data. `trace config set auto-sync false` is the only
- * way to turn it off; explicit `trace sync` ignores this entirely.
+ * silently strands task data. `eqnx config set auto-sync false` is the only
+ * way to turn it off; explicit `eqnx sync` ignores this entirely.
  */
 export function resolveAutoSyncEnabled(
   env: Record<string, string | undefined>,

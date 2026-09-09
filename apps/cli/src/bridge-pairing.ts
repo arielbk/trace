@@ -7,7 +7,7 @@ const SECRET_BYTES = 32;
 export const PAIRING_LINK_TTL_MS = 5 * 60_000;
 
 /** How many unused links may exist at once; creating another retires the
- * oldest, so an abandoned `trace connection pair` cannot accumulate authority. */
+ * oldest, so an abandoned `eqnx connection pair` cannot accumulate authority. */
 export const MAX_OUTSTANDING_PAIRING_LINKS = 5;
 
 /** The label a browser paired through a link is recorded under. */

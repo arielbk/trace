@@ -57,8 +57,8 @@ test("init exits 0 and describes installation", () => {
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toBe("");
     // Must mention the CLI-first install path — not the old CLAUDE.md approach.
-    expect(r.stdout).toContain("npm install -g @arielbk/trace");
-    expect(r.stdout).toContain("trace setup");
+    expect(r.stdout).toContain("npm install -g @eqnx/cli");
+    expect(r.stdout).toContain("eqnx setup");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });

@@ -4,7 +4,8 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "trace": "apps/cli/src/trace.ts"
+    "trace": "apps/cli/src/trace.ts",
+    "eqnx": "apps/cli/src/trace.ts"
   },
   "scripts": {
     "build": "turbo run build",
@@ -14,7 +15,8 @@
     "check-types": "turbo run check-types",
     "release:trace": "node apps/cli/src/release.ts",
     "eval": "node evals/run.ts",
-    "test:evals": "vitest run evals/src"
+    "test:evals": "vitest run evals/src",
+    "release:eqnx": "node apps/cli/src/release.ts"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",

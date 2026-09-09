@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const packageName = "@arielbk/trace";
+const packageName = "@eqnx/cli";
 
 const sourcePath = fileURLToPath(import.meta.url);
 const appRoot = resolve(dirname(sourcePath), "..");
@@ -170,7 +170,7 @@ function parseArgs(args: string[]): {
       index += 1;
     } else if (arg === "--help" || arg === "-h") {
       process.stdout.write(
-        "Usage: pnpm release:trace -- --dry-run (--version x.y.z | --bump patch|minor|major)\n",
+        "Usage: pnpm release:eqnx -- --dry-run (--version x.y.z | --bump patch|minor|major)\n",
       );
       process.exit(0);
     } else {

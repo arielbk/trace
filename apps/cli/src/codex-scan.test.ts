@@ -107,7 +107,7 @@ test("Codex skill command flow scans, binds, and re-enters a task", () => {
         "work-on-task",
         "Codex skill flow",
         "--description",
-        "Exercise Trace from Codex",
+        "Exercise EQNX from Codex",
       ],
       { encoding: "utf8", env, cwd: dir },
     );
@@ -127,7 +127,7 @@ test("Codex skill command flow scans, binds, and re-enters a task", () => {
     );
 
     expect(reentered).toContain("title: Codex skill flow");
-    expect(reentered).toContain("description: Exercise Trace from Codex");
+    expect(reentered).toContain("description: Exercise EQNX from Codex");
     expect(reentered).toContain("docs:");
     expect(reentered).toContain("decision.md");
     expect(reentered).toMatch(

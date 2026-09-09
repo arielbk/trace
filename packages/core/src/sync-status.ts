@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 /**
- * Persisted beside the Trace database as `sync-status.json`. This is the
+ * Persisted beside the EQNX database as `sync-status.json`. This is the
  * board's single source of truth for the sync header: the CLI writes it on
  * login/logout/sync and the local api-handler reads it for
  * `GET /api/sync/status`. Keeping the state on disk (rather than making the
@@ -33,7 +33,7 @@ export interface SyncStatusFile {
 /**
  * The derived shape returned by `GET /api/sync/status` and consumed by the
  * board header. `identity` is presentational and best-effort — it is only
- * learned at `trace login`, so a token that predates identity recording (or a
+ * learned at `eqnx login`, so a token that predates identity recording (or a
  * background sync on a machine that never ran login) still derives as a
  * logged-in state, just without a name to show.
  *

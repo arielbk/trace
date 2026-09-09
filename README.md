@@ -1,4 +1,4 @@
-<h1 align="center">Trace</h1>
+<h1 align="center">EQNX</h1>
 
 <p align="center">
   <strong>Pick up any task exactly where you left off, in any agent, days later, without re-explaining it.</strong>
@@ -17,7 +17,7 @@ all of it from scrollback and guesswork. The mistake is treating the **session**
 as the thing that ties your work together. It isn't: sessions are throwaway, the
 **task** is the thread.
 
-Trace makes that the default. It records each agent session against a task, gives
+EQNX makes that the default. It records each agent session against a task, gives
 you a known place to drop plans and decision docs, and lets a brand-new session
 reload the whole thread with one sentence:
 
@@ -27,7 +27,7 @@ The agent gets back the task, its docs, a distilled summary of where you left of
 and pointers to prior sessions. No pasting transcripts, no "remind me what we
 decided." It's cheaper, too: re-entering a short summary spends a fraction of the
 tokens you'd burn making a fresh agent re-derive everything from scrollback. And
-Trace doesn't care which agent you use, so a task you start in one session you can
+EQNX doesn't care which agent you use, so a task you start in one session you can
 re-enter in another, even a different agent, all in the same store underneath.
 
 ## Setup
@@ -39,72 +39,76 @@ marketplace, no per-repo config, no pinned `npx` commands.
 ### Install
 
 ```sh
-npm install -g @arielbk/trace
+npm install -g @eqnx/cli
 # or
-pnpm add -g @arielbk/trace
+pnpm add -g @eqnx/cli
 # or
-bun install -g @arielbk/trace
+bun install -g @eqnx/cli
 ```
+
+You can run one-off commands with `npx @eqnx/cli --help`. Setup requires the
+persistent installation above because agent hooks and the login service must
+keep working after npm clears its temporary cache.
 
 ### Wire up your agents
 
 ```sh
-trace setup
+eqnx setup
 ```
 
-Running `trace setup` with no flags auto-detects installed Claude Code, Codex,
-and Cursor roots — plus anything already in the Trace registry — and opens an
+Running `eqnx setup` with no flags auto-detects installed Claude Code, Codex,
+and Cursor roots — plus anything already in the EQNX registry — and opens an
 interactive checklist grouped by tool. Every target is **preselected**, so
-pressing enter sets up everything Trace found. Space toggles a target, enter
+pressing enter sets up everything EQNX found. Space toggles a target, enter
 submits, and escape cancels without writing anything.
 
-Trace then prints the plan for exactly what you selected and asks you to
+EQNX then prints the plan for exactly what you selected and asks you to
 confirm before touching a single file. A tool whose configuration needs
 attention first — a leftover plugin entry, say — is listed with exact
 remediation guidance while the healthy ones still install.
 
 Outside a terminal (a pipe, a CI job, a script) there is nobody to answer the
-picker, so bare `trace setup` prints the plan and exits without writing.
+picker, so bare `eqnx setup` prints the plan and exits without writing.
 
 ```sh
-trace setup --yes
+eqnx setup --yes
 ```
 
 Applies to every detected and registered target without prompting — the
 scriptable equivalent of accepting the whole checklist.
 
-You can run `trace setup` at any time to add new tools or reconcile existing
+You can run `eqnx setup` at any time to add new tools or reconcile existing
 installs. It is idempotent: re-running it changes nothing when everything is
 already current.
 
 <details>
 <summary>What this does</summary>
 
-`trace setup` copies the six canonical Trace skills (`trace`, `trace-reenter`,
+`eqnx setup` copies the six canonical EQNX skills (`trace`, `trace-reenter`,
 `trace-recall`, `trace-state`, `trace-doc-placement`, `trace-board`) into each
 agent's user-level skills directory, registers Claude Code's `SessionStart`,
 `SubagentStop`, and `Stop` hooks with the CLI's absolute path so hooks survive
 across updates, and records each installed target in `~/.trace/integrations.json`
-so `trace update` can reconcile them later.
+so `eqnx update` can reconcile them later.
 
 </details>
 
 ### Open the board
 
 ```sh
-trace board
+eqnx board
 ```
 
-`trace setup` also installs a small background connection that starts at login
+`eqnx setup` also installs a small background connection that starts at login
 and serves the board from your own machine, so opening it is never "first,
-start a server". `trace board` opens `https://app.eqnx.ai` against that connection
-(`trace board --local` opens the bundled board). Custom hosting can override
+start a server". `eqnx board` opens `https://app.eqnx.ai` against that connection
+(`eqnx board --local` opens the bundled board). Custom hosting can override
 the exact allowed origin with `TRACE_WEB_ORIGIN`. A browser is let in
 one at a time by running the pairing command shown on the hosted page; that
 same page then connects automatically. A browser is shut out again with
-`trace connection revoke`; `trace connection status` says what is holding the
+`eqnx connection revoke`; `eqnx connection status` says what is holding the
 connection when a board will not load. The managed connection is macOS-only —
-elsewhere, run `trace serve` to serve a board in the foreground.
+elsewhere, run `eqnx serve` to serve a board in the foreground.
 
 See [docs/local-connection.md](docs/local-connection.md) for the whole
 lifecycle: pairing, reboots, second browsers, revocation, upgrades, uninstall,
@@ -113,25 +117,25 @@ and what to run when something is wrong.
 ### Update
 
 ```sh
-trace update
+eqnx update
 ```
 
 Resolves the latest published version, reinstalls via your package manager, then
-runs `trace setup` for each registered agent to reconcile skills and hooks. In a
+runs `eqnx setup` for each registered agent to reconcile skills and hooks. In a
 terminal it shows the version it would move to and asks before applying, so one
-command is enough; `trace update --yes` skips the question, and without a
+command is enough; `eqnx update --yes` skips the question, and without a
 terminal it prints the plan and exits. Update is not selective and never opens the picker: it reconciles every target
 in `~/.trace/integrations.json`, so an install you chose once stays current
-without you re-choosing it. Use `trace setup` when you want to change *which*
-targets Trace manages.
+without you re-choosing it. Use `eqnx setup` when you want to change *which*
+targets EQNX manages.
 
 ### Target a specific tool or path
 
 ```sh
-trace setup --tool codex
-trace setup --tool cursor
-trace setup --tool copilot
-trace setup --tool claude --target claude=/path/to/custom/config
+eqnx setup --tool codex
+eqnx setup --tool cursor
+eqnx setup --tool copilot
+eqnx setup --tool claude --target claude=/path/to/custom/config
 ```
 
 Naming targets explicitly skips the picker — you have already made the choice
@@ -140,29 +144,29 @@ it would ask for.
 ### Remove
 
 ```sh
-trace setup --remove
+eqnx setup --remove
 ```
 
-Removes only Trace-owned skills, hooks, and metadata. Unrelated agent
+Removes only EQNX-owned skills, hooks, and metadata. Unrelated agent
 configuration is never touched. Like the other flags, `--remove` skips the
 picker and runs deterministically.
 
 ### Migrating from the old plugin install
 
-If you previously installed Trace via the Claude Code plugin marketplace or
+If you previously installed EQNX via the Claude Code plugin marketplace or
 `codex plugin`, run:
 
 ```sh
-trace setup
+eqnx setup
 ```
 
-Trace lists every detected tool in the picker and, wherever it finds a legacy
+EQNX lists every detected tool in the picker and, wherever it finds a legacy
 plugin entry or a pinned `npx` hook, prints exact remediation guidance in place
 of a plan for that target. Follow the instructions (typically: remove the old
 plugin), then re-run setup and your configuration will be on the CLI-first path.
 
 Use the bare command while migrating. Targeting one tool explicitly
-(`trace setup --tool claude`) previews the plan it *intends* to apply and only
+(`eqnx setup --tool claude`) previews the plan it *intends* to apply and only
 reports a legacy config once you add `--yes`.
 
 ### Copilot CLI
@@ -171,17 +175,17 @@ Copilot installs through the same path as every other host — the picker lists 
 whenever `~/.copilot` exists, or name it directly:
 
 ```sh
-trace setup --tool copilot
+eqnx setup --tool copilot
 ```
 
 <details>
 <summary>What this does</summary>
 
-Alongside the skills, setup writes a Trace-owned hooks file to
+Alongside the skills, setup writes a EQNX-owned hooks file to
 `~/.copilot/hooks/trace.json` (honoring `COPILOT_HOME`). It registers the
-session at `sessionStart`, prompts the agent to consult Trace and bind or
-re-enter work, and checks the bound task's `state.md` at `agentStop`. Trace
-identifies the live session through Copilot's lock files, so run Trace commands
+session at `sessionStart`, prompts the agent to consult EQNX and bind or
+re-enter work, and checks the bound task's `state.md` at `agentStop`. EQNX
+identifies the live session through Copilot's lock files, so run EQNX commands
 from within the Copilot session.
 
 > Copilot records an **output-only token** total in its transcript. The board
@@ -193,12 +197,12 @@ from within the Copilot session.
 
 It's a loop:
 
-1. **Say what you're working on.** "We're working on the checkout flow." Trace
+1. **Say what you're working on.** "We're working on the checkout flow." EQNX
    binds the session to a task (creating it if needed) and tells you where the
    task's docs live.
 2. **Drop docs where re-entry can find them.** Any spec, plan, or note you write
    into that task's docs directory is associated with the task automatically.
-3. **Wrap up — or don't.** When you're done for the session, Trace distills it
+3. **Wrap up — or don't.** When you're done for the session, EQNX distills it
    into the task's living state file, so the next agent reads a summary, not a
    transcript. And if you never wrap up, the state file keeps itself honest: on
    Claude a `Stop` hook has the still-warm agent write it the moment the docs
@@ -209,15 +213,15 @@ It's a loop:
    state file, the docs, and only if needed the tail of the last session, then
    keeps going.
 
-If you ever start real work in a session that _isn't_ tracked, Trace notices and
+If you ever start real work in a session that _isn't_ tracked, EQNX notices and
 offers to bind it, so you don't have to remember to.
 
 ### Encrypted sync keys
 
-Task documents are encrypted before cloud sync. The first `trace login` for an
+Task documents are encrypted before cloud sync. The first `eqnx login` for an
 empty account generates a document encryption key and shows it once; save that
-key somewhere secure. On another machine, `trace login` asks for the same key
-and verifies it against your synced documents. Run `trace key show` on a
+key somewhere secure. On another machine, `eqnx login` asks for the same key
+and verifies it against your synced documents. Run `eqnx key show` on a
 configured machine when you need to copy it.
 
 If every copy of the key is lost, generate a fresh key during login and re-upload
@@ -241,7 +245,7 @@ the way.
 
 ## The skills
 
-Trace is a **store**; the **skills** are the behaviour. Trace records sessions
+EQNX is a **store**; the **skills** are the behaviour. EQNX records sessions
 against tasks and surfaces the right context back on re-entry. That's its whole
 job: _remember, and hand back._ Everything else (scoping, spec-writing, distilling
 a session into a handoff) lives in skills, which are separate, swappable, and
@@ -252,7 +256,7 @@ yours to keep or replace.
 | **trace**               | say you're working on / scoping / defining something  | binds the session to a task (creating it if absent); nudges you when an untracked session is doing real work |
 | **trace-reenter**       | name a task by its exact slug or title                | reloads that task's full context from its re-entry manifest                                                  |
 | **trace-recall**        | gesture vaguely at past work ("that archiving thing") | figures out _which_ task you mean, then re-enters it                                                         |
-| **trace-state**         | wrap up, hand off, or Trace reports state drift       | distills the session into the task's living `state.md`; also runs when Trace detects the docs moved ahead    |
+| **trace-state**         | wrap up, hand off, or EQNX reports state drift       | distills the session into the task's living `state.md`; also runs when EQNX detects the docs moved ahead    |
 | **trace-doc-placement** | write a spec, PRD, plan, or note                      | lands the file in the current task's docs directory                                                          |
 | **trace-board**         | ask to open the board                                 | starts the local web UI for browsing tasks                                                                   |
 
@@ -275,7 +279,7 @@ the rest) is a silo, with its own context and its own runtime, none of it carryi
 over when you switch tools or start a new session. A meta-harness lifts your work
 out of that silo. (The term comes from Databricks'
 [Omnigent](https://www.databricks.com/blog/introducing-omnigent-meta-harness-combine-control-and-share-your-agents):
-Omnigent is a meta-harness for the _session_, the agents running right now; Trace
+Omnigent is a meta-harness for the _session_, the agents running right now; EQNX
 is a meta-harness for the _task_, the same work carried across sessions, tools, and
 days.)
 
@@ -283,6 +287,6 @@ days.)
 
 ---
 
-Working on Trace itself, or wiring it into your own tooling? See
+Working on EQNX itself, or wiring it into your own tooling? See
 [CONTRIBUTING.md](./CONTRIBUTING.md) for what's underneath, registering spawned
 children, development, and releasing.

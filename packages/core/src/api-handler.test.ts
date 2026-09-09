@@ -60,7 +60,7 @@ function withSeededDatabase(
   };
 }
 
-test("GET /api/connection identifies the local Trace API without opening the database", () => {
+test("GET /api/connection identifies the local EQNX API without opening the database", () => {
   const response = handleTraceApiRequest(
     "/path/that/does/not/exist.sqlite",
     "GET",

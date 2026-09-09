@@ -35,10 +35,10 @@ test("init reports CLI-first setup without writing Claude settings", () => {
       env,
     });
 
-    expect(output).toContain("npm install -g @arielbk/trace");
-    expect(output).toContain("trace setup");
-    expect(output).toContain("trace update");
-    expect(output).toContain("trace setup --remove");
+    expect(output).toContain("npm install -g @eqnx/cli");
+    expect(output).toContain("eqnx setup");
+    expect(output).toContain("eqnx update");
+    expect(output).toContain("eqnx setup --remove");
     expect(output).not.toContain("plugin marketplace");
     expect(output).not.toContain("pnpm link --global");
     expect(output).not.toContain("SessionStart hook");
@@ -82,8 +82,8 @@ test("init preserves existing Claude settings without adding SessionStart hooks"
       env,
     });
 
-    expect(secondOutput).toContain("npm install -g @arielbk/trace");
-    expect(secondOutput).toContain("trace setup");
+    expect(secondOutput).toContain("npm install -g @eqnx/cli");
+    expect(secondOutput).toContain("eqnx setup");
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as {
       permissions?: { allow?: string[] };
@@ -803,7 +803,7 @@ test("update-doc rewrites an existing doc's title and description in the manifes
   }
 });
 
-test("task show and skill re-enter list docs written under the trace task docs directory", () => {
+test("task show and skill re-enter list docs written under the eqnx task docs directory", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
   const env = { ...process.env, TRACE_DB: databasePath };

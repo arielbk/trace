@@ -34,7 +34,7 @@ type ConnectionState = {
   legacyMigrated?: boolean;
 };
 
-/** How the migrated `bridge.json` credential appears in `trace connection
+/** How the migrated `bridge.json` credential appears in `eqnx connection
  * browsers` — it authorizes every browser paired before per-browser tokens. */
 export const LEGACY_BROWSER_LABEL = "Browsers paired before this version";
 
@@ -183,7 +183,7 @@ function readState(path: string): ConnectionState | null {
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    throw new Error(`Invalid Trace connection state at ${path}`);
+    throw new Error(`Invalid EQNX connection state at ${path}`);
   }
   const candidate = parsed as Partial<ConnectionState>;
   if (
@@ -194,7 +194,7 @@ function readState(path: string): ConnectionState | null {
     !TOKEN_PATTERN.test(candidate.management) ||
     !Array.isArray(candidate.browsers)
   ) {
-    throw new Error(`Invalid Trace connection state at ${path}`);
+    throw new Error(`Invalid EQNX connection state at ${path}`);
   }
   return candidate as ConnectionState;
 }

@@ -15,13 +15,13 @@ export type BoardDependencies = ManagedConnectionDependencies & {
   open?: (url: string) => void;
 };
 
-const USAGE = "Usage: trace board [--local]";
+const USAGE = "Usage: eqnx board [--local]";
 
 /**
- * `trace board` — the ordinary way to open the board. With a hosted origin
+ * `eqnx board` — the ordinary way to open the board. With a hosted origin
  * configured it hands the browser a fresh, single-use pairing link against the
  * connection that is already running; without one — or with `--local` — it
- * opens the board Trace bundles with itself.
+ * opens the board EQNX bundles with itself.
  */
 export async function boardOperation(
   args: string[],
@@ -68,20 +68,20 @@ async function openHostedBoard(
   const { url } = response.payload as { url?: string };
   if (!url) {
     return failure(
-      `The Trace connection is running, but it was not started with ${hostedOrigin} configured.\n` +
-        "Reinstall it with: trace connection install",
+      `The EQNX connection is running, but it was not started with ${hostedOrigin} configured.\n` +
+        "Reinstall it with: eqnx connection install",
     );
   }
 
   (dependencies.open ?? openBrowser)(url);
   return success(
-    `Opening the Trace board at ${hostedOrigin}.\n` +
+    `Opening the EQNX board at ${hostedOrigin}.\n` +
       `If it did not open, use this link within 5 minutes:\n${url}\n`,
   );
 }
 
 /**
- * The board Trace ships with itself, served from this machine. A managed
+ * The board EQNX ships with itself, served from this machine. A managed
  * connection already serving the endpoint is reused as it stands — opening the
  * board is never a reason to run a second runtime.
  */
@@ -95,7 +95,7 @@ async function openBundledBoard(
   if (occupant.kind === "own") {
     const url = `${CONNECTION_ENDPOINT_ORIGIN}/`;
     open(url);
-    return success(`Opening the Trace board at ${url}\n`);
+    return success(`Opening the EQNX board at ${url}\n`);
   }
 
   try {
@@ -104,11 +104,11 @@ async function openBundledBoard(
     const server = await startForegroundServe(env, dependencies);
     open(server.url);
     return success(
-      `Trace board listening on ${server.url}\nStop it with Ctrl-C.\n`,
+      `EQNX board listening on ${server.url}\nStop it with Ctrl-C.\n`,
     );
   } catch (error) {
     return failure(
-      `The Trace board could not start: ${
+      `The EQNX board could not start: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -116,30 +116,30 @@ async function openBundledBoard(
 }
 
 const LOCAL_INSTEAD =
-  "Open the board Trace bundles with itself instead: trace board --local";
+  "Open the board EQNX bundles with itself instead: eqnx board --local";
 
 /** Why the hosted board has nothing to connect to, and what fixes it. */
 function describeUnusable(occupant: EndpointOccupant): string {
   switch (occupant.kind) {
     case "free":
       return (
-        `The Trace connection is not running on ${CONNECTION_ENDPOINT_ORIGIN}, so the hosted board has nothing to read.\n` +
-        "Start it with: trace connection install"
+        `The EQNX connection is not running on ${CONNECTION_ENDPOINT_ORIGIN}, so the hosted board has nothing to read.\n` +
+        "Start it with: eqnx connection install"
       );
     case "incompatible":
       return (
-        `A Trace ${occupant.runtimeVersion} runtime speaking protocol ${occupant.protocolVersion} holds ${CONNECTION_ENDPOINT_ORIGIN}.\n` +
-        "Move it onto this version with: trace connection restart"
+        `A EQNX ${occupant.runtimeVersion} runtime speaking protocol ${occupant.protocolVersion} holds ${CONNECTION_ENDPOINT_ORIGIN}.\n` +
+        "Move it onto this version with: eqnx connection restart"
       );
     case "foreign-trace":
       return (
-        `Another Trace installation holds ${CONNECTION_ENDPOINT_ORIGIN}, so this one cannot answer the hosted board.\n` +
-        "Stop that connection, then run: trace connection restart"
+        `Another EQNX installation holds ${CONNECTION_ENDPOINT_ORIGIN}, so this one cannot answer the hosted board.\n` +
+        "Stop that connection, then run: eqnx connection restart"
       );
     default:
       return (
-        `Another process is listening on ${CONNECTION_ENDPOINT_ORIGIN}, so the hosted board cannot reach Trace.\n` +
-        "Free that port, then run: trace connection restart"
+        `Another process is listening on ${CONNECTION_ENDPOINT_ORIGIN}, so the hosted board cannot reach EQNX.\n` +
+        "Free that port, then run: eqnx connection restart"
       );
   }
 }

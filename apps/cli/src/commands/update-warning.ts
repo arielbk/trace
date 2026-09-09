@@ -14,7 +14,7 @@ export function checkUpdateWarning(env: Env): string {
     const staleTools = IntegrationRegistry.fromEnv(env).staleTools(currentVersion);
     if (staleTools.length === 0) return "";
     const tools = staleTools.join(", ");
-    return `Warning: Trace integrations are out of date (${tools}). Run \`trace setup\` to update.\n`;
+    return `Warning: EQNX integrations are out of date (${tools}). Run \`eqnx setup\` to update.\n`;
   } catch {
     return "";
   }

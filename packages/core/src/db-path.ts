@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 /**
- * Single source of truth for the Trace database path, consumed by both the
+ * Single source of truth for the EQNX database path, consumed by both the
  * CLI and the web server. `TRACE_DB` is the explicit override; otherwise the
  * global default `~/.trace/trace.sqlite` is used, resolving home from `HOME`
  * or `USERPROFILE` (native Windows shells set only the latter). Throws when

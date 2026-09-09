@@ -15,7 +15,7 @@ function createRepository(branch = "main"): string {
   const root = mkdtempSync(join(tmpdir(), "trace-cli-git-"));
   git(root, "init", "-b", branch, "--quiet");
   git(root, "config", "user.email", "trace@example.com");
-  git(root, "config", "user.name", "Trace Tests");
+  git(root, "config", "user.name", "EQNX Tests");
   writeFileSync(join(root, "README.md"), "trace\n");
   git(root, "add", "README.md");
   git(root, "commit", "--quiet", "-m", "initial");

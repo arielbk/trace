@@ -15,7 +15,7 @@ import {
 /**
  * State freshness — "has the prose drifted from the docs?" — computed once.
  *
- * The board's staleness flag, `trace state check`, and the re-entry manifest's
+ * The board's staleness flag, `eqnx state check`, and the re-entry manifest's
  * `stateFreshness:` block are three readers of one invariant. When each
  * re-derived it (resolve docs dir, drop the State Document, hash the rest,
  * compare to the stamp) they could silently disagree, and no test could catch

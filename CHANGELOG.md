@@ -1,5 +1,18 @@
 # Changelog
 
+## @eqnx/cli 0.1.0
+
+First release under the EQNX npm organization, continuing the Trace codebase.
+
+- Install with `npm install -g @eqnx/cli` and run `eqnx setup`.
+- Open the hosted board at `https://app.eqnx.ai`, with terminal-approved browser pairing.
+- Manage the macOS login service through setup, update, and connection commands.
+- Preserve existing `.trace` data, configuration, and bridge protocol identities.
+- Linux and Windows retain foreground serving; installed service acceptance and
+  Firefox validation remain ongoing.
+
+The entries below describe the earlier `@arielbk/trace` releases.
+
 Notable changes to `@arielbk/trace`. Older releases are documented in the
 [GitHub releases](https://github.com/arielbk/trace/releases).
 

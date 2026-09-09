@@ -1,4 +1,4 @@
-# Trace in Claude Code
+# EQNX in Claude Code
 
 This is the Claude Code binding flow for the `trace` skill. The shared verbs
 (`work-on-task`, re-entry) live in `../SKILL.md`; this file covers what is
@@ -6,8 +6,8 @@ specific to Claude Code.
 
 ## No active task for this session
 
-At session start, Trace injects one line of context about this session's task
-state. When that line says a task is being tracked (`✓ Trace tracking: <title>`),
+At session start, EQNX injects one line of context about this session's task
+state. When that line says a task is being tracked (`✓ EQNX tracking: <title>`),
 the session is already bound — do nothing; do not re-offer to bind it.
 
 When instead it reports that **no task is bound to this session** — or you

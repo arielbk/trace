@@ -24,7 +24,7 @@ function findWindowsShim(env: Env): string | undefined {
   for (const dir of pathValue.split(";")) {
     if (!dir) continue;
     for (const extension of WINDOWS_SHIM_EXTENSIONS) {
-      const candidate = join(dir, `trace${extension}`);
+      const candidate = join(dir, `eqnx${extension}`);
       if (existsSync(candidate)) return candidate;
     }
   }
@@ -32,7 +32,7 @@ function findWindowsShim(env: Env): string | undefined {
 }
 
 /**
- * Absolute path to the persistent Trace CLI. Both agent hook commands and the
+ * Absolute path to the persistent EQNX CLI. Both agent hook commands and the
  * managed connection's LaunchAgent record it, so it must outlive this process.
  */
 export function resolveTraceCliPath(
@@ -52,7 +52,7 @@ export function resolveTraceCliPath(
       return invoked;
     }
   }
-  return "trace";
+  return "eqnx";
 }
 
 /**
@@ -67,16 +67,16 @@ export function checkManagedCliPath(cliPath: string): CliPathCheck {
     return {
       ok: false,
       error:
-        `Trace setup cannot register the ephemeral npx executable at ${cliPath}.\n` +
-        "  Install @arielbk/trace as a persistent global CLI, then run trace setup again.",
+        `EQNX setup cannot register the ephemeral npx executable at ${cliPath}.\n` +
+        "  Install @eqnx/cli as a persistent global CLI, then run eqnx setup again.",
     };
   }
   if (/(?:^|\/)apps\/cli\/(?:src|dist)\/trace\.(?:ts|js)$/.test(normalized)) {
     return {
       ok: false,
       error:
-        `Trace setup cannot register the source checkout executable at ${cliPath}.\n` +
-        "  Install @arielbk/trace as a persistent global CLI, then run trace setup again.",
+        `EQNX setup cannot register the source checkout executable at ${cliPath}.\n` +
+        "  Install @eqnx/cli as a persistent global CLI, then run eqnx setup again.",
     };
   }
   return { ok: true };

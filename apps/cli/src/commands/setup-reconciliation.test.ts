@@ -85,7 +85,7 @@ test("reconciliation preflights every target before mutating any target", () => 
   }
 });
 
-test("reconciliation removes obsolete files from Trace-owned skills", () => {
+test("reconciliation removes obsolete files from EQNX-owned skills", () => {
   const { dir, cleanup } = tempDir("trace-reconcile-obsolete-");
   try {
     const codexRoot = join(dir, ".codex");

@@ -114,11 +114,11 @@ describe("Clack setup prompt adapter", () => {
     const { clack, recorded } = fakeClack({ confirm: false });
 
     const result = await createClackPrompt(clack).confirm({
-      message: "Install Trace into these targets?",
+      message: "Install EQNX into these targets?",
     });
 
     assert.deepEqual(recorded.confirmCalls, [
-      { message: "Install Trace into these targets?", initialValue: true },
+      { message: "Install EQNX into these targets?", initialValue: true },
     ]);
     assert.deepEqual(result, { cancelled: false, value: false });
   });
@@ -127,7 +127,7 @@ describe("Clack setup prompt adapter", () => {
     const { clack } = fakeClack({ confirm: CANCEL });
 
     const result = await createClackPrompt(clack).confirm({
-      message: "Install Trace into these targets?",
+      message: "Install EQNX into these targets?",
     });
 
     assert.deepEqual(result, { cancelled: true });
@@ -136,7 +136,7 @@ describe("Clack setup prompt adapter", () => {
   it("satisfies a consumer that only asks a yes/no question", async () => {
     const { clack, recorded } = fakeClack({ confirm: true });
 
-    // Typed as the narrow seam, so `trace update` can take this adapter without
+    // Typed as the narrow seam, so `eqnx update` can take this adapter without
     // depending on the target picker at all.
     const askOnly = async (prompt: ConfirmPrompt) =>
       prompt.confirm({ message: "Update to v1.2.3?" });

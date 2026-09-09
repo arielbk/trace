@@ -46,7 +46,7 @@ function unzipText(zipPath: string): {
   };
 }
 
-test("trace export writes a dated zip with README, manifest, and docs", () => {
+test("eqnx export writes a dated zip with README, manifest, and docs", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-export-"));
   const env = tempEnv(dir);
   const databasePath = env.TRACE_DB as string;
@@ -235,7 +235,7 @@ test("trace export writes a dated zip with README, manifest, and docs", () => {
   }
 });
 
-test("trace export with no task argument exports the bound task", () => {
+test("eqnx export with no task argument exports the bound task", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-export-bound-"));
   const env = tempEnv(dir);
   env.CLAUDE_CODE_SESSION_ID = "bound-session";
@@ -262,7 +262,7 @@ test("trace export with no task argument exports the bound task", () => {
   }
 });
 
-test("trace export --out writes the zip to the given path", () => {
+test("eqnx export --out writes the zip to the given path", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-export-out-"));
   const env = tempEnv(dir);
 
@@ -288,7 +288,7 @@ test("trace export --out writes the zip to the given path", () => {
   }
 });
 
-test("trace export --include-transcripts copies files, warns, and reports size", () => {
+test("eqnx export --include-transcripts copies files, warns, and reports size", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-export-transcripts-"));
   const env = tempEnv(dir);
 

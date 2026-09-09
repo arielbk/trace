@@ -28,7 +28,7 @@ import { failure, success, type CommandResult, type Env } from "./seam.ts";
 const SERVICE_ORIGIN = CONNECTION_ENDPOINT_ORIGIN;
 
 const NOT_RUNNING =
-  "The Trace connection is not running. Start it with `trace serve`.";
+  "The EQNX connection is not running. Start it with `eqnx serve`.";
 
 export type ConnectionDependencies = ManagedConnectionDependencies & {
   /** Registers the graceful-shutdown handler. Injectable so tests never touch
@@ -41,7 +41,7 @@ export type ConnectionDependencies = ManagedConnectionDependencies & {
 };
 
 /**
- * `trace connection …` — the local administration commands. Each one asks the
+ * `eqnx connection …` — the local administration commands. Each one asks the
  * *running* service over loopback rather than editing state behind its back, so
  * pairing and revocation take effect without a restart.
  */
@@ -86,7 +86,7 @@ export async function connectionOperation(
       );
       if (!response.ok) {
         return failure(
-          "This pairing code could not be approved. Get a fresh command from the page and check that Trace is running.",
+          "This pairing code could not be approved. Get a fresh command from the page and check that EQNX is running.",
         );
       }
       return success(
@@ -94,7 +94,7 @@ export async function connectionOperation(
       );
     }
     if (args.slice(1).some((arg) => arg !== "--open")) {
-      return failure("Usage: trace connection pair [<code>|--open]");
+      return failure("Usage: eqnx connection pair [<code>|--open]");
     }
     const response = await request("POST", "/api/management/pairings");
     if (!response.ok) return response.result;
@@ -107,7 +107,7 @@ export async function connectionOperation(
     if (args.includes("--open")) {
       (dependencies.open ?? openBrowser)(link.url);
       return success(
-        `Opening Trace in your browser.\nIf it did not open, use this link within 5 minutes:\n${link.url}\n`,
+        `Opening EQNX in your browser.\nIf it did not open, use this link within 5 minutes:\n${link.url}\n`,
       );
     }
     return success(
@@ -134,7 +134,7 @@ export async function connectionOperation(
 
   if (subcommand === "revoke") {
     const id = args[1];
-    if (!id) return failure("Usage: trace connection revoke <id>");
+    if (!id) return failure("Usage: eqnx connection revoke <id>");
     const response = await request(
       "POST",
       `/api/management/browsers/${encodeURIComponent(id)}/revoke`,
@@ -156,11 +156,11 @@ export async function connectionOperation(
 }
 
 const USAGE =
-  "Usage: trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>";
+  "Usage: eqnx connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>";
 
 /**
  * A lifecycle command is an explicit request, so every reason it did not
- * happen — including the ones `trace setup` passes over in silence — is an
+ * happen — including the ones `eqnx setup` passes over in silence — is an
  * error here.
  */
 function reportLifecycle(outcome: ConnectionLifecycleOutcome): CommandResult {
@@ -170,7 +170,7 @@ function reportLifecycle(outcome: ConnectionLifecycleOutcome): CommandResult {
 }
 
 /**
- * `trace connection status` — one report of everything that decides whether
+ * `eqnx connection status` — one report of everything that decides whether
  * the board can reach this machine: what holds the endpoint, what launchd
  * thinks of the job, and where to read its logs. It only observes, so it
  * always succeeds; what it found is in the report, not the exit code.
@@ -193,23 +193,23 @@ async function reportConnectionStatus(
 function describeEndpoint(occupant: EndpointOccupant): string {
   switch (occupant.kind) {
     case "own":
-      return `Connection: running on ${SERVICE_ORIGIN} (Trace ${occupant.runtimeVersion}, pid ${occupant.pid}).`;
+      return `Connection: running on ${SERVICE_ORIGIN} (EQNX ${occupant.runtimeVersion}, pid ${occupant.pid}).`;
     case "free":
       return `Connection: not running — nothing is listening on ${SERVICE_ORIGIN}.`;
     case "incompatible":
       return (
-        `Connection: a Trace ${occupant.runtimeVersion} runtime on ${SERVICE_ORIGIN} speaks protocol ${occupant.protocolVersion}, which this version does not.\n` +
-        "  Recover with: trace connection restart"
+        `Connection: a EQNX ${occupant.runtimeVersion} runtime on ${SERVICE_ORIGIN} speaks protocol ${occupant.protocolVersion}, which this version does not.\n` +
+        "  Recover with: eqnx connection restart"
       );
     case "foreign-trace":
       return (
-        `Connection: another Trace installation holds ${SERVICE_ORIGIN}.\n` +
+        `Connection: another EQNX installation holds ${SERVICE_ORIGIN}.\n` +
         "  Stop that connection before starting this one."
       );
     case "occupied":
       return (
         `Connection: another process is listening on ${SERVICE_ORIGIN}.\n` +
-        "  Free that port, then run: trace connection restart"
+        "  Free that port, then run: eqnx connection restart"
       );
   }
 }
@@ -221,25 +221,25 @@ function describeServiceState(state: ConnectionServiceState): string {
     case "missing":
       return (
         "Login service: not installed.\n" +
-        "  Install it with: trace connection install"
+        "  Install it with: eqnx connection install"
       );
     case "installed":
       if (state.stale) {
         return (
           `Login service: installed at ${state.plistPath}, but it runs ${state.cliPath}, which is no longer on disk.\n` +
-          "  Recover with: trace connection install"
+          "  Recover with: eqnx connection install"
         );
       }
       return state.loaded
         ? `Login service: loaded from ${state.plistPath}.`
         : `Login service: installed at ${state.plistPath}, but launchd is not running it.\n` +
-            "  Start it with: trace connection restart";
+            "  Start it with: eqnx connection restart";
   }
 }
 
 /**
- * `trace connection install` — the deterministic path to a background
- * connection for someone who wants no agent integrations at all. `trace setup`
+ * `eqnx connection install` — the deterministic path to a background
+ * connection for someone who wants no agent integrations at all. `eqnx setup`
  * reconciles the same service; this is the same reconciliation on its own.
  */
 function installLoginService(
@@ -249,7 +249,7 @@ function installLoginService(
   const outcome = installConnectionService(env, dependencies.service);
   const described = describeConnectionServiceOutcome(outcome);
   // An explicit install is a request, so every reason it did not happen is an
-  // error here, including the ones `trace setup` passes over in silence.
+  // error here, including the ones `eqnx setup` passes over in silence.
   return outcome.kind === "installed" ||
     outcome.kind === "reconciled" ||
     outcome.kind === "unchanged"
@@ -258,7 +258,7 @@ function installLoginService(
 }
 
 /**
- * `trace connection run` — the managed connection's own process, and what the
+ * `eqnx connection run` — the managed connection's own process, and what the
  * login service executes. It resolves once the endpoint is owned; the running
  * server is what keeps the process alive afterwards.
  */
@@ -276,7 +276,7 @@ async function runManagedConnection(
 
   if (outcome.kind === "reused") {
     return success(
-      `The Trace connection is already running on ${SERVICE_ORIGIN} (version ${outcome.runtimeVersion}, pid ${outcome.pid}).\n`,
+      `The EQNX connection is already running on ${SERVICE_ORIGIN} (version ${outcome.runtimeVersion}, pid ${outcome.pid}).\n`,
     );
   }
 
@@ -284,7 +284,7 @@ async function runManagedConnection(
   (dependencies.onShutdownSignal ?? onProcessTermination)(() => {
     void server.close();
   });
-  return success(`Trace connection listening on ${server.url}\n`);
+  return success(`EQNX connection listening on ${server.url}\n`);
 }
 
 /** launchd stops the service with SIGTERM; a developer running it in a
@@ -299,7 +299,7 @@ export type ManagementResponse =
 
 /**
  * A caller for the local management surface, carrying this installation's
- * management credential. Exported so `trace board` can mint a pairing link
+ * management credential. Exported so `eqnx board` can mint a pairing link
  * through the same authority rather than opening a second one.
  */
 export function managementRequest(
@@ -326,7 +326,7 @@ export function managementRequest(
         result: failure(
           response.status === 404 && body.startsWith("{")
             ? "No browser is paired with that id."
-            : `The Trace connection refused the request (${response.status}).`,
+            : `The EQNX connection refused the request (${response.status}).`,
         ),
       };
     }

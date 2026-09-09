@@ -3,7 +3,7 @@ name: trace-recall
 description: Resolve a vague reference to prior work ("let's get back to that archiving thing", "what was that task about checkout", "pick up where we left off on the wizard") against the current project's tasks, then re-enter and bind the right one. Use when the user gestures at earlier work without naming an exact task title.
 ---
 
-# Trace recall
+# EQNX recall
 
 Use this skill when the user references prior work **without** giving an exact
 task title — e.g. "let's get back to that archiving thing", "where were we on
@@ -22,7 +22,7 @@ asks to open the board (the `trace-board` skill).
 Run, from the project the user is in:
 
 ```sh
-trace skill recall-candidates
+eqnx skill recall-candidates
 ```
 
 It prints a JSON array of the project's unarchived tasks, each
@@ -38,7 +38,7 @@ specific repo — pass `--project <dir>` pointing at that project so the candida
 pool is scoped to its git root instead of cwd's:
 
 ```sh
-trace skill recall-candidates --project /path/to/that/repo
+eqnx skill recall-candidates --project /path/to/that/repo
 ```
 
 Default to cwd (omit the flag) unless you have a concrete reason the recalled
@@ -74,7 +74,7 @@ hand off to the **`trace-reenter` skill** — it owns the re-entry flow. Re-ente
 the resolved task by its slug (the canonical ref):
 
 ```sh
-trace skill re-enter "{slug}"
+eqnx skill re-enter "{slug}"
 ```
 
 This single command both fetches the re-entry manifest **and** binds the

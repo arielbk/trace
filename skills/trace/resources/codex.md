@@ -1,4 +1,4 @@
-# Trace in Codex
+# EQNX in Codex
 
 This is the Codex binding flow for the `trace` skill. The shared verbs
 (`work-on-task`, re-entry) live in `../SKILL.md`; this file covers what is
@@ -10,10 +10,10 @@ when the user asks to work on, track, resume, re-enter, or continue a task.
 ## Backfill Codex sessions first
 
 Before binding or re-entering, backfill Codex sessions so the current and recent
-Codex threads exist in the Trace store:
+Codex threads exist in the EQNX store:
 
 ```sh
-trace session scan --codex
+eqnx session scan --codex
 ```
 
 This uses `CODEX_HOME` when set, otherwise `$HOME/.codex`. Run it once at the

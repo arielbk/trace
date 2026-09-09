@@ -8,7 +8,7 @@ import { expect, test } from "vitest";
 
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 
-test("trace project merge prints what moved and persists the merge", () => {
+test("eqnx project merge prints what moved and persists the merge", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-project-merge-"));
   const databasePath = join(dir, "trace.sqlite");
   const canonicalRoot = join(dir, "one", "checkout");
@@ -47,7 +47,7 @@ test("trace project merge prints what moved and persists the merge", () => {
   }
 });
 
-test("trace project merge exits non-zero for an unknown slug and prints near candidates", () => {
+test("eqnx project merge exits non-zero for an unknown slug and prints near candidates", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-project-merge-missing-"));
   const databasePath = join(dir, "trace.sqlite");
   const canonicalRoot = join(dir, "one", "checkout");
@@ -79,7 +79,7 @@ test("trace project merge exits non-zero for an unknown slug and prints near can
   }
 });
 
-test("trace project merge exits non-zero for a self-merge", () => {
+test("eqnx project merge exits non-zero for a self-merge", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-project-merge-self-"));
   const databasePath = join(dir, "trace.sqlite");
   const root = join(dir, "checkout");

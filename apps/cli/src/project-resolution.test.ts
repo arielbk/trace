@@ -23,7 +23,7 @@ test("work-on-task declares project creation then links a sibling worktree", () 
     mkdirSync(mainRoot);
     git(mainRoot, "init", "--quiet");
     git(mainRoot, "config", "user.email", "trace@example.com");
-    git(mainRoot, "config", "user.name", "Trace Tests");
+    git(mainRoot, "config", "user.name", "EQNX Tests");
     writeFileSync(join(mainRoot, "README.md"), "trace\n");
     git(mainRoot, "add", "README.md");
     git(mainRoot, "commit", "--quiet", "-m", "initial");

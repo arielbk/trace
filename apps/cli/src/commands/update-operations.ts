@@ -25,7 +25,7 @@ export type SpawnResult = { status: number | null; stderr: string };
 const CANCELLED = "Update cancelled; no changes made.\n";
 
 export type UpdateDeps = {
-  /** Fetches the latest published version of @arielbk/trace from the npm registry. */
+  /** Fetches the latest published version of @eqnx/cli from the npm registry. */
   fetchLatestVersion: (packageName: string) => Promise<string>;
   /**
    * Spawns the package manager to install the given version globally.
@@ -46,7 +46,7 @@ export type UpdateDeps = {
 
 /** Returns the install args for the given package manager. */
 function installArgs(pm: PackageManager, version: string): { cmd: string; args: string[] } {
-  const pkg = `@arielbk/trace@${version}`;
+  const pkg = `@eqnx/cli@${version}`;
   switch (pm) {
     case "pnpm": return { cmd: "pnpm", args: ["add", "-g", pkg] };
     case "bun": return { cmd: "bun", args: ["install", "-g", pkg] };
@@ -100,7 +100,7 @@ const defaultDeps: UpdateDeps = createDefaultDeps();
 
 /**
  * @param prompt Confirms the update in the terminal. Absent — every
- * non-interactive caller — leaves `trace update` on its preview-then-exit path.
+ * non-interactive caller — leaves `eqnx update` on its preview-then-exit path.
  */
 export async function updateOperation(
   rawArgs: string[],
@@ -121,7 +121,7 @@ export async function updateOperation(
   const serviceCliPath = readInstalledConnectionCli(ctx.env);
   if (!registry && serviceCliPath === undefined) {
     return failure(
-      "No Trace integrations registered. Run `trace setup` first.",
+      "No EQNX integrations registered. Run `eqnx setup` first.",
     );
   }
 
@@ -133,7 +133,7 @@ export async function updateOperation(
   // Fetch latest version.
   let latestVersion: string;
   try {
-    latestVersion = await deps.fetchLatestVersion("@arielbk/trace");
+    latestVersion = await deps.fetchLatestVersion("@eqnx/cli");
   } catch (err) {
     return failure(
       `Failed to fetch latest version: ${err instanceof Error ? err.message : String(err)}`,
@@ -145,10 +145,10 @@ export async function updateOperation(
 
   // No-op when already current.
   if (currentVersion === latestVersion) {
-    return success(`Trace is already at v${currentVersion}. Nothing to update.\n`);
+    return success(`EQNX is already at v${currentVersion}. Nothing to update.\n`);
   }
 
-  const planLine = `Trace v${currentVersion} → v${latestVersion} (via ${packageManager})\n`;
+  const planLine = `EQNX v${currentVersion} → v${latestVersion} (via ${packageManager})\n`;
 
   // `--yes` keeps its exact meaning of "skip the question", so only a bare
   // invocation handed a prompt ever asks.
@@ -184,10 +184,10 @@ export async function updateOperation(
       // than adding a second competing "Remediation:" label.
       const indented = detail.split("\n").map((line) => `  ${line}`).join("\n");
       return failure(
-        `Trace was upgraded to v${latestVersion}, but reconciling integrations failed:\n` +
+        `EQNX was upgraded to v${latestVersion}, but reconciling integrations failed:\n` +
           `${indented}\n` +
           `Your integrations are still on the previous version. ` +
-          `Once the above is resolved, run \`trace setup --yes\` to finish.`,
+          `Once the above is resolved, run \`eqnx setup --yes\` to finish.`,
       );
     }
   }
@@ -202,10 +202,10 @@ export async function updateOperation(
         .map((line) => `  ${line}`)
         .join("\n");
       return failure(
-        `Trace was upgraded to v${latestVersion}, but the local connection would not restart:\n` +
+        `EQNX was upgraded to v${latestVersion}, but the local connection would not restart:\n` +
           `${indented}\n` +
           `The previous connection is still running. Once the above is resolved, ` +
-          `run \`trace connection restart\` to finish.`,
+          `run \`eqnx connection restart\` to finish.`,
       );
     }
   }

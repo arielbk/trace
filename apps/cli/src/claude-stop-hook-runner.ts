@@ -15,7 +15,7 @@ type ClaudeStopHookInput = {
   cwd?: string;
 };
 
-// Shape of the `trace state check` verdict this runner consumes. Only the
+// Shape of the `eqnx state check` verdict this runner consumes. Only the
 // prose-pass fields are load-bearing here.
 type StateCheckVerdict = {
   needsProsePass?: boolean;
@@ -24,7 +24,7 @@ type StateCheckVerdict = {
 
 // Main-agent `Stop` hook: when the live session is explicitly bound to a task
 // whose state.md prose has drifted from its docs, block the turn once with a
-// reason pointing at `trace state reflect`. An unbound session — or one whose
+// reason pointing at `eqnx state reflect`. An unbound session — or one whose
 // state is already reconciled — ends the turn normally (exit 0, no output).
 //
 // Binding is resolved STRICTLY: only the session's explicit `taskId` counts,
@@ -70,7 +70,7 @@ export function runClaudeStopHook(
   // Unbound session (or bound to an archived/missing task) — nothing to check.
   if (!task) return ok();
 
-  // Hand the resolved binding to `trace state check`, which recomputes the
+  // Hand the resolved binding to `eqnx state check`, which recomputes the
   // verdict. It re-resolves the session from env, so surface this session's id
   // to it (the payload may carry an id absent from the ambient env).
   const childEnv = {

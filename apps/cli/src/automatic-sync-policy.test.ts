@@ -24,7 +24,7 @@ import type { Env } from "./commands/seam.ts";
  * Every implicit sync trigger, driven through its *production* wiring — none of
  * these rows inject a sync seam, so a trigger site that stopped routing through
  * `requestAutomaticSync` would fail here. The only thing stubbed is the process
- * spawn itself, which stands in for "Trace decided to synchronize task data".
+ * spawn itself, which stands in for "EQNX decided to synchronize task data".
  */
 const spawnMock = vi.hoisted(() =>
   vi.fn(() => ({ on: vi.fn(), unref: vi.fn() })),

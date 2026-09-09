@@ -79,7 +79,7 @@ test("returns warning when one target version does not match installed", () => {
     });
     expect(result).toMatch(/warning/i);
     expect(result).toMatch(/claude/);
-    expect(result).toMatch(/trace setup/);
+    expect(result).toMatch(/eqnx setup/);
   } finally {
     cleanup();
   }

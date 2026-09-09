@@ -9,10 +9,10 @@ import { reconcileStateFooter } from "./task-operations.ts";
 import type { Env, Store } from "./seam.ts";
 
 /**
- * The bind seam: everything Trace does when a Session starts working on a Task.
+ * The bind seam: everything EQNX does when a Session starts working on a Task.
  *
- * Three commands bind — `trace skill work-on-task`, `trace skill re-enter`, and
- * `trace session assign` — and before this module each spelled the ritual out.
+ * Three commands bind — `eqnx skill work-on-task`, `eqnx skill re-enter`, and
+ * `eqnx session assign` — and before this module each spelled the ritual out.
  * It owns three things those seams used to re-derive: the fixed order of the
  * steps, the question "is there a live session to bind at all?", and the rule
  * that a session's Git work context is re-read at every touchpoint rather than
@@ -62,7 +62,7 @@ export function bindSessionToTask(
  * The live session to bind, or null when there is none.
  *
  * Both fields are required: an identity that cannot name a transcript is not
- * something Trace can register, so a command holding one must behave as if it
+ * something EQNX can register, so a command holding one must behave as if it
  * ran outside a session — a human at a bare terminal reading a manifest has
  * nothing to bind — rather than binding a half-identified one.
  */

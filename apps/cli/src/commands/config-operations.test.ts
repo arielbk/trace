@@ -140,7 +140,7 @@ test("config commands reject unknown keys and list the known ones", () => {
   }
 });
 
-test("trace config dispatches through the CLI entry", () => {
+test("eqnx config dispatches through the CLI entry", () => {
   const { home, cleanup } = tempHome();
   try {
     const set = runTraceCli(

@@ -17,7 +17,7 @@ import { openTraceStore } from "@trace/core";
 /**
  * The unconditional gap between automatic syncs. It applies even to a machine
  * with unpushed changes: a burst of mutations coalesces into one sync a moment
- * later rather than one sync each. Explicit `trace sync` never comes through
+ * later rather than one sync each. Explicit `eqnx sync` never comes through
  * here, so the floor can never delay a sync the user asked for.
  */
 export const AUTOMATIC_SYNC_FLOOR_MS = 60_000;
@@ -31,7 +31,7 @@ export const AUTOMATIC_SYNC_FLOOR_MS = 60_000;
 export const AUTOMATIC_SYNC_QUIET_MS = 10 * 60_000;
 
 /**
- * Persisted beside the Trace database as `auto-sync.json`. It has to be on disk
+ * Persisted beside the EQNX database as `auto-sync.json`. It has to be on disk
  * rather than in memory because the triggers live in separate, short-lived
  * processes — each `trace` invocation is a fresh process, so an in-memory
  * timestamp would never see the previous request.

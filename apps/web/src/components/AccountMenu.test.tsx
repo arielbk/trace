@@ -264,7 +264,7 @@ test("the popover shows the identity, AutoSync mode, and last sync time", async 
   expect(menu).toHaveTextContent("The Octocat");
   expect(menu).toHaveTextContent("Last synced 2m ago");
   expect(menu).toHaveTextContent(/AutoSync\s*On/);
-  // Trace cannot know whether another machine has unpublished changes.
+  // EQNX cannot know whether another machine has unpublished changes.
   expect(menu).not.toHaveTextContent(/up to date/i);
 });
 
@@ -382,7 +382,7 @@ test("manual mode is reported as read-only state, with no way to sync or switch"
 
   const menu = await screen.findByRole("dialog", { name: /account/i });
   expect(menu).toHaveTextContent("Off — manual sync only");
-  // AutoSync is a machine-local CLI setting, and on-demand sync is `trace sync`.
+  // AutoSync is a machine-local CLI setting, and on-demand sync is `eqnx sync`.
   // Signing out is the one action the menu carries; changing synchronization
   // is not, so there is no toggle and no field beside it.
   expect(menu.querySelectorAll("input, [role='switch']")).toHaveLength(0);
@@ -469,7 +469,7 @@ test("a machine with no sync server says Cloud Sync is unavailable rather than o
   expect(menu).toHaveTextContent(
     "Cloud Sync is not configured on this machine.",
   );
-  expect(menu).not.toHaveTextContent("trace login");
+  expect(menu).not.toHaveTextContent("eqnx login");
 });
 
 test("the menu opens from the keyboard and Escape returns focus to the trigger", async () => {

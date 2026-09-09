@@ -30,7 +30,7 @@ export { NO_SERVER_CONFIGURED_MESSAGE } from "../auth-service.ts";
 
 /**
  * The terminal adapter over the machine-local auth service (`auth-service.ts`).
- * It owns the prompts and printed output of `trace login`/`logout`/`whoami`;
+ * It owns the prompts and printed output of `eqnx login`/`logout`/`whoami`;
  * the device sequence, credential files, and status writes live in the service
  * so the board adapter (`local-auth.ts`) performs them identically.
  */
@@ -168,10 +168,10 @@ async function whoami(
 ): Promise<CommandResult> {
   const serverUrl = requireServerUrl(env);
   const token = readAuthToken(env);
-  if (!token) return failure("Not logged in. Run trace login.");
+  if (!token) return failure("Not logged in. Run eqnx login.");
 
   const session = await fetchSession(serverUrl, fetch, token.accessToken);
-  if (!session?.user) return failure("Not logged in. Run trace login.");
+  if (!session?.user) return failure("Not logged in. Run eqnx login.");
 
   const identity = identityFromSession(session);
   if (!identity) return failure("Auth server returned no user identity.");

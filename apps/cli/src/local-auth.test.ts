@@ -111,7 +111,7 @@ function existingAccount(masterKey: string): {
 
 type Listener = (req: IncomingMessage, res: ServerResponse) => void;
 
-/** The `trace serve` request listener over a local auth service that talks to
+/** The `eqnx serve` request listener over a local auth service that talks to
  * `hosted` instead of the real sync server. */
 function makeListener(hosted: HostedAuth): Listener {
   return createServeRequestListener(
@@ -770,7 +770,7 @@ test("the endpoints refuse what they cannot serve", async () => {
   const hosted = hostedAuth();
   const listener = makeListener(hosted);
 
-  // A board tab left open across a `trace serve` restart holds a dead attempt.
+  // A board tab left open across a `eqnx serve` restart holds a dead attempt.
   expect((await readAttemptResponse(listener, "no-such-attempt")).status).toBe(404);
   expect(
     (

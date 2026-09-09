@@ -81,7 +81,7 @@ function runningService(): {
   return { fetch, connection };
 }
 
-test("trace connection pair prints a single-use link for another browser", async () => {
+test("eqnx connection pair prints a single-use link for another browser", async () => {
   const { fetch } = runningService();
 
   const result = await connectionOperation(["pair"], { env }, { fetch });
@@ -110,7 +110,7 @@ test("pair --open opens the single-use link and keeps a fallback", async () => {
   expect(open.mock.calls[0]?.[0]).toMatch(
     /^https:\/\/trace-hosted\.example\/#trace-pair=/,
   );
-  expect(result.stdout).toContain("Opening Trace in your browser");
+  expect(result.stdout).toContain("Opening EQNX in your browser");
   expect(result.stdout).toContain(open.mock.calls[0]?.[0]);
   expect(result.stdout).not.toContain("Device paired");
 });
@@ -127,7 +127,7 @@ test("pair rejects unknown options without issuing a link", async () => {
   expect(fetch).not.toHaveBeenCalled();
 });
 
-test("trace connection pair says how to start a connection that is not running", async () => {
+test("eqnx connection pair says how to start a connection that is not running", async () => {
   const fetch = (async () => {
     throw new TypeError("fetch failed");
   }) as unknown as typeof globalThis.fetch;
@@ -138,7 +138,7 @@ test("trace connection pair says how to start a connection that is not running",
   expect(result.stderr).toContain("not running");
 });
 
-test("trace connection browsers lists what is paired and revoke removes one", async () => {
+test("eqnx connection browsers lists what is paired and revoke removes one", async () => {
   const { fetch, connection } = runningService();
   const laptop = connection.issueBrowserToken("Safari");
   const phone = connection.issueBrowserToken("Chrome");
@@ -169,7 +169,7 @@ test("trace connection browsers lists what is paired and revoke removes one", as
   expect(missing.stderr).toContain("No browser is paired");
 });
 
-test("trace connection reset revokes every browser at once", async () => {
+test("eqnx connection reset revokes every browser at once", async () => {
   const { fetch, connection } = runningService();
   const laptop = connection.issueBrowserToken("Safari");
   connection.issueBrowserToken("Chrome");
@@ -184,16 +184,16 @@ test("trace connection reset revokes every browser at once", async () => {
   ).toContain("No browsers are paired");
 });
 
-test("trace connection needs a subcommand it recognises", async () => {
+test("eqnx connection needs a subcommand it recognises", async () => {
   const { fetch } = runningService();
 
   const result = await connectionOperation(["frobnicate"], { env }, { fetch });
 
   expect(result.exitCode).toBe(2);
-  expect(result.stderr).toContain("Usage: trace connection");
+  expect(result.stderr).toContain("Usage: eqnx connection");
 });
 
-test("trace connection run takes the fixed endpoint and says where it listens", async () => {
+test("eqnx connection run takes the fixed endpoint and says where it listens", async () => {
   const closed = { count: 0 };
   const start = async () => ({
     url: `${CONNECTION_ENDPOINT_ORIGIN}/`,
@@ -246,7 +246,7 @@ test("a shutdown signal closes the connection's server", async () => {
   await vi.waitFor(() => expect(closed.count).toBe(1));
 });
 
-test("trace connection run reports a busy endpoint instead of taking it", async () => {
+test("eqnx connection run reports a busy endpoint instead of taking it", async () => {
   const fetch = (async () =>
     new Response("not trace", { status: 200 })) as typeof globalThis.fetch;
   const start = vi.fn();
@@ -258,7 +258,7 @@ test("trace connection run reports a busy endpoint instead of taking it", async 
   expect(start).not.toHaveBeenCalled();
 });
 
-test("trace connection run reuses the connection already running here", async () => {
+test("eqnx connection run reuses the connection already running here", async () => {
   const { fetch } = runningService();
   const start = vi.fn();
 
@@ -293,7 +293,7 @@ function fakeLaunchd(
   };
 }
 
-test("trace connection install starts the login service without any integration", async () => {
+test("eqnx connection install starts the login service without any integration", async () => {
   const { calls, service } = fakeLaunchd();
 
   const result = await connectionOperation(
@@ -323,7 +323,7 @@ test("trace connection install starts the login service without any integration"
   expect(existsSync(join(home, ".trace", "integrations.json"))).toBe(false);
 });
 
-test("trace connection install fails loudly when launchd refuses the job", async () => {
+test("eqnx connection install fails loudly when launchd refuses the job", async () => {
   const { service } = fakeLaunchd((args) =>
     args[0] === "bootstrap"
       ? { status: 5, stderr: "Input/output error\n" }
@@ -340,7 +340,7 @@ test("trace connection install fails loudly when launchd refuses the job", async
   expect(result.stderr).toContain("launchctl bootstrap gui/501");
 });
 
-test("trace connection install says what to do on a platform without launchd", async () => {
+test("eqnx connection install says what to do on a platform without launchd", async () => {
   const { calls, service } = fakeLaunchd();
 
   const result = await connectionOperation(
@@ -350,11 +350,11 @@ test("trace connection install says what to do on a platform without launchd", a
   );
 
   expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain("trace serve");
+  expect(result.stderr).toContain("eqnx serve");
   expect(calls).toEqual([]);
 });
 
-test("trace connection usage names install", async () => {
+test("eqnx connection usage names install", async () => {
   const result = await connectionOperation([], { env }, { fetch: refusing });
 
   expect(result.stderr).toContain("install");
@@ -375,7 +375,7 @@ const loadedJob = (): { status: number | null; stderr: string } => ({
   stderr: "",
 });
 
-test("trace connection status reports a healthy connection and where its logs are", async () => {
+test("eqnx connection status reports a healthy connection and where its logs are", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -400,7 +400,7 @@ test("trace connection status reports a healthy connection and where its logs ar
   );
 });
 
-test("trace connection status distinguishes an installed service that is not running", async () => {
+test("eqnx connection status distinguishes an installed service that is not running", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -418,10 +418,10 @@ test("trace connection status distinguishes an installed service that is not run
 
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toMatch(/not running/i);
-  expect(result.stdout).toContain("trace connection restart");
+  expect(result.stdout).toContain("eqnx connection restart");
 });
 
-test("trace connection status says the service is not installed at all", async () => {
+test("eqnx connection status says the service is not installed at all", async () => {
   const { service } = fakeLaunchd();
 
   const result = await connectionOperation(
@@ -432,10 +432,10 @@ test("trace connection status says the service is not installed at all", async (
 
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toMatch(/not installed/i);
-  expect(result.stdout).toContain("trace connection install");
+  expect(result.stdout).toContain("eqnx connection install");
 });
 
-test("trace connection status flags a service whose executable is gone", async () => {
+test("eqnx connection status flags a service whose executable is gone", async () => {
   const cli = installedCli();
   const cliEnv = { ...env, TRACE_CLI_PATH: cli };
   const installer = fakeLaunchd();
@@ -457,7 +457,7 @@ test("trace connection status flags a service whose executable is gone", async (
   expect(result.stdout).toMatch(/no longer on disk/i);
 });
 
-test("trace connection status names an unrelated process holding the endpoint", async () => {
+test("eqnx connection status names an unrelated process holding the endpoint", async () => {
   const fetch = (async () =>
     new Response("not trace", { status: 200 })) as typeof globalThis.fetch;
   const { service } = fakeLaunchd();
@@ -472,7 +472,7 @@ test("trace connection status names an unrelated process holding the endpoint", 
   expect(result.stdout).toContain(CONNECTION_ENDPOINT_ORIGIN);
 });
 
-test("trace connection restart restarts the job and keeps paired browsers", async () => {
+test("eqnx connection restart restarts the job and keeps paired browsers", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -500,7 +500,7 @@ test("trace connection restart restarts the job and keeps paired browsers", asyn
   expect(connection.verifyBrowserToken(laptop.token)).not.toBeNull();
 });
 
-test("trace connection restart says what to install when nothing is", async () => {
+test("eqnx connection restart says what to install when nothing is", async () => {
   const { calls, service } = fakeLaunchd();
 
   const result = await connectionOperation(
@@ -510,11 +510,11 @@ test("trace connection restart says what to install when nothing is", async () =
   );
 
   expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain("trace connection install");
+  expect(result.stderr).toContain("eqnx connection install");
   expect(calls.some(([verb]) => verb === "kickstart")).toBe(false);
 });
 
-test("trace connection restart loads a service launchd is not holding", async () => {
+test("eqnx connection restart loads a service launchd is not holding", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -538,7 +538,7 @@ test("trace connection restart loads a service launchd is not holding", async ()
   ]);
 });
 
-test("trace connection uninstall removes the service and revokes every browser", async () => {
+test("eqnx connection uninstall removes the service and revokes every browser", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -577,7 +577,7 @@ test("trace connection uninstall removes the service and revokes every browser",
   );
 });
 
-test("trace connection uninstall is idempotent and leaves integrations alone", async () => {
+test("eqnx connection uninstall is idempotent and leaves integrations alone", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   const installer = fakeLaunchd();
   await connectionOperation(
@@ -602,11 +602,11 @@ test("trace connection uninstall is idempotent and leaves integrations alone", a
 
   expect(first.exitCode).toBe(0);
   expect(second.exitCode).toBe(0);
-  expect(second.stdout).toMatch(/no trace login service is installed/i);
+  expect(second.stdout).toMatch(/no eqnx login service is installed/i);
   expect(existsSync(registryPath)).toBe(true);
 });
 
-test("trace connection uninstall reports a job launchd refused to stop", async () => {
+test("eqnx connection uninstall reports a job launchd refused to stop", async () => {
   const cliEnv = { ...env, TRACE_CLI_PATH: installedCli() };
   await connectionOperation(
     ["install"],
@@ -633,7 +633,7 @@ test("trace connection uninstall reports a job launchd refused to stop", async (
   );
 });
 
-test("trace connection usage names the lifecycle subcommands", async () => {
+test("eqnx connection usage names the lifecycle subcommands", async () => {
   const result = await connectionOperation([], { env }, { fetch: refusing });
 
   for (const subcommand of ["install", "status", "restart", "uninstall"]) {
@@ -641,7 +641,7 @@ test("trace connection usage names the lifecycle subcommands", async () => {
   }
 });
 
-test("trace connection run bounds the log it is about to append to", async () => {
+test("eqnx connection run bounds the log it is about to append to", async () => {
   const logs = resolveConnectionLogPaths(env);
   mkdirSync(logs.directory, { recursive: true, mode: 0o700 });
   writeFileSync(logs.out, "x".repeat(1024 * 1024 + 1));

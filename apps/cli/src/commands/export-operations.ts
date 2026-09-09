@@ -45,7 +45,7 @@ export function exportOperation(
       const identity = inferCliSessionIdentity(ctx.env, ctx.cwd);
       if (identity.id === undefined) {
         return failure(
-          "No task specified. Pass a task slug or bind the session with: trace skill work-on-task <title>",
+          "No task specified. Pass a task slug or bind the session with: eqnx skill work-on-task <title>",
         );
       }
       const activeTask = store.resolveActiveTask(identity.id, projectRoot);
@@ -53,12 +53,12 @@ export function exportOperation(
         taskRef = activeTask.task.slug;
       } else if (activeTask.kind === "re-enter") {
         return failure(
-          `Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter ${activeTask.task.slug}`,
+          `Session is not bound to a task. Re-enter the most recent task with: eqnx skill re-enter ${activeTask.task.slug}`,
           1,
         );
       } else {
         return failure(
-          "Session is not bound to a task and the project has no task to re-enter. Bind one first with: trace skill work-on-task <title>",
+          "Session is not bound to a task and the project has no task to re-enter. Bind one first with: eqnx skill work-on-task <title>",
           1,
         );
       }

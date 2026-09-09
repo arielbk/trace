@@ -431,7 +431,7 @@ test("whoami treats a null session as logged out", async () => {
     expect(result).toEqual({
       exitCode: 1,
       stdout: "",
-      stderr: "Not logged in. Run trace login.\n",
+      stderr: "Not logged in. Run eqnx login.\n",
     });
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -530,7 +530,7 @@ test("login and whoami refuse to run with no server configured", async () => {
   const expected = {
     exitCode: 1,
     stdout: "",
-    stderr: "No sync server configured. Run trace config set server-url <url>.\n",
+    stderr: "No sync server configured. Run eqnx config set server-url <url>.\n",
   };
 
   try {

@@ -87,7 +87,7 @@ test("sync no-ops with a config hint when no server is configured", async () => 
   const result = await runSyncCommand({ HOME: home }, { fetch });
   expect(result).toEqual({
     exitCode: 0,
-    stdout: "No sync server configured. Run trace config set server-url <url>.\n",
+    stdout: "No sync server configured. Run eqnx config set server-url <url>.\n",
     stderr: "",
   });
   expect(fetch).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ test("sync exits with a login hint without making a network call", async () => {
   );
   expect(result).toEqual({
     exitCode: 0,
-    stdout: "Not logged in. Run trace login.\n",
+    stdout: "Not logged in. Run eqnx login.\n",
     stderr: "",
   });
   expect(fetch).not.toHaveBeenCalled();
@@ -181,7 +181,7 @@ test("a second sync asks the server only for what it has not already seen", asyn
   expect(await runSyncCommand(env, { fetch })).toMatchObject({ exitCode: 0 });
 
   // The watermark survives the process exiting: it lives in the database, not
-  // in the transport, so the second `trace sync` picks up where the first left
+  // in the transport, so the second `eqnx sync` picks up where the first left
   // off rather than asking for full state again.
   expect(pulls).toEqual(["rows:", "docs:", "rows:42", "docs:9"]);
 });

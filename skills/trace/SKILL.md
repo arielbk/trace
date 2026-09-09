@@ -1,21 +1,21 @@
 ---
 name: trace
-description: Bind the current session to a Trace task, and re-enter prior task context. Use when the user names a specific piece of work they are starting, resuming, or continuing — including "scope out X", "define a new X", "plan the work for X", "build X", "I need to build X from scratch", "tackle X", "add X to Y", "work on X", or "get back to X". Covers features, bugs, and refactors. Trace fires FIRST whenever the user commits to a new, named piece of work — whether or not they say "feature" or "task", and even when they also want to brainstorm, scope, or plan it — so the session is bound before any planning or creative skill runs. Does NOT apply when actively debugging or investigating a running system ("this endpoint is throwing errors", "help me debug X"), nor when the user is explicitly deferring the build to explore options first ("before we build anything, let's explore the design space") — neither is a committed new piece of work. Also use when explicitly asked to bind a session to a task, or when session-start context reports no active task during real project work.
+description: Bind the current session to a EQNX task, and re-enter prior task context. Use when the user names a specific piece of work they are starting, resuming, or continuing — including "scope out X", "define a new X", "plan the work for X", "build X", "I need to build X from scratch", "tackle X", "add X to Y", "work on X", or "get back to X". Covers features, bugs, and refactors. EQNX fires FIRST whenever the user commits to a new, named piece of work — whether or not they say "feature" or "task", and even when they also want to brainstorm, scope, or plan it — so the session is bound before any planning or creative skill runs. Does NOT apply when actively debugging or investigating a running system ("this endpoint is throwing errors", "help me debug X"), nor when the user is explicitly deferring the build to explore options first ("before we build anything, let's explore the design space") — neither is a committed new piece of work. Also use when explicitly asked to bind a session to a task, or when session-start context reports no active task during real project work.
 ---
 
-# Trace
+# EQNX
 
 Use this skill when the user names a specific feature, fix, or task they are
 starting or about to do — even when phrased as "scope out X", "define a new X",
 "plan the work for X", "build X from scratch", "tackle X", or "add X to Y".
-Trace binds the session before any planning skill runs; other skills do the
+EQNX binds the session before any planning skill runs; other skills do the
 subsequent planning or execution. Also use when the user asks to bind the
 current session to a task, or when session-start context reports there is no
 active task for this session.
 
 ## First, follow your host's binding flow
 
-Trace runs in Claude Code, Codex, Cursor, and GitHub Copilot CLI. The hosts differ only in how a
+EQNX runs in Claude Code, Codex, Cursor, and GitHub Copilot CLI. The hosts differ only in how a
 session is identified and in how the "no active task" signal arrives — the
 verbs below are the same in all of them. Before binding, read the file for your
 host and follow it:
@@ -53,7 +53,7 @@ surface). Draft it yourself from what you know; don't stop to interview the
 user for it.
 
 ```sh
-trace skill work-on-task "X" --description "Rework the checkout into a multi-step wizard"
+eqnx skill work-on-task "X" --description "Rework the checkout into a multi-step wizard"
 ```
 
 `--description` only seeds a freshly created task; when the task already
@@ -67,12 +67,12 @@ the task belongs to a specific repo — pass `--project <dir>` pointing at that
 project so the task keys to its git root instead of cwd's:
 
 ```sh
-trace skill work-on-task "X" --project /path/to/that/repo
+eqnx skill work-on-task "X" --project /path/to/that/repo
 ```
 
 Default to cwd (omit the flag) unless you have a concrete reason the work belongs
 to another project. A nonexistent `--project` path is a hard error. The same
-`--project <dir>` flag is accepted by `trace task create` and `trace task
+`--project <dir>` flag is accepted by `eqnx task create` and `eqnx task
 capture` for the same reason.
 
 The command prints `taskDocsDir: <path>`. Put task-specific decision docs,

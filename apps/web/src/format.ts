@@ -153,10 +153,10 @@ const MONTHS = [
  * Build the canonical re-enter prompt for a task. The slug rides along as
  * the exact resolution hook even though it is not displayed in the UI.
  *
- * Example output: `Re-enter the trace task "Break stop and stale expiry" (break-stop-and-stale-expiry)`
+ * Example output: `Re-enter the eqnx task "Break stop and stale expiry" (break-stop-and-stale-expiry)`
  */
 export function buildReEnterPrompt(title: string, slug: string): string {
-  return `Re-enter the trace task "${title}" (${slug})`;
+  return `Re-enter the eqnx task "${title}" (${slug})`;
 }
 
 /**

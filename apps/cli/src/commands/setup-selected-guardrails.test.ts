@@ -119,7 +119,7 @@ function plannedRoots(plan: string): string[] {
 
 /** The roots a successful apply reports having written to. */
 function installedRoots(summary: string): string[] {
-  const roots = summary.match(/^Installed Trace into (.+)\.$/m)?.[1];
+  const roots = summary.match(/^Installed EQNX into (.+)\.$/m)?.[1];
   return roots === undefined ? [] : roots.split(", ");
 }
 
@@ -143,7 +143,7 @@ test("a blocked selection is listed with its remediation while healthy ones inst
     expect(reviewedPlan(prompt)).toContain(cursorRoot);
     expect(reviewedPlan(prompt).toLowerCase()).toContain("remediation");
     expect(prompt.warnings).toEqual([
-      "Setup incomplete: Cursor was skipped.\nFix the guardrail issue shown above, then run `trace setup` again.",
+      "Setup incomplete: Cursor was skipped.\nFix the guardrail issue shown above, then run `eqnx setup` again.",
     ]);
 
     expect(result.exitCode).toBe(0);
@@ -151,10 +151,10 @@ test("a blocked selection is listed with its remediation while healthy ones inst
     expect(result.stdout).toContain("SETUP INCOMPLETE — ACTION REQUIRED");
     expect(result.stdout).toContain("Skipped targets (guardrail checks failed):");
     expect(result.stdout).toContain(
-      "Fix each skipped target, then run `trace setup` again.",
+      "Fix each skipped target, then run `eqnx setup` again.",
     );
     expect(result.stdout.trimEnd()).toMatch(
-      /Fix each skipped target, then run `trace setup` again\.$/,
+      /Fix each skipped target, then run `eqnx setup` again\.$/,
     );
     expect(result.stdout).not.toContain("\u001B[");
     expect(existsSync(join(claudeRoot, "skills", "board", "SKILL.md"))).toBe(

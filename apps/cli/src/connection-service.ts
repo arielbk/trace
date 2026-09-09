@@ -18,7 +18,7 @@ import { resolveAllowedWebOrigin } from "./serve.ts";
 
 type Env = Record<string, string | undefined>;
 
-/** The one launchd job Trace owns. Everything about the managed connection —
+/** The one launchd job EQNX owns. Everything about the managed connection —
  * install, status, restart, uninstall — is addressed through this label. */
 export const MANAGED_CONNECTION_LABEL = "com.arielbk.trace.connection";
 
@@ -118,7 +118,7 @@ export function rotateConnectionLogs(
 /**
  * Install — or reconcile — the per-user login service that runs the managed
  * connection. Idempotent: an unchanged plist against a loaded job is left
- * alone, so running `trace setup` twice does not restart a healthy connection.
+ * alone, so running `eqnx setup` twice does not restart a healthy connection.
  * It never installs a root or system daemon, and never touches a job that is
  * not {@link MANAGED_CONNECTION_LABEL}.
  */
@@ -228,8 +228,8 @@ export function restartConnectionService(
     return {
       kind: "failed",
       reason:
-        "No Trace login service is installed, so there is nothing to restart.\n" +
-        "  Install it with: trace connection install",
+        "No EQNX login service is installed, so there is nothing to restart.\n" +
+        "  Install it with: eqnx connection install",
     };
   }
 
@@ -322,7 +322,7 @@ export function uninstallConnectionService(
       state.kind === "installed"
         ? `Local connection uninstalled: login service removed, ${removedBrowsers}.\n` +
           `Your tasks, documents and agent integrations are unchanged.\n`
-        : `No Trace login service is installed; ${removedBrowsers}.\n`,
+        : `No EQNX login service is installed; ${removedBrowsers}.\n`,
   };
 }
 
@@ -408,7 +408,7 @@ export function readInstalledConnectionCli(env: Env): string | undefined {
 }
 
 /**
- * The Trace executable a rendered plist runs. The job's arguments are
+ * The EQNX executable a rendered plist runs. The job's arguments are
  * `<node> <cli> connection run`, so the CLI is the argument before
  * `connection`.
  */
@@ -514,14 +514,14 @@ function foreignHomeReason(env: Env): string {
   return (
     `A managed background connection lives in this login session's home ` +
     `(${homedir()}), but HOME points at ${userHome(env)}.\n` +
-    `  Run \`trace serve\` to connect a board from here.`
+    `  Run \`eqnx serve\` to connect a board from here.`
   );
 }
 
 function unsupportedReason(platform: NodeJS.Platform): string {
   return (
     `A managed background connection needs launchd, which ${platform} does not have.\n` +
-    `  Run \`trace serve\` to connect a board on this machine.`
+    `  Run \`eqnx serve\` to connect a board on this machine.`
   );
 }
 

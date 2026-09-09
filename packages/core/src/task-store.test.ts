@@ -3355,7 +3355,7 @@ test("recording an unchanged or empty work context leaves the session alone", ()
       store.recordSessionWorkContext(session.id, { branch: "main" })?.gitBranch,
     ).toBe("main");
 
-    // Empty (the cwd left the repo): never erase a branch Trace already knows.
+    // Empty (the cwd left the repo): never erase a branch EQNX already knows.
     expect(
       store.recordSessionWorkContext(session.id, {})?.gitBranch,
     ).toBe("main");

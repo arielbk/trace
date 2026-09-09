@@ -68,36 +68,36 @@ export function buildTraceCittyRoot(
   stdin: string,
 ): CommandDef {
   return defineCommand({
-    meta: { name: "trace", description: "Trace task manager" },
+    meta: { name: "eqnx", description: "EQNX task manager" },
     subCommands: {
       init: defineCommand({
-        meta: { description: "Install Trace into Claude Code" },
+        meta: { description: "Install EQNX into Claude Code" },
         run(): CommandResult {
           return success(runInit(env, cwd));
         },
       }),
 
       setup: defineCommand({
-        meta: { description: "Install Trace integrations into an agent config root" },
+        meta: { description: "Install EQNX integrations into an agent config root" },
         run({ rawArgs: args }: { rawArgs: string[] }): CommandResult {
           return setupOperation(args, { env, cwd, stdin });
         },
       }),
 
       serve: defineCommand({
-        meta: { description: "Start the Trace web UI" },
+        meta: { description: "Start the EQNX web UI" },
         run(): CommandResult {
           startForegroundServe(env, { fetch: globalThis.fetch })
             .then(({ url, pairingUrl }) => {
-              process.stdout.write(`trace serve listening on ${url}\n`);
+              process.stdout.write(`eqnx serve listening on ${url}\n`);
               if (pairingUrl) {
-                process.stdout.write(`trace serve pairing at ${pairingUrl}\n`);
+                process.stdout.write(`eqnx serve pairing at ${pairingUrl}\n`);
               }
               openBrowser(pairingUrl ?? url);
             })
             .catch((error: unknown) => {
               process.stderr.write(
-                `trace serve failed: ${
+                `eqnx serve failed: ${
                   error instanceof Error ? error.message : String(error)
                 }\n`,
               );
@@ -127,7 +127,7 @@ export function buildTraceCittyRoot(
       }),
 
       hook: defineCommand({
-        meta: { description: "Trace hook handlers" },
+        meta: { description: "EQNX hook handlers" },
         subCommands: {
           "session-start": defineCommand({
             meta: { description: "Register a new Claude or Copilot session on start" },
@@ -350,7 +350,7 @@ export function buildTraceCittyRoot(
       }),
 
       skill: defineCommand({
-        meta: { description: "Trace skill helpers" },
+        meta: { description: "EQNX skill helpers" },
         subCommands: {
           "work-on-task": defineCommand({
             meta: { description: "Bind current session to a task" },
@@ -415,7 +415,7 @@ export function runCittyDispatch(
   if (subCmds && remaining.length > 0) {
     const knownCmds = Object.keys(subCmds).join("|");
     return failure(
-      `Usage: trace ${matchedPath.join(" ")} <${knownCmds}>`,
+      `Usage: eqnx ${matchedPath.join(" ")} <${knownCmds}>`,
     );
   }
 
@@ -423,7 +423,7 @@ export function runCittyDispatch(
   if (!cmd.run && subCmds) {
     const knownCmds = Object.keys(subCmds).join("|");
     return failure(
-      `Usage: trace ${matchedPath.join(" ")} <${knownCmds}>`,
+      `Usage: eqnx ${matchedPath.join(" ")} <${knownCmds}>`,
     );
   }
 

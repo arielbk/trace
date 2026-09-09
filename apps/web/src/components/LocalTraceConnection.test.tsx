@@ -23,11 +23,11 @@ vi.mock("./BrowserPairing.tsx", async () => {
   return {
     BrowserPairing: () => (
       <>
-        <code>trace connection pair ABCD-1234</code>
+        <code>eqnx connection pair ABCD-1234</code>
         <CopyPromptButton
           label="Copy command"
           copyLabel="Copy command"
-          value="trace connection pair ABCD-1234"
+          value="eqnx connection pair ABCD-1234"
         />
       </>
     ),
@@ -77,16 +77,16 @@ describe("LocalTraceConnection", () => {
     const user = userEvent.setup();
     const connect = vi.fn();
     renderConnection(connect);
-    expect(screen.getByText("trace connection pair ABCD-1234")).toBeVisible();
+    expect(screen.getByText("eqnx connection pair ABCD-1234")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Connect to Trace" }),
+      screen.queryByRole("button", { name: "Connect to EQNX" }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Try again" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Copy command" }));
     expect(await navigator.clipboard.readText()).toBe(
-      "trace connection pair ABCD-1234",
+      "eqnx connection pair ABCD-1234",
     );
     expect(connect).not.toHaveBeenCalled();
   });
@@ -107,7 +107,7 @@ describe("LocalTraceConnection", () => {
         </TraceDataSourceProvider>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Trace isn’t reachable")).toBeVisible();
+    expect(await screen.findByText("EQNX isn’t reachable")).toBeVisible();
     expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
   });
 
@@ -152,7 +152,7 @@ describe("LocalTraceConnection", () => {
         </TraceDataSourceProvider>
       </MemoryRouter>,
     );
-    await screen.findByText("trace connection pair ABCD-1234");
+    await screen.findByText("eqnx connection pair ABCD-1234");
     expect(screen.queryByText("Not paired")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Try again" }),
@@ -214,7 +214,7 @@ describe("LocalTraceConnection", () => {
         </TraceDataSourceProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByText("trace connection pair ABCD-1234")).toBeVisible();
+    expect(screen.getByText("eqnx connection pair ABCD-1234")).toBeVisible();
     try {
       await act(async () => {
         window.history.replaceState(null, "", `/#trace-pair=${"s".repeat(43)}`);
@@ -240,13 +240,13 @@ describe("LocalTraceConnection", () => {
     });
   });
 
-  test("reports an incompatible installed Trace version", () => {
+  test("reports an incompatible installed EQNX version", () => {
     expect(
       validateTraceConnection({
         service: "trace",
         protocolVersion: 0 as typeof TRACE_PROTOCOL_VERSION,
       }),
-    ).toMatchObject({ kind: "incompatible", title: "Trace needs an update" });
+    ).toMatchObject({ kind: "incompatible", title: "EQNX needs an update" });
   });
 
   test("states what the site may and may not do before it is connected", () => {
@@ -311,7 +311,7 @@ describe("LocalTraceConnection", () => {
     renderConnection(vi.fn(), safari);
     expect(screen.getByText("This browser isn’t supported yet")).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Connect to Trace" }),
+      screen.queryByRole("button", { name: "Connect to EQNX" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -326,7 +326,7 @@ describe("LocalConnectionBadge", () => {
     );
 
     const trigger = screen.getByRole("button", {
-      name: /connected to Trace on this device/i,
+      name: /connected to EQNX on this device/i,
     });
     expect(screen.queryByText("Connected locally")).not.toBeInTheDocument();
 
@@ -342,13 +342,13 @@ describe("LocalConnectionBadge", () => {
 
 
 test.each([
-  ["https://app.eqnx.ai", "trace setup"],
-  ["https://preview.example", "TRACE_WEB_ORIGIN='https://preview.example' trace setup"],
+  ["https://app.eqnx.ai", "eqnx setup"],
+  ["https://preview.example", "TRACE_WEB_ORIGIN='https://preview.example' eqnx setup"],
 ])("setup instructions match the hosted origin %s", (origin, command) => {
   vi.stubGlobal("location", new URL(origin));
   renderConnection(vi.fn());
   const instructions = screen.getByText((_, element) =>
-    element?.tagName === "CODE" && element.textContent === `npm install -g @arielbk/trace\n${command}`,
+    element?.tagName === "CODE" && element.textContent === `npm install -g @eqnx/cli\n${command}`,
   );
   expect(instructions).toBeInTheDocument();
 });

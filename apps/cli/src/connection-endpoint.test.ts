@@ -104,7 +104,7 @@ test("the endpoint is this installation when local management authorizes", async
   expect(occupant).toMatchObject({ kind: "own", runtimeVersion: "1.4.2" });
 });
 
-test("a Trace owned by another installation is reported as a conflict, not reused", async () => {
+test("a EQNX owned by another installation is reported as a conflict, not reused", async () => {
   const otherHome = mkdtempSync(join(tmpdir(), "trace-other-installation-"));
   try {
     const { fetch } = runningService({ home: otherHome });
@@ -226,7 +226,7 @@ test("foreground serve owns periodic sync when no managed connection runs", asyn
 
 test("the managed connection is administrable with hosted access disabled", async () => {
   // A machine that only ever opens the bundled board still installs the login
-  // service, and `trace connection …` still has to be able to talk to it.
+  // service, and `eqnx connection …` still has to be able to talk to it.
   const local = { HOME: home, TRACE_DB: join(home, "trace.sqlite"), TRACE_WEB_ORIGIN: "" };
 
   const outcome = await startManagedConnection(local, {

@@ -414,7 +414,7 @@ function desktopTokenTotals(usage: CodexDesktopUsage): TokenTotals {
   const rawInputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const cacheReadInputTokens = usage.cached_input_tokens ?? 0;
-  // OpenAI's input_tokens INCLUDES cached input; Trace's inputTokens is fresh
+  // OpenAI's input_tokens INCLUDES cached input; EQNX's inputTokens is fresh
   // input only (the Anthropic convention the rest of the app assumes), so
   // cached reads move to cacheReadInputTokens instead of inflating "in".
   const inputTokens = Math.max(0, rawInputTokens - cacheReadInputTokens);

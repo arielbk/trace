@@ -19,7 +19,7 @@ export function formatProjectResolution(
   ];
   if (resolution.collisionHint) {
     lines.push(
-      `possible duplicate project; repair with: trace project merge ${resolution.collisionHint.duplicateSlug} ${resolution.collisionHint.canonicalSlug}`,
+      `possible duplicate project; repair with: eqnx project merge ${resolution.collisionHint.duplicateSlug} ${resolution.collisionHint.canonicalSlug}`,
     );
   }
   return `${lines.join("\n")}\n`;
@@ -176,7 +176,7 @@ export function formatReEntryManifest(manifest: ReEntryManifest): string {
   }
 
   // Only the prior session ships by default — older transcripts stay one
-  // `trace session` call away. Absent (a task nobody has worked yet) prints
+  // `eqnx session` call away. Absent (a task nobody has worked yet) prints
   // nothing at all, like the other optional pointers.
   if (manifest.lastSession) {
     lines.push(

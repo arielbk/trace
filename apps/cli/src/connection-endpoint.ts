@@ -26,10 +26,10 @@ export type EndpointOccupant =
   /** Ours, but speaking a protocol this CLI does not — an upgrade landed
    * half-way, so the running process must be replaced rather than reused. */
   | { kind: "incompatible"; runtimeVersion: string; protocolVersion: number }
-  /** A Trace runtime that will not accept this installation's management
+  /** A EQNX runtime that will not accept this installation's management
    * credential — another user's or another checkout's connection. */
   | { kind: "foreign-trace" }
-  /** Something is listening that is not a Trace connection at all. */
+  /** Something is listening that is not a EQNX connection at all. */
   | { kind: "occupied" };
 
 export type EndpointDependencies = {
@@ -70,13 +70,13 @@ export async function startManagedConnection(
   if (occupant.kind === "foreign-trace") {
     return {
       kind: "conflict",
-      reason: `Another Trace installation is already using ${CONNECTION_ENDPOINT_ORIGIN}.`,
+      reason: `Another EQNX installation is already using ${CONNECTION_ENDPOINT_ORIGIN}.`,
     };
   }
   if (occupant.kind === "incompatible") {
     return {
       kind: "conflict",
-      reason: `A Trace ${occupant.runtimeVersion} runtime speaking protocol ${occupant.protocolVersion} holds ${CONNECTION_ENDPOINT_ORIGIN}. Restart the connection to pick up this version.`,
+      reason: `A EQNX ${occupant.runtimeVersion} runtime speaking protocol ${occupant.protocolVersion} holds ${CONNECTION_ENDPOINT_ORIGIN}. Restart the connection to pick up this version.`,
     };
   }
   if (occupant.kind === "occupied") {
@@ -93,7 +93,7 @@ export async function startManagedConnection(
       server: await start(env, {
         port: DEFAULT_SERVE_PORT,
         allowPortFallback: false,
-        // `trace connection …` administers this process over loopback, and a
+        // `eqnx connection …` administers this process over loopback, and a
         // probe proves the endpoint is ours the same way — neither may depend
         // on whether a hosted board happens to be configured.
         localManagement: true,
@@ -111,7 +111,7 @@ export async function startManagedConnection(
 
 /**
  * Ask the endpoint who is there, and never mutate anything on the way. A
- * public handshake is not proof of ownership — anyone's Trace answers it — so
+ * public handshake is not proof of ownership — anyone's EQNX answers it — so
  * ownership is decided by whether the process accepts *this* installation's
  * local management credential.
  */
@@ -160,7 +160,7 @@ export async function probeConnectionEndpoint(
 }
 
 /**
- * `trace serve` — the explicit foreground runtime, kept for development and
+ * `eqnx serve` — the explicit foreground runtime, kept for development and
  * troubleshooting. It still moves to a free port when the endpoint is taken,
  * but it hands periodic sync to the managed connection when one is running, so
  * two coexisting runtimes never sync twice as often as one.

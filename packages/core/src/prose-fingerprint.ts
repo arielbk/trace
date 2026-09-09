@@ -20,7 +20,7 @@ export type ProseStamp = {
 
 // The marker's two shipped shapes: `:HASH` alone (written before stamps carried
 // a time) and `:HASH:ISO8601`. Both must keep parsing forever — a State
-// Document written by an older Trace is still a valid State Document.
+// Document written by an older EQNX is still a valid State Document.
 const PROSE_MARKER_RE =
   /<!--\s*trace:prose-fingerprint:([0-9a-f]+)(?::(\S+?))?\s*-->/;
 const PROSE_MARKER_RE_GLOBAL = new RegExp(PROSE_MARKER_RE.source, "g");

@@ -58,7 +58,7 @@ test("key show exits non-zero with a login hint when no key is stored", () => {
       exitCode: 1,
       stdout: "",
       stderr:
-        "No document encryption key found. Run trace login to set one up.\n",
+        "No document encryption key found. Run eqnx login to set one up.\n",
     });
   } finally {
     cleanup();

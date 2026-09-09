@@ -15,7 +15,7 @@ afterEach(async () => {
   );
 });
 
-test("hosted production build emits a strict CSP for the local Trace bridge", async () => {
+test("hosted production build emits a strict CSP for the local EQNX bridge", async () => {
   const outputDirectory = await mkdtemp(
     path.join(tmpdir(), "trace-hosted-build-"),
   );

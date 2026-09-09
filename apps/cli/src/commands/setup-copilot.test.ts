@@ -111,7 +111,7 @@ test("on Windows a .js CLI path is invoked through Node, never handed to the she
   const { dir, cleanup } = tempDir("trace-setup-copilot-win-js-");
   try {
     // What npm-global actually leaves in argv[1] on Windows: the raw script,
-    // not the trace.cmd shim. Handed to PowerShell bare, it reaches Windows
+    // not the eqnx.cmd shim. Handed to PowerShell bare, it reaches Windows
     // Script Host, which parses the `#!` shebang as JScript (800A03F6).
     const cliPath =
       "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\@arielbk\\trace\\dist\\trace.js";
@@ -173,7 +173,7 @@ test("Copilot is detected by bare setup and reconciled idempotently", () => {
   }
 });
 
-test("setup refuses to overwrite a Copilot hooks file Trace does not own", () => {
+test("setup refuses to overwrite a Copilot hooks file EQNX does not own", () => {
   const { dir, cleanup } = tempDir("trace-setup-copilot-unowned-");
   try {
     const root = join(dir, ".copilot");
@@ -203,7 +203,7 @@ test("removal deletes the Copilot hooks file and deregisters the target", () => 
     setupOperation(["--tool", "copilot", "--yes"], { env, cwd: dir, stdin: "" });
 
     const root = join(dir, ".copilot");
-    // A neighbouring hooks file is not Trace's to remove.
+    // A neighbouring hooks file is not EQNX's to remove.
     writeFileSync(join(root, "hooks", "other.json"), "{}\n");
 
     const result = setupOperation(["--remove", "--tool", "copilot", "--yes"], {
@@ -222,7 +222,7 @@ test("removal deletes the Copilot hooks file and deregisters the target", () => 
   }
 });
 
-test("on Windows the trace.cmd shim on PATH is preferred over the raw script", () => {
+test("on Windows the eqnx.cmd shim on PATH is preferred over the raw script", () => {
   const { dir, cleanup } = tempDir("trace-setup-copilot-win-shim-");
   try {
     // npm-global leaves argv[1] pointing at the script, but the shim is what
@@ -230,7 +230,7 @@ test("on Windows the trace.cmd shim on PATH is preferred over the raw script", (
     // Node version switch, which a baked-in execPath would not.
     const binDir = join(dir, "npm-bin");
     mkdirSync(binDir);
-    const shim = join(binDir, "trace.cmd");
+    const shim = join(binDir, "eqnx.cmd");
     writeFileSync(shim, "@echo off\n");
 
     setupOperation(["--tool", "copilot", "--yes"], {

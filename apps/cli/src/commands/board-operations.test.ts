@@ -71,7 +71,7 @@ function runningService(hostedOrigin = HOSTED_ORIGIN): typeof globalThis.fetch {
 const noService = (() =>
   Promise.reject(new Error("connect ECONNREFUSED"))) as typeof globalThis.fetch;
 
-test("trace board opens the hosted board through a fresh pairing link", async () => {
+test("eqnx board opens the hosted board through a fresh pairing link", async () => {
   const opened: string[] = [];
   const start = vi.fn();
 
@@ -92,7 +92,7 @@ test("trace board opens the hosted board through a fresh pairing link", async ()
   expect(start).not.toHaveBeenCalled();
 });
 
-test("trace board falls back to the bundled board when hosted access is explicitly disabled", async () => {
+test("eqnx board falls back to the bundled board when hosted access is explicitly disabled", async () => {
   const opened: string[] = [];
   const start = vi.fn().mockResolvedValue({
     url: "http://127.0.0.1:4317/",
@@ -111,7 +111,7 @@ test("trace board falls back to the bundled board when hosted access is explicit
   expect(start).toHaveBeenCalledOnce();
 });
 
-test("trace board says the connection is stopped rather than opening a board that cannot read it", async () => {
+test("eqnx board says the connection is stopped rather than opening a board that cannot read it", async () => {
   const opened: string[] = [];
   const start = vi.fn();
 
@@ -122,13 +122,13 @@ test("trace board says the connection is stopped rather than opening a board tha
   );
 
   expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain("trace connection install");
-  expect(result.stderr).toContain("trace board --local");
+  expect(result.stderr).toContain("eqnx connection install");
+  expect(result.stderr).toContain("eqnx board --local");
   expect(opened).toEqual([]);
   expect(start).not.toHaveBeenCalled();
 });
 
-test("trace board --local reuses the running connection instead of a second runtime", async () => {
+test("eqnx board --local reuses the running connection instead of a second runtime", async () => {
   const opened: string[] = [];
   const start = vi.fn();
 
@@ -143,14 +143,14 @@ test("trace board --local reuses the running connection instead of a second runt
   expect(start).not.toHaveBeenCalled();
 });
 
-test("trace board --local opens the port the bundled board fell back to", async () => {
+test("eqnx board --local opens the port the bundled board fell back to", async () => {
   const opened: string[] = [];
   const start = vi.fn().mockResolvedValue({
     url: "http://127.0.0.1:4318/",
     port: 4318,
     close: () => Promise.resolve(),
   });
-  // Something that is not Trace holds the endpoint.
+  // Something that is not EQNX holds the endpoint.
   const occupiedPort = (async () =>
     new Response("nginx", { status: 200 })) as typeof globalThis.fetch;
 
@@ -165,7 +165,7 @@ test("trace board --local opens the port the bundled board fell back to", async 
   expect(result.stdout).toContain("http://127.0.0.1:4318/");
 });
 
-test("trace board rejects an option it does not know", async () => {
+test("eqnx board rejects an option it does not know", async () => {
   const result = await boardOperation(
     ["--hosted"],
     { env },
@@ -173,11 +173,11 @@ test("trace board rejects an option it does not know", async () => {
   );
 
   expect(result.exitCode).not.toBe(0);
-  expect(result.stderr).toContain("Usage: trace board [--local]");
+  expect(result.stderr).toContain("Usage: eqnx board [--local]");
 });
 
 
-test("trace board uses the official hosted origin without configuration", async () => {
+test("eqnx board uses the official hosted origin without configuration", async () => {
   const opened: string[] = [];
   const result = await boardOperation([], { env }, {
     fetch: runningService("https://app.eqnx.ai"),
