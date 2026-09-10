@@ -966,3 +966,27 @@ test("a fresh machine with no history restores into the account it signs into", 
 
   expect(settled.state).toBe("complete");
 });
+
+test("cancelling while manifests are loading cannot persist credentials late", async () => {
+  const hosted = hostedAuth();
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  let reading = false;
+  const service = createLocalAuthService(env, {
+    fetch: (async (input, init) => {
+      if (String(input).endsWith("/docs/manifests")) { reading = true; await delayed; }
+      return hosted.fetch(input, init);
+    }) as typeof fetch,
+    sleep: async () => {},
+  });
+  const attempt = await service.startLogin("github");
+  hosted.approve();
+  for (let i = 0; i < 100 && !reading; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(reading).toBe(true);
+  service.cancelLogin(attempt.attemptId);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(service.readLogin(attempt.attemptId)?.state).toBe("cancelled");
+  expect(readStoredDocCryptoKey(env)).toBeNull();
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+});

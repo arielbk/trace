@@ -40,6 +40,7 @@ export class FakeSyncServer {
     if (new Headers(init?.headers).get("authorization") !== `Bearer ${this.#token}`) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
+    if (pathname === "/api/auth/get-session") return Response.json({ user: { id: "fixture-user" } });
     const body = (): unknown => JSON.parse(String(init?.body ?? "null"));
 
     if (pathname === "/api/sync/push") {

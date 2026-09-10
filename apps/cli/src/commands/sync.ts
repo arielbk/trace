@@ -1,8 +1,16 @@
+import { fetchDocManifests, validateDocumentKey } from "../auth-service.ts";
+import {
+  assertLegacyStoreAccount,
+  assertStoreAccount,
+  resolveSyncAccount,
+} from "../account-binding.ts";
 import {
   beginSyncRun,
   createKeyWrapper,
   finalizeSyncRun,
   openTraceStore,
+  readSyncIdentity,
+  writeSyncIdentity,
   resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
   resolveDatabasePath,
@@ -117,11 +125,19 @@ export async function runSyncCommand(
   if (!serverUrl) {
     // Cloud sync is flagged off without a configured server — soft no-op so a
     // stray `eqnx sync` (foreground or background) never invents a server.
-    return { exitCode: 0, stdout: `${NO_SERVER_CONFIGURED_MESSAGE}\n`, stderr: "" };
+    return {
+      exitCode: 0,
+      stdout: `${NO_SERVER_CONFIGURED_MESSAGE}\n`,
+      stderr: "",
+    };
   }
   const token = readAuthToken(env);
   if (!token) {
-    return { exitCode: 0, stdout: "Not logged in. Run eqnx login.\n", stderr: "" };
+    return {
+      exitCode: 0,
+      stdout: "Not logged in. Run eqnx login.\n",
+      stderr: "",
+    };
   }
   const masterKey = readStoredDocCryptoKey(env);
   if (!masterKey) {
@@ -142,6 +158,28 @@ export async function runSyncCommand(
   );
   const store = openTraceStore(databasePath);
   try {
+    const bound = readSyncIdentity(databasePath);
+    if (bound && bound.serverUrl !== serverUrl)
+      throw new Error(
+        "This store belongs to a different sync server. Restore its server-url configuration before syncing.",
+      );
+    const fetch = dependencies.fetch ?? globalThis.fetch;
+    const account = await resolveSyncAccount(
+      serverUrl,
+      fetch,
+      token.accessToken,
+    );
+    assertStoreAccount(env, serverUrl, account);
+    if (!bound) {
+      const { wrappedKeys } = await fetchDocManifests(
+        serverUrl,
+        fetch,
+        token.accessToken,
+      );
+      assertLegacyStoreAccount(env, wrappedKeys);
+      if (wrappedKeys.length > 0) validateDocumentKey(masterKey, wrappedKeys);
+      writeSyncIdentity(databasePath, { serverUrl, ...account });
+    }
     const result = await synchronize(
       store,
       new HttpSyncTransport(
@@ -149,17 +187,25 @@ export async function runSyncCommand(
         token.accessToken,
         dependencies.fetch ?? globalThis.fetch,
       ),
-      new FileSystemDocumentStore(databasePath, () => store.syncSnapshot().tasks, {
-        keyWrapper: createKeyWrapper(masterKey),
-        docs: {
-          list: (taskId) => store.listDocsForTask(taskId),
-          update: (taskId, path, fields) => void store.updateTaskDoc(taskId, path, fields),
+      new FileSystemDocumentStore(
+        databasePath,
+        () => store.syncSnapshot().tasks,
+        {
+          keyWrapper: createKeyWrapper(masterKey),
+          docs: {
+            list: (taskId) => store.listDocsForTask(taskId),
+            update: (taskId, path, fields) =>
+              void store.updateTaskDoc(taskId, path, fields),
+          },
         },
-      }),
+      ),
     );
     const syncedAt = new Date().toISOString();
     recordSyncStatus(databasePath, (path) =>
-      finalizeSyncRun(path, runId, { lastSyncedAt: syncedAt, lastError: undefined }),
+      finalizeSyncRun(path, runId, {
+        lastSyncedAt: syncedAt,
+        lastError: undefined,
+      }),
     );
     // What the machine looks like now that server and local state agree — the
     // baseline the next automatic trigger compares itself against. Taken after
@@ -290,9 +336,12 @@ class HttpSyncTransport implements SyncTransport {
   }
 
   async downloadBlob(hash: string): Promise<Uint8Array | null> {
-    const response = await this.fetch(`${this.serverUrl}/api/sync/blobs/${encodeURIComponent(hash)}`, {
-      headers: { authorization: `Bearer ${this.token}` },
-    });
+    const response = await this.fetch(
+      `${this.serverUrl}/api/sync/blobs/${encodeURIComponent(hash)}`,
+      {
+        headers: { authorization: `Bearer ${this.token}` },
+      },
+    );
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`server returned ${response.status}`);
     return new Uint8Array(await response.arrayBuffer());

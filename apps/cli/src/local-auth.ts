@@ -1,3 +1,9 @@
+import {
+  ACCOUNT_CONFLICT_GUIDANCE,
+  commitAccountCredentials,
+  resolveSyncAccount,
+} from "./account-binding.ts";
+export { ACCOUNT_CONFLICT_GUIDANCE } from "./account-binding.ts";
 import { randomUUID } from "node:crypto";
 import {
   generateTaskKey,
@@ -10,24 +16,20 @@ import {
   resolveDatabasePath,
   type LoginProvider,
   type SyncWrappedKey,
-  writeSyncIdentity,
+  updateSyncStatusFile,
 } from "@trace/core";
 import {
   clearStoredCredentials,
   DeviceCodeExpiredError,
   fetchDocManifests,
   pollForAccessToken,
-  fetchSession,
-  identityFromSession,
-  recordSignedIn,
   requestDeviceAuthorization,
   requireServerUrl,
   validateDocumentKey,
-  writeAuthToken,
   type AuthFetch,
   type DeviceAuthorization,
 } from "./auth-service.ts";
-import { readStoredDocCryptoKey, writeStoredDocCryptoKey } from "./commands/key.ts";
+import { readStoredDocCryptoKey } from "./commands/key.ts";
 import type { Env } from "./commands/seam.ts";
 
 /**
@@ -73,8 +75,8 @@ interface LoginAttempt {
     wrappedKeys: SyncWrappedKey[];
     /** The account the token belongs to, resolved once before any key check, so
      * every path that persists credentials binds the store to the same account
-     * the identity check was made against. Absent when the server named none. */
-    account?: { accountId: string; identity?: string };
+     * the identity check was made against. */
+    account: { accountId: string; identity?: string };
   };
 }
 
@@ -96,7 +98,11 @@ export function createLocalAuthService(
   return {
     async startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
       const serverUrl = requireServerUrl(env);
-      const device = await requestDeviceAuthorization(serverUrl, fetch, provider);
+      const device = await requestDeviceAuthorization(
+        serverUrl,
+        fetch,
+        provider,
+      );
       const attempt: LoginAttempt = {
         view: {
           attemptId: randomUUID(),
@@ -167,9 +173,8 @@ export function createLocalAuthService(
         return attempt.view;
       }
 
-      writeStoredDocCryptoKey(env, masterKey);
       setView(attempt, { ...attempt.view, error: undefined });
-      await finishKeySetup(env, fetch, attempt, "complete");
+      finishKeySetup(env, attempt, "complete", undefined, masterKey);
       return attempt.view;
     },
 
@@ -179,7 +184,10 @@ export function createLocalAuthService(
     ): Promise<LoginAttemptView | null> {
       const attempt = attempts.get(attemptId);
       if (!attempt) return null;
-      if (!attempt.keySetup || attempt.view.state !== "waiting-for-existing-key") {
+      if (
+        !attempt.keySetup ||
+        attempt.view.state !== "waiting-for-existing-key"
+      ) {
         return attempt.view;
       }
 
@@ -192,11 +200,10 @@ export function createLocalAuthService(
       }
 
       const masterKey = generateTaskKey();
-      writeStoredDocCryptoKey(env, masterKey);
       setView(attempt, { ...attempt.view, error: undefined });
       // Shown once, exactly as a fresh account's key is: this key is now the
       // only thing that can read anything this machine syncs from here on.
-      await finishKeySetup(env, fetch, attempt, "showing-generated-key", masterKey);
+      finishKeySetup(env, attempt, "showing-generated-key", masterKey);
       return attempt.view;
     },
 
@@ -260,9 +267,13 @@ async function setUpDocumentKey(
   accessToken: string,
   attempt: LoginAttempt,
 ): Promise<void> {
-  const account = await resolveAccount(serverUrl, fetch, accessToken);
+  const account = await resolveSyncAccount(serverUrl, fetch, accessToken);
+  if (attempt.cancelled) return;
   const bound = readBoundAccount(env);
-  if (bound && account && !isSameSyncAccount(bound, { serverUrl, accountId: account.accountId })) {
+  if (
+    bound &&
+    !isSameSyncAccount(bound, { serverUrl, accountId: account.accountId })
+  ) {
     // Terminal, not a key prompt: offering to type the other account's key
     // would merge two accounts' work into one store.
     settleAccountConflict(attempt, bound.identity ?? bound.accountId);
@@ -274,14 +285,16 @@ async function setUpDocumentKey(
     fetch,
     accessToken,
   );
-  attempt.keySetup = { serverUrl, accessToken, wrappedKeys, ...(account ? { account } : {}) };
+  if (attempt.cancelled) return;
+  attempt.keySetup = { serverUrl, accessToken, wrappedKeys, account };
 
   // A key already on this machine is a candidate, never a credential. Holding
   // some account's key says nothing about the account that just signed in, so
   // it is put to the same test as one the user types: unwrap this account's own
   // wrapped key, or ask for the right one.
   const stored = readStoredDocCryptoKey(env);
-  const storedOpensAccount = stored !== null && opensAccount(stored, wrappedKeys);
+  const storedOpensAccount =
+    stored !== null && opensAccount(stored, wrappedKeys);
 
   // A store that has synced before but records no account predates this binding
   // (or had its record removed). Its work came from *some* account, and the only
@@ -298,13 +311,13 @@ async function setUpDocumentKey(
       setView(attempt, { ...attempt.view, state: "waiting-for-existing-key" });
       return;
     }
-    await finishKeySetup(env, fetch, attempt, "complete");
+    finishKeySetup(env, attempt, "complete");
     return;
   }
   if (stored) {
     // Nothing on the account to check against, and nothing to lose by keeping
     // the key this machine already uses for its own documents.
-    await finishKeySetup(env, fetch, attempt, "complete");
+    finishKeySetup(env, attempt, "complete");
     return;
   }
 
@@ -314,11 +327,10 @@ async function setUpDocumentKey(
   }
 
   const masterKey = generateTaskKey();
-  writeStoredDocCryptoKey(env, masterKey);
   // The attempt goes straight to `showing-generated-key` — never through
   // `complete` — so a poll cannot land between the two and rob the user of the
   // one showing of their key. Acknowledging it is what completes the login.
-  await finishKeySetup(env, fetch, attempt, "showing-generated-key", masterKey);
+  finishKeySetup(env, attempt, "showing-generated-key", masterKey);
 }
 
 /**
@@ -326,64 +338,43 @@ async function setUpDocumentKey(
  * move the attempt to its post-key state. Persisting the bearer token here, and
  * only here, is what makes "no key, no credentials" true of every path.
  */
-async function finishKeySetup(
+function finishKeySetup(
   env: Env,
-  fetch: AuthFetch,
   attempt: LoginAttempt,
   state: LoginAttemptView["state"],
   generatedKey?: string,
-): Promise<void> {
+  submittedKey?: string,
+): void {
   const setup = attempt.keySetup;
-  if (!setup) return;
-  bindStoreToAccount(env, setup.serverUrl, setup.account);
-  const identity = await persistCredentials(
-    env,
-    setup.serverUrl,
-    fetch,
-    setup.accessToken,
-  );
+  if (!setup || attempt.cancelled) return;
+  // No asynchronous work after this point: cancellation cannot interleave with
+  // credential persistence and turn a cancelled attempt into a completed one.
+  try {
+    commitAccountCredentials(
+      env,
+      setup.serverUrl,
+      setup.account,
+      setup.accessToken,
+      submittedKey ?? generatedKey,
+    );
+  } catch (error) {
+    settleFailure(attempt, error);
+    return;
+  }
+  const identity = setup.account.identity ?? null;
+  try {
+    updateSyncStatusFile(resolveDatabasePath(env), {
+      loggedIn: true,
+      ...(identity ? { identity } : {}),
+      lastError: undefined,
+      activeRun: undefined,
+    });
+  } catch {
+    /* Status is presentational; the credential commit already succeeded. */
+  }
   delete attempt.keySetup;
   settle(attempt, state, identity, generatedKey);
 }
-
-/** Store the bearer token and record the signed-in identity, returning it. */
-async function persistCredentials(
-  env: Env,
-  serverUrl: string,
-  fetch: AuthFetch,
-  accessToken: string,
-): Promise<string | null> {
-  writeAuthToken(env, { accessToken });
-  return recordSignedIn(env, serverUrl, fetch, accessToken);
-}
-
-/**
- * Who the approved bearer token belongs to. `null` when the server names
- * nobody — an older deployment, or a session read that failed — in which case
- * there is nothing to bind and nothing to compare, and the key checks below are
- * the only gate. Never guessed: an invented id would bind a store to an account
- * that does not exist.
- */
-async function resolveAccount(
-  serverUrl: string,
-  fetch: AuthFetch,
-  accessToken: string,
-): Promise<{ accountId: string; identity?: string } | null> {
-  let session;
-  try {
-    session = await fetchSession(serverUrl, fetch, accessToken);
-  } catch {
-    return null;
-  }
-  if (!session) return null;
-  const accountId = session.user?.id ?? session.user?.email;
-  if (!accountId) return null;
-  const identity = identityFromSession(session);
-  return { accountId, ...(identity ? { identity } : {}) };
-}
-
-export const ACCOUNT_CONFLICT_GUIDANCE =
-  "To use a different account, set up a separate EQNX store (TRACE_DB) for it.";
 
 /**
  * Refuse the login and name what the store already belongs to. Account
@@ -400,11 +391,7 @@ function settleAccountConflict(attempt: LoginAttempt, held: string): void {
 
 /** The account this store is bound to, if any. */
 function readBoundAccount(env: Env) {
-  try {
-    return readSyncIdentity(resolveDatabasePath(env));
-  } catch {
-    return null;
-  }
+  return readSyncIdentity(resolveDatabasePath(env));
 }
 
 /** Whether `key` unwraps one of this account's own wrapped task keys — the only
@@ -438,25 +425,6 @@ function storeHasSyncHistory(env: Env): boolean {
   }
 }
 
-/** Record which account the credentials about to be written belong to. */
-function bindStoreToAccount(
-  env: Env,
-  serverUrl: string,
-  account?: { accountId: string; identity?: string },
-): void {
-  if (!account) return;
-  try {
-    writeSyncIdentity(resolveDatabasePath(env), {
-      serverUrl,
-      accountId: account.accountId,
-      ...(account.identity ? { identity: account.identity } : {}),
-    });
-  } catch {
-    // No usable database path — there is no store to bind, and the login is
-    // no worse off than it was before this record existed.
-  }
-}
-
 function settle(
   attempt: LoginAttempt,
   state: LoginAttemptView["state"],
@@ -479,7 +447,8 @@ function settle(
  * the attempt complete does not fire it again.
  */
 function setView(attempt: LoginAttempt, view: LoginAttemptView): void {
-  const completed = view.state === "complete" && attempt.view.state !== "complete";
+  const completed =
+    view.state === "complete" && attempt.view.state !== "complete";
   attempt.view = view;
   if (completed) attempt.onComplete();
 }

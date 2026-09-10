@@ -1,5 +1,12 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -445,4 +452,130 @@ test("a revoked browser loses the restore routes on its very next request", asyn
   expect(
     (await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).status,
   ).toBe(401);
+});
+
+test("a cloud that will not say who signed in signs nobody in", async () => {
+  // The dangerous shape: this store already belongs to one account and holds
+  // its key, and the machine is signed into another whose session read fails.
+  // Treating "no answer" as "no account to compare" would let the two meet.
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat", email: "octocat@github.com" },
+  });
+  await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+
+  const b = machine("b", cloud.url);
+  signInDirectly(b, "stale-token", masterKey);
+  writeFileSync(
+    join(root, "b", "sync-identity.json"),
+    JSON.stringify({ serverUrl: cloud.url, accountId: "octocat" }),
+  );
+  const silent = ((input: string | URL | Request, init?: RequestInit) =>
+    String(input).endsWith("/api/auth/get-session")
+      ? Promise.resolve(Response.json({ error: "boom" }, { status: 500 }))
+      : cloud.fetch(input, init)) as typeof globalThis.fetch;
+  const board = hostedBoard(b, { ...cloud, fetch: silent } as unknown as FakeCloud);
+
+  const started = JSON.parse(
+    (await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).body,
+  ) as AttemptView;
+  cloud.approve();
+  const attempt = await waitForState(board, started.attemptId, "failed");
+
+  expect(attempt.error).toMatch(/could not confirm which account/i);
+  expect(board.syncs).toHaveLength(0);
+  // The credentials that were already here are the ones that are still here.
+  expect(
+    JSON.parse(readFileSync(join(b.home, ".trace", "auth.json"), "utf8")),
+  ).toEqual({ accessToken: "stale-token" });
+  expect(readSyncIdentity(b.db)).toMatchObject({ accountId: "octocat" });
+});
+
+test("a cloud that names the account only by something it can change is refused", async () => {
+  // An email is a label, not an identity: a server that lets one be moved
+  // between accounts would move this store's binding with it.
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat", email: "octocat@github.com" },
+  });
+  const b = machine("b", cloud.url);
+  const anonymous = ((input: string | URL | Request, init?: RequestInit) =>
+    String(input).endsWith("/api/auth/get-session")
+      ? Promise.resolve(Response.json({ user: { email: "octocat@github.com" } }))
+      : cloud.fetch(input, init)) as typeof globalThis.fetch;
+  const board = hostedBoard(b, { ...cloud, fetch: anonymous } as unknown as FakeCloud);
+
+  const started = JSON.parse(
+    (await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).body,
+  ) as AttemptView;
+  cloud.approve();
+  const attempt = await waitForState(board, started.attemptId, "failed");
+
+  expect(attempt.error).toMatch(/could not confirm which account/i);
+  expect(existsSync(join(b.home, ".trace", "auth.json"))).toBe(false);
+  expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(false);
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("a store whose account record cannot be read refuses to sign in", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat", email: "octocat@github.com" },
+  });
+  await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+
+  const b = machine("b", cloud.url);
+  // Present but unreadable is not the same as absent: absent is a fresh
+  // machine, this is a machine whose binding we cannot check.
+  writeFileSync(join(root, "b", "sync-identity.json"), "{ not json");
+  const board = hostedBoard(b, cloud);
+
+  const started = JSON.parse(
+    (await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).body,
+  ) as AttemptView;
+  cloud.approve();
+  const attempt = await waitForState(board, started.attemptId, "failed");
+
+  expect(attempt.error).toMatch(/account record/i);
+  expect(existsSync(join(b.home, ".trace", "auth.json"))).toBe(false);
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("a binding that cannot be written stores no credentials and no key", async () => {
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat", email: "octocat@github.com" },
+  });
+  const b = machine("b", cloud.url);
+  // Nothing can be written to this path, so the store can never be bound —
+  // and an unbindable store must not be given an account's credentials.
+  mkdirSync(join(root, "b", "sync-identity.json"), { recursive: true });
+  writeFileSync(join(root, "b", "sync-identity.json", "occupied"), "");
+  const board = hostedBoard(b, cloud);
+
+  const started = JSON.parse(
+    (await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).body,
+  ) as AttemptView;
+  cloud.approve();
+  const attempt = await waitForState(board, started.attemptId, "failed");
+
+  expect(attempt.error).toMatch(/account record/i);
+  expect(existsSync(join(b.home, ".trace", "auth.json"))).toBe(false);
+  expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(false);
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("a credential write failure restores the previous key and account binding", async () => {
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
+  const b = machine("b", cloud.url);
+  mkdirSync(join(b.home, ".trace", `auth.json.${process.pid}.tmp`), { recursive: true });
+  const board = hostedBoard(b, cloud);
+  const started = JSON.parse((await board.request("POST", "/api/local-auth/login", JSON.stringify({}))).body) as AttemptView;
+  cloud.approve();
+  await waitForState(board, started.attemptId, "failed");
+  expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(false);
+  expect(readSyncIdentity(b.db)).toBeNull();
+  expect(board.syncs).toHaveLength(0);
 });

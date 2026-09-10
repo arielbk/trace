@@ -30,30 +30,32 @@ export function resolveSyncIdentityPath(databasePath: string): string {
   return join(dirname(resolve(databasePath)), "sync-identity.json");
 }
 
-/**
- * The account this store is bound to, or `null` when it is bound to none — a
- * fresh machine, or one that last synced before this record existed. A
- * malformed file reads as `null` rather than throwing: it is answered by the
- * same "unbound store" handling, which is conservative rather than permissive.
- */
-export function readSyncIdentity(databasePath: string): SyncIdentityFile | null {
+/** A missing record is a legacy/fresh store; a damaged record must fail closed. */
+export function readSyncIdentity(
+  databasePath: string,
+): SyncIdentityFile | null {
   try {
     const parsed: unknown = JSON.parse(
       readFileSync(resolveSyncIdentityPath(databasePath), "utf8"),
     );
-    if (typeof parsed !== "object" || parsed === null) return null;
+    if (typeof parsed !== "object" || parsed === null)
+      throw new Error("invalid record");
     const identity = parsed as SyncIdentityFile;
     if (
       typeof identity.serverUrl !== "string" ||
+      !identity.serverUrl.trim() ||
       typeof identity.accountId !== "string" ||
-      !identity.serverUrl ||
-      !identity.accountId
-    ) {
-      return null;
-    }
+      !identity.accountId.trim() ||
+      (identity.identity !== undefined && typeof identity.identity !== "string")
+    )
+      throw new Error("invalid record");
     return identity;
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new Error(
+      "This store's account record could not be read. Restore its sync-identity.json backup before signing in.",
+      { cause: error },
+    );
   }
 }
 
