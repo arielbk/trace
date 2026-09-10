@@ -169,6 +169,7 @@ test("eqnx serve exposes a read-only connection handshake", () => {
       "taskExports",
       "account",
       "sync",
+      "keyTransfer",
     ],
   });
 });
@@ -195,7 +196,13 @@ test("eqnx serve advertises only the hosted allowlist to the hosted board", () =
     service: "trace",
     protocolVersion: 1,
     runtimeVersion: "9.8.7",
-    capabilities: ["taskDetails", "taskMutations", "account", "sync"],
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "account",
+      "sync",
+      "keyTransfer",
+    ],
   });
 });
 
@@ -715,6 +722,7 @@ test("what the hosted handshake advertises is exactly what the bridge allows", (
     // The granted slice of `sync` is the status read; commanding a sync run
     // stays local-only, which the restore-routes test pins separately.
     sync: () => hosted("GET", "/api/sync/status"),
+    keyTransfer: () => hosted("GET", "/api/local-auth/transfers"),
   };
 
   const advertised = new Set(
@@ -1279,6 +1287,13 @@ test("the hosted board may drive the restore routes it needs and nothing more", 
     ["POST", "/api/local-auth/login"],
     ["POST", "/api/local-auth/login/an-attempt/existing-key"],
     ["POST", "/api/local-auth/login/an-attempt/cancel"],
+    // Being let in by another machine, and letting one in.
+    ["POST", "/api/local-auth/login/an-attempt/transfer"],
+    ["POST", "/api/local-auth/login/an-attempt/transfer/cancel"],
+    ["GET", "/api/local-auth/transfers"],
+    ["POST", "/api/local-auth/transfers/a-request/open"],
+    ["POST", "/api/local-auth/transfers/a-request/approve"],
+    ["POST", "/api/local-auth/transfers/a-request/deny"],
   ] as const;
   for (const [method, path] of granted) {
     expect([path, hosted(method, path).statusCode]).not.toEqual([path, 403]);

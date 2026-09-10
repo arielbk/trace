@@ -1,4 +1,9 @@
 import type { TraceApiResponse } from "./api-handler.ts";
+import type {
+  KeyTransferInspection,
+  KeyTransferRequestView,
+  PendingKeyTransfer,
+} from "./key-transfer.ts";
 
 /**
  * The machine-local authentication endpoints (`/api/local-auth/...`) the board
@@ -69,6 +74,12 @@ export interface LoginAttemptView {
   generatedKey?: string;
   /** The signed-in identity, once the attempt completes. */
   identity?: string;
+  /**
+   * The request to be unlocked by another of this account's machines, when the
+   * user chose that over their recovery key. Carries a locator and a code to
+   * compare — never key material, sealed or otherwise.
+   */
+  transfer?: KeyTransferRequestView;
   /** Why the attempt failed or expired. */
   error?: string;
 }
@@ -107,6 +118,28 @@ export interface LocalAuthService {
     attemptId: string,
     confirmation: string,
   ): Promise<LoginAttemptView | null>;
+  /**
+   * Ask another machine of this account to unlock this one, instead of typing
+   * the recovery key. Only from `waiting-for-existing-key`, and only one live
+   * request at a time; the key prompt stays available throughout, because the
+   * other machine may never answer.
+   */
+  requestKeyTransfer(attemptId: string): Promise<LoginAttemptView | null>;
+  /** Abandon the request to be unlocked, leaving the login at the key prompt. */
+  cancelKeyTransfer(attemptId: string): Promise<LoginAttemptView | null>;
+  /**
+   * The other side of the same journey, on a machine that is already signed
+   * in: this account's requests waiting for someone here to approve them.
+   */
+  listKeyTransfers(): Promise<PendingKeyTransfer[]>;
+  /** Join one request's exchange and produce the code to compare. Repeating
+   * this re-uses the same offer rather than starting a second exchange. */
+  openKeyTransfer(requestId: string): Promise<KeyTransferInspection>;
+  /** Send this account's document key to a request whose code the user has
+   * confirmed matches. */
+  approveKeyTransfer(requestId: string): Promise<KeyTransferInspection>;
+  /** Refuse a request, which ends the other machine's wait immediately. */
+  denyKeyTransfer(requestId: string): Promise<KeyTransferInspection>;
   /** Abandon an attempt. Explicit — closing the popover must not silently give
    * up on a device approval the user is still completing in another tab. */
   cancelLogin(attemptId: string): LoginAttemptView | null;
@@ -115,6 +148,7 @@ export interface LocalAuthService {
 }
 
 const LOGIN_PATH = "/api/local-auth/login";
+const TRANSFERS_PATH = "/api/local-auth/transfers";
 
 const PROVIDERS: readonly string[] = ["github", "google"];
 
@@ -154,6 +188,41 @@ export function handleLocalAuthRequest(
     // answer, and the board must be able to tell it from a host that serves no
     // local-auth routes at all.
     return resolved(json(service.readCurrentLogin()));
+  }
+
+  // The requesting machine's side: one live request per login attempt.
+  const transferMatch =
+    /^\/api\/local-auth\/login\/([^/]+)\/transfer(\/cancel)?$/.exec(path);
+  if (transferMatch?.[1]) {
+    if (method !== "POST") return resolved(methodNotAllowed());
+    const attemptId = decodeURIComponent(transferMatch[1]);
+    return settleAsync(
+      transferMatch[2]
+        ? service.cancelKeyTransfer(attemptId)
+        : service.requestKeyTransfer(attemptId),
+    );
+  }
+
+  // The approving machine's side. Not under `/login`: this machine is signed
+  // in already, and these are about somebody else's attempt.
+  if (path === TRANSFERS_PATH) {
+    if (method !== "GET") return resolved(methodNotAllowed());
+    return listTransfers(service);
+  }
+
+  const transferActionMatch =
+    /^\/api\/local-auth\/transfers\/([^/]+)\/(open|approve|deny)$/.exec(path);
+  if (transferActionMatch?.[1] && transferActionMatch[2]) {
+    if (method !== "POST") return resolved(methodNotAllowed());
+    const requestId = decodeURIComponent(transferActionMatch[1]);
+    const action = transferActionMatch[2];
+    return inspection(
+      action === "open"
+        ? service.openKeyTransfer(requestId)
+        : action === "approve"
+          ? service.approveKeyTransfer(requestId)
+          : service.denyKeyTransfer(requestId),
+    );
   }
 
   const existingKeyMatch =
@@ -203,6 +272,28 @@ export function handleLocalAuthRequest(
   }
 
   return resolved(notFound());
+}
+
+async function listTransfers(
+  service: LocalAuthService,
+): Promise<TraceApiResponse> {
+  try {
+    return json(await service.listKeyTransfers());
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** An approving-machine action: the request as it now stands, or the reason
+ * this machine will not act on it. */
+async function inspection(
+  pending: Promise<KeyTransferInspection>,
+): Promise<TraceApiResponse> {
+  try {
+    return json(await pending);
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : String(error));
+  }
 }
 
 async function start(

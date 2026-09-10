@@ -14,7 +14,8 @@ export type TraceCapability =
   | "docEdits"
   | "taskExports"
   | "account"
-  | "sync";
+  | "sync"
+  | "keyTransfer";
 
 /**
  * Which authority a request arrived with. `same-origin` is the bundled board
@@ -31,6 +32,7 @@ export const SAME_ORIGIN_CAPABILITIES: readonly TraceCapability[] = [
   "taskExports",
   "account",
   "sync",
+  "keyTransfer",
 ];
 
 /**
@@ -50,6 +52,10 @@ export const HOSTED_CAPABILITIES: readonly TraceCapability[] = [
   "taskMutations",
   "account",
   "sync",
+  // Being unlocked by another machine, and unlocking one. Advertised so a
+  // board talking to an older runtime hides the affordance rather than
+  // offering a button that answers 403.
+  "keyTransfer",
 ];
 
 /**

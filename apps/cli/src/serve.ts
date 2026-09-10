@@ -469,6 +469,7 @@ function isHostedReadPath(path: string): boolean {
     normalized === "/api/tasks" ||
     /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized) ||
     normalized === "/api/sync/status" ||
+    normalized === "/api/local-auth/transfers" ||
     isRestoreLoginReadPath(normalized)
   );
 }
@@ -502,8 +503,11 @@ function isRestoreLoginReadPath(normalized: string): boolean {
 }
 
 /**
- * The three writes that recover existing work: start a login, offer the
- * account's existing document key, give up on the attempt.
+ * The writes that recover existing work: start a login, offer the account's
+ * existing document key, give up on the attempt — and the two halves of being
+ * let in by another machine instead of typing that key. The approval half
+ * carries only a locator and a comparison code; the sealed envelope and the
+ * document key itself never enter a response the board can read.
  *
  * The rest of `/api/local-auth` is deliberately absent, and the prefix is never
  * allowed wholesale. `replacement-key` makes an account's synced documents
@@ -514,7 +518,9 @@ function isRestoreLoginReadPath(normalized: string): boolean {
 function isRestoreLoginActionPath(normalized: string): boolean {
   return (
     normalized === "/api/local-auth/login" ||
-    /^\/api\/local-auth\/login\/[^/]+\/(existing-key|cancel)$/.test(normalized)
+    /^\/api\/local-auth\/login\/[^/]+\/(existing-key|cancel)$/.test(normalized) ||
+    /^\/api\/local-auth\/login\/[^/]+\/transfer(\/cancel)?$/.test(normalized) ||
+    /^\/api\/local-auth\/transfers\/[^/]+\/(open|approve|deny)$/.test(normalized)
   );
 }
 
