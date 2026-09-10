@@ -579,3 +579,90 @@ test("a credential write failure restores the previous key and account binding",
   expect(readSyncIdentity(b.db)).toBeNull();
   expect(board.syncs).toHaveLength(0);
 });
+
+test("restore reports metadata then documents and cannot be ready before the document is readable", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  const { slug } = await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("progress", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const status = async () => JSON.parse((await board.request("GET", "/api/sync/status")).body);
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/api/sync/pull")) {
+      expect(await status()).toMatchObject({ state: "syncing", restore: { phase: "metadata" } });
+      expect(existsSync(join(resolveTaskDocsDir(b.db, slug), "state.md"))).toBe(false);
+    }
+    if (url.includes("/api/sync/blobs/") && !url.endsWith("missing")) {
+      expect(await status()).toMatchObject({ state: "syncing", restore: { phase: "documents" } });
+      expect(JSON.parse((await board.request("GET", "/api/tasks")).body)).toHaveLength(1);
+      expect(existsSync(join(resolveTaskDocsDir(b.db, slug), "state.md"))).toBe(false);
+    }
+    return cloud.fetch(input, init);
+  };
+  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 1 } });
+  expect(readFileSync(join(resolveTaskDocsDir(b.db, slug), "state.md"), "utf8")).toContain("A wrote this");
+});
+
+test("failed document download keeps tasks visible and a later retry completes recovery", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("failed-progress", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const fetch: typeof globalThis.fetch = async (input, init) =>
+    String(input).includes("/api/sync/blobs/") && !String(input).endsWith("missing")
+      ? new Response("offline", { status: 503 }) : cloud.fetch(input, init);
+  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(1);
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "failed", restore: { phase: "documents" } });
+  expect(JSON.parse((await board.request("GET", "/api/tasks")).body)).toHaveLength(1);
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 1 } });
+});
+
+test("an empty account finishes restore with an observed zero local tasks", async () => {
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  const b = machine("empty-progress", cloud.url);
+  signInDirectly(b, "token", generateTaskKey());
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  const board = hostedBoard(b, cloud);
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 0 } });
+});
+
+test("an established machine's later sync is not stamped as a restore", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("settled", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const status = async () =>
+    JSON.parse((await board.request("GET", "/api/sync/status")).body) as {
+      state: string;
+      restore?: { phase: string; taskCount?: number };
+    };
+
+  // The first run is the restore, and it ends ready.
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ restore: { phase: "ready", taskCount: 1 } });
+
+  // The next one is just a sync: nothing is arriving that this machine does
+  // not already have, so no phase is claimed while it runs.
+  const seen: string[] = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    seen.push((await status()).restore?.phase ?? "none");
+    return cloud.fetch(input, init);
+  };
+  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(0);
+  expect(seen).not.toHaveLength(0);
+  expect([...new Set(seen)]).toEqual(["ready"]);
+  // And a machine that gains a task afterwards does not keep the old count.
+  const store = openTraceStore(b.db);
+  store.createTask("Written on B");
+  store.close();
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ restore: { phase: "ready", taskCount: 2 } });
+});

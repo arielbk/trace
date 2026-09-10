@@ -309,6 +309,7 @@ test("approving an empty account generates a document key and stores the credent
   ).toEqual({ accessToken: "bearer-token" });
   expect(readSyncStatus(join(home, ".trace", "trace.sqlite"))).toEqual({
     state: "never-synced",
+    restore: { phase: "metadata" },
     identity: "The Octocat <octocat@github.com>",
   });
 });

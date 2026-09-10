@@ -330,3 +330,123 @@ test("both machines run the ceremony from the hosted board, and no key crosses i
     readFileSync(join(resolveTaskDocsDir(b.db, slug), "state.md"), "utf8"),
   ).toContain("A wrote this.");
 });
+
+/** Poll something the board can see, the way an open tab does. */
+async function untilView<T>(
+  read: () => Promise<T>,
+  predicate: (value: T) => boolean,
+): Promise<T> {
+  for (let poll = 0; poll < 1_000; poll += 1) {
+    const value = await read();
+    if (predicate(value)) return value;
+    await tick();
+  }
+  throw new Error(`view never settled: ${JSON.stringify(await read())}`);
+}
+
+type BoardAttempt = {
+  state: string;
+  transfer?: { requestId: string; state: string };
+};
+
+/**
+ * The two ways into a second machine are meant to be one journey after the
+ * unlock: whichever way the key arrived, the board tells the same story about
+ * the work coming over, and tells it once.
+ *
+ * Each path stamps its own progress — the typed key and the approved transfer
+ * commit through different code — so this compares what the two machines
+ * actually report rather than trusting that they share a function.
+ */
+test("the recovery-key path and the approval path leave the same restore progress", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
+  const { slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+
+  /** A fresh machine, signed in through its own board as far as the key step. */
+  const signIn = async (name: string) => {
+    const m = machine(name, cloud.url);
+    const board = hostedBoard(m, cloud);
+    const started = JSON.parse(
+      (
+        await board.request(
+          "POST",
+          "/api/local-auth/login",
+          JSON.stringify({ provider: "github" }),
+        )
+      ).body,
+    ) as { attemptId: string };
+    cloud.approve();
+    const attempt = (): Promise<BoardAttempt> =>
+      board
+        .request("GET", `/api/local-auth/login/${started.attemptId}`)
+        .then((response) => JSON.parse(response.body) as BoardAttempt);
+    await untilView(attempt, (view) => view.state === "waiting-for-existing-key");
+    return { m, board, attemptId: started.attemptId, attempt };
+  };
+
+  // One machine is unlocked by the key the user still has.
+  const typed = await signIn("typed");
+  await typed.board.request(
+    "POST",
+    `/api/local-auth/login/${typed.attemptId}/existing-key`,
+    JSON.stringify({ key: masterKey }),
+  );
+  await untilView(typed.attempt, (view) => view.state === "complete");
+
+  // The other is unlocked by machine A, which never shows the user a key.
+  const approved = await signIn("approved");
+  await approved.board.request(
+    "POST",
+    `/api/local-auth/login/${approved.attemptId}/transfer`,
+  );
+  const approver = createKeyTransferApproverSession({
+    relay: createKeyTransferRelay({
+      serverUrl: cloud.url,
+      fetch: cloud.fetch,
+      accessToken: "cloud-token",
+    }),
+    accountId: "octocat",
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+  const [request] = await approver.list();
+  await untilView(
+    () => approver.inspect(request!.requestId),
+    (inspection) => inspection.state === "comparing",
+  );
+  await approver.approve(request!.requestId);
+  await untilView(approved.attempt, (view) => view.state === "complete");
+
+  // Each path brings the work over exactly once — neither doubles the restore,
+  // neither leaves it to a later idle sync.
+  expect(typed.board.syncs).toHaveLength(1);
+  expect(approved.board.syncs).toHaveLength(1);
+  await Promise.all([...typed.board.syncs, ...approved.board.syncs]);
+
+  /** What this machine's board would render, minus the one field that is a
+   * clock reading rather than a claim about the restore. */
+  const progressOf = async (board: {
+    request: (method: string, path: string) => Promise<Captured>;
+  }) => {
+    const { lastSyncedAt, ...rest } = JSON.parse(
+      (await board.request("GET", "/api/sync/status")).body,
+    ) as Record<string, unknown>;
+    expect(typeof lastSyncedAt).toBe("string");
+    return rest;
+  };
+  const typedProgress = await progressOf(typed.board);
+  expect(typedProgress).toMatchObject({
+    state: "synced",
+    restore: { phase: "ready", taskCount: 1 },
+  });
+  expect(await progressOf(approved.board)).toEqual(typedProgress);
+
+  // Which is only worth reporting because both machines really do have it.
+  for (const m of [typed.m, approved.m]) {
+    expect(
+      readFileSync(join(resolveTaskDocsDir(m.db, slug), "state.md"), "utf8"),
+    ).toContain("A wrote this.");
+  }
+});

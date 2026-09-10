@@ -226,3 +226,29 @@ test("a late finalizer cannot overwrite the run that replaced it", () => {
     cleanup();
   }
 });
+
+test("restore readiness survives status reads only after the document phase finishes", () => {
+  const { databasePath, cleanup } = tempDatabasePath();
+  try {
+    writeSyncStatusFile(databasePath, {
+      loggedIn: true,
+      restore: { phase: "documents" },
+      activeRun: { id: "restore", startedAt: new Date().toISOString() },
+    });
+    expect(readSyncStatus(databasePath)).toMatchObject({ state: "syncing", restore: { phase: "documents" } });
+    finalizeSyncRun(databasePath, "restore", {
+      lastSyncedAt: new Date().toISOString(),
+      restore: { phase: "ready", taskCount: 0 },
+    });
+    expect(readSyncStatus(databasePath)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 0 } });
+  } finally { cleanup(); }
+});
+
+test("an interrupted restore cannot fall back to an older successful run", () => {
+  expect(deriveSyncStatus({
+    loggedIn: true,
+    lastSyncedAt: "2026-01-01T00:00:00Z",
+    restore: { phase: "documents" },
+    activeRun: { id: "killed", startedAt: "2026-01-02T00:00:00Z" },
+  }, new Date("2026-01-03T00:00:00Z"))).toMatchObject({ state: "failed" });
+});

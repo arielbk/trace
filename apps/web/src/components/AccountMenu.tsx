@@ -52,8 +52,8 @@ import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
  * exceptions, because a terminal was previously the only way to do either.
  */
 export function AccountMenu({ now }: { now?: Date }) {
-  const { data } = useSyncStatus();
-  const account = describeAccount(data, now);
+  const { data, isError } = useSyncStatus();
+  const account = isError ? unreachable() : describeAccount(data, now);
 
   return (
     <Dropdown>
@@ -297,7 +297,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
 
       {/* Sync block: the state's own dot leads the line, so the popover
           reads the same way the trigger badge does. */}
-      <div className={cn(SECTION, "flex flex-col gap-1")}>
+      <div role="status" aria-live="polite" className={cn(SECTION, "flex flex-col gap-1")}>
         <span className="flex items-start gap-2">
           <StateDot state={account.state} />
           <span className="min-w-0 text-text-muted">{account.headline}</span>
@@ -1165,6 +1165,80 @@ export function describeAccount(
     };
   };
 
+  const restore = status.state === "logged-out" ? undefined : status.restore;
+  // Work that has not landed on this machine yet. Once it has, the field stays
+  // behind as the settled description of the machine, and the runs that follow
+  // are ordinary syncing rather than a restore still arriving.
+  const arriving = restore?.phase === "ready" ? undefined : restore;
+  const paused = status.state !== "logged-out" && status.autoSync === false;
+  // What to tell someone whose recovery stalled. With automatic sync off there
+  // is no retry coming, so promising one would be a lie.
+  const retry = paused
+    ? "Automatic sync is off on this machine; run eqnx sync on this machine to retry."
+    : "Automatic sync will retry; run eqnx sync on this machine to retry now.";
+
+  // A restore in flight — or one that died in flight — describes this machine
+  // better than the policy that governs its *next* run, so those two states
+  // are reported before sync policy is.
+  if (arriving) {
+    if (status.state === "failed")
+      return described({
+        summary: "restore interrupted",
+        headline:
+          arriving.phase === "documents"
+            ? "Tasks arrived; document recovery was interrupted."
+            : "Could not bring work onto this machine.",
+        detail: `${status.lastError} · Check this machine’s connection. ${retry}`,
+      });
+    if (status.state === "syncing")
+      return described({
+        summary: "bringing work onto this machine",
+        headline:
+          arriving.phase === "documents"
+            ? "Bringing documents onto this machine…"
+            : "Bringing tasks onto this machine…",
+        detail: "Signed in. Work is served by EQNX on this machine.",
+      });
+    // Partial recovery outranks the paused line: the tasks are usable but the
+    // documents are not here, and that is the thing to act on.
+    if (arriving.phase === "partial")
+      return described({
+        summary: "documents pending",
+        headline: "Some documents are still waiting.",
+        detail: `Your available tasks remain usable. ${retry}`,
+      });
+  }
+
+  // Policy comes last among the settled states, and stands in front of
+  // "ready": a machine that will not sync again on its own has not finished
+  // recovering in any lasting sense, so it is never described as ready.
+  if (paused)
+    return described({
+      summary: "sync paused",
+      headline: "Sync is paused on this machine.",
+      detail:
+        "Run eqnx config set auto-sync true on this machine to resume automatic sync.",
+    });
+
+  // Signed in, nothing started yet: the unlock landed but no run has reported
+  // anything, so the honest thing is to say the work is still to come.
+  if (arriving)
+    return described({
+      summary: "waiting for sync",
+      headline: "Signed in. Waiting to bring work onto this machine.",
+      detail: "Run eqnx sync on this machine if recovery does not start.",
+    });
+
+  if (restore && status.state === "synced")
+    return described({
+      summary: "work ready on this machine",
+      headline:
+        restore.taskCount === 0
+          ? "Ready — no synced tasks in this account yet."
+          : "Work is ready on this machine.",
+      detail: lastSynced,
+    });
+
   switch (status.state) {
     case "logged-out":
       return status.serverConfigured
@@ -1209,6 +1283,26 @@ export function describeAccount(
     default:
       return loading();
   }
+}
+
+/**
+ * The status read itself failed: the serving process is unreachable, or
+ * refusing this browser. Nothing about the account can be claimed, and neither
+ * signing in nor out would reach the machine that holds the credential, so
+ * both are withheld rather than offered and failed. The task view the board
+ * already fetched is untouched — this is one query going quiet, not a board
+ * that has lost its connection, which `ConnectionRecovery` reports separately.
+ */
+function unreachable(): AccountDescription {
+  return {
+    state: "unknown",
+    triggerLabel: "Account — sync status unavailable",
+    headline: "Cannot reach this machine’s sync status.",
+    detail:
+      "Check that EQNX is running on this machine, then reconnect. Your existing task view is still available.",
+    canSignIn: false,
+    canSignOut: false,
+  };
 }
 
 /** Before the first status read there is nothing to say and nothing to act on. */

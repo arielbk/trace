@@ -506,6 +506,7 @@ function finishKeySetup(
       ...(identity ? { identity } : {}),
       lastError: undefined,
       activeRun: undefined,
+      restore: { phase: "metadata" },
     });
   } catch {
     /* Status is presentational; the credential commit already succeeded. */

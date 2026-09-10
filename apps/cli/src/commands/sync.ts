@@ -10,6 +10,8 @@ import {
   finalizeSyncRun,
   openTraceStore,
   readSyncIdentity,
+  readSyncStatusFile,
+  updateSyncStatusFile,
   writeSyncIdentity,
   resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
@@ -153,9 +155,18 @@ export async function runSyncCommand(
   // sees a spinner rather than the previous outcome. The id is what lets a slow
   // run recognise that a newer one has taken over, and refuse to finalize.
   const runId = randomUUID();
+  // Restore progress describes a machine that is still acquiring work it does
+  // not have: login stamps the opening phase, and a run carries it through to
+  // ready. An established machine leaves it alone while it runs, so pushing
+  // local edits is never narrated as bringing work onto this machine.
+  const restoring = readSyncStatusFile(databasePath)?.restore?.phase !== "ready";
   recordSyncStatus(databasePath, (path) =>
     beginSyncRun(path, { id: runId, startedAt: new Date().toISOString() }),
   );
+  if (restoring)
+    recordSyncStatus(databasePath, (path) =>
+      updateSyncStatusFile(path, { restore: { phase: "metadata" } }),
+    );
   const store = openTraceStore(databasePath);
   try {
     const bound = readSyncIdentity(databasePath);
@@ -199,12 +210,28 @@ export async function runSyncCommand(
           },
         },
       ),
+      () => {
+        if (!restoring) return;
+        recordSyncStatus(databasePath, (path) => {
+          // A newer run may have taken the file over meanwhile; only the run
+          // that owns it gets to narrate its phases.
+          if (readSyncStatusFile(path)?.activeRun?.id === runId)
+            updateSyncStatusFile(path, { restore: { phase: "documents" } });
+        });
+      },
     );
     const syncedAt = new Date().toISOString();
     recordSyncStatus(databasePath, (path) =>
       finalizeSyncRun(path, runId, {
         lastSyncedAt: syncedAt,
         lastError: undefined,
+        // Always restated on success, restore or not: the count behind the
+        // empty-account line has to be this run's, and a run that left
+        // manifests behind has not finished recovering whatever it skipped.
+        restore: {
+          phase: result.deferredManifests ? "partial" : "ready",
+          taskCount: store.syncSnapshot().tasks.length,
+        },
       }),
     );
     // What the machine looks like now that server and local state agree — the

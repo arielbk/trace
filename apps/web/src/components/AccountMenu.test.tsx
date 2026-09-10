@@ -402,7 +402,7 @@ test("manual mode is reported as read-only state, with no way to sync or switch"
   });
 
   await user.click(
-    await screen.findByRole("button", { name: "Account — not synced yet" }),
+    await screen.findByRole("button", { name: "Account — sync paused" }),
   );
 
   const menu = await screen.findByRole("dialog", { name: /account/i });
