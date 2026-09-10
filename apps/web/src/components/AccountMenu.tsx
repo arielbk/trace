@@ -2,8 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,
+  type KeyTransferInspection,
+  type KeyTransferRequestView,
   type LoginAttemptView,
   type LoginProvider,
+  type PendingKeyTransfer,
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
@@ -11,13 +14,19 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
+  approveKeyTransfer,
+  cancelKeyTransfer,
   cancelLogin,
+  denyKeyTransfer,
   generateReplacementKey,
+  openKeyTransfer,
   postLogout,
+  requestKeyTransfer,
   startLogin,
   submitExistingKey,
   traceQueryKey,
   useCurrentLogin,
+  useKeyTransfers,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
@@ -209,6 +218,14 @@ function AccountBody({ account }: { account: AccountDescription }) {
     mutationFn: (attemptId: string) => cancelLogin(attemptId, source),
     onSuccess: recordAttempt,
   });
+  const askAnotherMachine = useMutation({
+    mutationFn: (attemptId: string) => requestKeyTransfer(attemptId, source),
+    onSuccess: recordAttempt,
+  });
+  const stopAsking = useMutation({
+    mutationFn: (attemptId: string) => cancelKeyTransfer(attemptId, source),
+    onSuccess: recordAttempt,
+  });
   const signOut = useMutation({
     mutationFn: () => postLogout(source),
     onSuccess: () => {
@@ -241,6 +258,12 @@ function AccountBody({ account }: { account: AccountDescription }) {
           replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
         }
         onCancel={() => cancel.mutate(attempt.attemptId)}
+        // A runtime that predates key transfer answers these routes with a
+        // refusal, so the affordance is not offered against one.
+        transferSupported={source.capabilities.keyTransfer}
+        transferPending={askAnotherMachine.isPending}
+        onRequestTransfer={() => askAnotherMachine.mutate(attempt.attemptId)}
+        onCancelTransfer={() => stopAsking.mutate(attempt.attemptId)}
         onDismiss={forgetAttempt}
         onRetry={() => {
           forgetAttempt();
@@ -265,6 +288,12 @@ function AccountBody({ account }: { account: AccountDescription }) {
           <span className="min-w-0 font-semibold">Documents unlocked</span>
         </div>
       ) : null}
+
+      {/* Above the sync block: someone is standing at another machine waiting
+          for an answer, which outranks how this one's own sync is doing. */}
+      <ApprovalRequests
+        enabled={account.state !== "logged-out" && source.capabilities.keyTransfer}
+      />
 
       {/* Sync block: the state's own dot leads the line, so the popover
           reads the same way the trigger badge does. */}
@@ -416,6 +445,10 @@ function LoginProgress({
   onSubmitKey,
   onReplaceKey,
   onCancel,
+  transferSupported,
+  transferPending,
+  onRequestTransfer,
+  onCancelTransfer,
   onDismiss,
   onRetry,
 }: {
@@ -425,6 +458,10 @@ function LoginProgress({
   onSubmitKey: (key: string) => void;
   onReplaceKey: (confirmation: string) => void;
   onCancel: () => void;
+  transferSupported: boolean;
+  transferPending: boolean;
+  onRequestTransfer: () => void;
+  onCancelTransfer: () => void;
   onDismiss: () => void;
   onRetry: () => void;
 }) {
@@ -493,6 +530,11 @@ function LoginProgress({
         <ExistingKeyStep
           error={attempt.error}
           pending={keyPending}
+          transfer={attempt.transfer}
+          transferSupported={transferSupported}
+          transferPending={transferPending}
+          onRequestTransfer={onRequestTransfer}
+          onCancelTransfer={onCancelTransfer}
           onSubmitKey={onSubmitKey}
           onReplaceKey={onReplaceKey}
           onCancel={onCancel}
@@ -527,6 +569,156 @@ function LoginProgress({
 }
 
 /**
+ * The other end of the same journey, on a machine that is already signed in:
+ * this account's machines asking to be let in.
+ *
+ * The name a request gives itself is a label, not evidence — the code is the
+ * evidence, and it exists only once both machines have committed to their keys.
+ * So the request is opened first and approved second, and the approval control
+ * says what the user is asserting rather than merely "Approve".
+ *
+ * Nothing here is destructive to this machine; what it risks is the account's
+ * documents on someone else's. That is why the loud control is the one that
+ * refuses, and the accent control appears only beside a code to check.
+ */
+function ApprovalRequests({ enabled }: { enabled: boolean }) {
+  const source = useTraceDataSource();
+  const queryClient = useQueryClient();
+  const { data: pending } = useKeyTransfers(enabled);
+  const [inspection, setInspection] = useState<KeyTransferInspection | null>(
+    null,
+  );
+
+  const forget = () => {
+    setInspection(null);
+    void queryClient.invalidateQueries({
+      queryKey: traceQueryKey(source, "key-transfers"),
+    });
+  };
+  const open = useMutation({
+    mutationFn: (requestId: string) => openKeyTransfer(requestId, source),
+    onSuccess: setInspection,
+  });
+  const approve = useMutation({
+    mutationFn: (requestId: string) => approveKeyTransfer(requestId, source),
+    onSuccess: forget,
+  });
+  const deny = useMutation({
+    mutationFn: (requestId: string) => denyKeyTransfer(requestId, source),
+    onSuccess: forget,
+  });
+
+  // The other machine reveals its key a moment after this one offers, so an
+  // opened request that has nothing to compare yet asks again — once a second,
+  // and only while it is on screen.
+  const openMutate = open.mutate;
+  useEffect(() => {
+    if (inspection?.state !== "waiting-for-reveal") return;
+    const timer = setTimeout(() => {
+      openMutate(inspection.requestId);
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [inspection?.state, inspection?.requestId, openMutate, inspection]);
+
+  if (!enabled) return null;
+  if (inspection && inspection.state !== "gone") {
+    return (
+      <div
+        className={cn(SECTION, "flex flex-col gap-2")}
+        data-testid="approval-request"
+        data-approval-state={inspection.state}
+      >
+        <span className="min-w-0 text-text-muted">
+          <span className="font-semibold text-text">
+            {inspection.machineName}
+          </span>{" "}
+          is asking for this account&rsquo;s documents.
+        </span>
+        {inspection.state === "comparing" ? (
+          <>
+            <p className="m-0 text-meta text-text-muted">
+              Approve only if this code is showing on that machine right now.
+            </p>
+            <code
+              className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+              data-testid="approval-code"
+            >
+              {inspection.verificationCode}
+            </code>
+            <button
+              type="button"
+              className={PRIMARY_ACTION}
+              disabled={approve.isPending}
+              onClick={() => approve.mutate(inspection.requestId)}
+            >
+              The codes match — approve
+            </button>
+          </>
+        ) : (
+          <span className="flex items-start gap-2">
+            <Loader2
+              size={10}
+              className="mt-1 shrink-0 animate-spin text-text-muted"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-meta text-text-muted">
+              Waiting for that machine to show its code&hellip;
+            </span>
+          </span>
+        )}
+        <span className="flex items-center gap-2">
+          <button
+            type="button"
+            className={QUIET_ACTION}
+            disabled={deny.isPending}
+            onClick={() => deny.mutate(inspection.requestId)}
+          >
+            Deny
+          </button>
+          <span className="text-meta text-text-muted" aria-hidden="true">
+            ·
+          </span>
+          <button type="button" className={QUIET_ACTION} onClick={forget}>
+            Not now
+          </button>
+        </span>
+      </div>
+    );
+  }
+
+  const waiting: PendingKeyTransfer[] = pending ?? [];
+  if (waiting.length === 0) return null;
+
+  return (
+    <div className={cn(SECTION, "flex flex-col gap-2")}>
+      {waiting.map((request) => (
+        <div key={request.requestId} className="flex flex-col gap-1.5">
+          <span className="min-w-0 text-text-muted">
+            <span className="font-semibold text-text">
+              {request.machineName}
+            </span>{" "}
+            is asking to be unlocked.
+          </span>
+          <span className="font-mono text-meta text-text-muted">
+            {request.locator}
+          </span>
+          <button
+            type="button"
+            className={SECONDARY_ACTION}
+            disabled={open.isPending}
+            onClick={() => open.mutate(request.requestId)}
+          >
+            Review request
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The key step of a login into an account that already holds synced documents.
  *
  * The board never judges the key: it hands what the user typed to the serving
@@ -543,12 +735,22 @@ function LoginProgress({
 function ExistingKeyStep({
   error,
   pending,
+  transfer,
+  transferSupported,
+  transferPending,
+  onRequestTransfer,
+  onCancelTransfer,
   onSubmitKey,
   onReplaceKey,
   onCancel,
 }: {
   error?: string;
   pending: boolean;
+  transfer?: KeyTransferRequestView;
+  transferSupported: boolean;
+  transferPending: boolean;
+  onRequestTransfer: () => void;
+  onCancelTransfer: () => void;
   onSubmitKey: (key: string) => void;
   onReplaceKey: (confirmation: string) => void;
   onCancel: () => void;
@@ -559,12 +761,42 @@ function ExistingKeyStep({
   const [replacing, setReplacing] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
+  const live =
+    transfer &&
+    (transfer.state === "waiting-for-approval" || transfer.state === "comparing");
+
   return (
     <>
       <p className="m-0 text-text-muted">
-        This account already has synced documents. Enter the document encryption
-        key you saved when you first signed in.
+        This account already has synced documents. Unlock this machine from one
+        that already has them, or enter the document encryption key you saved
+        when you first signed in.
       </p>
+
+      {transferSupported && !live ? (
+        <>
+          <button
+            type="button"
+            className={SECONDARY_ACTION}
+            disabled={transferPending}
+            onClick={onRequestTransfer}
+          >
+            Approve from another machine
+          </button>
+          {/* A request that ended says so here rather than replacing the step:
+              the key field below is still a way through. */}
+          {transfer?.error ? (
+            <p
+              className="m-0 text-meta text-warning wrap-anywhere"
+              data-testid="transfer-outcome"
+            >
+              {transfer.error}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {live ? <TransferRequest transfer={transfer} onCancel={onCancelTransfer} /> : null}
       <form
         className="flex flex-col gap-1.5"
         onSubmit={(event) => {
@@ -665,6 +897,69 @@ function ExistingKeyStep({
         </button>
       </span>
     </>
+  );
+}
+
+/**
+ * The request this machine has out with another of the account's machines.
+ *
+ * Two values are on screen and they mean different things, so they are never
+ * shown alike: the locator is how the user finds the right row over there, and
+ * the code is the only thing that says the two machines are talking to each
+ * other rather than to something in between. The instruction to compare is
+ * stated where the code is, because a code nobody compares buys nothing.
+ */
+function TransferRequest({
+  transfer,
+  onCancel,
+}: {
+  transfer: KeyTransferRequestView;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-control border border-border-subtle px-2 py-2"
+      data-testid="transfer-request"
+      data-transfer-state={transfer.state}
+    >
+      {transfer.state === "comparing" ? (
+        <>
+          <p className="m-0 text-meta text-text-muted">
+            Check this code matches the one on your other machine, then approve
+            it there.
+          </p>
+          <code
+            className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+            data-testid="transfer-code"
+          >
+            {transfer.verificationCode}
+          </code>
+        </>
+      ) : (
+        <>
+          <span className="flex items-start gap-2">
+            <Loader2
+              size={10}
+              className="mt-1 shrink-0 animate-spin text-text-muted"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-meta text-text-muted">
+              Open EQNX on a machine that already has your documents and find
+              this request:
+            </span>
+          </span>
+          <code
+            className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+            data-testid="transfer-locator"
+          >
+            {transfer.locator}
+          </code>
+        </>
+      )}
+      <button type="button" className={QUIET_ACTION} onClick={onCancel}>
+        Stop waiting
+      </button>
+    </div>
   );
 }
 

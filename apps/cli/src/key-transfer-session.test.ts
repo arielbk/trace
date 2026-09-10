@@ -263,3 +263,37 @@ test("approving a request nobody compared on this machine is refused", async () 
   expect(untouched?.state).toBe("pending");
   expect(untouched?.envelope).toBeUndefined();
 });
+
+test("a request cancelled before delivery commits nothing, even if an approval lands", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const delivered: string[] = [];
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(cloud),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: tick,
+    onKey: (key) => delivered.push(key),
+  });
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(cloud),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+
+  await approver.inspect(recipient.view.requestId);
+  await until(() => recipient.view, (view) => view.state === "comparing");
+
+  // The user gives up here — and the other machine approves anyway.
+  await recipient.cancel();
+  await approver.approve(recipient.view.requestId).catch(() => undefined);
+  for (let poll = 0; poll < 20; poll += 1) await tick();
+
+  expect(recipient.view.state).toBe("cancelled");
+  expect(recipient.key()).toBeUndefined();
+  expect(delivered).toEqual([]);
+});

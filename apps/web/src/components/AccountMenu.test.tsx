@@ -12,7 +12,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import {
   REPLACEMENT_KEY_CONFIRMATION,
+  type KeyTransferInspection,
+  type KeyTransferRequestView,
   type LoginAttemptView,
+  type PendingKeyTransfer,
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { AccountMenu } from "./AccountMenu.tsx";
@@ -77,6 +80,11 @@ function localAuthServer(options: {
   masterKey?: string;
   /** How `POST /logout` refuses, for hosts that serve no auth routes at all. */
   logoutFailure?: { status: number; body: string };
+  /** What `POST .../transfer` answers with, and what the approving machine's
+   * routes report. */
+  transfer?: KeyTransferRequestView;
+  pendingTransfers?: PendingKeyTransfer[];
+  inspection?: KeyTransferInspection;
   /** Serve `polled` as the machine's outstanding login from the outset, as a
    * serving process does when an earlier popover walked away from one. */
   outstanding?: boolean;
@@ -147,6 +155,23 @@ function localAuthServer(options: {
                 error: `Type ${REPLACEMENT_KEY_CONFIRMATION} to confirm.`,
               };
         return jsonResponse(polled);
+      }
+      if (url.endsWith("/transfer")) {
+        polled = { ...polled, transfer: options.transfer ?? PENDING_TRANSFER };
+        return jsonResponse(polled);
+      }
+      if (url.endsWith("/transfer/cancel")) {
+        polled = { ...polled, transfer: undefined };
+        return jsonResponse(polled);
+      }
+      if (url === "/api/local-auth/transfers") {
+        return jsonResponse(options.pendingTransfers ?? []);
+      }
+      if (url.endsWith("/open") || url.endsWith("/approve")) {
+        return jsonResponse(options.inspection ?? COMPARING_INSPECTION);
+      }
+      if (url.endsWith("/deny")) {
+        return jsonResponse({ ...COMPARING_INSPECTION, state: "gone" });
       }
       if (url.endsWith("/cancel")) {
         polled = { ...polled, state: "cancelled" };
@@ -617,6 +642,21 @@ const WAITING_FOR_KEY: LoginAttemptView = {
   state: "waiting-for-existing-key",
 };
 
+const PENDING_TRANSFER: KeyTransferRequestView = {
+  requestId: "request-1",
+  locator: "K3M9QZ",
+  machineName: "Studio Mac",
+  state: "waiting-for-approval",
+};
+
+const COMPARING_INSPECTION: KeyTransferInspection = {
+  requestId: "request-1",
+  locator: "K3M9QZ",
+  machineName: "Studio Mac",
+  state: "comparing",
+  verificationCode: "8H2K-4RTQ",
+};
+
 test("an account with synced documents asks for its key and signs in once it validates", async () => {
   const user = userEvent.setup();
   const server = localAuthServer({
@@ -877,4 +917,94 @@ test("a refused sign-out is reported instead of silently doing nothing", async (
   expect(await screen.findByTestId("logout-error")).toHaveTextContent(/404/);
   // Still offered, so the user can try again once the host can serve it.
   expect(screen.getByRole("button", { name: /sign out/i })).toBeEnabled();
+});
+
+test("the key prompt offers being unlocked by another machine, and keeps the key field", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.click(
+    screen.getByRole("button", { name: /approve from another machine/i }),
+  );
+
+  // A short handle for finding this request on the other machine — not a
+  // secret, and never presented as one.
+  expect(await screen.findByTestId("transfer-locator")).toHaveTextContent(
+    "K3M9QZ",
+  );
+  expect(server.calls).toContain(
+    "POST /api/local-auth/login/attempt-1/transfer",
+  );
+  // The other machine may never answer, so the key stays one field away.
+  expect(screen.getByLabelText(/document encryption key/i)).toBeInTheDocument();
+});
+
+test("the code to compare is shown on the requesting machine, and can be given up on", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: {
+      ...WAITING_FOR_KEY,
+      transfer: {
+        ...PENDING_TRANSFER,
+        state: "comparing",
+        verificationCode: "8H2K-4RTQ",
+      },
+    },
+    outstanding: true,
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  expect(await screen.findByTestId("transfer-code")).toHaveTextContent(
+    "8H2K-4RTQ",
+  );
+
+  await user.click(screen.getByRole("button", { name: /stop waiting/i }));
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/login/attempt-1/transfer/cancel",
+    ),
+  );
+});
+
+test("a signed-in machine reviews a waiting request and approves it after comparing codes", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    status: SIGNED_IN,
+    pendingTransfers: [
+      {
+        requestId: "request-1",
+        locator: "K3M9QZ",
+        machineName: "Studio Mac",
+        expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
+      },
+    ],
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  // The machine name is what the request calls itself; the code is what the
+  // user actually checks.
+  expect(await screen.findByText(/Studio Mac/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /review request/i }));
+
+  expect(await screen.findByTestId("approval-code")).toHaveTextContent(
+    "8H2K-4RTQ",
+  );
+  // Nothing is sent by opening the request: the key goes only on the user's
+  // word that the two codes match.
+  expect(server.calls).not.toContain(
+    "POST /api/local-auth/transfers/request-1/approve",
+  );
+
+  await user.click(screen.getByRole("button", { name: /codes match/i }));
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/transfers/request-1/approve",
+    ),
+  );
 });
