@@ -89,6 +89,7 @@ function fakePrompt(answer: PromptResult<boolean> = { cancelled: false, value: t
 function asSetupPrompt(prompt: FakePrompt): SetupPrompt {
   return {
     ...prompt,
+    async serverUrl() { return { cancelled: false, value: "" } as const; },
     selectTargets() {
       throw new Error("update must never open the target picker");
     },

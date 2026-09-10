@@ -26,6 +26,7 @@ function fakeClack(
     warnings: [],
   };
   const clack: ClackApi = {
+    text: () => Promise.resolve(""),
     groupMultiselect: (options) => {
       recorded.groupCalls.push(options);
       return Promise.resolve(answers.group ?? []);
@@ -51,13 +52,21 @@ const REQUEST: TargetSelectionRequest = {
     {
       label: "Claude Code",
       options: [
-        { value: "claude\0/home/me/.claude", label: "~/.claude", hint: "detected · default" },
+        {
+          value: "claude\0/home/me/.claude",
+          label: "~/.claude",
+          hint: "detected · default",
+        },
       ],
     },
     {
       label: "Codex",
       options: [
-        { value: "codex\0/home/me/.codex", label: "~/.codex", hint: "not registered" },
+        {
+          value: "codex\0/home/me/.codex",
+          label: "~/.codex",
+          hint: "not registered",
+        },
       ],
     },
   ],
@@ -167,5 +176,29 @@ describe("Clack setup prompt adapter", () => {
     assert.deepEqual(recorded.warnings, [
       "Setup incomplete: Cursor was skipped.",
     ]);
+  });
+});
+
+describe("setup sync server entry", () => {
+  it("normalizes entered URLs and validates without writing configuration", async () => {
+    const { clack } = fakeClack();
+    clack.text = async (request) => {
+      assert.match(request.message, /same URL as your first machine/);
+      assert.equal(request.validate(""), undefined);
+      assert.equal(request.validate("https://sync.example.test"), undefined);
+      assert.match(request.validate("not a URL")!, /valid URL/);
+      return "  https://sync.example.test/  ";
+    };
+    assert.deepEqual(await createClackPrompt(clack).serverUrl(), {
+      cancelled: false,
+      value: "https://sync.example.test/",
+    });
+  });
+  it("normalizes cancellation without saving the placeholder", async () => {
+    const { clack } = fakeClack();
+    clack.text = async () => CANCEL;
+    assert.deepEqual(await createClackPrompt(clack).serverUrl(), {
+      cancelled: true,
+    });
   });
 });

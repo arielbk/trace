@@ -101,7 +101,7 @@ export function configUnsetOperation(
   return success(`${key} unset\n`);
 }
 
-function validateServerUrl(value: string): CommandResult | null {
+export function validateServerUrl(value: string): CommandResult | null {
   let parsed: URL;
   try {
     parsed = new URL(value);

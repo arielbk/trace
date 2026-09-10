@@ -61,6 +61,7 @@ function fakePrompt(
     confirmRequests: [],
     notes: [],
     warnings: [],
+    async serverUrl() { return { cancelled: false, value: "" } as const; },
     selectTargets(request) {
       prompt.selectRequests.push(request);
       return Promise.resolve(

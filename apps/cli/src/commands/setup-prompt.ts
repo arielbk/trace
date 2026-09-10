@@ -37,7 +37,11 @@ export type TargetSelectionRequest = {
  * driven by a fake in tests without rendering a real UI.
  */
 export type SetupPrompt = ConfirmPrompt & {
-  selectTargets(request: TargetSelectionRequest): Promise<PromptResult<string[]>>;
+  selectTargets(
+    request: TargetSelectionRequest,
+  ): Promise<PromptResult<string[]>>;
+  /** An empty answer keeps this installation local-only. */
+  serverUrl(): Promise<PromptResult<string>>;
 };
 
 /**

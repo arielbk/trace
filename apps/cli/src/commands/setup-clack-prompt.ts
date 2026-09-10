@@ -1,3 +1,4 @@
+import { validateServerUrl } from "./config-operations.ts";
 import * as clackPrompts from "@clack/prompts";
 import type {
   PromptResult,
@@ -25,6 +26,11 @@ export type ClackApi = {
     message: string;
     initialValue: boolean;
   }): Promise<boolean | symbol>;
+  text(options: {
+    message: string;
+    placeholder: string;
+    validate(value: string | undefined): string | undefined;
+  }): Promise<string | symbol>;
   note(message?: string, title?: string): void;
   warn(message: string): void;
   isCancel(value: unknown): boolean;
@@ -33,6 +39,7 @@ export type ClackApi = {
 const defaultClack: ClackApi = {
   groupMultiselect: (options) => clackPrompts.groupMultiselect(options),
   confirm: (options) => clackPrompts.confirm(options),
+  text: (options) => clackPrompts.text(options),
   note: (message, title) => {
     clackPrompts.note(message, title);
   },
@@ -75,7 +82,23 @@ export function createClackPrompt(clack: ClackApi = defaultClack): SetupPrompt {
       return { cancelled: false, value: submitted as string[] };
     },
 
-    async confirm(request: { message: string }): Promise<PromptResult<boolean>> {
+    async serverUrl(): Promise<PromptResult<string>> {
+      const answer = await clack.text({
+        message:
+          "Sync server URL (use the same URL as your first machine; leave blank for local-only)",
+        placeholder: "https://sync.example.com",
+        validate(value) {
+          const url = value?.trim();
+          return url ? validateServerUrl(url)?.stderr.trimEnd() : undefined;
+        },
+      });
+      if (clack.isCancel(answer)) return { cancelled: true };
+      return { cancelled: false, value: (answer as string).trim() };
+    },
+
+    async confirm(request: {
+      message: string;
+    }): Promise<PromptResult<boolean>> {
       // Accepting the default is the common answer on both call sites — setting
       // up the detected targets, taking the offered update — so Enter means yes.
       const answer = await clack.confirm({
