@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import {
   createKeyTransferApprover,
-  createKeyTransferRecipient,
   createKeyWrapper,
   generateTaskKey,
   type SyncWrappedKey,
@@ -204,7 +203,6 @@ test("a relay that substitutes the approving machine's key shows the user two di
 
 test("a relay that substitutes the requesting machine's key is caught by its commitment", async () => {
   const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
-  const stranger = createKeyTransferRecipient();
   const honestB = await startKeyTransferRequest({
     relay: relayFor(cloud),
     machineName: "B's MacBook",
@@ -218,8 +216,10 @@ test("a relay that substitutes the requesting machine's key is caught by its com
       serverUrl: cloud.url,
       fetch: tamperingCloud(cloud, (record) => {
         if (record.recipientPublicKey) {
-          record.recipientPublicKey = stranger.acceptOffer(
-            String(record.senderPublicKey),
+          // A well-formed key of somebody else's — which is the whole of what a
+          // relay can do here. It cannot produce one matching B's commitment,
+          // and the approving machine is what has to notice.
+          record.recipientPublicKey = createKeyTransferApprover(
             record as never,
           ).publicKey;
         }
@@ -296,4 +296,56 @@ test("a request cancelled before delivery commits nothing, even if an approval l
   expect(recipient.view.state).toBe("cancelled");
   expect(recipient.key()).toBeUndefined();
   expect(delivered).toEqual([]);
+});
+
+/** A cloud whose key-transfer reads fail the first `failures` times they are
+ * tried — a dropped response, not a refusal. */
+function flakyReads(cloud: FakeCloud, failures: number): FakeCloud {
+  let dropped = 0;
+  const fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes("/api/key-transfer/") && method === "GET" && dropped < failures) {
+      dropped += 1;
+      throw new TypeError("fetch failed");
+    }
+    return cloud.fetch(input as never, init);
+  }) as FakeCloud["fetch"];
+  return new Proxy(cloud, {
+    get: (target, key) => (key === "fetch" ? fetch : Reflect.get(target, key)),
+  }) as FakeCloud;
+}
+
+test("a dropped response is waited through, not treated as a lost request", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const { recipient, approver } = await sessions(flakyReads(cloud, 3), masterKey);
+
+  const listed = await approver.list();
+  await approver.inspect(listed[0]!.requestId);
+  await until(() => recipient.view, (view) => view.state === "comparing");
+  await approver.approve(listed[0]!.requestId);
+
+  // The network dropped three reads on the way here. None of them was evidence
+  // that the request had gone: the user kept comparing the same code, and the
+  // approval still landed.
+  const complete = await until(
+    () => recipient.view,
+    (view) => view.state === "complete",
+  );
+  expect(complete.state).toBe("complete");
+  expect(recipient.key()).toBe(masterKey);
+});
+
+test("a relay that stops answering gives up with the recovery key still on offer", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const { recipient } = await sessions(flakyReads(cloud, Number.MAX_SAFE_INTEGER), masterKey);
+
+  const failed = await until(
+    () => recipient.view,
+    (view) => view.state === "failed" || view.state === "expired",
+  );
+  // Not a stack trace, and not a silent wait: the way out is on the message.
+  expect(failed.error).toMatch(/recovery key/i);
 });

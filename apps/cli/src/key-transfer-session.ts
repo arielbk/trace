@@ -13,8 +13,10 @@ import {
 } from "@trace/core";
 import { validateDocumentKey } from "./auth-service.ts";
 import {
+  KEY_TRANSFER_EXPIRED_MESSAGE,
   KeyTransferConflictError,
   KeyTransferExpiredError,
+  KeyTransferUnavailableError,
   type KeyTransferRecord,
   type KeyTransferRelay,
 } from "./key-transfer-relay.ts";
@@ -52,6 +54,29 @@ const POLL_INTERVAL_MS = 1_000;
 /** How many of those polls one `inspect` call is willing to spend before
  * answering "still waiting" and letting the board ask again. */
 const INSPECT_POLLS = 5;
+
+/**
+ * How many relay reads in a row may come back as nothing at all before a
+ * machine stops waiting.
+ *
+ * A dropped response is not evidence about the request — the row is on the
+ * relay either way — so one is worth another poll rather than the end of the
+ * ceremony. A run of them is a connection that will not come back inside this
+ * interaction, and saying so beats leaving the user comparing a code against a
+ * machine nobody is talking to.
+ */
+const MAX_READ_FAILURES = 5;
+
+export const KEY_TRANSFER_UNREACHABLE_MESSAGE =
+  "This machine lost contact with the sync server while it waited. Ask again, or use your recovery key.";
+
+/** A relay that stopped answering — told apart from one that answered with a
+ * refusal, which is a fact about the request rather than about the network. */
+export class KeyTransferUnreachableError extends Error {
+  constructor() {
+    super(KEY_TRANSFER_UNREACHABLE_MESSAGE);
+  }
+}
 
 /**
  * Wait between polls, and hand the event loop a turn either way.
@@ -137,6 +162,7 @@ export async function startKeyTransferRequest(options: {
   async function run(created: KeyTransferRecord, deadline: number): Promise<void> {
     let exchange: KeyTransferExchange | undefined;
     let record: KeyTransferRecord | null = created;
+    let readFailures = 0;
 
     for (;;) {
       if (cancelled) return;
@@ -181,7 +207,17 @@ export async function startKeyTransferRequest(options: {
       }
 
       await pause();
-      record = await options.relay.read(created.context.requestId);
+      try {
+        record = await options.relay.read(created.context.requestId);
+        readFailures = 0;
+      } catch (error) {
+        // Only an unreachable relay is worth waiting through. Anything it
+        // actually pronounced is about this request, and the last record this
+        // machine read is still the best thing it knows.
+        if (!(error instanceof KeyTransferUnavailableError)) throw error;
+        readFailures += 1;
+        if (readFailures > MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
+      }
     }
   }
 
@@ -235,9 +271,6 @@ export async function startKeyTransferRequest(options: {
   return session;
 }
 
-const KEY_TRANSFER_EXPIRED_MESSAGE =
-  "That transfer request expired before it finished. Start a new one.";
-
 const SETTLED: readonly KeyTransferRequestState[] = [
   "complete",
   "denied",
@@ -259,6 +292,14 @@ export interface KeyTransferApproverSession {
   approve(requestId: string): Promise<void>;
   deny(requestId: string): Promise<void>;
 }
+
+/** The relay-side states a request can still be acted on from. */
+const OPEN_STATES: readonly KeyTransferRecord["state"][] = [
+  "pending",
+  "offered",
+  "revealed",
+  "approved",
+];
 
 export const KEY_TRANSFER_UNCOMPARED_MESSAGE =
   "This request has not been compared on this machine yet. Open it and check the codes match before approving.";
@@ -322,10 +363,29 @@ export function createKeyTransferApproverSession(options: {
       // Bounded: `inspect` answers a board request, and a request that waits
       // for the other machine to reveal is a request that never returns. The
       // board asks again, which is also how it notices a request going away.
+      let readFailures = 0;
       for (let poll = 0; poll < INSPECT_POLLS; poll += 1) {
-        const record = await options.relay.read(requestId);
+        let record: KeyTransferRecord | null;
+        try {
+          record = await options.relay.read(requestId);
+        } catch (error) {
+          // The same rule as the requesting machine's: a dropped response is
+          // not news about the request, so it costs a poll rather than the
+          // exchange this machine has already joined.
+          if (!(error instanceof KeyTransferUnavailableError)) throw error;
+          readFailures += 1;
+          if (readFailures > MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
+          await pause();
+          continue;
+        }
         const context = record && accept(record);
         if (!record || !context) return gone(requestId);
+        // A request that has finished being one — claimed, cancelled, denied,
+        // expired — is over regardless of how far its exchange got. Asked
+        // after the fact it still carries both machines' keys, and answering
+        // "comparing" would put a code back on screen for a request the other
+        // machine has already walked away from.
+        if (!OPEN_STATES.includes(record.state)) return gone(requestId);
 
         let entry = joined.get(requestId);
         if (!entry) {
@@ -361,12 +421,9 @@ export function createKeyTransferApproverSession(options: {
             verificationCode: entry.approval.verificationCode,
           };
         }
-        if (record.state !== "pending" && record.state !== "offered") {
-          return gone(requestId);
-        }
         await pause();
       }
-      const waiting = await options.relay.read(requestId);
+      const waiting = await options.relay.read(requestId).catch(() => null);
       return {
         requestId,
         locator: waiting?.locator ?? "",

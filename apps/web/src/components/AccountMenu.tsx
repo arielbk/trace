@@ -27,6 +27,7 @@ import {
   traceQueryKey,
   useCurrentLogin,
   useKeyTransfers,
+  isForgottenLogin,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
@@ -140,7 +141,12 @@ function AccountBody({ account }: { account: AccountDescription }) {
   const [claimed, setClaimed] = useState(false);
   const { data: outstanding, isPending: findingOutstanding } =
     useCurrentLogin();
-  const { data: attempt } = useLoginAttempt(attemptId);
+  const { data: watched, error: watchError } = useLoginAttempt(attemptId);
+  // A machine that no longer knows this attempt has forgotten it — `eqnx
+  // serve` restarted, and attempts live in that process's memory. The login is
+  // over whatever the last poll said, and a key prompt nothing is listening to
+  // is worse than saying so.
+  const attempt = interrupted(watched, watchError) ?? watched;
   const unlocked = useUnlockBeat();
 
   /** Take up an attempt, wherever it came from, and watch it from here. */
@@ -968,6 +974,33 @@ const FIELD_CLASS =
 
 /** Attempt states that are over, and the wording each gets when the service
  * offered no message of its own. */
+export const LOGIN_INTERRUPTED_MESSAGE =
+  "This machine no longer has that sign-in — it was interrupted. Start again to sign in.";
+
+/**
+ * The attempt as it now stands, when the machine has answered that it has none.
+ *
+ * A one-time generated key is the exception: it was shown from this board's own
+ * memory and is the only copy the user may ever see, so an interruption must
+ * not sweep it off the screen before they have saved it.
+ */
+function interrupted(
+  view: LoginAttemptView | undefined,
+  error: unknown,
+): LoginAttemptView | undefined {
+  if (!view || !isForgottenLogin(error)) return undefined;
+  if (view.state === "showing-generated-key") return undefined;
+  const interruptedView: LoginAttemptView = {
+    ...view,
+    state: "failed",
+    error: LOGIN_INTERRUPTED_MESSAGE,
+  };
+  // Neither survives the process that held them, so neither belongs on screen.
+  delete interruptedView.generatedKey;
+  delete interruptedView.transfer;
+  return interruptedView;
+}
+
 const SETTLED_LOGIN_MESSAGES: Partial<
   Record<LoginAttemptView["state"], string>
 > = {

@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { ReEntryManifest, Session, Task, TaskDoc } from "@trace/core";
 import {
@@ -113,6 +116,13 @@ test("formatReEntryManifest renders an empty doc index and omits an absent sessi
 });
 
 test("formatReEntryManifest renders state, the doc index, and the prior session", () => {
+  // A transcript this machine can actually read — the ordinary case, where the
+  // pointer needs no qualification.
+  const transcriptPath = join(
+    mkdtempSync(join(tmpdir(), "trace-formatters-")),
+    "session.jsonl",
+  );
+  writeFileSync(transcriptPath, "");
   const manifest: ReEntryManifest = {
     task: {
       id: "task-1",
@@ -131,7 +141,7 @@ test("formatReEntryManifest renders state, the doc index, and the prior session"
     ],
     lastSession: {
       id: "session-1",
-      transcriptPath: "/tmp/session.jsonl",
+      transcriptPath,
       tool: "codex",
       model: "gpt-5-codex",
       createdAt: "2026-06-18T17:01:00.000Z",
@@ -156,10 +166,31 @@ test("formatReEntryManifest renders state, the doc index, and the prior session"
       "lastSession:",
       "  id: session-1",
       "  tool: codex",
-      "  transcript: /tmp/session.jsonl",
+      `  transcript: ${transcriptPath}`,
       "  model: gpt-5-codex",
       "",
     ].join("\n"),
+  );
+});
+
+test("formatReEntryManifest marks a transcript that is not on this machine", () => {
+  // What a session synced from another machine leaves behind: the row, and a
+  // locator pointing at that machine's disk.
+  const manifest: ReEntryManifest = {
+    task: { id: "task-1", title: "Ship formatters", projectRoot: "/repo" },
+    taskDocsDir: "/trace/tasks/ship-formatters/docs",
+    docs: [],
+    lastSession: {
+      id: "session-1",
+      transcriptPath: "/machine-a/.claude/projects/session.jsonl",
+      tool: "claude",
+      model: null,
+      createdAt: "2026-06-18T17:01:00.000Z",
+    },
+  };
+
+  expect(formatReEntryManifest(manifest)).toContain(
+    "  transcript: /machine-a/.claude/projects/session.jsonl (not on this machine)",
   );
 });
 

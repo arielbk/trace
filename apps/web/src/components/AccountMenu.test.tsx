@@ -88,6 +88,9 @@ function localAuthServer(options: {
   /** Serve `polled` as the machine's outstanding login from the outset, as a
    * serving process does when an earlier popover walked away from one. */
   outstanding?: boolean;
+  /** Forget every attempt from now on, the way a restarted `eqnx serve` has:
+   * attempts live in that process's memory, so it answers 404. */
+  restart?: () => void;
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
@@ -97,12 +100,22 @@ function localAuthServer(options: {
   let live = options.outstanding ?? false;
   const calls: string[] = [];
   const bodies: unknown[] = [];
+  let forgotten = false;
+  options.restart = () => {
+    forgotten = true;
+  };
   const fetch = vi
     .fn()
     .mockImplementation(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       calls.push(`${init?.method ?? "GET"} ${url}`);
       if (init?.body) bodies.push(JSON.parse(String(init.body)));
+      if (forgotten && url.startsWith("/api/local-auth/login/")) {
+        // `current` answers `null`; a named attempt is simply not found.
+        return url.endsWith("/current")
+          ? jsonResponse(null)
+          : new Response("", { status: 404 });
+      }
       if (url === "/api/sync/status") {
         // A completed login is what turns this machine signed-in, exactly as
         // the serving process reports it once credentials are stored.
@@ -231,6 +244,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   cleanup();
 });
@@ -1007,4 +1021,62 @@ test("a signed-in machine reviews a waiting request and approves it after compar
       "POST /api/local-auth/transfers/request-1/approve",
     ),
   );
+});
+
+test("a login the machine has forgotten is reported, not polled forever", async () => {
+  const restarted: { go?: () => void } = {};
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+    get restart() {
+      return restarted.go;
+    },
+    set restart(go) {
+      restarted.go = go;
+    },
+  });
+  // The board learns an attempt is gone by polling, so the clock is what moves
+  // this test forward — and it has to be this test's clock from the outset,
+  // since the poll is scheduled the moment the attempt is adopted.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const poll = () => vi.advanceTimersByTimeAsync(3_000);
+
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(
+    await screen.findByRole("button", { name: /sign in with github/i }),
+  );
+  await screen.findByLabelText(/document encryption key/i);
+
+  // `eqnx serve` restarts. Attempts live in that process's memory, so the one
+  // this popover is watching is simply gone — and the board was still showing
+  // its key prompt, against a machine that could no longer accept a key.
+  restarted.go?.();
+  await poll();
+
+  expect(await screen.findByTestId("login-outcome")).toHaveTextContent(
+    /interrupted/i,
+  );
+  expect(
+    screen.queryByLabelText(/document encryption key/i),
+  ).not.toBeInTheDocument();
+
+  // And it stopped asking: a machine that has forgotten an attempt will not
+  // remember it on the next poll, and a board still polling one is a board
+  // waiting for something that cannot happen.
+  const asked = () =>
+    server.calls.filter((call) =>
+      call.startsWith("GET /api/local-auth/login/attempt-1"),
+    ).length;
+  const settled = asked();
+  await poll();
+  await poll();
+  expect(asked()).toBe(settled);
+
+  // The way out is one the user can act on.
+  await user.click(screen.getByRole("button", { name: /try again/i }));
+  expect(
+    server.calls.filter((call) => call === "POST /api/local-auth/login"),
+  ).toHaveLength(2);
 });

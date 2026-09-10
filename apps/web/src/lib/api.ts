@@ -367,16 +367,30 @@ export function useCurrentLogin() {
   });
 }
 
+/**
+ * Whether a machine has answered that it does not know this attempt.
+ *
+ * Attempts live in the serving process's memory, so this is what a restarted
+ * `eqnx serve` says about the login a board tab is still watching. It is a
+ * settled answer, not a hiccup: asking again cannot bring the attempt back.
+ */
+export function isForgottenLogin(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 404;
+}
+
 export function useLoginAttempt(attemptId: string | null) {
   const source = useTraceDataSource();
   return useQuery({
     queryKey: traceQueryKey(source, "login-attempt", attemptId),
     queryFn: () => fetchLoginAttempt(attemptId as string, source),
     enabled: attemptId !== null,
-    refetchInterval: (query) =>
-      query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
+    retry: (failureCount, error) => !isForgottenLogin(error) && failureCount < 3,
+    refetchInterval: (query) => {
+      if (isForgottenLogin(query.state.error)) return false;
+      return query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
         ? false
-        : LOGIN_POLL_MS,
+        : LOGIN_POLL_MS;
+    },
   });
 }
 

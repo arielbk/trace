@@ -34,6 +34,20 @@ export class FakeSyncServer {
       this.#handle(String(input), init)) as typeof globalThis.fetch;
   }
 
+  /**
+   * Everything the server is holding, as one string — rows, manifests, and the
+   * raw blob bytes. This is the seam for "the cloud never sees a plaintext
+   * document": what the server stores, read the way an operator with the
+   * database in front of them would read it.
+   */
+  get stored(): string {
+    return [
+      JSON.stringify(this.#rows),
+      JSON.stringify(this.#manifests),
+      ...[...this.#blobs.values()].map((blob) => Buffer.from(blob).toString("latin1")),
+    ].join("\n");
+  }
+
   async #handle(url: string, init?: RequestInit): Promise<Response> {
     const { pathname } = new URL(url);
     const method = (init?.method ?? "GET").toUpperCase();
@@ -325,6 +339,11 @@ export class FakeCloud {
 
   approve(): void {
     this.#approved = true;
+  }
+
+  /** Everything the sync half is holding — see {@link FakeSyncServer.stored}. */
+  get stored(): string {
+    return this.#sync.stored;
   }
 
   /** Point the transfer relay's expiry arithmetic at a test-controlled clock. */

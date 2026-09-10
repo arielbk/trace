@@ -991,3 +991,28 @@ test("cancelling while manifests are loading cannot persist credentials late", a
   expect(readStoredDocCryptoKey(env)).toBeNull();
   expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
 });
+
+test("starting a second login gives up on the one it supersedes", async () => {
+  const accountKey = generateTaskKey();
+  const hosted = hostedAuth(existingAccount(accountKey));
+  const { service, requestSync } = serviceWithSyncTrigger(hosted);
+
+  const abandoned = await service.startLogin("github");
+  hosted.approve();
+  await waitForServiceState(service, abandoned.attemptId, "waiting-for-existing-key");
+
+  // The user gave up and pressed sign in again. Two approved attempts holding
+  // two bearer tokens for the same store is one too many: the one they are
+  // standing in front of is the only one that may still finish.
+  const current = await service.startLogin("github");
+
+  expect(service.readLogin(abandoned.attemptId)?.state).toBe("cancelled");
+  expect(service.readCurrentLogin()?.attemptId).toBe(current.attemptId);
+
+  // The superseded attempt still knows its key setup, so this would have
+  // completed it — and fired a second sync — before it was given up on.
+  const late = await service.submitExistingKey(abandoned.attemptId, accountKey);
+  expect(late?.state).toBe("cancelled");
+  expect(requestSync).not.toHaveBeenCalled();
+  expect(readStoredDocCryptoKey(env)).toBeNull();
+});

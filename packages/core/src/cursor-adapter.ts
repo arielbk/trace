@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   chatIdFromTranscriptPath,
   readAgentSession,
@@ -187,6 +188,18 @@ export const cursorTranscriptAdapter: TranscriptAdapter = {
       return exportComposerTranscript(input);
     }
     return exportFileTranscript(input, "cursor-agent-jsonl", "cursor");
+  },
+  // A Cursor locator names a conversation in this machine's own Cursor storage,
+  // not a file that could travel with a sync — so the only honest check is
+  // whether it still resolves here.
+  hasTranscript(transcriptPath: string): boolean {
+    if (isAgentTranscriptLocator(transcriptPath)) return existsSync(transcriptPath);
+    try {
+      readSessionForLocator(transcriptPath);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 

@@ -247,12 +247,20 @@ export async function runSyncCommand(
       (result.pulledManifests ?? 0) +
       (result.uploadedBlobs ?? 0) +
       (result.downloadedBlobs ?? 0);
+    // A deferred manifest is the one outcome a "complete" line would misreport:
+    // the sync did succeed, and the machine still does not have those
+    // documents. Say so, and say what happens next, rather than leaving the gap
+    // to be discovered as a missing file.
+    const deferred = result.deferredManifests ?? 0;
     return {
       exitCode: 0,
       stdout:
         `Sync complete: ${result.pushed} pushed, ${result.pulled} pulled.` +
         (documentChanges > 0
           ? ` Docs: ${result.pushedManifests} manifests pushed, ${result.pulledManifests} pulled, ${result.uploadedBlobs} blobs uploaded, ${result.downloadedBlobs} downloaded.`
+          : "") +
+        (deferred > 0
+          ? ` Documents for ${deferred} task${deferred === 1 ? "" : "s"} are not on this machine yet; the next sync retries them.`
           : "") +
         "\n",
       stderr: "",

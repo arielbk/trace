@@ -54,11 +54,25 @@ export class KeyTransferConflictError extends Error {
 }
 
 export const KEY_TRANSFER_EXPIRED_MESSAGE =
-  "That transfer request expired before it finished. Start a new one.";
+  "That transfer request expired before it was approved. Ask again, or use your recovery key.";
 
 export class KeyTransferExpiredError extends Error {
   constructor() {
     super(KEY_TRANSFER_EXPIRED_MESSAGE);
+  }
+}
+
+/**
+ * The relay could not be reached, or answered with its own failure.
+ *
+ * Told apart from every other error here because it is news about the network
+ * rather than about the request: the row is still on the relay either way, so a
+ * caller in the middle of a ceremony is right to try again rather than to give
+ * the user a new request to start.
+ */
+export class KeyTransferUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super("The sync server could not be reached.", { cause });
   }
 }
 
@@ -108,14 +122,22 @@ export function createKeyTransferRelay(options: {
     path: string,
     body?: unknown,
   ): Promise<{ status: number; payload: unknown }> {
-    const response = await options.fetch(`${base}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${options.accessToken}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    let response: Response;
+    try {
+      response = await options.fetch(`${base}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${options.accessToken}`,
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    } catch (error) {
+      throw new KeyTransferUnavailableError(error);
+    }
+    // A server that failed to answer has said nothing about the request. A
+    // server that refused has, and that refusal belongs to the caller.
+    if (response.status >= 500) throw new KeyTransferUnavailableError();
     const payload = await readJson<Record<string, unknown>>(response);
     return { status: response.status, payload };
   }

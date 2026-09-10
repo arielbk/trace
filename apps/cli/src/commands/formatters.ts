@@ -1,4 +1,5 @@
 import {
+  hasReadableTranscript,
   resolveSessionName,
   resolveTaskDocsDir,
   type ActiveTask,
@@ -179,11 +180,21 @@ export function formatReEntryManifest(manifest: ReEntryManifest): string {
   // `eqnx session` call away. Absent (a task nobody has worked yet) prints
   // nothing at all, like the other optional pointers.
   if (manifest.lastSession) {
+    // The transcript locator was recorded by whichever machine ran the session,
+    // and only the session row syncs. Saying where it is not is the difference
+    // between an agent reaching for `eqnx session tail` and an agent believing
+    // the prior session had nothing to say.
+    const elsewhere = hasReadableTranscript({
+      transcriptPath: manifest.lastSession.transcriptPath,
+      tool: manifest.lastSession.tool,
+    })
+      ? ""
+      : " (not on this machine)";
     lines.push(
       "lastSession:",
       `  id: ${manifest.lastSession.id}`,
       `  tool: ${manifest.lastSession.tool}`,
-      `  transcript: ${manifest.lastSession.transcriptPath}`,
+      `  transcript: ${manifest.lastSession.transcriptPath}${elsewhere}`,
       ...(manifest.lastSession.model
         ? [`  model: ${manifest.lastSession.model}`]
         : []),

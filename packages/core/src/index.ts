@@ -235,6 +235,7 @@ export type {
   ParsedCodexSession,
 } from "./codex-adapter.ts";
 export {
+  hasReadableTranscript,
   readTranscriptTail,
   tailTranscriptMessages,
 } from "./transcript-tail.ts";

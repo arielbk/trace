@@ -153,6 +153,19 @@ export function createLocalAuthService(
     return session;
   }
 
+  /**
+   * Stop waiting on an attempt, for good. Marks it cancelled — which is what
+   * every path checks before it persists anything — and lets go of the relay
+   * request it may be holding, so the other machine stops being asked to
+   * approve a login nobody is finishing.
+   */
+  function giveUp(attempt: LoginAttempt): void {
+    if (SETTLED_STATES.includes(attempt.view.state)) return;
+    attempt.cancelled = true;
+    void attempt.transfer?.cancel();
+    setView(attempt, { ...attempt.view, state: "cancelled" });
+  }
+
   return {
     async startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
       const serverUrl = requireServerUrl(env);
@@ -161,6 +174,12 @@ export function createLocalAuthService(
         fetch,
         provider,
       );
+      // Only once there is a new attempt to stand in its place: a device
+      // authorization that fails leaves the user with the login they had.
+      // Two approved attempts would hold two bearer tokens for one store, and
+      // the abandoned one would still be able to finish and sync behind the
+      // user's back.
+      for (const live of attempts.values()) giveUp(live);
       const attempt: LoginAttempt = {
         view: {
           attemptId: randomUUID(),
@@ -344,14 +363,7 @@ export function createLocalAuthService(
     cancelLogin(attemptId: string): LoginAttemptView | null {
       const attempt = attempts.get(attemptId);
       if (!attempt) return null;
-      attempt.cancelled = true;
-      // The transfer holds a live request on the relay; cancelling the login
-      // without cancelling it would leave the other machine looking at a row
-      // nobody is waiting on.
-      void attempt.transfer?.cancel();
-      if (!SETTLED_STATES.includes(attempt.view.state)) {
-        setView(attempt, { ...attempt.view, state: "cancelled" });
-      }
+      giveUp(attempt);
       return viewOf(attempt);
     },
 

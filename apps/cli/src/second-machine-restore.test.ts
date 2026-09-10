@@ -616,8 +616,13 @@ test("failed document download keeps tasks visible and a later retry completes r
   const fetch: typeof globalThis.fetch = async (input, init) =>
     String(input).includes("/api/sync/blobs/") && !String(input).endsWith("missing")
       ? new Response("offline", { status: 503 }) : cloud.fetch(input, init);
-  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(1);
-  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "failed", restore: { phase: "documents" } });
+  // A blob this machine cannot fetch defers the manifest rather than failing the
+  // run: the rows it pulled stay, the board says documents are pending, and the
+  // next sync is the retry.
+  const interrupted = await runSyncCommand(b.env, { fetch });
+  expect(interrupted.exitCode).toBe(0);
+  expect(interrupted.stdout).toContain("not on this machine yet");
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "partial" } });
   expect(JSON.parse((await board.request("GET", "/api/tasks")).body)).toHaveLength(1);
   expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
   expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 1 } });

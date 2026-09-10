@@ -1,12 +1,9 @@
-import { EventEmitter } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   generateTaskKey,
-  openTraceStore,
   readSyncIdentity,
   resolveTaskDocsDir,
 } from "@trace/core";
@@ -14,10 +11,16 @@ import { runSyncCommand } from "./commands/sync.ts";
 import { createLocalAuthService } from "./local-auth.ts";
 import { createKeyTransferRelay } from "./key-transfer-relay.ts";
 import { createKeyTransferApproverSession } from "./key-transfer-session.ts";
-import { createServeRequestListener } from "./serve.ts";
-import { openConnectionCredentials } from "./connection-credentials.ts";
 import { FakeCloud } from "./fake-sync-server.ts";
-import type { Env } from "./commands/seam.ts";
+import {
+  hostedBoard,
+  type Captured,
+  machine as makeMachine,
+  machineAWithSyncedWork,
+  tick,
+  until,
+  untilView,
+} from "./second-machine-fixtures.ts";
 
 /**
  * The journey this slice exists for: a second machine unlocks itself through
@@ -39,57 +42,17 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function machine(name: string, cloudUrl: string): { home: string; db: string; env: Env } {
-  const home = join(root, name, "home");
-  mkdirSync(join(home, ".trace"), { recursive: true });
-  const db = join(root, name, "trace.sqlite");
-  return { home, db, env: { HOME: home, TRACE_DB: db, TRACE_SERVER_URL: cloudUrl } };
-}
-
-const tick = (): Promise<void> =>
-  new Promise((resolve) => setImmediate(() => resolve()));
-
-/** Machine A: signed in the way an established machine is, with one task and
- * one encrypted document already in the cloud. */
-async function machineAWithSyncedWork(
-  cloud: FakeCloud,
-  token: string,
-  masterKey: string,
-): Promise<{ a: ReturnType<typeof machine>; slug: string }> {
-  const a = machine("a", cloud.url);
-  writeFileSync(join(a.home, ".trace", "auth.json"), JSON.stringify({ accessToken: token }));
-  writeFileSync(join(a.home, ".trace", "key.json"), JSON.stringify({ masterKey }));
-  const store = openTraceStore(a.db);
-  const task = store.createTask("Ship the second machine");
-  store.close();
-  const docs = resolveTaskDocsDir(a.db, task.slug);
-  mkdirSync(docs, { recursive: true });
-  writeFileSync(join(docs, "state.md"), "# Ship it\n\nA wrote this.\n");
-  expect((await runSyncCommand(a.env, { fetch: cloud.fetch })).exitCode).toBe(0);
-  return { a, slug: task.slug };
-}
-
-/** Poll a value the way a board tab does, yielding between reads. */
-async function until<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
-  for (let poll = 0; poll < 1_000; poll += 1) {
-    const value = read();
-    if (predicate(value)) return value;
-    await tick();
-  }
-  throw new Error(`never settled: ${JSON.stringify(read())}`);
-}
-
 test("machine B unlocks through machine A's approval and reads A's document", async () => {
   const masterKey = generateTaskKey();
   const cloud = new FakeCloud({
     token: "cloud-token",
     user: { id: "octocat", name: "The Octocat" },
   });
-  const { slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+  const { slug } = await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
 
   // B signs in. The account holds documents, so the login parks at the key
   // step rather than storing anything.
-  const b = machine("b", cloud.url);
+  const b = makeMachine(root, "b", cloud.url);
   const syncs: Promise<unknown>[] = [];
   const auth = createLocalAuthService(b.env, {
     fetch: cloud.fetch,
@@ -156,90 +119,13 @@ test("machine B unlocks through machine A's approval and reads A's document", as
   ).toContain("A wrote this.");
 });
 
-const HOSTED_ORIGIN = "https://board.test";
-
-type Captured = { status: number; body: string };
-
-/**
- * A hosted board pointed at one machine's local EQNX, carrying the hosted
- * origin and a paired browser credential on every request — so the
- * cross-origin allowlist and the capability grant are on the exercised path,
- * not assumed.
- */
-function hostedBoard(
-  m: { home: string; db: string; env: Env },
-  cloud: FakeCloud,
-): {
-  request: (method: string, path: string, body?: string) => Promise<Captured>;
-  syncs: Promise<unknown>[];
-  seen: string[];
-} {
-  const syncs: Promise<unknown>[] = [];
-  const seen: string[] = [];
-  const connection = openConnectionCredentials({ HOME: m.home });
-  const { token } = connection.issueBrowserToken("Test browser");
-  const listener = createServeRequestListener(
-    m.db,
-    undefined,
-    true,
-    undefined,
-    undefined,
-    createLocalAuthService(m.env, {
-      fetch: cloud.fetch,
-      sleep: tick,
-      onLoginComplete: () => {
-        syncs.push(runSyncCommand(m.env, { fetch: cloud.fetch }));
-      },
-    }),
-    HOSTED_ORIGIN,
-    connection,
-  );
-
-  const request = (method: string, path: string, body?: string): Promise<Captured> =>
-    new Promise((resolve) => {
-      const captured: Captured = { status: 200, body: "" };
-      const res = {
-        set statusCode(value: number) {
-          captured.status = value;
-        },
-        get statusCode() {
-          return captured.status;
-        },
-        setHeader() {},
-        end(chunk?: Buffer | string) {
-          captured.body = chunk === undefined ? "" : chunk.toString("utf8");
-          seen.push(captured.body);
-          resolve(captured);
-        },
-      } as unknown as ServerResponse;
-
-      const req = Object.assign(new EventEmitter(), {
-        method,
-        url: path,
-        headers: {
-          host: "127.0.0.1:4317",
-          origin: HOSTED_ORIGIN,
-          authorization: `Bearer ${token}`,
-          ...(body === undefined ? {} : { "content-type": "application/json" }),
-        },
-      }) as unknown as IncomingMessage;
-      listener(req, res);
-      if (method === "POST") {
-        if (body !== undefined) req.emit("data", Buffer.from(body));
-        req.emit("end");
-      }
-    });
-
-  return { request, syncs, seen };
-}
-
 test("both machines run the ceremony from the hosted board, and no key crosses it", async () => {
   const masterKey = generateTaskKey();
   const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
-  const { a, slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+  const { a, slug } = await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
   const boardA = hostedBoard(a, cloud);
 
-  const b = machine("b", cloud.url);
+  const b = makeMachine(root, "b", cloud.url);
   const boardB = hostedBoard(b, cloud);
 
   const started = JSON.parse(
@@ -332,18 +218,6 @@ test("both machines run the ceremony from the hosted board, and no key crosses i
 });
 
 /** Poll something the board can see, the way an open tab does. */
-async function untilView<T>(
-  read: () => Promise<T>,
-  predicate: (value: T) => boolean,
-): Promise<T> {
-  for (let poll = 0; poll < 1_000; poll += 1) {
-    const value = await read();
-    if (predicate(value)) return value;
-    await tick();
-  }
-  throw new Error(`view never settled: ${JSON.stringify(await read())}`);
-}
-
 type BoardAttempt = {
   state: string;
   transfer?: { requestId: string; state: string };
@@ -361,11 +235,11 @@ type BoardAttempt = {
 test("the recovery-key path and the approval path leave the same restore progress", async () => {
   const masterKey = generateTaskKey();
   const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
-  const { slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
+  const { slug } = await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
 
   /** A fresh machine, signed in through its own board as far as the key step. */
   const signIn = async (name: string) => {
-    const m = machine(name, cloud.url);
+    const m = makeMachine(root, name, cloud.url);
     const board = hostedBoard(m, cloud);
     const started = JSON.parse(
       (
