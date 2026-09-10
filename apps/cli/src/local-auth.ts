@@ -1,17 +1,24 @@
 import { randomUUID } from "node:crypto";
 import {
   generateTaskKey,
+  isSameSyncAccount,
   type LocalAuthService,
   type LoginAttemptView,
+  openTraceStore,
+  readSyncIdentity,
   REPLACEMENT_KEY_CONFIRMATION,
+  resolveDatabasePath,
   type LoginProvider,
   type SyncWrappedKey,
+  writeSyncIdentity,
 } from "@trace/core";
 import {
   clearStoredCredentials,
   DeviceCodeExpiredError,
   fetchDocManifests,
   pollForAccessToken,
+  fetchSession,
+  identityFromSession,
   recordSignedIn,
   requestDeviceAuthorization,
   requireServerUrl,
@@ -64,6 +71,10 @@ interface LoginAttempt {
     serverUrl: string;
     accessToken: string;
     wrappedKeys: SyncWrappedKey[];
+    /** The account the token belongs to, resolved once before any key check, so
+     * every path that persists credentials binds the store to the same account
+     * the identity check was made against. Absent when the server named none. */
+    account?: { accountId: string; identity?: string };
   };
 }
 
@@ -236,6 +247,11 @@ async function completeLogin(
  * account that already holds synced documents needs the existing key, which the
  * board must supply — until then no credentials are persisted, so an abandoned
  * key step leaves the machine fully signed out rather than half signed in.
+ *
+ * Two questions come before either: is this store already somebody else's, and
+ * is the key already on this machine actually this account's? Both are asked
+ * here rather than at push time, because credentials written are a push waiting
+ * to happen.
  */
 async function setUpDocumentKey(
   env: Env,
@@ -244,9 +260,12 @@ async function setUpDocumentKey(
   accessToken: string,
   attempt: LoginAttempt,
 ): Promise<void> {
-  if (readStoredDocCryptoKey(env)) {
-    const identity = await persistCredentials(env, serverUrl, fetch, accessToken);
-    settle(attempt, "complete", identity);
+  const account = await resolveAccount(serverUrl, fetch, accessToken);
+  const bound = readBoundAccount(env);
+  if (bound && account && !isSameSyncAccount(bound, { serverUrl, accountId: account.accountId })) {
+    // Terminal, not a key prompt: offering to type the other account's key
+    // would merge two accounts' work into one store.
+    settleAccountConflict(attempt, bound.identity ?? bound.accountId);
     return;
   }
 
@@ -255,7 +274,39 @@ async function setUpDocumentKey(
     fetch,
     accessToken,
   );
-  attempt.keySetup = { serverUrl, accessToken, wrappedKeys };
+  attempt.keySetup = { serverUrl, accessToken, wrappedKeys, ...(account ? { account } : {}) };
+
+  // A key already on this machine is a candidate, never a credential. Holding
+  // some account's key says nothing about the account that just signed in, so
+  // it is put to the same test as one the user types: unwrap this account's own
+  // wrapped key, or ask for the right one.
+  const stored = readStoredDocCryptoKey(env);
+  const storedOpensAccount = stored !== null && opensAccount(stored, wrappedKeys);
+
+  // A store that has synced before but records no account predates this binding
+  // (or had its record removed). Its work came from *some* account, and the only
+  // evidence available that this is that account is its own key opening this
+  // account's wrapped keys. Without that evidence, signing in would quietly make
+  // this account the new home of work that did not come from it.
+  if (!bound && !storedOpensAccount && storeHasSyncHistory(env)) {
+    settleAccountConflict(attempt, "another account");
+    return;
+  }
+
+  if (stored && wrappedKeys.length > 0) {
+    if (!storedOpensAccount) {
+      setView(attempt, { ...attempt.view, state: "waiting-for-existing-key" });
+      return;
+    }
+    await finishKeySetup(env, fetch, attempt, "complete");
+    return;
+  }
+  if (stored) {
+    // Nothing on the account to check against, and nothing to lose by keeping
+    // the key this machine already uses for its own documents.
+    await finishKeySetup(env, fetch, attempt, "complete");
+    return;
+  }
 
   if (manifests.length > 0) {
     setView(attempt, { ...attempt.view, state: "waiting-for-existing-key" });
@@ -284,6 +335,7 @@ async function finishKeySetup(
 ): Promise<void> {
   const setup = attempt.keySetup;
   if (!setup) return;
+  bindStoreToAccount(env, setup.serverUrl, setup.account);
   const identity = await persistCredentials(
     env,
     setup.serverUrl,
@@ -303,6 +355,106 @@ async function persistCredentials(
 ): Promise<string | null> {
   writeAuthToken(env, { accessToken });
   return recordSignedIn(env, serverUrl, fetch, accessToken);
+}
+
+/**
+ * Who the approved bearer token belongs to. `null` when the server names
+ * nobody — an older deployment, or a session read that failed — in which case
+ * there is nothing to bind and nothing to compare, and the key checks below are
+ * the only gate. Never guessed: an invented id would bind a store to an account
+ * that does not exist.
+ */
+async function resolveAccount(
+  serverUrl: string,
+  fetch: AuthFetch,
+  accessToken: string,
+): Promise<{ accountId: string; identity?: string } | null> {
+  let session;
+  try {
+    session = await fetchSession(serverUrl, fetch, accessToken);
+  } catch {
+    return null;
+  }
+  if (!session) return null;
+  const accountId = session.user?.id ?? session.user?.email;
+  if (!accountId) return null;
+  const identity = identityFromSession(session);
+  return { accountId, ...(identity ? { identity } : {}) };
+}
+
+export const ACCOUNT_CONFLICT_GUIDANCE =
+  "To use a different account, set up a separate EQNX store (TRACE_DB) for it.";
+
+/**
+ * Refuse the login and name what the store already belongs to. Account
+ * switching and migration are deliberately out of scope, so the honest answer
+ * is to say what is in the way and where a different account can live.
+ */
+function settleAccountConflict(attempt: LoginAttempt, held: string): void {
+  setView(attempt, {
+    ...attempt.view,
+    state: "failed",
+    error: `This machine already holds work synced from ${held}. ${ACCOUNT_CONFLICT_GUIDANCE}`,
+  });
+}
+
+/** The account this store is bound to, if any. */
+function readBoundAccount(env: Env) {
+  try {
+    return readSyncIdentity(resolveDatabasePath(env));
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `key` unwraps one of this account's own wrapped task keys — the only
+ * evidence available that a key and an account belong together. */
+function opensAccount(key: string, wrappedKeys: SyncWrappedKey[]): boolean {
+  if (wrappedKeys.length === 0) return false;
+  try {
+    validateDocumentKey(key, wrappedKeys);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether this store has ever pulled from a sync server. The cursor is the
+ * record of that: null means "has never seen one", which is exactly the fresh
+ * machine this journey is about. An unreadable store answers `false` — a
+ * missing database is a machine with nothing to protect.
+ */
+function storeHasSyncHistory(env: Env): boolean {
+  try {
+    const store = openTraceStore(resolveDatabasePath(env));
+    try {
+      return store.syncCursor("rows") !== null;
+    } finally {
+      store.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** Record which account the credentials about to be written belong to. */
+function bindStoreToAccount(
+  env: Env,
+  serverUrl: string,
+  account?: { accountId: string; identity?: string },
+): void {
+  if (!account) return;
+  try {
+    writeSyncIdentity(resolveDatabasePath(env), {
+      serverUrl,
+      accountId: account.accountId,
+      ...(account.identity ? { identity: account.identity } : {}),
+    });
+  } catch {
+    // No usable database path — there is no store to bind, and the login is
+    // no worse off than it was before this record existed.
+  }
 }
 
 function settle(

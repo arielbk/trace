@@ -46,6 +46,7 @@ export type { SyncStatus, SyncStatusResponse } from "./sync-status.ts";
 export type { TraceCapability, TraceConnection } from "./connection.ts";
 export {
   HOSTED_CAPABILITIES,
+  LEGACY_HOSTED_CAPABILITIES,
   DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
 } from "./connection.ts";

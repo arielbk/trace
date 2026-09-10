@@ -880,6 +880,10 @@ export function describeAccount(
         : described({
             summary: "Cloud Sync not configured",
             headline: "Cloud Sync is not configured on this machine.",
+            // The state a freshly installed second machine lands in. Naming
+            // the command is the whole difference between a dead end and a
+            // next step, and it is the same one `eqnx login` prints.
+            detail: "Run eqnx config set server-url <url> on this machine.",
           });
     case "never-synced":
       return described({

@@ -35,11 +35,32 @@ export const SAME_ORIGIN_CAPABILITIES: readonly TraceCapability[] = [
 
 /**
  * What the hosted board may do. This must stay identical to the server-side
- * cross-origin allowlist — reads plus archive/unarchive/pin/unpin — because a
- * capability the runtime advertises but refuses is a broken affordance, and a
- * capability it grants but never advertised is unreviewed authority.
+ * cross-origin allowlist, because a capability the runtime advertises but
+ * refuses is a broken affordance, and a capability it grants but never
+ * advertised is unreviewed authority.
+ *
+ * `account` and `sync` are narrower than their names suggest, and deliberately
+ * so: the hosted board may run the sign-in that recovers existing work and read
+ * how this machine's sync is doing, but it may not replace a document key,
+ * receive a plaintext one, log the machine out, or command a sync run. The
+ * server-side allowlist is where that narrowing is written down.
  */
 export const HOSTED_CAPABILITIES: readonly TraceCapability[] = [
+  "taskDetails",
+  "taskMutations",
+  "account",
+  "sync",
+];
+
+/**
+ * What a client must assume of a runtime that answers protocol 1 but advertises
+ * no capabilities — one built before capability negotiation existed. Such a
+ * runtime serves the original fixed cross-origin allowlist and nothing more, so
+ * this set is frozen at what that allowlist was and must never track
+ * {@link HOSTED_CAPABILITIES} again: widening the modern grant would otherwise
+ * teach a client to call routes an old runtime answers with 403.
+ */
+export const LEGACY_HOSTED_CAPABILITIES: readonly TraceCapability[] = [
   "taskDetails",
   "taskMutations",
 ];

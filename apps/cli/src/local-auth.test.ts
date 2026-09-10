@@ -8,11 +8,15 @@ import {
   createKeyWrapper,
   createTaskDocCrypto,
   generateTaskKey,
+  openTraceStore,
   readSyncStatus,
   REPLACEMENT_KEY_CONFIRMATION,
 } from "@trace/core";
 import { createLocalAuthService } from "./local-auth.ts";
-import { readStoredDocCryptoKey } from "./commands/key.ts";
+import {
+  readStoredDocCryptoKey,
+  writeStoredDocCryptoKey,
+} from "./commands/key.ts";
 import { createServeRequestListener } from "./serve.ts";
 
 let home: string;
@@ -46,6 +50,8 @@ function hostedAuth(
     wrappedKeys?: unknown[];
     /** Device-code lifetime; the default is long enough never to expire mid-test. */
     expiresIn?: number;
+    /** Who the bearer token belongs to, as `/api/auth/get-session` reports it. */
+    user?: { id?: string; name?: string; email?: string };
   } = {},
 ): HostedAuth {
   let approved = false;
@@ -79,7 +85,11 @@ function hostedAuth(
     }
     if (url.endsWith("/get-session")) {
       return Response.json({
-        user: { name: "The Octocat", email: "octocat@github.com" },
+        user: account.user ?? {
+          id: "octocat",
+          name: "The Octocat",
+          email: "octocat@github.com",
+        },
       });
     }
     return Response.json({ error: "not_found" }, { status: 404 });
@@ -795,4 +805,164 @@ test("a machine with no sync server cannot start a login", async () => {
 
   expect(response.status).toBe(400);
   expect(response.body).toContain("No sync server configured");
+});
+
+test("a key already on this machine is checked against the account, not just believed", async () => {
+  // A machine that has been signed into some other account still holds that
+  // account's key. Possession proves nothing about who just signed in.
+  writeStoredDocCryptoKey(env, generateTaskKey());
+  const accountKey = generateTaskKey();
+  const hosted = hostedAuth(existingAccount(accountKey));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+
+  hosted.approve();
+  const attempt = await waitForState(
+    listener,
+    started.attemptId,
+    "waiting-for-existing-key",
+  );
+
+  expect(attempt.state).toBe("waiting-for-existing-key");
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+
+  // Typing this account's own key is what gets the machine in.
+  const settled = JSON.parse(
+    (await submitExistingKey(listener, started.attemptId, accountKey)).body,
+  ) as AttemptView;
+  expect(settled.state).toBe("complete");
+  expect(readStoredDocCryptoKey(env)).toBe(accountKey);
+});
+
+test("a key already on this machine that does open the account signs straight in", async () => {
+  const accountKey = generateTaskKey();
+  writeStoredDocCryptoKey(env, accountKey);
+  const hosted = hostedAuth(existingAccount(accountKey));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+
+  hosted.approve();
+  const attempt = await waitForState(listener, started.attemptId, "complete");
+
+  expect(attempt.identity).toBe("The Octocat <octocat@github.com>");
+  expect(readStoredDocCryptoKey(env)).toBe(accountKey);
+});
+
+/** Sign this machine fully into `account`, leaving it bound to that account. */
+async function signInTo(
+  account: {
+    manifests: unknown[];
+    wrappedKeys: unknown[];
+    user: { id: string; email: string };
+  },
+  masterKey: string,
+): Promise<void> {
+  const hosted = hostedAuth(account);
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+  hosted.approve();
+  await waitForState(listener, started.attemptId, "waiting-for-existing-key");
+  await submitExistingKey(listener, started.attemptId, masterKey);
+  await waitForState(listener, started.attemptId, "complete");
+}
+
+test("a machine bound to one account refuses to sign into another", async () => {
+  const firstKey = generateTaskKey();
+  await signInTo(
+    {
+      ...existingAccount(firstKey),
+      user: { id: "octocat", email: "octocat@github.com" },
+    },
+    firstKey,
+  );
+  const before = readFileSync(join(home, ".trace", "auth.json"), "utf8");
+
+  const otherKey = generateTaskKey();
+  const hosted = hostedAuth({
+    ...existingAccount(otherKey),
+    user: { id: "hubot", email: "hubot@github.com" },
+  });
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+  hosted.approve();
+  const attempt = await waitForState(listener, started.attemptId, "failed");
+
+  // Not a key prompt: typing the other account's key would merge two stores.
+  expect(attempt.error).toMatch(/already holds work/i);
+  expect(attempt.error).toContain("octocat@github.com");
+  expect(readStoredDocCryptoKey(env)).toBe(firstKey);
+  expect(readFileSync(join(home, ".trace", "auth.json"), "utf8")).toBe(before);
+});
+
+test("signing back into the account this machine already belongs to still works", async () => {
+  const key = generateTaskKey();
+  const account = {
+    ...existingAccount(key),
+    user: { id: "octocat", email: "octocat@github.com" },
+  };
+  await signInTo(account, key);
+
+  const hosted = hostedAuth(account);
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+  hosted.approve();
+
+  expect(
+    (await waitForState(listener, started.attemptId, "complete")).state,
+  ).toBe("complete");
+});
+
+/** A store that has synced with some account before this machine recorded which. */
+function storeWithSyncHistory(): void {
+  const store = openTraceStore(join(home, ".trace", "trace.sqlite"));
+  try {
+    store.setSyncCursor("rows", "42");
+  } finally {
+    store.close();
+  }
+}
+
+test("a store that already synced somewhere will not adopt an unproven account", async () => {
+  storeWithSyncHistory();
+  writeStoredDocCryptoKey(env, generateTaskKey());
+  const hosted = hostedAuth(existingAccount(generateTaskKey()));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+
+  hosted.approve();
+  const attempt = await waitForState(listener, started.attemptId, "failed");
+
+  // Never a key prompt: typing this account's key would push the work already
+  // in this store into an account it did not come from.
+  expect(attempt.error).toMatch(/already holds work/i);
+  expect(existsSync(join(home, ".trace", "auth.json"))).toBe(false);
+});
+
+test("a store that already synced signs in where its own key proves it belongs", async () => {
+  storeWithSyncHistory();
+  const accountKey = generateTaskKey();
+  writeStoredDocCryptoKey(env, accountKey);
+  const hosted = hostedAuth(existingAccount(accountKey));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+
+  hosted.approve();
+  const attempt = await waitForState(listener, started.attemptId, "complete");
+
+  expect(attempt.state).toBe("complete");
+});
+
+test("a fresh machine with no history restores into the account it signs into", async () => {
+  const accountKey = generateTaskKey();
+  const hosted = hostedAuth(existingAccount(accountKey));
+  const listener = makeListener(hosted);
+  const started = await startLogin(listener);
+
+  hosted.approve();
+  await waitForState(listener, started.attemptId, "waiting-for-existing-key");
+  const settled = JSON.parse(
+    (await submitExistingKey(listener, started.attemptId, accountKey)).body,
+  ) as AttemptView;
+
+  expect(settled.state).toBe("complete");
 });
