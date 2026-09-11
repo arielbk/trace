@@ -18,6 +18,7 @@ import {
   type PendingKeyTransfer,
   type SyncStatusResponse,
 } from "@trace/core/browser";
+import { SameOriginTraceSource, TraceDataSourceProvider, type TraceDataSource } from "../lib/trace-data-source.ts";
 import { AccountMenu } from "./AccountMenu.tsx";
 
 const NOW = new Date("2026-07-10T16:05:00.000Z");
@@ -102,6 +103,7 @@ function localAuthServer(options: {
   const calls: string[] = [];
   const bodies: unknown[] = [];
   let forgotten = false;
+  let signedOut = false;
   options.restart = () => {
     forgotten = true;
   };
@@ -118,6 +120,7 @@ function localAuthServer(options: {
           : new Response("", { status: 404 });
       }
       if (url === "/api/sync/status") {
+        if (signedOut) return jsonResponse(SIGNED_OUT);
         // A completed login is what turns this machine signed-in, exactly as
         // the serving process reports it once credentials are stored.
         if (polled.state === "complete") return jsonResponse(SIGNED_IN);
@@ -132,6 +135,7 @@ function localAuthServer(options: {
       }
       if (url === "/api/local-auth/logout") {
         const { logoutFailure } = options;
+        if (!logoutFailure) signedOut = true;
         return logoutFailure
           ? new Response(logoutFailure.body, { status: logoutFailure.status })
           : jsonResponse({ ok: true });
@@ -201,7 +205,7 @@ function localAuthServer(options: {
 }
 
 /** Render the menu over a scripted local-auth server, with `window.open` stubbed. */
-function renderWithLocalAuth(server: LocalAuthFake): { opened: string[] } {
+function renderWithLocalAuth(server: LocalAuthFake, source: TraceDataSource = new SameOriginTraceSource()): { opened: string[] } {
   const opened: string[] = [];
   vi.stubGlobal("fetch", server.fetch);
   vi.stubGlobal(
@@ -216,7 +220,9 @@ function renderWithLocalAuth(server: LocalAuthFake): { opened: string[] } {
   });
   render(
     <QueryClientProvider client={client}>
-      <AccountMenu now={NOW} />
+      <TraceDataSourceProvider source={source}>
+        <AccountMenu now={NOW} />
+      </TraceDataSourceProvider>
     </QueryClientProvider>,
   );
   return { opened };
@@ -907,10 +913,9 @@ test("a signed-in machine can be signed out from the menu", async () => {
   await waitFor(() =>
     expect(server.calls).toContain("POST /api/local-auth/logout"),
   );
-  // Signing out never offers to sign in with a provider in the same breath.
-  expect(
-    screen.queryByRole("button", { name: /sign in with/i }),
-  ).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /sign in with github/i })).toBeEnabled();
+  expect(screen.getByText("Local connection")).toBeVisible();
+  expect(screen.getByText(/This board shows work stored on this Mac/)).toBeVisible();
 });
 
 // A host that serves the board without the `/api/local-auth` routes — the Vite
@@ -1102,4 +1107,31 @@ test.each(["open", "approve", "deny"] as const)("a refused %s tells the user why
   }
   expect(await screen.findByRole("alert")).toHaveTextContent(/already cancelled/i);
   expect(screen.queryByTestId("approval-code")).not.toBeInTheDocument();
+});
+
+test("older hosted runtimes explain local work and offer Terminal sign-out without a broken button", async () => {
+  const server = localAuthServer({ status: SIGNED_IN });
+  const base = new SameOriginTraceSource();
+  const source: TraceDataSource = {
+    key: "older-hosted-runtime",
+    protocolVersion: base.protocolVersion,
+    connectAutomatically: false,
+    capabilities: {
+      ...base.capabilities,
+      requiresConnection: true,
+      accountSignOut: false,
+    },
+    request: base.request.bind(base),
+    connect: base.connect.bind(base),
+  };
+  renderWithLocalAuth(server, source);
+  await userEvent.click(
+    await screen.findByRole("button", { name: /account/i }),
+  );
+  expect(await screen.findByText("eqnx logout")).toBeVisible();
+  expect(screen.getByText("Local connection")).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: /sign out/i }),
+  ).not.toBeInTheDocument();
+  expect(server.calls).not.toContain("POST /api/local-auth/logout");
 });

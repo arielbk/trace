@@ -312,7 +312,7 @@ test("a cancelled sign-in on the second machine stores nothing and syncs nothing
   expect(board.syncs).toHaveLength(0);
 });
 
-test("the hosted board cannot reach the second machine's key replacement or logout", async () => {
+test("the hosted board cannot reach the second machine's key replacement or local management", async () => {
   const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
   const b = machine("b", cloud.url);
   const board = hostedBoard(b, cloud);
@@ -320,7 +320,6 @@ test("the hosted board cannot reach the second machine's key replacement or logo
   for (const path of [
     "/api/local-auth/login/any/replacement-key",
     "/api/local-auth/login/any/acknowledge-key",
-    "/api/local-auth/logout",
     "/api/management/pairings",
   ]) {
     expect([path, (await board.request("POST", path, "{}")).status]).toEqual([
@@ -670,4 +669,25 @@ test("an established machine's later sync is not stamped as a restore", async ()
   store.close();
   expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
   expect(await status()).toMatchObject({ restore: { phase: "ready", taskCount: 2 } });
+});
+
+test("hosted sign-out stops sync while preserving local work and browser pairing", async () => {
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat" },
+  });
+  const b = machine("logout", cloud.url);
+  signInDirectly(b, "cloud-token", "retained-key");
+  const store = openTraceStore(b.db);
+  const task = store.createTask("Keep my local work");
+  store.close();
+  const board = hostedBoard(b, cloud);
+  const response = await board.request("POST", "/api/local-auth/logout");
+  expect(response.status).toBe(200);
+  expect(existsSync(join(b.home, ".trace", "auth.json"))).toBe(false);
+  expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(true);
+  const tasks = await board.request("GET", "/api/tasks");
+  expect(tasks.status).toBe(200);
+  expect(tasks.body).toContain(task.id);
+  expect(board.syncs).toHaveLength(0);
 });

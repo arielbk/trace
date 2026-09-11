@@ -346,3 +346,39 @@ describe("TraceDataSource", () => {
     expect(result.current).toBe(source);
   });
 });
+
+test("an account-capable older runtime does not implicitly grant sign-out", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json({
+      service: "trace",
+      protocolVersion: 1,
+      capabilities: ["account", "sync", "keyTransfer"],
+    }),
+  );
+  const source = new LocalTraceSource("http://127.0.0.1:4317");
+  await source.connect();
+  fetchMock.mockClear();
+  await expect(
+    source.request("/api/local-auth/logout", { method: "POST" }),
+  ).rejects.toBeInstanceOf(UnsupportedOperationError);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("a runtime explicitly granting sign-out permits the paired source request", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    Response.json({
+      service: "trace",
+      protocolVersion: 1,
+      capabilities: ["account", "accountSignOut"],
+    }),
+  );
+  const source = new LocalTraceSource("http://127.0.0.1:4317");
+  await source.connect();
+  fetchMock.mockClear();
+  fetchMock.mockResolvedValue(Response.json({ ok: true }));
+  expect(source.capabilities.accountSignOut).toBe(true);
+  expect(
+    (await source.request("/api/local-auth/logout", { method: "POST" })).ok,
+  ).toBe(true);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

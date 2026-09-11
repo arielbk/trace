@@ -5,10 +5,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import {
-  createPairingLinks,
-  type PairingLinks,
-} from "./bridge-pairing.ts";
+import { createPairingLinks, type PairingLinks } from "./bridge-pairing.ts";
 import {
   openConnectionCredentials,
   type ConnectionCredentials,
@@ -168,6 +165,7 @@ test("eqnx serve exposes a read-only connection handshake", () => {
       "docEdits",
       "taskExports",
       "account",
+      "accountSignOut",
       "sync",
       "keyTransfer",
     ],
@@ -200,6 +198,7 @@ test("eqnx serve advertises only the hosted allowlist to the hosted board", () =
       "taskDetails",
       "taskMutations",
       "account",
+      "accountSignOut",
       "sync",
       "keyTransfer",
     ],
@@ -719,6 +718,7 @@ test("what the hosted handshake advertises is exactly what the bridge allows", (
     docEdits: () => hosted("POST", `/api/tasks/${taskId}/docs/checkbox`),
     taskExports: () => hosted("GET", `/api/tasks/${taskId}/export`),
     account: () => hosted("POST", "/api/local-auth/login"),
+    accountSignOut: () => hosted("POST", "/api/local-auth/logout"),
     // The granted slice of `sync` is the status read; commanding a sync run
     // stays local-only, which the restore-routes test pins separately.
     sync: () => hosted("GET", "/api/sync/status"),
@@ -1281,6 +1281,7 @@ test("the hosted board may drive the restore routes it needs and nothing more", 
     );
 
   const granted = [
+    ["POST", "/api/local-auth/logout"],
     ["GET", "/api/sync/status"],
     ["GET", "/api/local-auth/login/current"],
     ["GET", "/api/local-auth/login/an-attempt"],
@@ -1300,12 +1301,10 @@ test("the hosted board may drive the restore routes it needs and nothing more", 
   }
 
   // Replacing a key destroys readable documents, acknowledging one would carry
-  // a plaintext key to a remote origin, logout and pushes are the machine's own
-  // business: none of them belong to recovering existing work.
+  // a plaintext key to a remote origin; explicit sync pushes stay local-only.
   const refused = [
     ["POST", "/api/local-auth/login/an-attempt/replacement-key"],
     ["POST", "/api/local-auth/login/an-attempt/acknowledge-key"],
-    ["POST", "/api/local-auth/logout"],
     ["POST", "/api/sync"],
   ] as const;
   for (const [method, path] of refused) {
@@ -1351,5 +1350,47 @@ test("a hosted restore POST may preflight a JSON body, and nothing else may", ()
   expect(
     preflight(`/api/tasks/${taskId}/pin`, "POST", "authorization, content-type")
       .statusCode,
+  ).toBe(403);
+});
+
+test("hosted sign-out preflights POST but still requires a paired browser", () => {
+  const origin = "https://board.test";
+  const { connection } = pairedConnection();
+  const preflight = dispatch(
+    "OPTIONS",
+    "/api/local-auth/logout",
+    undefined,
+    undefined,
+    {
+      origin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization",
+    },
+    origin,
+    connection,
+  );
+  expect(preflight.statusCode).toBe(204);
+  expect(preflight.headers["access-control-allow-origin"]).toBe(origin);
+  expect(
+    dispatch(
+      "POST",
+      "/api/local-auth/logout",
+      undefined,
+      undefined,
+      { origin },
+      origin,
+      connection,
+    ).statusCode,
+  ).toBe(401);
+  expect(
+    dispatch(
+      "POST",
+      "/api/local-auth/logout",
+      undefined,
+      undefined,
+      { origin: "https://untrusted.test" },
+      origin,
+      connection,
+    ).statusCode,
   ).toBe(403);
 });

@@ -49,6 +49,7 @@ export type TraceDataSourceCapabilities = Readonly<{
   /** Export downloads, which pull whole tasks and transcripts out at once. */
   taskExports: boolean;
   account: boolean;
+  accountSignOut: boolean;
   sync: boolean;
   /** Being unlocked by another of the account's machines, and unlocking one —
    * the alternative to typing a recovery key. */
@@ -75,6 +76,7 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
   docEdits: true,
   taskExports: true,
   account: true,
+  accountSignOut: true,
   sync: true,
   keyTransfer: true,
 };
@@ -104,6 +106,7 @@ function localCapabilities(
     docEdits: granted.has("docEdits"),
     taskExports: granted.has("taskExports"),
     account: granted.has("account"),
+    accountSignOut: granted.has("accountSignOut"),
     sync: granted.has("sync"),
     keyTransfer: granted.has("keyTransfer"),
   };
@@ -157,6 +160,7 @@ function requiredCapability(path: string): TraceCapability | null {
   ) {
     return "keyTransfer";
   }
+  if (route === "/api/local-auth/logout") return "accountSignOut";
   if (route === "/api/config" || route.startsWith("/api/local-auth")) {
     return "account";
   }
@@ -169,6 +173,7 @@ const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
   "docEdits",
   "taskExports",
   "account",
+  "accountSignOut",
   "sync",
   "keyTransfer",
 ]);

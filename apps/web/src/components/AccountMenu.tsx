@@ -91,6 +91,13 @@ export function AccountMenu({ now }: { now?: Date }) {
           </span>
         </div>
 
+        <div className={SECTION}>
+          <p className="m-0 font-semibold">Local connection</p>
+          <p className="mt-1 mb-0 text-meta text-text-muted">
+            This board shows work stored on this Mac. Your account syncs it with
+            your other machines.
+          </p>
+        </div>
         <AccountBody account={account} />
       </DropdownContent>
     </Dropdown>
@@ -362,7 +369,17 @@ function AccountBody({ account }: { account: AccountDescription }) {
         </div>
       ) : null}
 
-      {account.canSignOut ? (
+      {account.canSignOut && !source.capabilities.accountSignOut ? (
+        <div className={SECTION}>
+          <p className="m-0 text-meta text-text-muted">
+            To sign out on this Mac, run <code>eqnx logout</code> in Terminal.
+            Your local work stays available. Run <code>eqnx update</code> to
+            enable sign-out here.
+          </p>
+        </div>
+      ) : null}
+
+      {account.canSignOut && source.capabilities.accountSignOut ? (
         <div className={SECTION}>
           <button
             type="button"
@@ -372,6 +389,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
           >
             Sign out
           </button>
+          <p className="mt-1.5 mb-0 text-meta text-text-muted">
+            Stops sync on this Mac. Your local work stays available.
+          </p>
           {/* A refused sign-out has to say so. Nothing else on the popover
               changes when it fails — the machine stays signed in and the button
               stays where it was — so without this line the click reads as a
@@ -379,6 +399,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
           {signOut.isError ? (
             <p
               className="mt-1.5 mb-0 text-meta text-warning wrap-anywhere"
+              role="alert"
               data-testid="logout-error"
             >
               {signOut.error.message}
@@ -599,9 +620,7 @@ function ApprovalRequests({ enabled }: { enabled: boolean }) {
   const forget = () => {
     setInspection(null);
     setActionError(null);
-    void queryClient.invalidateQueries({
-      queryKey: traceQueryKey(source, "key-transfers"),
-    });
+    void queryClient.invalidateQueries({ queryKey: traceQueryKey(source, "key-transfers") });
   };
   const reportError = (error: Error) => {
     setInspection(null);

@@ -476,7 +476,7 @@ function isHostedReadPath(path: string): boolean {
 
 /**
  * The mutations the hosted board may perform cross-origin: archiving and
- * pinning a task, plus the three login steps that recover existing work. Each
+ * pinning a task, sign-out, and the login steps that recover existing work. Each
  * task action is reversible, carries no request body, and touches only the
  * task's own board metadata. Doc-checkbox writes, exports, and explicit sync
  * runs stay local-only.
@@ -485,6 +485,7 @@ function isHostedActionPath(path: string): boolean {
   const normalized = normalizePath(path);
   return (
     /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(normalized) ||
+    normalized === "/api/local-auth/logout" ||
     isRestoreLoginActionPath(normalized)
   );
 }
@@ -512,8 +513,8 @@ function isRestoreLoginReadPath(normalized: string): boolean {
  * The rest of `/api/local-auth` is deliberately absent, and the prefix is never
  * allowed wholesale. `replacement-key` makes an account's synced documents
  * permanently unreadable; `acknowledge-key` is the one response that carries a
- * plaintext document key, which must not cross to a remote origin; `logout`
- * unpicks this machine's own credentials rather than recovering anything.
+ * plaintext document key, which must not cross to a remote origin. Sign-out is
+ * granted separately in isHostedActionPath and carries no request body.
  */
 function isRestoreLoginActionPath(normalized: string): boolean {
   return (
