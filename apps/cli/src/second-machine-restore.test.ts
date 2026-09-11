@@ -17,7 +17,8 @@ import {
   readSyncIdentity,
   resolveTaskDocsDir,
 } from "@trace/core";
-import { runSyncCommand } from "./commands/sync.ts";
+import { updateAutomaticSyncState } from "./commands/automatic-sync-policy.ts";
+import { requestAutomaticSync, runSyncCommand } from "./commands/sync.ts";
 import { createLocalAuthService } from "./local-auth.ts";
 import { createServeRequestListener } from "./serve.ts";
 import { openConnectionCredentials } from "./connection-credentials.ts";
@@ -92,7 +93,14 @@ function hostedBoard(
       // The real login-complete trigger: a machine that just signed in has
       // documents waiting for it and must not sit out the periodic interval.
       onLoginComplete: () => {
-        syncs.push(runSyncCommand(m.env, { fetch: cloud.fetch }));
+        requestAutomaticSync(m.env, {
+          reason: "login",
+          executable: "eqnx",
+          spawn: (_command, _args, options) => {
+            syncs.push(runSyncCommand(options.env as Env, { fetch: cloud.fetch }));
+            return { on: () => {}, unref: () => {} };
+          },
+        });
       },
     }),
     HOSTED_ORIGIN,
@@ -184,6 +192,8 @@ test("a second machine signs in from the hosted board and reads machine A's work
   const { slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
 
   const b = machine("b", cloud.url);
+  // A recent attempt must not delay recovery after this login.
+  updateAutomaticSyncState(b.db, { lastRequestedAt: new Date().toISOString() });
   const board = hostedBoard(b, cloud);
 
   // Nothing of A's is here yet, and B is signed out.

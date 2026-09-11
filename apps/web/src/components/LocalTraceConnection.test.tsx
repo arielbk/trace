@@ -18,9 +18,10 @@ import {
   validateTraceConnection,
 } from "./LocalTraceConnection.tsx";
 
-vi.mock("./BrowserPairing.tsx", async () => {
+vi.mock("./BrowserPairing.tsx", async (importOriginal) => {
   const { CopyPromptButton } = await import("./CopyPromptButton.tsx");
   return {
+    ...await importOriginal<typeof import("./BrowserPairing.tsx")>(),
     BrowserPairing: () => (
       <>
         <code>eqnx pair ABCD-1234</code>
@@ -344,10 +345,16 @@ describe("LocalConnectionBadge", () => {
 test.each([
   ["https://app.eqnx.ai", "eqnx setup"],
   ["https://preview.example", "TRACE_WEB_ORIGIN='https://preview.example' eqnx setup"],
-])("setup instructions match the hosted origin %s", (origin, command) => {
+])("setup instructions match the hosted origin %s", async (origin, command) => {
   vi.stubGlobal("location", new URL(origin));
-  renderConnection(vi.fn());
-  const instructions = screen.getByText((_, element) =>
+  localStorage.setItem("trace.bridgeCredential:http://127.0.0.1:4317", "c".repeat(43));
+  const source = new LocalTraceSource("http://127.0.0.1:4317");
+  render(<MemoryRouter><TraceDataSourceProvider source={source}>
+    <LocalTraceConnection connect={vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))} userAgent="Chrome/140.0 Safari/537.36">
+      <p>Local tasks</p>
+    </LocalTraceConnection>
+  </TraceDataSourceProvider></MemoryRouter>);
+  const instructions = await screen.findByText((_, element) =>
     element?.tagName === "CODE" && element.textContent === `npm install -g @eqnx/cli\n${command}`,
   );
   expect(instructions).toBeInTheDocument();

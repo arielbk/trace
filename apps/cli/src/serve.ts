@@ -20,6 +20,7 @@ import {
   type LocalAuthService,
   type TraceClientScope,
 } from "@trace/core";
+import { readAuthToken } from "./auth-service.ts";
 import { requestAutomaticSync } from "./commands/sync.ts";
 import { resolvePackagedVersion } from "./commands/setup-operations.ts";
 import { createLocalAuthService } from "./local-auth.ts";
@@ -50,7 +51,7 @@ export type StartTraceServeOptions = {
   server?: Server;
   /** Injectable background-sync trigger; defaults to the real fire-and-forget
    * spawn. Overridden by tests. */
-  triggerSync?: (env: Record<string, string | undefined>) => void;
+  triggerSync?: (env: Record<string, string | undefined>, options?: { reason?: "login" }) => void;
   /** Foreground serve may move to the next free port; the managed connection
    * may not, because the hosted board is configured against one address.
    * Defaults to true. */
@@ -107,6 +108,7 @@ export type ServeSyncHooks = {
 export function createSyncHooks(
   trigger: () => void,
   now: () => number = Date.now,
+  onLoginComplete: () => void = trigger,
 ): ServeSyncHooks {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastRequestedAt = -Infinity;
@@ -124,7 +126,7 @@ export function createSyncHooks(
       lastRequestedAt = now();
       trigger();
     },
-    onLoginComplete: trigger,
+    onLoginComplete,
   };
 }
 
@@ -206,6 +208,7 @@ export function createServeRequestListener(
   pairing?: PairingLinks,
   /** The EQNX version this process is running, reported by the handshake. */
   runtimeVersion?: string,
+  hasAccountCredentials?: () => boolean,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
@@ -277,6 +280,7 @@ export function createServeRequestListener(
 
       const response = handleTraceApiRequest(databasePath, method, url, body, {
         syncServerConfigured,
+        accountCredentialsPresent: hasAccountCredentials?.(),
         autoSyncEnabled: resolveAutoSync?.(),
         onMutation: syncHooks?.onMutation,
         requestSync: syncHooks?.requestSync,
@@ -868,6 +872,7 @@ export function createTraceServeServer(
       access?.connection,
       access?.pairing,
       env.TRACE_CURRENT_VERSION ?? resolvePackagedVersion(),
+      () => Boolean(readAuthToken(env)),
     ),
   );
 }
@@ -908,7 +913,7 @@ export function startTraceServe(
     createTraceServeServer(
       env,
       undefined,
-      createSyncHooks(() => triggerSync(env)),
+      createSyncHooks(() => triggerSync(env), Date.now, () => triggerSync(env, { reason: "login" })),
       bridgeAccess,
     );
 

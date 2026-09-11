@@ -1,4 +1,4 @@
-import { fetchDocManifests, validateDocumentKey } from "../auth-service.ts";
+import { AuthenticationRequiredError, clearStoredCredentials, fetchDocManifests, validateDocumentKey } from "../auth-service.ts";
 import {
   assertLegacyStoreAccount,
   assertStoreAccount,
@@ -72,6 +72,8 @@ export function requestAutomaticSync(
   dependencies: {
     spawn?: BackgroundSpawn;
     executable?: string;
+    /** Initial recovery must not wait behind an earlier automatic run. */
+    reason?: "login";
   } = {},
 ): void {
   if (!resolveAutoSyncEnabled(env)) return;
@@ -81,6 +83,7 @@ export function requestAutomaticSync(
 
   const databasePath = resolveDatabasePath(env);
   if (
+    dependencies.reason !== "login" &&
     !shouldRequestAutomaticSync({
       state: readAutomaticSyncState(databasePath),
       fingerprint: localSyncFingerprint(databasePath),
@@ -266,6 +269,9 @@ export async function runSyncCommand(
       stderr: "",
     };
   } catch (error) {
+    if (error instanceof AuthenticationRequiredError && readAuthToken(env)?.accessToken === token.accessToken) {
+      clearStoredCredentials(env);
+    }
     const message = error instanceof Error ? error.message : String(error);
     recordSyncStatus(databasePath, (path) =>
       finalizeSyncRun(path, runId, { lastError: message }),

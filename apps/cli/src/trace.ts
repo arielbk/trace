@@ -3,6 +3,7 @@ import { buildTraceCittyRoot, runCittyDispatch } from "./trace-citty.ts";
 import { readFileSync, realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requestAutomaticSync } from "./commands/sync.ts";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
 import { boardOperation } from "./commands/board-operations.ts";
@@ -145,7 +146,10 @@ export async function runTraceCliAsync(
     (command === "login" || command === "logout" || command === "whoami") &&
     argv.length === 1
   ) {
-    return runAuthCommand(command, env, { onOutput });
+    return runAuthCommand(command, env, {
+      onOutput,
+      onLoginComplete: () => requestAutomaticSync(env, { reason: "login" }),
+    });
   }
   if (command === "update") {
     // The interactivity check lives inside this early return rather than after

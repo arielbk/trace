@@ -1,5 +1,15 @@
 # Changelog
 
+## @eqnx/cli 0.22.1
+
+- Show installation and setup guidance when the hosted board cannot reach EQNX,
+  with a connection check before offering a pairing command.
+- Recover synced work immediately after terminal or board sign-in and key setup,
+  without waiting behind automatic sync throttling. AutoSync off is still respected.
+- Keep the board signed out when credentials are absent or rejected; temporary
+  server outages preserve credentials.
+- Allow paired browsers to sign out and clarify which work stays on this device.
+
 ## @eqnx/cli 0.21.1
 
 Resume the Trace version sequence after the initial EQNX 0.1.x releases.

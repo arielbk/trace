@@ -37,6 +37,8 @@ const JSON_CONTENT_TYPE = "application/json";
  */
 export interface TraceApiRequestOptions {
   syncServerConfigured?: boolean;
+  /** Credential presence is read by the host; cached sync status is not proof of sign-in. */
+  accountCredentialsPresent?: boolean;
   /** The version of the EQNX runtime serving this request, reported by the
    * connection handshake. The host resolves it, since only it knows whether it
    * is a packaged CLI, a dev server, or a pinned test double. */
@@ -92,7 +94,9 @@ export function handleTraceApiRequest(
 
   if (path === "/api/sync/status") {
     if (method !== "GET") return methodNotAllowed();
-    const status = readSyncStatus(databasePath);
+    const status = options?.accountCredentialsPresent === false
+      ? { state: "logged-out" as const }
+      : readSyncStatus(databasePath);
     return json({
       ...status,
       ...(status.state === "logged-out"

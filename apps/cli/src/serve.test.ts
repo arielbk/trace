@@ -15,6 +15,7 @@ import {
   resolveTaskDocsDir,
   unzipExportBundle,
   updateConfigFile,
+  writeSyncStatusFile,
 } from "@trace/core";
 import {
   createServeRequestListener,
@@ -1393,4 +1394,17 @@ test("hosted sign-out preflights POST but still requires a paired browser", () =
       connection,
     ).statusCode,
   ).toBe(403);
+});
+
+
+test("a stale signed-in status cannot sign in a machine without credentials", () => {
+  writeSyncStatusFile(databasePath, { loggedIn: true, identity: "Previous account" });
+  const server = createTraceServeServer({ HOME: dir, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://sync.test" });
+  let body = "";
+  server.emit("request", {
+    method: "GET", url: "/api/sync/status", headers: { host: "127.0.0.1:4317" },
+  } as IncomingMessage, {
+    setHeader: () => {}, end: (chunk: string) => { body = chunk; },
+  } as unknown as ServerResponse);
+  expect(JSON.parse(body)).toEqual({ state: "logged-out", serverConfigured: true, autoSync: true });
 });

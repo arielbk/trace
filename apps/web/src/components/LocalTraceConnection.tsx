@@ -13,7 +13,7 @@ import {
 } from "@trace/core/browser";
 import { HttpError, useTraceDataSource } from "../lib/trace-data-source.ts";
 import { useConnectionHealth } from "../lib/connection-recovery.ts";
-import { BrowserPairing } from "./BrowserPairing.tsx";
+import { BrowserPairing, SetupInstructions } from "./BrowserPairing.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
 
@@ -229,7 +229,7 @@ export function LocalTraceConnection({
           </h1>
           <p className="mt-subtitle-top mb-0 max-w-row-description text-caption leading-relaxed text-text-muted">
             {failure?.description ??
-              "Run the command below in Terminal, then return here. This page will connect automatically."}
+              "Connect to the EQNX service on this device, then sign in to recover your synced work."}
           </p>
         </div>
       </div>
@@ -246,6 +246,7 @@ export function LocalTraceConnection({
             </p>
           ) : failure ? (
             <>
+              {failure.kind === "unavailable" ? <SetupInstructions command={setupCommand} /> : null}
               <button
                 type="button"
                 className={PRIMARY_ACTION}
@@ -265,23 +266,11 @@ export function LocalTraceConnection({
             </>
           ) : (
             <>
-              <BrowserPairing source={source} onApproved={handleConnect} />
+              <BrowserPairing source={source} onApproved={handleConnect} setupCommand={setupCommand} />
               <p className="m-0 max-w-row-description text-meta leading-relaxed text-text-muted">
                 If your browser asks for local-network access, allow it to
                 continue.
               </p>
-              <details className="max-w-row-description text-meta text-text-muted">
-                <summary className="cursor-pointer">
-                  Need to set up EQNX?
-                </summary>
-                <p>
-                  On macOS, install EQNX and run setup once. After setup,
-                  return here to get your pairing command.
-                </p>
-                <pre className="overflow-x-auto rounded-control border border-border bg-surface p-3 text-crumb">
-                  <code>{`npm install -g @eqnx/cli\n${setupCommand}`}</code>
-                </pre>
-              </details>
             </>
           )}
         </div>
