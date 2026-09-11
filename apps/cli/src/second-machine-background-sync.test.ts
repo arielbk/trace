@@ -442,3 +442,89 @@ test("re-entry on B reads the synced state locally and says whose machine the tr
   expect(tail.exitCode).toBe(1);
   expect(tail.stderr).toContain("not on this machine");
 });
+
+test("one task's missing blob does not hold back another task's documents", async () => {
+  // Two tasks, each with its own document, so a single unreachable blob has
+  // something to fail to hold back.
+  const { a } = await machineAWithSyncedWork(root, cloud, TOKEN, MASTER_KEY);
+  const storeA = openTraceStore(a.db);
+  const second = storeA.createTask("Write the walkthrough");
+  storeA.close();
+  const docsOnA = resolveTaskDocsDir(a.db, second.slug);
+  mkdirSync(docsOnA, { recursive: true });
+  writeFileSync(join(docsOnA, "state.md"), "# Walkthrough\n\nA wrote this too.\n");
+  expect((await runSyncCommand(a.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+
+  // Exactly one blob is unreachable — whichever B asks for first — and it stays
+  // the same one, so this is one missing document rather than an outage.
+  let stuckBlob: string | undefined;
+  let downloadsFail = true;
+  const offline: typeof globalThis.fetch = (input, init) => {
+    const { pathname } = new URL(String(input));
+    const isDownload =
+      (init?.method ?? "GET").toUpperCase() === "GET" &&
+      pathname.startsWith("/api/sync/blobs/");
+    if (isDownload && downloadsFail) {
+      stuckBlob ??= pathname;
+      if (pathname === stuckBlob) {
+        return Promise.resolve(new Response("", { status: 503 }));
+      }
+    }
+    return cloud.fetch(input, init);
+  };
+
+  const b = makeMachine(root, "b", cloud.url);
+  signInDirectly(b, TOKEN, MASTER_KEY);
+  const runtime = await startLocalRuntime(b, offline);
+  try {
+    const [first] = await runtime.settle();
+    expect(first!.exitCode).toBe(0);
+
+    const slugs = slugsOn(b);
+    const landed = slugs.filter((slug) =>
+      existsSync(join(resolveTaskDocsDir(b.db, slug), "state.md")),
+    );
+    // The other task's document is here. Deferring one manifest defers one
+    // manifest — it does not cost the rest of the pull its documents.
+    expect(landed).toHaveLength(1);
+    const kept = readFileSync(
+      join(resolveTaskDocsDir(b.db, landed[0]!), "state.md"),
+      "utf8",
+    );
+    expect(titlesOn(b).sort()).toEqual([
+      "Ship the second machine",
+      "Write the walkthrough",
+    ]);
+    expect(readSyncStatusFile(b.db)?.restore?.phase).toBe("partial");
+
+    // The blob comes back. The next scheduled sync converges on both documents,
+    // and the one already recovered is left exactly as it was.
+    downloadsFail = false;
+    await elapse(runtime, REMOTE_CHANGE_ARRIVAL_BOUND_MS);
+
+    for (const slug of slugs) {
+      expect(
+        readFileSync(join(resolveTaskDocsDir(b.db, slug), "state.md"), "utf8"),
+      ).toContain("A wrote this");
+    }
+    expect(
+      readFileSync(join(resolveTaskDocsDir(b.db, landed[0]!), "state.md"), "utf8"),
+    ).toBe(kept);
+    expect(readSyncStatusFile(b.db)?.restore?.phase).toBe("ready");
+    // Converging is not duplicating: the deferred manifest replayed onto the
+    // same two tasks.
+    expect(titlesOn(b)).toHaveLength(2);
+  } finally {
+    await runtime.close();
+  }
+});
+
+/** The slugs a machine holds, which is how its document directories are found. */
+function slugsOn(m: Machine): string[] {
+  const store = openTraceStore(m.db);
+  try {
+    return store.listTasks().map((task) => task.slug);
+  } finally {
+    store.close();
+  }
+}

@@ -124,7 +124,10 @@ export function sessionTailOperation(
     if (!session) return failure(`Session not found: ${sessionId}`, 1);
     // The session row synced; the transcript it points at did not. An empty
     // tail would read as "this session said nothing", so a locator this machine
-    // cannot resolve is reported as what it is.
+    // cannot resolve is reported as what it is — absence, and only absence.
+    // Nothing here knows which machine recorded the session, and a transcript
+    // pruned by the tool that wrote it looks exactly like one that never
+    // arrived.
     if (
       !hasReadableTranscript({
         transcriptPath: session.transcriptPath,
@@ -132,7 +135,7 @@ export function sessionTailOperation(
       })
     ) {
       return failure(
-        `Session ${sessionId} was recorded by ${session.tool} on another machine: its transcript is not on this machine (${session.transcriptPath}).`,
+        `Session ${sessionId}'s ${session.tool} transcript is not on this machine (${session.transcriptPath}). It was recorded elsewhere, or has since been removed.`,
         1,
       );
     }

@@ -590,28 +590,44 @@ function LoginProgress({
 function ApprovalRequests({ enabled }: { enabled: boolean }) {
   const source = useTraceDataSource();
   const queryClient = useQueryClient();
-  const { data: pending } = useKeyTransfers(enabled);
+  const { data: pending, error: listError } = useKeyTransfers(enabled);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [inspection, setInspection] = useState<KeyTransferInspection | null>(
     null,
   );
 
   const forget = () => {
     setInspection(null);
+    setActionError(null);
     void queryClient.invalidateQueries({
       queryKey: traceQueryKey(source, "key-transfers"),
     });
   };
+  const reportError = (error: Error) => {
+    setInspection(null);
+    setActionError(error.message);
+    void queryClient.invalidateQueries({ queryKey: traceQueryKey(source, "key-transfers") });
+  };
   const open = useMutation({
     mutationFn: (requestId: string) => openKeyTransfer(requestId, source),
-    onSuccess: setInspection,
+    onMutate: () => setActionError(null),
+    onSuccess: (next) => {
+      setInspection(next);
+      if (next.state === "gone") setActionError("That request is no longer available. Ask the other machine to start a new one.");
+    },
+    onError: reportError,
   });
   const approve = useMutation({
     mutationFn: (requestId: string) => approveKeyTransfer(requestId, source),
     onSuccess: forget,
+    onMutate: () => setActionError(null),
+    onError: reportError,
   });
   const deny = useMutation({
     mutationFn: (requestId: string) => denyKeyTransfer(requestId, source),
     onSuccess: forget,
+    onMutate: () => setActionError(null),
+    onError: reportError,
   });
 
   // The other machine reveals its key a moment after this one offers, so an
@@ -695,10 +711,12 @@ function ApprovalRequests({ enabled }: { enabled: boolean }) {
   }
 
   const waiting: PendingKeyTransfer[] = pending ?? [];
-  if (waiting.length === 0) return null;
+  const error = actionError ?? listError?.message;
+  if (waiting.length === 0 && !error) return null;
 
   return (
     <div className={cn(SECTION, "flex flex-col gap-2")}>
+      {error ? <p role="alert" className="m-0 text-meta text-danger">{error}</p> : null}
       {waiting.map((request) => (
         <div key={request.requestId} className="flex flex-col gap-1.5">
           <span className="min-w-0 text-text-muted">

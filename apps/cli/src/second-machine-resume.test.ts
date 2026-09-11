@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -382,6 +382,106 @@ test("a refused approval ends the wait without ending the sign-in", async () => 
     ).body,
   ) as BoardAttempt;
   expect(settled.state).toBe("complete");
+  await Promise.all(board.syncs);
+  expect(board.syncs).toHaveLength(1);
+});
+
+test("a failed local credential save does not claim the transferred envelope", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
+  await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
+  const { b, board, attemptId, attempt } = await machineBAtTheKeyPrompt(cloud);
+  await board.service.requestKeyTransfer(attemptId);
+  const approver = approverFor(cloud, masterKey);
+  const [request] = await approver.list();
+  await approver.inspect(request!.requestId);
+  mkdirSync(join(b.home, ".trace", "auth.json"));
+  await approver.approve(request!.requestId);
+  await untilView(attempt, view => view.state === "failed");
+  await tick();
+  const relay = createKeyTransferRelay({ serverUrl: cloud.url, fetch: cloud.fetch, accessToken: "cloud-token" });
+  expect(await relay.read(request!.requestId)).toMatchObject({ state: "approved", envelope: expect.any(Object) });
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("concurrent transfer clicks share one creation and cancelling it leaves no live request", async () => {
+  const masterKey = generateTaskKey();
+  const real = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
+  let release!: () => void;
+  let entered!: () => void;
+  let creates = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const delayed: typeof globalThis.fetch = async (input, init) => {
+    const response = await real.fetch(input, init);
+    if (init?.method === "POST" && String(input).endsWith("/api/key-transfer")) {
+      creates++;
+      entered();
+      await gate;
+    }
+    return response;
+  };
+  const cloud = new Proxy(real, { get: (target, key) => {
+    if (key === "fetch") return delayed;
+    const value = Reflect.get(target, key);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
+  await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
+  const { board, attemptId } = await machineBAtTheKeyPrompt(cloud);
+  const first = board.service.requestKeyTransfer(attemptId);
+  await started;
+  const second = board.service.requestKeyTransfer(attemptId);
+  await board.service.cancelKeyTransfer(attemptId);
+  release();
+  await Promise.all([first, second]);
+  expect(creates).toBe(1);
+  expect(await approverFor(real, masterKey).list()).toEqual([]);
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("an account that has used up its requests is still offered the recovery key", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
+  await machineAWithSyncedWork(root, cloud, "cloud-token", masterKey);
+
+  // Five fumbled attempts inside one ten-minute window — the request slots the
+  // relay allows an account — spent before the sixth is asked for.
+  const relay = createKeyTransferRelay({
+    serverUrl: cloud.url,
+    fetch: cloud.fetch,
+    accessToken: "cloud-token",
+  });
+  for (let spent = 0; spent < 5; spent += 1) {
+    const burned = await relay.create({
+      commitment: Buffer.alloc(32, spent + 1).toString("base64"),
+      machineName: `Abandoned ${spent}`,
+      now: new Date(),
+    });
+    await relay.cancel(burned.context.requestId);
+  }
+
+  const { board, attemptId, attempt } = await machineBAtTheKeyPrompt(cloud);
+  await board.request("POST", `/api/local-auth/login/${attemptId}/transfer`);
+  const refused = await untilView(attempt, (view) => view.error !== undefined);
+
+  // Asking failed, and the way through is the one that never needed the other
+  // machine: the key prompt is still the attempt's state, with the refusal
+  // beside it rather than in place of it.
+  expect(refused.state).toBe("waiting-for-existing-key");
+  expect(refused.error).toMatch(/wait|too many/i);
+  expect(refused.transfer).toBeUndefined();
+
+  // And that path still works: this machine recovers on its own key.
+  const done = JSON.parse(
+    (
+      await board.request(
+        "POST",
+        `/api/local-auth/login/${attemptId}/existing-key`,
+        JSON.stringify({ key: masterKey }),
+      )
+    ).body,
+  ) as BoardAttempt;
+  expect(done.state).toBe("complete");
   await Promise.all(board.syncs);
   expect(board.syncs).toHaveLength(1);
 });

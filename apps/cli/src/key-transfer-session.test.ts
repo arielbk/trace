@@ -112,7 +112,7 @@ test("a key that cannot open the account's documents is refused, not committed",
     // does not have.
     wrappedKeys: wrappedKeysFor(generateTaskKey()),
     sleep: tick,
-    onKey: (key) => delivered.push(key),
+    onKey: (key) => { delivered.push(key); },
   });
   const approver = createKeyTransferApproverSession({
     relay: relayFor(cloud),
@@ -275,7 +275,7 @@ test("a request cancelled before delivery commits nothing, even if an approval l
     serviceOrigin: cloud.url,
     wrappedKeys: wrappedKeysFor(masterKey),
     sleep: tick,
-    onKey: (key) => delivered.push(key),
+    onKey: (key) => { delivered.push(key); },
   });
   const approver = createKeyTransferApproverSession({
     relay: relayFor(cloud),
@@ -348,4 +348,236 @@ test("a relay that stops answering gives up with the recovery key still on offer
   );
   // Not a stack trace, and not a silent wait: the way out is on the message.
   expect(failed.error).toMatch(/recovery key/i);
+});
+
+test("the approving machine says the relay is unreachable rather than waiting on a nameless request", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(cloud),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: tick,
+  });
+  // Only A's relay goes dark: B already has its request, and the question is
+  // what A's board is told while it cannot read the row.
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(flakyReads(cloud, Number.MAX_SAFE_INTEGER)),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+
+  // Never an inspection with an empty machine name and a spinner behind it:
+  // the board must be able to tell the user the server is the problem.
+  await expect(approver.inspect(recipient.view.requestId)).rejects.toThrow(
+    /lost contact with the sync server/i,
+  );
+  await recipient.cancel();
+});
+
+/** A cloud that applies the write and then loses the response `failures`
+ * times — the case the relay's identical-retry rules exist for. */
+function lostWriteResponses(
+  cloud: FakeCloud,
+  action: string,
+  failures: number,
+): FakeCloud {
+  let dropped = 0;
+  const fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const response = await cloud.fetch(input as never, init);
+    if (
+      method === "POST" &&
+      url.includes(`/api/key-transfer/`) &&
+      url.endsWith(`/${action}`) &&
+      dropped < failures
+    ) {
+      dropped += 1;
+      throw new TypeError("fetch failed");
+    }
+    return response;
+  }) as FakeCloud["fetch"];
+  return new Proxy(cloud, {
+    get: (target, key) => (key === "fetch" ? fetch : Reflect.get(target, key)),
+  }) as FakeCloud;
+}
+
+test("a reveal whose response is lost is retried rather than ending the ceremony", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const { recipient, approver } = await sessions(
+    lostWriteResponses(cloud, "reveal", 2),
+    masterKey,
+  );
+
+  const listed = await approver.list();
+  await approver.inspect(listed[0]!.requestId);
+  // The relay recorded both reveals; only the answers went missing. An
+  // identical retry is the same reveal, so the exchange survives it.
+  const comparing = await until(
+    () => recipient.view,
+    (view) => view.state === "comparing",
+  );
+  expect(comparing.verificationCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+
+  await approver.approve(listed[0]!.requestId);
+  await until(() => recipient.view, (view) => view.state === "complete");
+  expect(recipient.key()).toBe(masterKey);
+});
+
+test("an offer whose response is lost is retried rather than failing the inspection", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(cloud),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: tick,
+  });
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(lostWriteResponses(cloud, "offer", 2)),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+
+  await approver.inspect(recipient.view.requestId);
+  await until(() => recipient.view, (view) => view.state === "comparing");
+  await approver.approve(recipient.view.requestId);
+  await until(() => recipient.view, (view) => view.state === "complete");
+  expect(recipient.key()).toBe(masterKey);
+});
+
+test("a create whose response is lost re-uses the same request rather than burning a second", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  let creates = 0;
+  const fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const created = method === "POST" && url.endsWith("/api/key-transfer");
+    if (created) creates += 1;
+    const response = await cloud.fetch(input as never, init);
+    if (created && creates === 1) throw new TypeError("fetch failed");
+    return response;
+  }) as FakeCloud["fetch"];
+  const flaky = new Proxy(cloud, {
+    get: (target, key) => (key === "fetch" ? fetch : Reflect.get(target, key)),
+  }) as FakeCloud;
+
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(flaky),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: tick,
+  });
+
+  // The ambiguous create is recovered by reading its preselected ID.
+  expect(creates).toBe(1);
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(cloud),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+  const pending = await approver.list();
+  expect(pending).toHaveLength(1);
+  expect(pending[0]!.requestId).toBe(recipient.view.requestId);
+  await recipient.cancel();
+});
+
+test("a key that cannot be stored locally is left on the relay to be recovered", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(cloud),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: tick,
+    // The disk is full, `auth.json` is locked, `~/.trace` is read-only: the
+    // key arrived and proved out, and could not be written down.
+    onKey: () => false,
+  });
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(cloud),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+
+  await approver.inspect(recipient.view.requestId);
+  await until(() => recipient.view, (view) => view.state === "comparing");
+  await approver.approve(recipient.view.requestId);
+
+  const settled = await until(
+    () => recipient.view,
+    (view) => view.state === "failed" || view.state === "complete",
+  );
+  // Not "complete" — nothing was stored. And the envelope is still there, so
+  // a failed local commit does not consume the encrypted envelope.
+  expect(settled.state).toBe("failed");
+  const row = await relayFor(cloud).read(recipient.view.requestId);
+  expect(row?.state).toBe("approved");
+  expect(row?.envelope).toBeDefined();
+});
+
+/** A cloud that answers reads until the `nth` one, whose response is lost. */
+function dropRead(cloud: FakeCloud, nth: number): FakeCloud {
+  let reads = 0;
+  const fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes("/api/key-transfer/") && method === "GET") {
+      reads += 1;
+      if (reads === nth) throw new TypeError("fetch failed");
+    }
+    return cloud.fetch(input as never, init);
+  }) as FakeCloud["fetch"];
+  return new Proxy(cloud, {
+    get: (target, key) => (key === "fetch" ? fetch : Reflect.get(target, key)),
+  }) as FakeCloud;
+}
+
+test("a read dropped at the end of an inspect still names the request this machine saw", async () => {
+  const masterKey = generateTaskKey();
+  const cloud = new FakeCloud({ token: "cloud-token", user: { id: ACCOUNT } });
+  // The requesting machine is wedged before its first poll, so the inspection
+  // runs out all five of its polls with nothing yet to compare.
+  const recipient = await startKeyTransferRequest({
+    relay: relayFor(cloud),
+    machineName: "B's MacBook",
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    wrappedKeys: wrappedKeysFor(masterKey),
+    sleep: () => new Promise<void>(() => {}),
+  });
+  const approver = createKeyTransferApproverSession({
+    relay: relayFor(dropRead(cloud, 5)),
+    accountId: ACCOUNT,
+    serviceOrigin: cloud.url,
+    masterKey,
+    sleep: tick,
+  });
+
+  // One dropped response on the way out is not an unreachable relay: this
+  // machine still knows whose request this is, and the board goes on showing
+  // it rather than announcing an outage that is not happening.
+  expect(await approver.inspect(recipient.view.requestId)).toMatchObject({
+    state: "waiting-for-reveal",
+    machineName: "B's MacBook",
+  });
 });

@@ -85,6 +85,7 @@ function localAuthServer(options: {
   transfer?: KeyTransferRequestView;
   pendingTransfers?: PendingKeyTransfer[];
   inspection?: KeyTransferInspection;
+  transferFailure?: { action: "open" | "approve" | "deny"; message: string };
   /** Serve `polled` as the machine's outstanding login from the outset, as a
    * serving process does when an earlier popover walked away from one. */
   outstanding?: boolean;
@@ -179,6 +180,9 @@ function localAuthServer(options: {
       }
       if (url === "/api/local-auth/transfers") {
         return jsonResponse(options.pendingTransfers ?? []);
+      }
+      if (options.transferFailure && url.endsWith(`/transfers/request-1/${options.transferFailure.action}`)) {
+        return new Response(JSON.stringify({ error: options.transferFailure.message }), { status: 400 });
       }
       if (url.endsWith("/open") || url.endsWith("/approve")) {
         return jsonResponse(options.inspection ?? COMPARING_INSPECTION);
@@ -1079,4 +1083,23 @@ test("a login the machine has forgotten is reported, not polled forever", async 
   expect(
     server.calls.filter((call) => call === "POST /api/local-auth/login"),
   ).toHaveLength(2);
+});
+
+
+test.each(["open", "approve", "deny"] as const)("a refused %s tells the user why and drops the stale approval code", async (action) => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    status: SIGNED_IN,
+    pendingTransfers: [{ requestId: "request-1", locator: "K3M9QZ", machineName: "Studio Mac", expiresAt: new Date(NOW.getTime() + 300_000).toISOString() }],
+    transferFailure: { action, message: "This transfer request is already cancelled. Start a new one." },
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /review request/i }));
+  if (action !== "open") {
+    await screen.findByTestId("approval-code");
+    await user.click(screen.getByRole("button", { name: action === "approve" ? /codes match/i : /^deny$/i }));
+  }
+  expect(await screen.findByRole("alert")).toHaveTextContent(/already cancelled/i);
+  expect(screen.queryByTestId("approval-code")).not.toBeInTheDocument();
 });

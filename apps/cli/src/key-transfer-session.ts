@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   assertKeyTransferContext,
   createKeyTransferApprover,
@@ -78,6 +79,9 @@ export class KeyTransferUnreachableError extends Error {
   }
 }
 
+export const KEY_TRANSFER_NOT_STORED_MESSAGE =
+  "The key arrived, but this machine could not store it. Fix the local storage problem, then sign in again.";
+
 /**
  * Wait between polls, and hand the event loop a turn either way.
  *
@@ -98,13 +102,40 @@ function pauser(
 }
 
 /**
+ * Run a relay write that is safe to repeat, retrying only an unreachable
+ * relay.
+ *
+ * Every write this ceremony makes is idempotent for an identical payload —
+ * the relay answers a repeated offer, reveal or create with the state it
+ * already holds — so a lost response is worth sending again rather than
+ * ending an exchange the relay is still perfectly willing to finish. Anything
+ * the relay actually pronounced propagates, as everywhere else here.
+ */
+async function persist<T>(
+  write: () => Promise<T>,
+  pause: () => Promise<void>,
+  check: () => void = () => {},
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    check();
+    try {
+      return await write();
+    } catch (error) {
+      if (!(error instanceof KeyTransferUnavailableError)) throw error;
+      if (attempt >= MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
+      await pause();
+    }
+  }
+}
+
+/**
  * Ask this account's other machines for its document key.
  *
  * Returns as soon as the request is minted; the exchange runs detached and is
  * observed through {@link KeyTransferRequestSession.view}, the same way a login
  * attempt is. `onKey` fires once, synchronously, at the moment a delivered key
- * has been proven — callers commit credentials there, before the claim that
- * tells the relay it may forget the envelope.
+ * has been proven — callers commit credentials there, and only a commit they
+ * report as successful lets this machine claim the envelope off the relay.
  */
 export async function startKeyTransferRequest(options: {
   relay: KeyTransferRelay;
@@ -117,7 +148,9 @@ export async function startKeyTransferRequest(options: {
   wrappedKeys: SyncWrappedKey[];
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => Date;
-  onKey?: (masterKey: string) => void;
+  /** Commit the proven key. Returns whether it was actually persisted: the
+   * envelope is not claimed if persistence fails. */
+  onKey?: (masterKey: string) => boolean | void;
 }): Promise<KeyTransferRequestSession> {
   const pause = pauser(options.sleep ?? defaultSleep);
   const now = options.now ?? (() => new Date());
@@ -126,15 +159,47 @@ export async function startKeyTransferRequest(options: {
   // Minting the request is what this call is: it either produces a request the
   // user can be told to go and approve, or it fails here where the caller can
   // say so, rather than becoming a session in a state nobody can act on.
-  const created = await options.relay.create({
+  //
+  // The id and the whole payload are chosen once, here, and repeated verbatim
+  // by every retry: a lost create response is then a request this machine can
+  // go and read rather than a second row burning one of the account's few
+  // live slots. See `docs/key-transfer-protocol.md`.
+  const requestId = randomUUID();
+  const draft = {
     commitment: recipient.commitment,
     machineName: options.machineName,
     now: now(),
-  });
+    requestId,
+  };
+  const deadline = draft.now.getTime() + KEY_TRANSFER_MAX_LIFETIME_MS;
+  const created = await mint();
   // The deadline is this machine's, fixed now, and never read back from the
   // relay: the whole point is that the relay cannot extend it.
-  const deadline = now().getTime() + KEY_TRANSFER_MAX_LIFETIME_MS;
-  const requestId = created.context.requestId;
+
+  async function mint(): Promise<KeyTransferRecord> {
+    for (let attempt = 0; ; attempt += 1) {
+      if (now().getTime() >= deadline) throw new KeyTransferExpiredError();
+      try {
+        return await options.relay.create(draft);
+      } catch (error) {
+        // A conflict on an id this machine chose is its own earlier create,
+        // answered after the answer went missing. Read it rather than mint a
+        // new one.
+        const recoverable =
+          error instanceof KeyTransferConflictError ||
+          error instanceof KeyTransferUnavailableError;
+        if (!recoverable) throw error;
+        const existing = await options.relay.read(requestId).catch((readError: unknown) => {
+          if (!(readError instanceof KeyTransferUnavailableError)) throw readError;
+          return null;
+        });
+        if (existing) return existing;
+        if (!(error instanceof KeyTransferUnavailableError)) throw error;
+        if (attempt >= MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
+        await pause();
+      }
+    }
+  }
 
   let view: KeyTransferRequestView = {
     requestId,
@@ -144,6 +209,11 @@ export async function startKeyTransferRequest(options: {
   };
   let masterKey: string | undefined;
   let cancelled = false;
+
+  function checkLive(): void {
+    if (cancelled) throw new Error(KEY_TRANSFER_GONE_MESSAGE);
+    if (now().getTime() >= deadline) throw new KeyTransferExpiredError();
+  }
 
   const session: KeyTransferRequestSession = {
     get view() {
@@ -189,8 +259,13 @@ export async function startKeyTransferRequest(options: {
         // carrying a different offer or context is refused by the arithmetic,
         // not by this loop.
         exchange = recipient.acceptOffer(record.senderPublicKey, record.context);
-        await options.relay.reveal(record.context.requestId, exchange.publicKey);
-        if (cancelled) return;
+        const revealed = exchange;
+        await persist(
+          () => options.relay.reveal(record!.context.requestId, revealed.publicKey),
+          pause,
+          checkLive,
+        );
+        checkLive();
         view = {
           ...view,
           state: "comparing",
@@ -199,9 +274,10 @@ export async function startKeyTransferRequest(options: {
       }
 
       if (exchange && record.envelope) {
-        deliver(exchange, record.envelope);
-        // Claimed only after the key is proven and committed, so a lost
-        // response cannot discard the one envelope that can be recovered.
+        // Claimed only after the key is proven *and* the caller says it wrote
+        // it down: claiming is what tells the relay to drop the ciphertext,
+        // and this is the only copy anyone has of it.
+        if (!deliver(exchange, record.envelope)) return;
         await options.relay.claim(record.context.requestId).catch(() => undefined);
         return;
       }
@@ -216,26 +292,45 @@ export async function startKeyTransferRequest(options: {
         // machine read is still the best thing it knows.
         if (!(error instanceof KeyTransferUnavailableError)) throw error;
         readFailures += 1;
-        if (readFailures > MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
+        if (readFailures >= MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
       }
     }
   }
 
   /** Open, prove, hand over — with no `await` between the proof and the
-   * handover, so a cancellation cannot interleave with a commit. */
+   * handover, so a cancellation cannot interleave with a commit. Answers
+   * whether the key is now this machine's to keep. */
   function deliver(
     exchange: KeyTransferExchange,
     envelope: NonNullable<KeyTransferRecord["envelope"]>,
-  ): void {
+  ): boolean {
     const opened = exchange.open(envelope);
     const proven =
       options.wrappedKeys.length > 0
         ? validateDocumentKey(opened, options.wrappedKeys)
         : opened;
-    if (cancelled) return;
+    if (cancelled) return false;
     masterKey = proven;
-    options.onKey?.(proven);
+    let stored: boolean;
+    try {
+      stored = options.onKey === undefined ? true : options.onKey(proven) !== false;
+    } catch {
+      stored = false;
+    }
+    if (!stored) {
+      // The envelope stays where it is. Nothing here is worth losing the one
+      // approval the user already made in front of another machine.
+      masterKey = undefined;
+      view = {
+        ...view,
+        state: "failed",
+        error: KEY_TRANSFER_NOT_STORED_MESSAGE,
+        verificationCode: undefined,
+      };
+      return false;
+    }
     view = { ...view, state: "complete", verificationCode: undefined };
+    return true;
   }
 
   /** Map a relay-side ending onto this machine's view. */
@@ -363,7 +458,7 @@ export function createKeyTransferApproverSession(options: {
       // Bounded: `inspect` answers a board request, and a request that waits
       // for the other machine to reveal is a request that never returns. The
       // board asks again, which is also how it notices a request going away.
-      let readFailures = 0;
+      let waiting: KeyTransferRecord | undefined;
       for (let poll = 0; poll < INSPECT_POLLS; poll += 1) {
         let record: KeyTransferRecord | null;
         try {
@@ -373,8 +468,6 @@ export function createKeyTransferApproverSession(options: {
           // not news about the request, so it costs a poll rather than the
           // exchange this machine has already joined.
           if (!(error instanceof KeyTransferUnavailableError)) throw error;
-          readFailures += 1;
-          if (readFailures > MAX_READ_FAILURES) throw new KeyTransferUnreachableError();
           await pause();
           continue;
         }
@@ -386,6 +479,7 @@ export function createKeyTransferApproverSession(options: {
         // "comparing" would put a code back on screen for a request the other
         // machine has already walked away from.
         if (!OPEN_STATES.includes(record.state)) return gone(requestId);
+        waiting = record;
 
         let entry = joined.get(requestId);
         if (!entry) {
@@ -398,7 +492,11 @@ export function createKeyTransferApproverSession(options: {
         if (now().getTime() >= entry.deadline) return gone(requestId);
 
         if (record.state === "pending") {
-          await options.relay.offer(requestId, entry.approver.publicKey);
+          const offer = entry.approver.publicKey;
+          await persist(() => options.relay.offer(requestId, offer), pause, () => {
+            if (now().getTime() >= entry.deadline) throw new KeyTransferExpiredError();
+            assertKeyTransferContext(context, { accountId: options.accountId, serviceOrigin: options.serviceOrigin, now: now() });
+          });
         } else if (
           record.senderPublicKey &&
           record.senderPublicKey !== entry.approver.publicKey
@@ -423,11 +521,14 @@ export function createKeyTransferApproverSession(options: {
         }
         await pause();
       }
-      const waiting = await options.relay.read(requestId).catch(() => null);
+      // Nothing was read at all: every poll's response went missing, which is
+      // an outage the board has to be told about rather than a nameless
+      // request it can go on spinning over.
+      if (!waiting) throw new KeyTransferUnreachableError();
       return {
         requestId,
-        locator: waiting?.locator ?? "",
-        machineName: waiting?.context.machineName ?? "",
+        locator: waiting.locator,
+        machineName: waiting.context.machineName,
         state: "waiting-for-reveal",
       };
     },
@@ -441,7 +542,9 @@ export function createKeyTransferApproverSession(options: {
         ciphertext: string;
       };
       try {
-        await options.relay.approve(requestId, envelope);
+        await persist(() => options.relay.approve(requestId, envelope), pause, () => {
+          if (now().getTime() >= entry.deadline) throw new KeyTransferExpiredError();
+        });
       } catch (error) {
         // An already-approved request answers the same way for a retried
         // response as for the first: the relay keeps the envelope it has.

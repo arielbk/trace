@@ -9,6 +9,7 @@ import {
   sessionListOperation,
   sessionRefreshTokensOperation,
   sessionRegisterOperation,
+  sessionTailOperation,
 } from "./session-operations.ts";
 import type { Env } from "./seam.ts";
 
@@ -244,5 +245,26 @@ test("session refresh-tokens --dry-run prints the proposed heal and does not per
       stdout: "healed: 1\nunchanged: 0\nunhealable: 0\n",
       stderr: "",
     });
+  });
+});
+
+test("a transcript that is missing here is reported as absent, not as another machine's", () => {
+  withTempContext((ctx) => {
+    // Recorded on this very machine, and then pruned — which is ordinary:
+    // Claude Code removes old transcripts, and project directories move.
+    const transcript = join(ctx.cwd, "session-gone.jsonl");
+    writeFileSync(transcript, "");
+    sessionRegisterOperation(
+      ["--id", "session-gone", "--transcript", transcript, "--tool", "claude"],
+      ctx,
+    );
+    rmSync(transcript);
+
+    const tail = sessionTailOperation(["session-gone"], ctx);
+    expect(tail.exitCode).toBe(1);
+    // Absence is all this machine can see. Claiming another machine recorded
+    // it would be a guess, and here a wrong one.
+    expect(tail.stderr).toContain("not on this machine");
+    expect(tail.stderr).not.toContain("was recorded by");
   });
 });

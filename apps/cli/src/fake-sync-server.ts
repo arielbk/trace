@@ -154,6 +154,8 @@ export class FakeSyncServer {
  */
 class FakeKeyTransferRelay {
   static readonly LIFETIME_MS = 10 * 60 * 1000;
+  /** How many requests one account may create inside a lifetime window. */
+  static readonly CREATION_LIMIT = 5;
   readonly #rows = new Map<string, Record<string, unknown>>();
   readonly #accountId: string;
   #now: () => Date = () => new Date();
@@ -212,6 +214,22 @@ class FakeKeyTransferRelay {
     }
     if (this.#rows.has(draft.requestId)) {
       return Response.json({ error: "request already exists" }, { status: 409 });
+    }
+    // The real relay bounds creation over the request lifetime rather than
+    // over what is still live: a cancelled or already-claimed request keeps
+    // its slot until it expires. Measured against the deployed handlers, and
+    // copied here so a client test can reach the refusal at all.
+    for (const [id, existing] of this.#rows) {
+      if (Date.parse(String(existing.expiresAt)) <= now.getTime()) this.#rows.delete(id);
+    }
+    if (this.#rows.size >= FakeKeyTransferRelay.CREATION_LIMIT) {
+      return Response.json(
+        {
+          error:
+            "Too many key-transfer requests. Wait for the current ten-minute window to expire.",
+        },
+        { status: 429, headers: { "retry-after": "600" } },
+      );
     }
     const row: Record<string, unknown> = {
       requestId: draft.requestId,

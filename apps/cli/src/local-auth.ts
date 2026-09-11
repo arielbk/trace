@@ -95,6 +95,7 @@ interface LoginAttempt {
    * ephemeral private key.
    */
   transfer?: KeyTransferRequestSession;
+  transferStarting?: { cancelled: boolean };
 }
 
 /** The attempt as the board may see it: its own view, plus whatever the
@@ -160,10 +161,13 @@ export function createLocalAuthService(
    * approve a login nobody is finishing.
    */
   function giveUp(attempt: LoginAttempt): void {
-    if (SETTLED_STATES.includes(attempt.view.state)) return;
     attempt.cancelled = true;
+    delete attempt.keySetup;
+    if (attempt.transferStarting) attempt.transferStarting.cancelled = true;
     void attempt.transfer?.cancel();
-    setView(attempt, { ...attempt.view, state: "cancelled" });
+    if (!SETTLED_STATES.includes(attempt.view.state)) {
+      setView(attempt, { ...attempt.view, state: "cancelled" });
+    }
   }
 
   return {
@@ -254,6 +258,7 @@ export function createLocalAuthService(
       setView(attempt, { ...attempt.view, error: undefined });
       finishKeySetup(env, attempt, "complete", undefined, masterKey);
       // The user got there first; the other machine should stop being asked.
+      if (attempt.transferStarting) attempt.transferStarting.cancelled = true;
       void attempt.transfer?.cancel();
       return viewOf(attempt);
     },
@@ -284,6 +289,8 @@ export function createLocalAuthService(
       // Shown once, exactly as a fresh account's key is: this key is now the
       // only thing that can read anything this machine syncs from here on.
       finishKeySetup(env, attempt, "showing-generated-key", masterKey);
+      if (attempt.transferStarting) attempt.transferStarting.cancelled = true;
+      void attempt.transfer?.cancel();
       return viewOf(attempt);
     },
 
@@ -299,9 +306,12 @@ export function createLocalAuthService(
       if (attempt.transfer && !isSettledTransfer(attempt.transfer)) {
         return viewOf(attempt);
       }
+      if (attempt.transferStarting) return viewOf(attempt);
+      const starting = { cancelled: false };
+      attempt.transferStarting = starting;
 
       try {
-        attempt.transfer = await startKeyTransferRequest({
+        const transfer = await startKeyTransferRequest({
           relay: createKeyTransferRelay({
             serverUrl: setup.serverUrl,
             fetch,
@@ -318,17 +328,25 @@ export function createLocalAuthService(
           // wrapped keys by the time this runs, and this is the same commit
           // the typed-key path makes.
           onKey: (masterKey) => {
+            if (starting.cancelled || attempt.keySetup !== setup) return false;
             setView(attempt, { ...attempt.view, error: undefined });
-            finishKeySetup(env, attempt, "complete", undefined, masterKey);
+            return finishKeySetup(env, attempt, "complete", undefined, masterKey);
           },
         });
+        if (starting.cancelled || attempt.cancelled || attempt.keySetup !== setup) {
+          await transfer.cancel();
+        } else {
+          attempt.transfer = transfer;
+        }
       } catch (error) {
         // Asking failed; the key prompt is still there, which is the whole
         // reason approval is an alternative to it rather than a replacement.
-        setView(attempt, {
+        if (!starting.cancelled && !attempt.cancelled && attempt.keySetup === setup) setView(attempt, {
           ...attempt.view,
           error: error instanceof Error ? error.message : String(error),
         });
+      } finally {
+        delete attempt.transferStarting;
       }
       return viewOf(attempt);
     },
@@ -336,6 +354,7 @@ export function createLocalAuthService(
     async cancelKeyTransfer(attemptId: string): Promise<LoginAttemptView | null> {
       const attempt = attempts.get(attemptId);
       if (!attempt) return null;
+      if (attempt.transferStarting) attempt.transferStarting.cancelled = true;
       await attempt.transfer?.cancel();
       return viewOf(attempt);
     },
@@ -494,9 +513,9 @@ function finishKeySetup(
   state: LoginAttemptView["state"],
   generatedKey?: string,
   submittedKey?: string,
-): void {
+): boolean {
   const setup = attempt.keySetup;
-  if (!setup || attempt.cancelled) return;
+  if (!setup || attempt.cancelled) return false;
   // No asynchronous work after this point: cancellation cannot interleave with
   // credential persistence and turn a cancelled attempt into a completed one.
   try {
@@ -509,7 +528,7 @@ function finishKeySetup(
     );
   } catch (error) {
     settleFailure(attempt, error);
-    return;
+    return false;
   }
   const identity = setup.account.identity ?? null;
   try {
@@ -525,6 +544,7 @@ function finishKeySetup(
   }
   delete attempt.keySetup;
   settle(attempt, state, identity, generatedKey);
+  return true;
 }
 
 /**
