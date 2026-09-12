@@ -1,4 +1,4 @@
-import { fetchDocManifests, validateDocumentKey } from "../auth-service.ts";
+import { AuthenticationRequiredError, clearStoredCredentials, fetchDocManifests, validateDocumentKey } from "../auth-service.ts";
 import {
   assertLegacyStoreAccount,
   assertStoreAccount,
@@ -10,6 +10,8 @@ import {
   finalizeSyncRun,
   openTraceStore,
   readSyncIdentity,
+  readSyncStatusFile,
+  updateSyncStatusFile,
   writeSyncIdentity,
   resolveAutoSyncEnabled,
   resolveConfiguredServerUrl,
@@ -70,6 +72,8 @@ export function requestAutomaticSync(
   dependencies: {
     spawn?: BackgroundSpawn;
     executable?: string;
+    /** Initial recovery must not wait behind an earlier automatic run. */
+    reason?: "login";
   } = {},
 ): void {
   if (!resolveAutoSyncEnabled(env)) return;
@@ -79,6 +83,7 @@ export function requestAutomaticSync(
 
   const databasePath = resolveDatabasePath(env);
   if (
+    dependencies.reason !== "login" &&
     !shouldRequestAutomaticSync({
       state: readAutomaticSyncState(databasePath),
       fingerprint: localSyncFingerprint(databasePath),
@@ -153,9 +158,18 @@ export async function runSyncCommand(
   // sees a spinner rather than the previous outcome. The id is what lets a slow
   // run recognise that a newer one has taken over, and refuse to finalize.
   const runId = randomUUID();
+  // Restore progress describes a machine that is still acquiring work it does
+  // not have: login stamps the opening phase, and a run carries it through to
+  // ready. An established machine leaves it alone while it runs, so pushing
+  // local edits is never narrated as bringing work onto this machine.
+  const restoring = readSyncStatusFile(databasePath)?.restore?.phase !== "ready";
   recordSyncStatus(databasePath, (path) =>
     beginSyncRun(path, { id: runId, startedAt: new Date().toISOString() }),
   );
+  if (restoring)
+    recordSyncStatus(databasePath, (path) =>
+      updateSyncStatusFile(path, { restore: { phase: "metadata" } }),
+    );
   const store = openTraceStore(databasePath);
   try {
     const bound = readSyncIdentity(databasePath);
@@ -199,12 +213,28 @@ export async function runSyncCommand(
           },
         },
       ),
+      () => {
+        if (!restoring) return;
+        recordSyncStatus(databasePath, (path) => {
+          // A newer run may have taken the file over meanwhile; only the run
+          // that owns it gets to narrate its phases.
+          if (readSyncStatusFile(path)?.activeRun?.id === runId)
+            updateSyncStatusFile(path, { restore: { phase: "documents" } });
+        });
+      },
     );
     const syncedAt = new Date().toISOString();
     recordSyncStatus(databasePath, (path) =>
       finalizeSyncRun(path, runId, {
         lastSyncedAt: syncedAt,
         lastError: undefined,
+        // Always restated on success, restore or not: the count behind the
+        // empty-account line has to be this run's, and a run that left
+        // manifests behind has not finished recovering whatever it skipped.
+        restore: {
+          phase: result.deferredManifests ? "partial" : "ready",
+          taskCount: store.syncSnapshot().tasks.length,
+        },
       }),
     );
     // What the machine looks like now that server and local state agree — the
@@ -220,6 +250,11 @@ export async function runSyncCommand(
       (result.pulledManifests ?? 0) +
       (result.uploadedBlobs ?? 0) +
       (result.downloadedBlobs ?? 0);
+    // A deferred manifest is the one outcome a "complete" line would misreport:
+    // the sync did succeed, and the machine still does not have those
+    // documents. Say so, and say what happens next, rather than leaving the gap
+    // to be discovered as a missing file.
+    const deferred = result.deferredManifests ?? 0;
     return {
       exitCode: 0,
       stdout:
@@ -227,10 +262,16 @@ export async function runSyncCommand(
         (documentChanges > 0
           ? ` Docs: ${result.pushedManifests} manifests pushed, ${result.pulledManifests} pulled, ${result.uploadedBlobs} blobs uploaded, ${result.downloadedBlobs} downloaded.`
           : "") +
+        (deferred > 0
+          ? ` Documents for ${deferred} task${deferred === 1 ? "" : "s"} are not on this machine yet; the next sync retries them.`
+          : "") +
         "\n",
       stderr: "",
     };
   } catch (error) {
+    if (error instanceof AuthenticationRequiredError && readAuthToken(env)?.accessToken === token.accessToken) {
+      clearStoredCredentials(env);
+    }
     const message = error instanceof Error ? error.message : String(error);
     recordSyncStatus(databasePath, (path) =>
       finalizeSyncRun(path, runId, { lastError: message }),

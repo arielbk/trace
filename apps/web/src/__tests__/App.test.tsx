@@ -14,7 +14,10 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "../App.tsx";
 import { LocalTraceSource } from "../lib/trace-data-source.ts";
-import { TRACE_PROTOCOL_VERSION } from "@trace/core/browser";
+import {
+  HOSTED_CAPABILITIES,
+  TRACE_PROTOCOL_VERSION,
+} from "@trace/core/browser";
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -37,6 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
   window.history.replaceState({}, "", "/");
@@ -140,4 +144,130 @@ test("a connected board reports a connection that stops answering", async () => 
   fireEvent(window, new Event("focus"));
 
   expect(await screen.findByRole("status")).toHaveTextContent(/reconnecting/i);
+});
+
+/**
+ * The restore itself, in a browser: a paired hosted board watching its own
+ * machine bring recovered work over, and then watching that status read fail.
+ *
+ * The board is the only place the phases are ever seen, so this drives the
+ * real `App` — capability handshake, data source, header, account popover —
+ * rather than the description function the unit tests cover. What it is here
+ * to prove is the promise the slice rests on: the board never says the work is
+ * ready before it is, and a status read that stops answering does not take the
+ * task list down with it.
+ */
+test("a hosted board follows a restore to ready and keeps its tasks when the status read fails", async () => {
+  const origin = "http://127.0.0.1:4319";
+  localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+
+  const json = (value: unknown) =>
+    new Response(JSON.stringify(value), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  const task = {
+    id: "task-abc",
+    slug: "ship-the-second-machine",
+    title: "Ship the second machine",
+    projectRoot: "/work/proj",
+    projectId: "project-proj",
+    projectSlug: "proj",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    lastActivityAt: "2026-09-01T00:00:00.000Z",
+    archivedAt: null,
+    pinnedAt: null,
+    tokenTotals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalTokens: 0,
+    },
+    agentTools: [],
+    hasDocs: true,
+  };
+
+  // The rows have arrived; the document behind them has not.
+  let status: unknown = {
+    state: "syncing",
+    startedAt: new Date().toISOString(),
+    identity: "The Octocat",
+    autoSync: true,
+    restore: { phase: "documents" },
+  };
+  let statusReadable = true;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith("/api/connection"))
+        return json({
+          service: "trace",
+          protocolVersion: TRACE_PROTOCOL_VERSION,
+          capabilities: HOSTED_CAPABILITIES,
+        });
+      if (url.endsWith("/api/sync/status"))
+        return statusReadable
+          ? json(status)
+          : new Response("unavailable", { status: 503 });
+      if (url.endsWith("/api/tasks")) return json([task]);
+      return json([]);
+    }),
+  );
+
+  // The board learns of each phase by polling, so the clock is the thing that
+  // moves this test forward.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const poll = () => vi.advanceTimersByTimeAsync(6_000);
+
+  render(<App source={new LocalTraceSource(origin)} />);
+
+  const account = await screen.findByRole("button", {
+    name: "Account — bringing work onto this machine",
+  });
+  expect(
+    await screen.findByText("Ship the second machine"),
+  ).toBeVisible();
+
+  // Opened mid-restore, the popover names which half is still coming.
+  fireEvent.click(account);
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "Bringing documents onto this machine…",
+  );
+
+  // The documents land, and only then does the board call it ready.
+  status = {
+    state: "synced",
+    lastSyncedAt: new Date().toISOString(),
+    identity: "The Octocat",
+    autoSync: true,
+    restore: { phase: "ready", taskCount: 1 },
+  };
+  await poll();
+  expect(
+    await screen.findByRole("button", {
+      name: "Account — work ready on this machine",
+    }),
+  ).toBeVisible();
+
+  // Now the status endpoint stops answering. It is one query going quiet, not
+  // a board that has lost its machine, so the account surface says so and the
+  // recovered work stays on screen.
+  statusReadable = false;
+  await poll();
+  expect(
+    await screen.findByRole("button", {
+      name: "Account — sync status unavailable",
+    }),
+  ).toBeVisible();
+  expect(screen.getByText("Ship the second machine")).toBeVisible();
 });

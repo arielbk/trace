@@ -17,7 +17,8 @@ import {
   readSyncIdentity,
   resolveTaskDocsDir,
 } from "@trace/core";
-import { runSyncCommand } from "./commands/sync.ts";
+import { updateAutomaticSyncState } from "./commands/automatic-sync-policy.ts";
+import { requestAutomaticSync, runSyncCommand } from "./commands/sync.ts";
 import { createLocalAuthService } from "./local-auth.ts";
 import { createServeRequestListener } from "./serve.ts";
 import { openConnectionCredentials } from "./connection-credentials.ts";
@@ -92,7 +93,14 @@ function hostedBoard(
       // The real login-complete trigger: a machine that just signed in has
       // documents waiting for it and must not sit out the periodic interval.
       onLoginComplete: () => {
-        syncs.push(runSyncCommand(m.env, { fetch: cloud.fetch }));
+        requestAutomaticSync(m.env, {
+          reason: "login",
+          executable: "eqnx",
+          spawn: (_command, _args, options) => {
+            syncs.push(runSyncCommand(options.env as Env, { fetch: cloud.fetch }));
+            return { on: () => {}, unref: () => {} };
+          },
+        });
       },
     }),
     HOSTED_ORIGIN,
@@ -184,6 +192,8 @@ test("a second machine signs in from the hosted board and reads machine A's work
   const { slug } = await machineAWithSyncedWork(cloud, "cloud-token", masterKey);
 
   const b = machine("b", cloud.url);
+  // A recent attempt must not delay recovery after this login.
+  updateAutomaticSyncState(b.db, { lastRequestedAt: new Date().toISOString() });
   const board = hostedBoard(b, cloud);
 
   // Nothing of A's is here yet, and B is signed out.
@@ -312,7 +322,7 @@ test("a cancelled sign-in on the second machine stores nothing and syncs nothing
   expect(board.syncs).toHaveLength(0);
 });
 
-test("the hosted board cannot reach the second machine's key replacement or logout", async () => {
+test("the hosted board cannot reach the second machine's key replacement or local management", async () => {
   const cloud = new FakeCloud({ token: "cloud-token", user: { id: "octocat" } });
   const b = machine("b", cloud.url);
   const board = hostedBoard(b, cloud);
@@ -320,7 +330,6 @@ test("the hosted board cannot reach the second machine's key replacement or logo
   for (const path of [
     "/api/local-auth/login/any/replacement-key",
     "/api/local-auth/login/any/acknowledge-key",
-    "/api/local-auth/logout",
     "/api/management/pairings",
   ]) {
     expect([path, (await board.request("POST", path, "{}")).status]).toEqual([
@@ -577,5 +586,118 @@ test("a credential write failure restores the previous key and account binding",
   await waitForState(board, started.attemptId, "failed");
   expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(false);
   expect(readSyncIdentity(b.db)).toBeNull();
+  expect(board.syncs).toHaveLength(0);
+});
+
+test("restore reports metadata then documents and cannot be ready before the document is readable", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  const { slug } = await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("progress", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const status = async () => JSON.parse((await board.request("GET", "/api/sync/status")).body);
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/api/sync/pull")) {
+      expect(await status()).toMatchObject({ state: "syncing", restore: { phase: "metadata" } });
+      expect(existsSync(join(resolveTaskDocsDir(b.db, slug), "state.md"))).toBe(false);
+    }
+    if (url.includes("/api/sync/blobs/") && !url.endsWith("missing")) {
+      expect(await status()).toMatchObject({ state: "syncing", restore: { phase: "documents" } });
+      expect(JSON.parse((await board.request("GET", "/api/tasks")).body)).toHaveLength(1);
+      expect(existsSync(join(resolveTaskDocsDir(b.db, slug), "state.md"))).toBe(false);
+    }
+    return cloud.fetch(input, init);
+  };
+  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 1 } });
+  expect(readFileSync(join(resolveTaskDocsDir(b.db, slug), "state.md"), "utf8")).toContain("A wrote this");
+});
+
+test("failed document download keeps tasks visible and a later retry completes recovery", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("failed-progress", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const fetch: typeof globalThis.fetch = async (input, init) =>
+    String(input).includes("/api/sync/blobs/") && !String(input).endsWith("missing")
+      ? new Response("offline", { status: 503 }) : cloud.fetch(input, init);
+  // A blob this machine cannot fetch defers the manifest rather than failing the
+  // run: the rows it pulled stay, the board says documents are pending, and the
+  // next sync is the retry.
+  const interrupted = await runSyncCommand(b.env, { fetch });
+  expect(interrupted.exitCode).toBe(0);
+  expect(interrupted.stdout).toContain("not on this machine yet");
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "partial" } });
+  expect(JSON.parse((await board.request("GET", "/api/tasks")).body)).toHaveLength(1);
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 1 } });
+});
+
+test("an empty account finishes restore with an observed zero local tasks", async () => {
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  const b = machine("empty-progress", cloud.url);
+  signInDirectly(b, "token", generateTaskKey());
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  const board = hostedBoard(b, cloud);
+  expect(JSON.parse((await board.request("GET", "/api/sync/status")).body)).toMatchObject({ state: "synced", restore: { phase: "ready", taskCount: 0 } });
+});
+
+test("an established machine's later sync is not stamped as a restore", async () => {
+  const key = generateTaskKey();
+  const cloud = new FakeCloud({ token: "token", user: { id: "account" } });
+  await machineAWithSyncedWork(cloud, "token", key);
+  const b = machine("settled", cloud.url);
+  signInDirectly(b, "token", key);
+  const board = hostedBoard(b, cloud);
+  const status = async () =>
+    JSON.parse((await board.request("GET", "/api/sync/status")).body) as {
+      state: string;
+      restore?: { phase: string; taskCount?: number };
+    };
+
+  // The first run is the restore, and it ends ready.
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ restore: { phase: "ready", taskCount: 1 } });
+
+  // The next one is just a sync: nothing is arriving that this machine does
+  // not already have, so no phase is claimed while it runs.
+  const seen: string[] = [];
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    seen.push((await status()).restore?.phase ?? "none");
+    return cloud.fetch(input, init);
+  };
+  expect((await runSyncCommand(b.env, { fetch })).exitCode).toBe(0);
+  expect(seen).not.toHaveLength(0);
+  expect([...new Set(seen)]).toEqual(["ready"]);
+  // And a machine that gains a task afterwards does not keep the old count.
+  const store = openTraceStore(b.db);
+  store.createTask("Written on B");
+  store.close();
+  expect((await runSyncCommand(b.env, { fetch: cloud.fetch })).exitCode).toBe(0);
+  expect(await status()).toMatchObject({ restore: { phase: "ready", taskCount: 2 } });
+});
+
+test("hosted sign-out stops sync while preserving local work and browser pairing", async () => {
+  const cloud = new FakeCloud({
+    token: "cloud-token",
+    user: { id: "octocat" },
+  });
+  const b = machine("logout", cloud.url);
+  signInDirectly(b, "cloud-token", "retained-key");
+  const store = openTraceStore(b.db);
+  const task = store.createTask("Keep my local work");
+  store.close();
+  const board = hostedBoard(b, cloud);
+  const response = await board.request("POST", "/api/local-auth/logout");
+  expect(response.status).toBe(200);
+  expect(existsSync(join(b.home, ".trace", "auth.json"))).toBe(false);
+  expect(existsSync(join(b.home, ".trace", "key.json"))).toBe(true);
+  const tasks = await board.request("GET", "/api/tasks");
+  expect(tasks.status).toBe(200);
+  expect(tasks.body).toContain(task.id);
   expect(board.syncs).toHaveLength(0);
 });

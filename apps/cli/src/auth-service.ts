@@ -213,7 +213,7 @@ export function readAuthToken(env: Env): AuthToken | null {
     const token = JSON.parse(
       readFileSync(resolveAuthTokenPath(env), "utf8"),
     ) as AuthToken;
-    return typeof token.accessToken === "string" ? token : null;
+    return typeof token.accessToken === "string" && token.accessToken.trim() ? token : null;
   } catch {
     return null;
   }
@@ -253,6 +253,13 @@ export function identityFromSession(session: SessionResponse): string | null {
   return `${label}${email}`;
 }
 
+export class AuthenticationRequiredError extends Error {
+  constructor() {
+    super("Your sign-in has expired. Sign in again to sync this device.");
+    this.name = "AuthenticationRequiredError";
+  }
+}
+
 export async function fetchSession(
   serverUrl: string,
   fetch: AuthFetch,
@@ -262,7 +269,9 @@ export async function fetchSession(
     headers: { authorization: `Bearer ${accessToken}` },
   });
   const session = await readJson<SessionResponse>(response);
-  return response.ok ? session : null;
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) throw new Error("Could not check sign-in status. Try again when the sync service is available.");
+  return session;
 }
 
 /**

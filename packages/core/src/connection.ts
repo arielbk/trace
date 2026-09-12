@@ -14,7 +14,9 @@ export type TraceCapability =
   | "docEdits"
   | "taskExports"
   | "account"
-  | "sync";
+  | "accountSignOut"
+  | "sync"
+  | "keyTransfer";
 
 /**
  * Which authority a request arrived with. `same-origin` is the bundled board
@@ -30,7 +32,9 @@ export const SAME_ORIGIN_CAPABILITIES: readonly TraceCapability[] = [
   "docEdits",
   "taskExports",
   "account",
+  "accountSignOut",
   "sync",
+  "keyTransfer",
 ];
 
 /**
@@ -42,14 +46,20 @@ export const SAME_ORIGIN_CAPABILITIES: readonly TraceCapability[] = [
  * `account` and `sync` are narrower than their names suggest, and deliberately
  * so: the hosted board may run the sign-in that recovers existing work and read
  * how this machine's sync is doing, but it may not replace a document key,
- * receive a plaintext one, log the machine out, or command a sync run. The
+ * receive a plaintext one, or command a sync run. `accountSignOut` separately
+ * permits signing this machine out while keeping local work. The
  * server-side allowlist is where that narrowing is written down.
  */
 export const HOSTED_CAPABILITIES: readonly TraceCapability[] = [
   "taskDetails",
   "taskMutations",
   "account",
+  "accountSignOut",
   "sync",
+  // Being unlocked by another machine, and unlocking one. Advertised so a
+  // board talking to an older runtime hides the affordance rather than
+  // offering a button that answers 403.
+  "keyTransfer",
 ];
 
 /**

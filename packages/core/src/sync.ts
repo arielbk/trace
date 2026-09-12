@@ -133,6 +133,7 @@ export async function synchronize(
   store: SyncStore,
   transport: SyncTransport,
   documents?: SyncDocumentStore,
+  onDocumentPhase?: () => void,
 ): Promise<{
   pushed: number;
   pulled: number;
@@ -140,6 +141,7 @@ export async function synchronize(
   pulledManifests?: number;
   uploadedBlobs?: number;
   downloadedBlobs?: number;
+  deferredManifests?: number;
 }> {
   const before = store.syncSnapshot();
   const pushed = await transport.push(before);
@@ -159,6 +161,7 @@ export async function synchronize(
     throw new Error("sync transport does not support document synchronization");
   }
 
+  onDocumentPhase?.();
   const snapshot = await documents.snapshot();
   const missing = new Set(
     await transport.missingBlobs(snapshot.blobs.map((blob) => blob.hash)),
@@ -186,5 +189,6 @@ export async function synchronize(
     pulledManifests: pulledDocuments.pulled,
     uploadedBlobs: pushedDocuments.uploaded,
     downloadedBlobs: pulledDocuments.downloaded,
+    ...(pulledDocuments.deferred ? { deferredManifests: pulledDocuments.deferred } : {}),
   };
 }

@@ -55,6 +55,12 @@ export type {
   LoginAttemptView,
   LoginProvider,
 } from "./local-auth-api.ts";
+export type {
+  KeyTransferInspection,
+  KeyTransferRequestState,
+  KeyTransferRequestView,
+  PendingKeyTransfer,
+} from "./key-transfer.ts";
 export {
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,

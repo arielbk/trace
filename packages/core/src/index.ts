@@ -6,6 +6,28 @@ export {
   generateTaskKey,
 } from "./doc-crypto.ts";
 export type { DocCrypto, DocCryptoFile, KeyWrapper } from "./doc-crypto.ts";
+export {
+  assertKeyTransferContext,
+  createKeyTransferApprover,
+  createKeyTransferRecipient,
+  KEY_TRANSFER_COMMITMENT_MISMATCH,
+  KEY_TRANSFER_MAX_LIFETIME_MS,
+  KEY_TRANSFER_OPEN_FAILURE,
+  KEY_TRANSFER_PROTOCOL_VERSION,
+  keyTransferLocator,
+} from "./key-transfer.ts";
+export type {
+  KeyTransferApproval,
+  KeyTransferInspection,
+  PendingKeyTransfer,
+  KeyTransferRequestState,
+  KeyTransferRequestView,
+  KeyTransferApprover,
+  KeyTransferEnvelope,
+  KeyTransferExchange,
+  KeyTransferRecipient,
+  KeyTransferRequestContext,
+} from "./key-transfer.ts";
 export type {
   SyncPayload,
   SyncBlob,
@@ -213,6 +235,7 @@ export type {
   ParsedCodexSession,
 } from "./codex-adapter.ts";
 export {
+  hasReadableTranscript,
   readTranscriptTail,
   tailTranscriptMessages,
 } from "./transcript-tail.ts";

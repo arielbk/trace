@@ -1,16 +1,17 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   createKeyWrapper,
   createTaskDocCrypto,
   generateTaskKey,
   beginSyncRun,
   readSyncStatus,
+  writeSyncStatusFile,
 } from "@trace/core";
 import { runTraceCli } from "../trace.ts";
-import { readAuthToken } from "../auth-service.ts";
+import { readAuthToken, writeAuthToken } from "../auth-service.ts";
 import { runAuthCommand } from "./auth.ts";
 import { writeStoredDocCryptoKey } from "./key.ts";
 
@@ -481,6 +482,7 @@ test("login records the signed-in identity and logout clears it for the board", 
     // Logged in but not yet synced: identity is known, no sync time yet.
     expect(readSyncStatus(databasePath)).toEqual({
       state: "never-synced",
+      restore: { phase: "metadata" },
       identity: "The Octocat <octocat@github.com>",
     });
 
@@ -528,6 +530,7 @@ test("a fresh login does not inherit an abandoned sync run", async () => {
 
     expect(readSyncStatus(databasePath)).toEqual({
       state: "never-synced",
+      restore: { phase: "metadata" },
       identity: "The Octocat",
     });
   } finally {
@@ -610,5 +613,64 @@ test("terminal login cannot replace the account bound to the local store", async
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("original");
     expect(readAuthToken(env)).toBeNull();
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+
+test("whoami clears a rejected session from the board as well as the CLI", async () => {
+  const home = tmp("trace-auth-rejected-");
+  const databasePath = join(home, ".trace", "trace.sqlite");
+  const env = { HOME: home, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://auth.test" };
+  try {
+    writeAuthToken(env, { accessToken: "expired" });
+    writeSyncStatusFile(databasePath, { loggedIn: true, identity: "Previous account" });
+    const result = await runAuthCommand("whoami", env, { fetch: async () => Response.json(null) });
+    expect(result.stderr).toContain("Not logged in");
+    expect(readSyncStatus(databasePath)).toEqual({ state: "logged-out" });
+    expect(readAuthToken(env)).toBeNull();
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+
+test("terminal login requests initial recovery after credentials are committed", async () => {
+  const home = tmp("trace-auth-restore-");
+  const env = { HOME: home, TRACE_SERVER_URL: "https://auth.test" };
+  const onLoginComplete = vi.fn(() => { expect(readAuthToken(env)).not.toBeNull(); });
+  try {
+    const result = await runAuthCommand("login", env, {
+      fetch: loginFetch({ manifests: [], wrappedKeys: [] }),
+      sleep: async () => {}, openBrowser: () => {}, onLoginComplete,
+    });
+    expect(result.exitCode).toBe(0);
+    expect(onLoginComplete).toHaveBeenCalledOnce();
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+
+test.each([401, 403, 503])("whoami distinguishes rejected credentials from an outage (%s)", async (status) => {
+  const home = tmp("trace-auth-status-");
+  const databasePath = join(home, ".trace", "trace.sqlite");
+  const env = { HOME: home, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://auth.test" };
+  try {
+    writeAuthToken(env, { accessToken: "token" });
+    writeSyncStatusFile(databasePath, { loggedIn: true });
+    const result = await runAuthCommand("whoami", env, { fetch: async () => Response.json({}, { status }) });
+    expect(result.exitCode).toBe(1);
+    expect(readAuthToken(env)?.accessToken ?? null).toBe(status === 503 ? "token" : null);
+    expect(readSyncStatus(databasePath).state).toBe(status === 503 ? "never-synced" : "logged-out");
+    expect(result.stderr).not.toContain("undefined");
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("whoami does not remove credentials replaced while it checks an old session", async () => {
+  const home = tmp("trace-auth-race-");
+  const env = { HOME: home, TRACE_SERVER_URL: "https://auth.test" };
+  try {
+    writeAuthToken(env, { accessToken: "old" });
+    await runAuthCommand("whoami", env, { fetch: async () => {
+      writeAuthToken(env, { accessToken: "new" });
+      return Response.json(null);
+    } });
+    expect(readAuthToken(env)?.accessToken).toBe("new");
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

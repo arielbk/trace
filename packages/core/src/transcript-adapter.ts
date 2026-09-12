@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   headClaudeCodeTranscript,
   parseClaudeCodeTranscript,
@@ -73,7 +73,10 @@ export type ReadTranscriptHeadInput = ReadTranscriptTailInput;
  * functions and re-branching on the tool string. `head` surfaces the first user
  * messages in order (for session naming); `tail` surfaces the last messages.
  * `exportTranscript` copies a file-backed transcript verbatim, extracts a
- * Cursor composer into JSON, or reports why it cannot.
+ * Cursor composer into JSON, or reports why it cannot. `hasTranscript` answers
+ * whether the locator resolves to something this machine can actually read —
+ * the question a synced session raises, since its locator was recorded on
+ * whichever machine ran it.
  */
 export type TranscriptAdapter = {
   readonly tool: SessionTool;
@@ -87,6 +90,7 @@ export type TranscriptAdapter = {
   tail(input: TranscriptTailInput): TranscriptMessage[];
   readTail(input: ReadTranscriptTailInput): TranscriptMessage[];
   exportTranscript(input: ExportTranscriptInput): ExportedTranscript;
+  hasTranscript(transcriptPath: string): boolean;
 };
 
 const claudeTranscriptAdapter: TranscriptAdapter = {
@@ -114,6 +118,9 @@ const claudeTranscriptAdapter: TranscriptAdapter = {
   },
   exportTranscript(input) {
     return exportFileTranscript(input, "claude-jsonl", "claude");
+  },
+  hasTranscript(transcriptPath) {
+    return existsSync(transcriptPath);
   },
 };
 
@@ -146,6 +153,9 @@ const codexTranscriptAdapter: TranscriptAdapter = {
   exportTranscript(input) {
     return exportFileTranscript(input, "codex-jsonl", "codex");
   },
+  hasTranscript(transcriptPath) {
+    return existsSync(transcriptPath);
+  },
 };
 
 const copilotTranscriptAdapter: TranscriptAdapter = {
@@ -170,6 +180,9 @@ const copilotTranscriptAdapter: TranscriptAdapter = {
   },
   exportTranscript(input) {
     return exportFileTranscript(input, "copilot-jsonl", "copilot");
+  },
+  hasTranscript(transcriptPath) {
+    return existsSync(transcriptPath);
   },
 };
 

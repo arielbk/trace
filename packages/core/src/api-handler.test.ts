@@ -82,7 +82,9 @@ test("GET /api/connection identifies the local EQNX API without opening the data
       "docEdits",
       "taskExports",
       "account",
+      "accountSignOut",
       "sync",
+      "keyTransfer",
     ],
   });
 });
@@ -100,7 +102,14 @@ test("GET /api/connection narrows the capabilities it advertises to a hosted cli
     service: "trace",
     protocolVersion: 1,
     runtimeVersion: "1.2.3",
-    capabilities: ["taskDetails", "taskMutations", "account", "sync"],
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "account",
+      "accountSignOut",
+      "sync",
+      "keyTransfer",
+    ],
   });
 });
 

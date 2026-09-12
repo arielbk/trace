@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -25,41 +24,17 @@ const CANONICAL_SKILLS = [
   "trace",
 ] as const;
 
-function sleepMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 /**
- * Ensure `dist/trace.js` and `dist/skills/**` exist for `npm pack`. Other suite
- * files (e.g. bundle.test) wipe `dist/` concurrently, so prefer restoring the
- * skills tree via copy and retry a full build on transient FS races.
+ * Build the actual package inputs. The packaging Vitest project runs these
+ * suites sequentially so no other build can remove files during npm pack.
  */
 function ensurePackedDist(): void {
   const traceJs = join(appRoot, "dist", "trace.js");
   const skillMarker = join(appRoot, "dist", "skills", "trace", "SKILL.md");
-  const skillsSource = join(repoRoot, "plugin", "skills");
-  const skillsDest = join(appRoot, "dist", "skills");
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    if (existsSync(traceJs) && existsSync(skillMarker)) return;
-
-    try {
-      if (existsSync(traceJs) && !existsSync(skillMarker)) {
-        rmSync(skillsDest, { recursive: true, force: true });
-        cpSync(skillsSource, skillsDest, { recursive: true });
-        if (existsSync(skillMarker)) return;
-      }
-
-      execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-      });
-      if (existsSync(traceJs) && existsSync(skillMarker)) return;
-    } catch {
-      // Parallel suite tests may be wiping/rebuilding dist/ at the same time.
-    }
-    sleepMs(150 * (attempt + 1));
-  }
+  execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
 
   assert.equal(existsSync(traceJs), true, "dist/trace.js missing after build");
   assert.equal(

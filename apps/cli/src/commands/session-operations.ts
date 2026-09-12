@@ -3,6 +3,7 @@ import {
   discoverCodexSubagentSessions,
   discoverCursorSubagentSessions,
   getTranscriptAdapter,
+  hasReadableTranscript,
   scanClaudeCodeSessions,
   scanCodexSessions,
 } from "@trace/core";
@@ -121,6 +122,23 @@ export function sessionTailOperation(
   return withStore(ctx.env, (store) => {
     const session = store.getSession(sessionId);
     if (!session) return failure(`Session not found: ${sessionId}`, 1);
+    // The session row synced; the transcript it points at did not. An empty
+    // tail would read as "this session said nothing", so a locator this machine
+    // cannot resolve is reported as what it is — absence, and only absence.
+    // Nothing here knows which machine recorded the session, and a transcript
+    // pruned by the tool that wrote it looks exactly like one that never
+    // arrived.
+    if (
+      !hasReadableTranscript({
+        transcriptPath: session.transcriptPath,
+        tool: session.tool,
+      })
+    ) {
+      return failure(
+        `Session ${sessionId}'s ${session.tool} transcript is not on this machine (${session.transcriptPath}). It was recorded elsewhere, or has since been removed.`,
+        1,
+      );
+    }
     return success(
       getTranscriptAdapter(session.tool)
         .readTail({ transcriptPath: session.transcriptPath, limit })

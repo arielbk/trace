@@ -869,3 +869,17 @@ describe("last-work context synchronization", () => {
     second.close();
   });
 });
+
+test("deferred document manifests report partial recovery and retain their cursor", async () => {
+  const server = new CursorTransport();
+  server.documentsCursor = "next";
+  const store = openTraceStore(database("partial-restore"));
+  try {
+    const result = await synchronize(store, server, {
+      snapshot: async () => ({ manifests: [], blobs: [], wrappedKeys: [] }),
+      apply: async () => ({ pulled: 0, downloaded: 0, deferred: 1 }),
+    });
+    expect(result.deferredManifests).toBe(1);
+    expect(store.syncCursor("documents")).toBeNull();
+  } finally { store.close(); }
+});

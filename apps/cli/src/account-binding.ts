@@ -10,6 +10,7 @@ import {
 } from "@trace/core";
 import {
   fetchSession,
+  AuthenticationRequiredError,
   validateDocumentKey,
   identityFromSession,
   resolveAuthTokenPath,
@@ -44,6 +45,7 @@ export async function resolveSyncAccount(
       "Could not confirm which account signed in. Try signing in again when the sync service is available.",
     );
   }
+  if (session === null) throw new AuthenticationRequiredError();
   const accountId = session?.user?.id;
   if (typeof accountId !== "string" || !accountId.trim()) {
     throw new Error(

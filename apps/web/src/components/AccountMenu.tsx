@@ -2,8 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,
+  type KeyTransferInspection,
+  type KeyTransferRequestView,
   type LoginAttemptView,
   type LoginProvider,
+  type PendingKeyTransfer,
   type SyncStatusResponse,
 } from "@trace/core/browser";
 import { CircleUser, Loader2, TriangleAlert } from "lucide-react";
@@ -11,13 +14,20 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { formatRelativeTime } from "../format.ts";
 import {
   acknowledgeGeneratedKey,
+  approveKeyTransfer,
+  cancelKeyTransfer,
   cancelLogin,
+  denyKeyTransfer,
   generateReplacementKey,
+  openKeyTransfer,
   postLogout,
+  requestKeyTransfer,
   startLogin,
   submitExistingKey,
   traceQueryKey,
   useCurrentLogin,
+  useKeyTransfers,
+  isForgottenLogin,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
@@ -43,8 +53,8 @@ import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
  * exceptions, because a terminal was previously the only way to do either.
  */
 export function AccountMenu({ now }: { now?: Date }) {
-  const { data } = useSyncStatus();
-  const account = describeAccount(data, now);
+  const { data, isError } = useSyncStatus();
+  const account = isError ? unreachable() : describeAccount(data, now);
 
   return (
     <Dropdown>
@@ -81,6 +91,13 @@ export function AccountMenu({ now }: { now?: Date }) {
           </span>
         </div>
 
+        <div className={SECTION}>
+          <p className="m-0 font-semibold">Local connection</p>
+          <p className="mt-1 mb-0 text-meta text-text-muted">
+            This board shows work stored on this Mac. Your account syncs it with
+            your other machines.
+          </p>
+        </div>
         <AccountBody account={account} />
       </DropdownContent>
     </Dropdown>
@@ -131,7 +148,12 @@ function AccountBody({ account }: { account: AccountDescription }) {
   const [claimed, setClaimed] = useState(false);
   const { data: outstanding, isPending: findingOutstanding } =
     useCurrentLogin();
-  const { data: attempt } = useLoginAttempt(attemptId);
+  const { data: watched, error: watchError } = useLoginAttempt(attemptId);
+  // A machine that no longer knows this attempt has forgotten it — `eqnx
+  // serve` restarted, and attempts live in that process's memory. The login is
+  // over whatever the last poll said, and a key prompt nothing is listening to
+  // is worse than saying so.
+  const attempt = interrupted(watched, watchError) ?? watched;
   const unlocked = useUnlockBeat();
 
   /** Take up an attempt, wherever it came from, and watch it from here. */
@@ -209,6 +231,14 @@ function AccountBody({ account }: { account: AccountDescription }) {
     mutationFn: (attemptId: string) => cancelLogin(attemptId, source),
     onSuccess: recordAttempt,
   });
+  const askAnotherMachine = useMutation({
+    mutationFn: (attemptId: string) => requestKeyTransfer(attemptId, source),
+    onSuccess: recordAttempt,
+  });
+  const stopAsking = useMutation({
+    mutationFn: (attemptId: string) => cancelKeyTransfer(attemptId, source),
+    onSuccess: recordAttempt,
+  });
   const signOut = useMutation({
     mutationFn: () => postLogout(source),
     onSuccess: () => {
@@ -241,6 +271,12 @@ function AccountBody({ account }: { account: AccountDescription }) {
           replaceKey.mutate({ attemptId: attempt.attemptId, confirmation })
         }
         onCancel={() => cancel.mutate(attempt.attemptId)}
+        // A runtime that predates key transfer answers these routes with a
+        // refusal, so the affordance is not offered against one.
+        transferSupported={source.capabilities.keyTransfer}
+        transferPending={askAnotherMachine.isPending}
+        onRequestTransfer={() => askAnotherMachine.mutate(attempt.attemptId)}
+        onCancelTransfer={() => stopAsking.mutate(attempt.attemptId)}
         onDismiss={forgetAttempt}
         onRetry={() => {
           forgetAttempt();
@@ -266,9 +302,15 @@ function AccountBody({ account }: { account: AccountDescription }) {
         </div>
       ) : null}
 
+      {/* Above the sync block: someone is standing at another machine waiting
+          for an answer, which outranks how this one's own sync is doing. */}
+      <ApprovalRequests
+        enabled={account.state !== "logged-out" && source.capabilities.keyTransfer}
+      />
+
       {/* Sync block: the state's own dot leads the line, so the popover
           reads the same way the trigger badge does. */}
-      <div className={cn(SECTION, "flex flex-col gap-1")}>
+      <div role="status" aria-live="polite" className={cn(SECTION, "flex flex-col gap-1")}>
         <span className="flex items-start gap-2">
           <StateDot state={account.state} />
           <span className="min-w-0 text-text-muted">{account.headline}</span>
@@ -327,7 +369,17 @@ function AccountBody({ account }: { account: AccountDescription }) {
         </div>
       ) : null}
 
-      {account.canSignOut ? (
+      {account.canSignOut && !source.capabilities.accountSignOut ? (
+        <div className={SECTION}>
+          <p className="m-0 text-meta text-text-muted">
+            To sign out on this Mac, run <code>eqnx logout</code> in Terminal.
+            Your local work stays available. Run <code>eqnx update</code> to
+            enable sign-out here.
+          </p>
+        </div>
+      ) : null}
+
+      {account.canSignOut && source.capabilities.accountSignOut ? (
         <div className={SECTION}>
           <button
             type="button"
@@ -337,6 +389,9 @@ function AccountBody({ account }: { account: AccountDescription }) {
           >
             Sign out
           </button>
+          <p className="mt-1.5 mb-0 text-meta text-text-muted">
+            Stops sync on this Mac. Your local work stays available.
+          </p>
           {/* A refused sign-out has to say so. Nothing else on the popover
               changes when it fails — the machine stays signed in and the button
               stays where it was — so without this line the click reads as a
@@ -344,6 +399,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
           {signOut.isError ? (
             <p
               className="mt-1.5 mb-0 text-meta text-warning wrap-anywhere"
+              role="alert"
               data-testid="logout-error"
             >
               {signOut.error.message}
@@ -416,6 +472,10 @@ function LoginProgress({
   onSubmitKey,
   onReplaceKey,
   onCancel,
+  transferSupported,
+  transferPending,
+  onRequestTransfer,
+  onCancelTransfer,
   onDismiss,
   onRetry,
 }: {
@@ -425,6 +485,10 @@ function LoginProgress({
   onSubmitKey: (key: string) => void;
   onReplaceKey: (confirmation: string) => void;
   onCancel: () => void;
+  transferSupported: boolean;
+  transferPending: boolean;
+  onRequestTransfer: () => void;
+  onCancelTransfer: () => void;
   onDismiss: () => void;
   onRetry: () => void;
 }) {
@@ -493,6 +557,11 @@ function LoginProgress({
         <ExistingKeyStep
           error={attempt.error}
           pending={keyPending}
+          transfer={attempt.transfer}
+          transferSupported={transferSupported}
+          transferPending={transferPending}
+          onRequestTransfer={onRequestTransfer}
+          onCancelTransfer={onCancelTransfer}
           onSubmitKey={onSubmitKey}
           onReplaceKey={onReplaceKey}
           onCancel={onCancel}
@@ -527,6 +596,172 @@ function LoginProgress({
 }
 
 /**
+ * The other end of the same journey, on a machine that is already signed in:
+ * this account's machines asking to be let in.
+ *
+ * The name a request gives itself is a label, not evidence — the code is the
+ * evidence, and it exists only once both machines have committed to their keys.
+ * So the request is opened first and approved second, and the approval control
+ * says what the user is asserting rather than merely "Approve".
+ *
+ * Nothing here is destructive to this machine; what it risks is the account's
+ * documents on someone else's. That is why the loud control is the one that
+ * refuses, and the accent control appears only beside a code to check.
+ */
+function ApprovalRequests({ enabled }: { enabled: boolean }) {
+  const source = useTraceDataSource();
+  const queryClient = useQueryClient();
+  const { data: pending, error: listError } = useKeyTransfers(enabled);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [inspection, setInspection] = useState<KeyTransferInspection | null>(
+    null,
+  );
+
+  const forget = () => {
+    setInspection(null);
+    setActionError(null);
+    void queryClient.invalidateQueries({ queryKey: traceQueryKey(source, "key-transfers") });
+  };
+  const reportError = (error: Error) => {
+    setInspection(null);
+    setActionError(error.message);
+    void queryClient.invalidateQueries({ queryKey: traceQueryKey(source, "key-transfers") });
+  };
+  const open = useMutation({
+    mutationFn: (requestId: string) => openKeyTransfer(requestId, source),
+    onMutate: () => setActionError(null),
+    onSuccess: (next) => {
+      setInspection(next);
+      if (next.state === "gone") setActionError("That request is no longer available. Ask the other machine to start a new one.");
+    },
+    onError: reportError,
+  });
+  const approve = useMutation({
+    mutationFn: (requestId: string) => approveKeyTransfer(requestId, source),
+    onSuccess: forget,
+    onMutate: () => setActionError(null),
+    onError: reportError,
+  });
+  const deny = useMutation({
+    mutationFn: (requestId: string) => denyKeyTransfer(requestId, source),
+    onSuccess: forget,
+    onMutate: () => setActionError(null),
+    onError: reportError,
+  });
+
+  // The other machine reveals its key a moment after this one offers, so an
+  // opened request that has nothing to compare yet asks again — once a second,
+  // and only while it is on screen.
+  const openMutate = open.mutate;
+  useEffect(() => {
+    if (inspection?.state !== "waiting-for-reveal") return;
+    const timer = setTimeout(() => {
+      openMutate(inspection.requestId);
+    }, 1000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [inspection?.state, inspection?.requestId, openMutate, inspection]);
+
+  if (!enabled) return null;
+  if (inspection && inspection.state !== "gone") {
+    return (
+      <div
+        className={cn(SECTION, "flex flex-col gap-2")}
+        data-testid="approval-request"
+        data-approval-state={inspection.state}
+      >
+        <span className="min-w-0 text-text-muted">
+          <span className="font-semibold text-text">
+            {inspection.machineName}
+          </span>{" "}
+          is asking for this account&rsquo;s documents.
+        </span>
+        {inspection.state === "comparing" ? (
+          <>
+            <p className="m-0 text-meta text-text-muted">
+              Approve only if this code is showing on that machine right now.
+            </p>
+            <code
+              className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+              data-testid="approval-code"
+            >
+              {inspection.verificationCode}
+            </code>
+            <button
+              type="button"
+              className={PRIMARY_ACTION}
+              disabled={approve.isPending}
+              onClick={() => approve.mutate(inspection.requestId)}
+            >
+              The codes match — approve
+            </button>
+          </>
+        ) : (
+          <span className="flex items-start gap-2">
+            <Loader2
+              size={10}
+              className="mt-1 shrink-0 animate-spin text-text-muted"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-meta text-text-muted">
+              Waiting for that machine to show its code&hellip;
+            </span>
+          </span>
+        )}
+        <span className="flex items-center gap-2">
+          <button
+            type="button"
+            className={QUIET_ACTION}
+            disabled={deny.isPending}
+            onClick={() => deny.mutate(inspection.requestId)}
+          >
+            Deny
+          </button>
+          <span className="text-meta text-text-muted" aria-hidden="true">
+            ·
+          </span>
+          <button type="button" className={QUIET_ACTION} onClick={forget}>
+            Not now
+          </button>
+        </span>
+      </div>
+    );
+  }
+
+  const waiting: PendingKeyTransfer[] = pending ?? [];
+  const error = actionError ?? listError?.message;
+  if (waiting.length === 0 && !error) return null;
+
+  return (
+    <div className={cn(SECTION, "flex flex-col gap-2")}>
+      {error ? <p role="alert" className="m-0 text-meta text-danger">{error}</p> : null}
+      {waiting.map((request) => (
+        <div key={request.requestId} className="flex flex-col gap-1.5">
+          <span className="min-w-0 text-text-muted">
+            <span className="font-semibold text-text">
+              {request.machineName}
+            </span>{" "}
+            is asking to be unlocked.
+          </span>
+          <span className="font-mono text-meta text-text-muted">
+            {request.locator}
+          </span>
+          <button
+            type="button"
+            className={SECONDARY_ACTION}
+            disabled={open.isPending}
+            onClick={() => open.mutate(request.requestId)}
+          >
+            Review request
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The key step of a login into an account that already holds synced documents.
  *
  * The board never judges the key: it hands what the user typed to the serving
@@ -543,12 +778,22 @@ function LoginProgress({
 function ExistingKeyStep({
   error,
   pending,
+  transfer,
+  transferSupported,
+  transferPending,
+  onRequestTransfer,
+  onCancelTransfer,
   onSubmitKey,
   onReplaceKey,
   onCancel,
 }: {
   error?: string;
   pending: boolean;
+  transfer?: KeyTransferRequestView;
+  transferSupported: boolean;
+  transferPending: boolean;
+  onRequestTransfer: () => void;
+  onCancelTransfer: () => void;
   onSubmitKey: (key: string) => void;
   onReplaceKey: (confirmation: string) => void;
   onCancel: () => void;
@@ -559,12 +804,42 @@ function ExistingKeyStep({
   const [replacing, setReplacing] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
+  const live =
+    transfer &&
+    (transfer.state === "waiting-for-approval" || transfer.state === "comparing");
+
   return (
     <>
       <p className="m-0 text-text-muted">
-        This account already has synced documents. Enter the document encryption
-        key you saved when you first signed in.
+        This account already has synced documents. Unlock this machine from one
+        that already has them, or enter the document encryption key you saved
+        when you first signed in.
       </p>
+
+      {transferSupported && !live ? (
+        <>
+          <button
+            type="button"
+            className={SECONDARY_ACTION}
+            disabled={transferPending}
+            onClick={onRequestTransfer}
+          >
+            Approve from another machine
+          </button>
+          {/* A request that ended says so here rather than replacing the step:
+              the key field below is still a way through. */}
+          {transfer?.error ? (
+            <p
+              className="m-0 text-meta text-warning wrap-anywhere"
+              data-testid="transfer-outcome"
+            >
+              {transfer.error}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {live ? <TransferRequest transfer={transfer} onCancel={onCancelTransfer} /> : null}
       <form
         className="flex flex-col gap-1.5"
         onSubmit={(event) => {
@@ -668,11 +943,101 @@ function ExistingKeyStep({
   );
 }
 
+/**
+ * The request this machine has out with another of the account's machines.
+ *
+ * Two values are on screen and they mean different things, so they are never
+ * shown alike: the locator is how the user finds the right row over there, and
+ * the code is the only thing that says the two machines are talking to each
+ * other rather than to something in between. The instruction to compare is
+ * stated where the code is, because a code nobody compares buys nothing.
+ */
+function TransferRequest({
+  transfer,
+  onCancel,
+}: {
+  transfer: KeyTransferRequestView;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-control border border-border-subtle px-2 py-2"
+      data-testid="transfer-request"
+      data-transfer-state={transfer.state}
+    >
+      {transfer.state === "comparing" ? (
+        <>
+          <p className="m-0 text-meta text-text-muted">
+            Check this code matches the one on your other machine, then approve
+            it there.
+          </p>
+          <code
+            className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+            data-testid="transfer-code"
+          >
+            {transfer.verificationCode}
+          </code>
+        </>
+      ) : (
+        <>
+          <span className="flex items-start gap-2">
+            <Loader2
+              size={10}
+              className="mt-1 shrink-0 animate-spin text-text-muted"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 text-meta text-text-muted">
+              Open EQNX on a machine that already has your documents and find
+              this request:
+            </span>
+          </span>
+          <code
+            className="block rounded-sm bg-chip-bg px-2 py-1.5 text-center font-mono text-text tracking-widest"
+            data-testid="transfer-locator"
+          >
+            {transfer.locator}
+          </code>
+        </>
+      )}
+      <button type="button" className={QUIET_ACTION} onClick={onCancel}>
+        Stop waiting
+      </button>
+    </div>
+  );
+}
+
 const FIELD_CLASS =
   "w-full rounded-control border border-border bg-bg px-2 py-1.5 font-mono text-crumb text-text outline-none transition-colors focus:border-border-strong";
 
 /** Attempt states that are over, and the wording each gets when the service
  * offered no message of its own. */
+export const LOGIN_INTERRUPTED_MESSAGE =
+  "This machine no longer has that sign-in — it was interrupted. Start again to sign in.";
+
+/**
+ * The attempt as it now stands, when the machine has answered that it has none.
+ *
+ * A one-time generated key is the exception: it was shown from this board's own
+ * memory and is the only copy the user may ever see, so an interruption must
+ * not sweep it off the screen before they have saved it.
+ */
+function interrupted(
+  view: LoginAttemptView | undefined,
+  error: unknown,
+): LoginAttemptView | undefined {
+  if (!view || !isForgottenLogin(error)) return undefined;
+  if (view.state === "showing-generated-key") return undefined;
+  const interruptedView: LoginAttemptView = {
+    ...view,
+    state: "failed",
+    error: LOGIN_INTERRUPTED_MESSAGE,
+  };
+  // Neither survives the process that held them, so neither belongs on screen.
+  delete interruptedView.generatedKey;
+  delete interruptedView.transfer;
+  return interruptedView;
+}
+
 const SETTLED_LOGIN_MESSAGES: Partial<
   Record<LoginAttemptView["state"], string>
 > = {
@@ -870,6 +1235,80 @@ export function describeAccount(
     };
   };
 
+  const restore = status.state === "logged-out" ? undefined : status.restore;
+  // Work that has not landed on this machine yet. Once it has, the field stays
+  // behind as the settled description of the machine, and the runs that follow
+  // are ordinary syncing rather than a restore still arriving.
+  const arriving = restore?.phase === "ready" ? undefined : restore;
+  const paused = status.state !== "logged-out" && status.autoSync === false;
+  // What to tell someone whose recovery stalled. With automatic sync off there
+  // is no retry coming, so promising one would be a lie.
+  const retry = paused
+    ? "Automatic sync is off on this machine; run eqnx sync on this machine to retry."
+    : "Automatic sync will retry; run eqnx sync on this machine to retry now.";
+
+  // A restore in flight — or one that died in flight — describes this machine
+  // better than the policy that governs its *next* run, so those two states
+  // are reported before sync policy is.
+  if (arriving) {
+    if (status.state === "failed")
+      return described({
+        summary: "restore interrupted",
+        headline:
+          arriving.phase === "documents"
+            ? "Tasks arrived; document recovery was interrupted."
+            : "Could not bring work onto this machine.",
+        detail: `${status.lastError} · Check this machine’s connection. ${retry}`,
+      });
+    if (status.state === "syncing")
+      return described({
+        summary: "bringing work onto this machine",
+        headline:
+          arriving.phase === "documents"
+            ? "Bringing documents onto this machine…"
+            : "Bringing tasks onto this machine…",
+        detail: "Signed in. Work is served by EQNX on this machine.",
+      });
+    // Partial recovery outranks the paused line: the tasks are usable but the
+    // documents are not here, and that is the thing to act on.
+    if (arriving.phase === "partial")
+      return described({
+        summary: "documents pending",
+        headline: "Some documents are still waiting.",
+        detail: `Your available tasks remain usable. ${retry}`,
+      });
+  }
+
+  // Policy comes last among the settled states, and stands in front of
+  // "ready": a machine that will not sync again on its own has not finished
+  // recovering in any lasting sense, so it is never described as ready.
+  if (paused)
+    return described({
+      summary: "sync paused",
+      headline: "Sync is paused on this machine.",
+      detail:
+        "Run eqnx config set auto-sync true on this machine to resume automatic sync.",
+    });
+
+  // Signed in, nothing started yet: the unlock landed but no run has reported
+  // anything, so the honest thing is to say the work is still to come.
+  if (arriving)
+    return described({
+      summary: "waiting for sync",
+      headline: "Signed in. Waiting to bring work onto this machine.",
+      detail: "Run eqnx sync on this machine if recovery does not start.",
+    });
+
+  if (restore && status.state === "synced")
+    return described({
+      summary: "work ready on this machine",
+      headline:
+        restore.taskCount === 0
+          ? "Ready — no synced tasks in this account yet."
+          : "Work is ready on this machine.",
+      detail: lastSynced,
+    });
+
   switch (status.state) {
     case "logged-out":
       return status.serverConfigured
@@ -914,6 +1353,26 @@ export function describeAccount(
     default:
       return loading();
   }
+}
+
+/**
+ * The status read itself failed: the serving process is unreachable, or
+ * refusing this browser. Nothing about the account can be claimed, and neither
+ * signing in nor out would reach the machine that holds the credential, so
+ * both are withheld rather than offered and failed. The task view the board
+ * already fetched is untouched — this is one query going quiet, not a board
+ * that has lost its connection, which `ConnectionRecovery` reports separately.
+ */
+function unreachable(): AccountDescription {
+  return {
+    state: "unknown",
+    triggerLabel: "Account — sync status unavailable",
+    headline: "Cannot reach this machine’s sync status.",
+    detail:
+      "Check that EQNX is running on this machine, then reconnect. Your existing task view is still available.",
+    canSignIn: false,
+    canSignOut: false,
+  };
 }
 
 /** Before the first status read there is nothing to say and nothing to act on. */

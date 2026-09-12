@@ -127,3 +127,12 @@ test("leaving a waiting page aborts its request and stops future polls", async (
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(onApproved).not.toHaveBeenCalled();
 });
+
+
+test("an unavailable local service shows installation before offering pairing", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+  render(<BrowserPairing source={new LocalTraceSource("http://127.0.0.1:4317")} onApproved={vi.fn()} />);
+  expect(await screen.findByText(/npm install -g @eqnx\/cli/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Check connection" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Get pairing command" })).not.toBeInTheDocument();
+});

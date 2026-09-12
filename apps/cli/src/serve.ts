@@ -20,6 +20,7 @@ import {
   type LocalAuthService,
   type TraceClientScope,
 } from "@trace/core";
+import { readAuthToken } from "./auth-service.ts";
 import { requestAutomaticSync } from "./commands/sync.ts";
 import { resolvePackagedVersion } from "./commands/setup-operations.ts";
 import { createLocalAuthService } from "./local-auth.ts";
@@ -50,7 +51,7 @@ export type StartTraceServeOptions = {
   server?: Server;
   /** Injectable background-sync trigger; defaults to the real fire-and-forget
    * spawn. Overridden by tests. */
-  triggerSync?: (env: Record<string, string | undefined>) => void;
+  triggerSync?: (env: Record<string, string | undefined>, options?: { reason?: "login" }) => void;
   /** Foreground serve may move to the next free port; the managed connection
    * may not, because the hosted board is configured against one address.
    * Defaults to true. */
@@ -107,6 +108,7 @@ export type ServeSyncHooks = {
 export function createSyncHooks(
   trigger: () => void,
   now: () => number = Date.now,
+  onLoginComplete: () => void = trigger,
 ): ServeSyncHooks {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastRequestedAt = -Infinity;
@@ -124,7 +126,7 @@ export function createSyncHooks(
       lastRequestedAt = now();
       trigger();
     },
-    onLoginComplete: trigger,
+    onLoginComplete,
   };
 }
 
@@ -206,6 +208,7 @@ export function createServeRequestListener(
   pairing?: PairingLinks,
   /** The EQNX version this process is running, reported by the handshake. */
   runtimeVersion?: string,
+  hasAccountCredentials?: () => boolean,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
@@ -277,6 +280,7 @@ export function createServeRequestListener(
 
       const response = handleTraceApiRequest(databasePath, method, url, body, {
         syncServerConfigured,
+        accountCredentialsPresent: hasAccountCredentials?.(),
         autoSyncEnabled: resolveAutoSync?.(),
         onMutation: syncHooks?.onMutation,
         requestSync: syncHooks?.requestSync,
@@ -469,13 +473,14 @@ function isHostedReadPath(path: string): boolean {
     normalized === "/api/tasks" ||
     /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized) ||
     normalized === "/api/sync/status" ||
+    normalized === "/api/local-auth/transfers" ||
     isRestoreLoginReadPath(normalized)
   );
 }
 
 /**
  * The mutations the hosted board may perform cross-origin: archiving and
- * pinning a task, plus the three login steps that recover existing work. Each
+ * pinning a task, sign-out, and the login steps that recover existing work. Each
  * task action is reversible, carries no request body, and touches only the
  * task's own board metadata. Doc-checkbox writes, exports, and explicit sync
  * runs stay local-only.
@@ -484,6 +489,7 @@ function isHostedActionPath(path: string): boolean {
   const normalized = normalizePath(path);
   return (
     /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(normalized) ||
+    normalized === "/api/local-auth/logout" ||
     isRestoreLoginActionPath(normalized)
   );
 }
@@ -502,19 +508,24 @@ function isRestoreLoginReadPath(normalized: string): boolean {
 }
 
 /**
- * The three writes that recover existing work: start a login, offer the
- * account's existing document key, give up on the attempt.
+ * The writes that recover existing work: start a login, offer the account's
+ * existing document key, give up on the attempt — and the two halves of being
+ * let in by another machine instead of typing that key. The approval half
+ * carries only a locator and a comparison code; the sealed envelope and the
+ * document key itself never enter a response the board can read.
  *
  * The rest of `/api/local-auth` is deliberately absent, and the prefix is never
  * allowed wholesale. `replacement-key` makes an account's synced documents
  * permanently unreadable; `acknowledge-key` is the one response that carries a
- * plaintext document key, which must not cross to a remote origin; `logout`
- * unpicks this machine's own credentials rather than recovering anything.
+ * plaintext document key, which must not cross to a remote origin. Sign-out is
+ * granted separately in isHostedActionPath and carries no request body.
  */
 function isRestoreLoginActionPath(normalized: string): boolean {
   return (
     normalized === "/api/local-auth/login" ||
-    /^\/api\/local-auth\/login\/[^/]+\/(existing-key|cancel)$/.test(normalized)
+    /^\/api\/local-auth\/login\/[^/]+\/(existing-key|cancel)$/.test(normalized) ||
+    /^\/api\/local-auth\/login\/[^/]+\/transfer(\/cancel)?$/.test(normalized) ||
+    /^\/api\/local-auth\/transfers\/[^/]+\/(open|approve|deny)$/.test(normalized)
   );
 }
 
@@ -861,6 +872,7 @@ export function createTraceServeServer(
       access?.connection,
       access?.pairing,
       env.TRACE_CURRENT_VERSION ?? resolvePackagedVersion(),
+      () => Boolean(readAuthToken(env)),
     ),
   );
 }
@@ -901,7 +913,7 @@ export function startTraceServe(
     createTraceServeServer(
       env,
       undefined,
-      createSyncHooks(() => triggerSync(env)),
+      createSyncHooks(() => triggerSync(env), Date.now, () => triggerSync(env, { reason: "login" })),
       bridgeAccess,
     );
 

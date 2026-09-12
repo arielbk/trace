@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type {
+  KeyTransferInspection,
   LoginAttemptView,
   LoginProvider,
+  PendingKeyTransfer,
   SyncStatusResponse,
   TaskSummary,
   TaskTimeline,
@@ -240,6 +242,97 @@ export function cancelLogin(
   );
 }
 
+/**
+ * Ask another of this account's machines to unlock this one, instead of typing
+ * the recovery key. What comes back is the same attempt view, now carrying the
+ * request's locator and — once both machines have committed to their keys — the
+ * code the user must see matching on both screens.
+ */
+export function requestKeyTransfer(
+  attemptId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/transfer`,
+    { method: "POST" },
+    source,
+  );
+}
+
+export function cancelKeyTransfer(
+  attemptId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}/transfer/cancel`,
+    { method: "POST" },
+    source,
+  );
+}
+
+/** The requests waiting for this machine — the already-signed-in one — to let
+ * another machine in. */
+export function fetchKeyTransfers(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<PendingKeyTransfer[]> {
+  return localAuth<PendingKeyTransfer[]>("/transfers", undefined, source);
+}
+
+/**
+ * Join one request's exchange, which is what produces a code to compare. Safe
+ * to repeat: the serving process re-uses the offer it already made rather than
+ * starting a second exchange.
+ */
+export function openKeyTransfer(
+  requestId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<KeyTransferInspection> {
+  return localAuth<KeyTransferInspection>(
+    `/transfers/${encodeURIComponent(requestId)}/open`,
+    { method: "POST" },
+    source,
+  );
+}
+
+/** Send this account's document key, on the user's word that the codes match. */
+export function approveKeyTransfer(
+  requestId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<KeyTransferInspection> {
+  return localAuth<KeyTransferInspection>(
+    `/transfers/${encodeURIComponent(requestId)}/approve`,
+    { method: "POST" },
+    source,
+  );
+}
+
+export function denyKeyTransfer(
+  requestId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<KeyTransferInspection> {
+  return localAuth<KeyTransferInspection>(
+    `/transfers/${encodeURIComponent(requestId)}/deny`,
+    { method: "POST" },
+    source,
+  );
+}
+
+/**
+ * Requests waiting on this machine's approval, asked at the login rhythm while
+ * the account popover is open: the user is being asked to compare codes with
+ * someone standing at another machine, and a background-rhythm answer would be
+ * stale before they read it.
+ */
+export function useKeyTransfers(enabled: boolean) {
+  const source = useTraceDataSource();
+  return useQuery({
+    queryKey: traceQueryKey(source, "key-transfers"),
+    queryFn: () => fetchKeyTransfers(source),
+    enabled,
+    refetchInterval: LOGIN_POLL_MS,
+  });
+}
+
 export function postLogout(
   source: TraceDataSource = defaultTraceDataSource,
 ): Promise<{ ok: true }> {
@@ -274,16 +367,30 @@ export function useCurrentLogin() {
   });
 }
 
+/**
+ * Whether a machine has answered that it does not know this attempt.
+ *
+ * Attempts live in the serving process's memory, so this is what a restarted
+ * `eqnx serve` says about the login a board tab is still watching. It is a
+ * settled answer, not a hiccup: asking again cannot bring the attempt back.
+ */
+export function isForgottenLogin(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 404;
+}
+
 export function useLoginAttempt(attemptId: string | null) {
   const source = useTraceDataSource();
   return useQuery({
     queryKey: traceQueryKey(source, "login-attempt", attemptId),
     queryFn: () => fetchLoginAttempt(attemptId as string, source),
     enabled: attemptId !== null,
-    refetchInterval: (query) =>
-      query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
+    retry: (failureCount, error) => !isForgottenLogin(error) && failureCount < 3,
+    refetchInterval: (query) => {
+      if (isForgottenLogin(query.state.error)) return false;
+      return query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
         ? false
-        : LOGIN_POLL_MS,
+        : LOGIN_POLL_MS;
+    },
   });
 }
 

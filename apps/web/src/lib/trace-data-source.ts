@@ -49,7 +49,11 @@ export type TraceDataSourceCapabilities = Readonly<{
   /** Export downloads, which pull whole tasks and transcripts out at once. */
   taskExports: boolean;
   account: boolean;
+  accountSignOut: boolean;
   sync: boolean;
+  /** Being unlocked by another of the account's machines, and unlocking one —
+   * the alternative to typing a recovery key. */
+  keyTransfer: boolean;
 }>;
 
 export interface TraceDataSource {
@@ -72,7 +76,9 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
   docEdits: true,
   taskExports: true,
   account: true,
+  accountSignOut: true,
   sync: true,
+  keyTransfer: true,
 };
 
 /**
@@ -100,7 +106,9 @@ function localCapabilities(
     docEdits: granted.has("docEdits"),
     taskExports: granted.has("taskExports"),
     account: granted.has("account"),
+    accountSignOut: granted.has("accountSignOut"),
     sync: granted.has("sync"),
+    keyTransfer: granted.has("keyTransfer"),
   };
 }
 
@@ -142,6 +150,17 @@ function requiredCapability(path: string): TraceCapability | null {
     return "taskDetails";
   }
   if (route === "/api/sync" || route.startsWith("/api/sync/")) return "sync";
+  // Ahead of the `account` catch-all below: a runtime that grants account
+  // routes may still predate key transfer, and a board must not offer an
+  // approval control such a runtime would refuse.
+  if (
+    route === "/api/local-auth/transfers" ||
+    route.startsWith("/api/local-auth/transfers/") ||
+    /^\/api\/local-auth\/login\/[^/]+\/transfer(\/cancel)?$/.test(route)
+  ) {
+    return "keyTransfer";
+  }
+  if (route === "/api/local-auth/logout") return "accountSignOut";
   if (route === "/api/config" || route.startsWith("/api/local-auth")) {
     return "account";
   }
@@ -154,7 +173,9 @@ const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
   "docEdits",
   "taskExports",
   "account",
+  "accountSignOut",
   "sync",
+  "keyTransfer",
 ]);
 
 abstract class HttpTraceDataSource implements TraceDataSource {

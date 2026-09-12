@@ -43,11 +43,13 @@ export interface AuthDependencies {
   sleep: (milliseconds: number) => Promise<void>;
   openBrowser: (url: string) => void;
   onOutput?: (output: string) => void;
+  onLoginComplete: () => void;
   prompt: (message: string) => Promise<string>;
 }
 
 const defaultDependencies: AuthDependencies = {
   fetch: globalThis.fetch,
+  onLoginComplete: () => {},
   openBrowser,
   sleep: (milliseconds) =>
     new Promise((resolve) => {
@@ -87,7 +89,7 @@ export async function runAuthCommand(
 
 async function login(
   env: Env,
-  { fetch, sleep, openBrowser, onOutput, prompt: ask }: AuthDependencies,
+  { fetch, sleep, openBrowser, onOutput, prompt: ask, onLoginComplete }: AuthDependencies,
 ): Promise<CommandResult> {
   const serverUrl = requireServerUrl(env);
   const device = await requestDeviceAuthorization(serverUrl, fetch);
@@ -107,10 +109,12 @@ async function login(
       identity: account.identity,
       lastError: undefined,
       activeRun: undefined,
+      restore: { phase: "metadata" },
     });
   } catch {
     /* The header is best-effort after credentials commit. */
   }
+  onLoginComplete();
   return success(`${onOutput ? "" : prompt}Signed in.\n${key.output}`);
 }
 
@@ -189,10 +193,16 @@ async function whoami(
 ): Promise<CommandResult> {
   const serverUrl = requireServerUrl(env);
   const token = readAuthToken(env);
-  if (!token) return failure("Not logged in. Run eqnx login.");
+  if (!token) {
+    clearStoredCredentials(env);
+    return failure("Not logged in. Run eqnx login.");
+  }
 
   const session = await fetchSession(serverUrl, fetch, token.accessToken);
-  if (!session?.user) return failure("Not logged in. Run eqnx login.");
+  if (!session?.user) {
+    if (readAuthToken(env)?.accessToken === token.accessToken) clearStoredCredentials(env);
+    return failure("Not logged in. Run eqnx login.");
+  }
 
   const identity = identityFromSession(session);
   if (!identity) return failure("Auth server returned no user identity.");

@@ -26,6 +26,36 @@ import {
   type SyncWrappedKey,
 } from "@trace/core";
 
+/**
+ * A document blob this machine could not get hold of: the server did not have
+ * it, or the transport did not deliver it. Deliberately distinct from a
+ * decryption or verification failure, which is news about the key or about the
+ * data itself and must still fail the sync loudly.
+ */
+class BlobUnavailableError extends Error {}
+
+/** Download one blob, or say — in one word the caller can catch — that this
+ * machine could not. */
+async function fetchBlob(
+  download: (hash: string) => Promise<Uint8Array | null>,
+  hash: string,
+): Promise<Uint8Array> {
+  let envelope: Uint8Array | null;
+  try {
+    envelope = await download(hash);
+  } catch (error) {
+    throw new BlobUnavailableError(
+      `could not download document blob ${hash}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (!envelope) {
+    throw new BlobUnavailableError(`sync server is missing blob ${hash}`);
+  }
+  return envelope;
+}
+
 type DocumentMetadata = {
   machineId: string;
   // Per task: the fingerprint of the last pushed file set, the manifest we
@@ -195,23 +225,31 @@ export class FileSystemDocumentStore implements SyncDocumentStore {
         ]),
       );
       const contents = new Map<string, Uint8Array>();
-      for (const file of manifestFiles) {
-        let content = local.get(file.blobHash);
-        if (!content) {
-          const envelope = await download(file.blobHash);
-          if (!envelope) {
-            throw new Error(`sync server is missing blob ${file.blobHash}`);
+      try {
+        for (const file of manifestFiles) {
+          let content = local.get(file.blobHash);
+          if (!content) {
+            const envelope = await fetchBlob(download, file.blobHash);
+            try {
+              content = crypto.openBlob(envelope, file.blobHash);
+            } catch {
+              throw new Error(
+                `could not decrypt or verify document blob ${file.blobHash}`,
+              );
+            }
+            downloaded += 1;
           }
-          try {
-            content = crypto.openBlob(envelope, file.blobHash);
-          } catch {
-            throw new Error(
-              `could not decrypt or verify document blob ${file.blobHash}`,
-            );
-          }
-          downloaded += 1;
+          contents.set(file.path, content);
         }
-        contents.set(file.path, content);
+      } catch (error) {
+        // A blob this machine could not fetch is news about the network, not
+        // about this task's documents: defer the manifest, leave every file on
+        // disk untouched, and hold the document cursor so the same manifest is
+        // offered again on the next sync. The other tasks in this pull still
+        // land — one unreachable blob must not cost them their documents.
+        if (!(error instanceof BlobUnavailableError)) throw error;
+        deferred += 1;
+        continue;
       }
 
       rmSync(docsDir, { recursive: true, force: true });

@@ -12,9 +12,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import {
   REPLACEMENT_KEY_CONFIRMATION,
+  type KeyTransferInspection,
+  type KeyTransferRequestView,
   type LoginAttemptView,
+  type PendingKeyTransfer,
   type SyncStatusResponse,
 } from "@trace/core/browser";
+import { SameOriginTraceSource, TraceDataSourceProvider, type TraceDataSource } from "../lib/trace-data-source.ts";
 import { AccountMenu } from "./AccountMenu.tsx";
 
 const NOW = new Date("2026-07-10T16:05:00.000Z");
@@ -77,9 +81,18 @@ function localAuthServer(options: {
   masterKey?: string;
   /** How `POST /logout` refuses, for hosts that serve no auth routes at all. */
   logoutFailure?: { status: number; body: string };
+  /** What `POST .../transfer` answers with, and what the approving machine's
+   * routes report. */
+  transfer?: KeyTransferRequestView;
+  pendingTransfers?: PendingKeyTransfer[];
+  inspection?: KeyTransferInspection;
+  transferFailure?: { action: "open" | "approve" | "deny"; message: string };
   /** Serve `polled` as the machine's outstanding login from the outset, as a
    * serving process does when an earlier popover walked away from one. */
   outstanding?: boolean;
+  /** Forget every attempt from now on, the way a restarted `eqnx serve` has:
+   * attempts live in that process's memory, so it answers 404. */
+  restart?: () => void;
 }): LocalAuthFake {
   const started = options.started ?? WAITING;
   let polled = options.polled ?? started;
@@ -89,13 +102,25 @@ function localAuthServer(options: {
   let live = options.outstanding ?? false;
   const calls: string[] = [];
   const bodies: unknown[] = [];
+  let forgotten = false;
+  let signedOut = false;
+  options.restart = () => {
+    forgotten = true;
+  };
   const fetch = vi
     .fn()
     .mockImplementation(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       calls.push(`${init?.method ?? "GET"} ${url}`);
       if (init?.body) bodies.push(JSON.parse(String(init.body)));
+      if (forgotten && url.startsWith("/api/local-auth/login/")) {
+        // `current` answers `null`; a named attempt is simply not found.
+        return url.endsWith("/current")
+          ? jsonResponse(null)
+          : new Response("", { status: 404 });
+      }
       if (url === "/api/sync/status") {
+        if (signedOut) return jsonResponse(SIGNED_OUT);
         // A completed login is what turns this machine signed-in, exactly as
         // the serving process reports it once credentials are stored.
         if (polled.state === "complete") return jsonResponse(SIGNED_IN);
@@ -110,6 +135,7 @@ function localAuthServer(options: {
       }
       if (url === "/api/local-auth/logout") {
         const { logoutFailure } = options;
+        if (!logoutFailure) signedOut = true;
         return logoutFailure
           ? new Response(logoutFailure.body, { status: logoutFailure.status })
           : jsonResponse({ ok: true });
@@ -148,6 +174,26 @@ function localAuthServer(options: {
               };
         return jsonResponse(polled);
       }
+      if (url.endsWith("/transfer")) {
+        polled = { ...polled, transfer: options.transfer ?? PENDING_TRANSFER };
+        return jsonResponse(polled);
+      }
+      if (url.endsWith("/transfer/cancel")) {
+        polled = { ...polled, transfer: undefined };
+        return jsonResponse(polled);
+      }
+      if (url === "/api/local-auth/transfers") {
+        return jsonResponse(options.pendingTransfers ?? []);
+      }
+      if (options.transferFailure && url.endsWith(`/transfers/request-1/${options.transferFailure.action}`)) {
+        return new Response(JSON.stringify({ error: options.transferFailure.message }), { status: 400 });
+      }
+      if (url.endsWith("/open") || url.endsWith("/approve")) {
+        return jsonResponse(options.inspection ?? COMPARING_INSPECTION);
+      }
+      if (url.endsWith("/deny")) {
+        return jsonResponse({ ...COMPARING_INSPECTION, state: "gone" });
+      }
       if (url.endsWith("/cancel")) {
         polled = { ...polled, state: "cancelled" };
         return jsonResponse(polled);
@@ -159,7 +205,7 @@ function localAuthServer(options: {
 }
 
 /** Render the menu over a scripted local-auth server, with `window.open` stubbed. */
-function renderWithLocalAuth(server: LocalAuthFake): { opened: string[] } {
+function renderWithLocalAuth(server: LocalAuthFake, source: TraceDataSource = new SameOriginTraceSource()): { opened: string[] } {
   const opened: string[] = [];
   vi.stubGlobal("fetch", server.fetch);
   vi.stubGlobal(
@@ -174,7 +220,9 @@ function renderWithLocalAuth(server: LocalAuthFake): { opened: string[] } {
   });
   render(
     <QueryClientProvider client={client}>
-      <AccountMenu now={NOW} />
+      <TraceDataSourceProvider source={source}>
+        <AccountMenu now={NOW} />
+      </TraceDataSourceProvider>
     </QueryClientProvider>,
   );
   return { opened };
@@ -206,6 +254,7 @@ beforeAll(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   cleanup();
 });
@@ -377,7 +426,7 @@ test("manual mode is reported as read-only state, with no way to sync or switch"
   });
 
   await user.click(
-    await screen.findByRole("button", { name: "Account — not synced yet" }),
+    await screen.findByRole("button", { name: "Account — sync paused" }),
   );
 
   const menu = await screen.findByRole("dialog", { name: /account/i });
@@ -617,6 +666,21 @@ const WAITING_FOR_KEY: LoginAttemptView = {
   state: "waiting-for-existing-key",
 };
 
+const PENDING_TRANSFER: KeyTransferRequestView = {
+  requestId: "request-1",
+  locator: "K3M9QZ",
+  machineName: "Studio Mac",
+  state: "waiting-for-approval",
+};
+
+const COMPARING_INSPECTION: KeyTransferInspection = {
+  requestId: "request-1",
+  locator: "K3M9QZ",
+  machineName: "Studio Mac",
+  state: "comparing",
+  verificationCode: "8H2K-4RTQ",
+};
+
 test("an account with synced documents asks for its key and signs in once it validates", async () => {
   const user = userEvent.setup();
   const server = localAuthServer({
@@ -849,10 +913,9 @@ test("a signed-in machine can be signed out from the menu", async () => {
   await waitFor(() =>
     expect(server.calls).toContain("POST /api/local-auth/logout"),
   );
-  // Signing out never offers to sign in with a provider in the same breath.
-  expect(
-    screen.queryByRole("button", { name: /sign in with/i }),
-  ).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: /sign in with github/i })).toBeEnabled();
+  expect(screen.getByText("Local connection")).toBeVisible();
+  expect(screen.getByText(/This board shows work stored on this Mac/)).toBeVisible();
 });
 
 // A host that serves the board without the `/api/local-auth` routes — the Vite
@@ -877,4 +940,198 @@ test("a refused sign-out is reported instead of silently doing nothing", async (
   expect(await screen.findByTestId("logout-error")).toHaveTextContent(/404/);
   // Still offered, so the user can try again once the host can serve it.
   expect(screen.getByRole("button", { name: /sign out/i })).toBeEnabled();
+});
+
+test("the key prompt offers being unlocked by another machine, and keeps the key field", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+  });
+  await signInToKeyPrompt(server);
+
+  await user.click(
+    screen.getByRole("button", { name: /approve from another machine/i }),
+  );
+
+  // A short handle for finding this request on the other machine — not a
+  // secret, and never presented as one.
+  expect(await screen.findByTestId("transfer-locator")).toHaveTextContent(
+    "K3M9QZ",
+  );
+  expect(server.calls).toContain(
+    "POST /api/local-auth/login/attempt-1/transfer",
+  );
+  // The other machine may never answer, so the key stays one field away.
+  expect(screen.getByLabelText(/document encryption key/i)).toBeInTheDocument();
+});
+
+test("the code to compare is shown on the requesting machine, and can be given up on", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    polled: {
+      ...WAITING_FOR_KEY,
+      transfer: {
+        ...PENDING_TRANSFER,
+        state: "comparing",
+        verificationCode: "8H2K-4RTQ",
+      },
+    },
+    outstanding: true,
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  expect(await screen.findByTestId("transfer-code")).toHaveTextContent(
+    "8H2K-4RTQ",
+  );
+
+  await user.click(screen.getByRole("button", { name: /stop waiting/i }));
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/login/attempt-1/transfer/cancel",
+    ),
+  );
+});
+
+test("a signed-in machine reviews a waiting request and approves it after comparing codes", async () => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    status: SIGNED_IN,
+    pendingTransfers: [
+      {
+        requestId: "request-1",
+        locator: "K3M9QZ",
+        machineName: "Studio Mac",
+        expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
+      },
+    ],
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+
+  // The machine name is what the request calls itself; the code is what the
+  // user actually checks.
+  expect(await screen.findByText(/Studio Mac/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /review request/i }));
+
+  expect(await screen.findByTestId("approval-code")).toHaveTextContent(
+    "8H2K-4RTQ",
+  );
+  // Nothing is sent by opening the request: the key goes only on the user's
+  // word that the two codes match.
+  expect(server.calls).not.toContain(
+    "POST /api/local-auth/transfers/request-1/approve",
+  );
+
+  await user.click(screen.getByRole("button", { name: /codes match/i }));
+  await waitFor(() =>
+    expect(server.calls).toContain(
+      "POST /api/local-auth/transfers/request-1/approve",
+    ),
+  );
+});
+
+test("a login the machine has forgotten is reported, not polled forever", async () => {
+  const restarted: { go?: () => void } = {};
+  const server = localAuthServer({
+    polled: WAITING_FOR_KEY,
+    masterKey: EXISTING_KEY,
+    get restart() {
+      return restarted.go;
+    },
+    set restart(go) {
+      restarted.go = go;
+    },
+  });
+  // The board learns an attempt is gone by polling, so the clock is what moves
+  // this test forward — and it has to be this test's clock from the outset,
+  // since the poll is scheduled the moment the attempt is adopted.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const poll = () => vi.advanceTimersByTimeAsync(3_000);
+
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(
+    await screen.findByRole("button", { name: /sign in with github/i }),
+  );
+  await screen.findByLabelText(/document encryption key/i);
+
+  // `eqnx serve` restarts. Attempts live in that process's memory, so the one
+  // this popover is watching is simply gone — and the board was still showing
+  // its key prompt, against a machine that could no longer accept a key.
+  restarted.go?.();
+  await poll();
+
+  expect(await screen.findByTestId("login-outcome")).toHaveTextContent(
+    /interrupted/i,
+  );
+  expect(
+    screen.queryByLabelText(/document encryption key/i),
+  ).not.toBeInTheDocument();
+
+  // And it stopped asking: a machine that has forgotten an attempt will not
+  // remember it on the next poll, and a board still polling one is a board
+  // waiting for something that cannot happen.
+  const asked = () =>
+    server.calls.filter((call) =>
+      call.startsWith("GET /api/local-auth/login/attempt-1"),
+    ).length;
+  const settled = asked();
+  await poll();
+  await poll();
+  expect(asked()).toBe(settled);
+
+  // The way out is one the user can act on.
+  await user.click(screen.getByRole("button", { name: /try again/i }));
+  expect(
+    server.calls.filter((call) => call === "POST /api/local-auth/login"),
+  ).toHaveLength(2);
+});
+
+
+test.each(["open", "approve", "deny"] as const)("a refused %s tells the user why and drops the stale approval code", async (action) => {
+  const user = userEvent.setup();
+  const server = localAuthServer({
+    status: SIGNED_IN,
+    pendingTransfers: [{ requestId: "request-1", locator: "K3M9QZ", machineName: "Studio Mac", expiresAt: new Date(NOW.getTime() + 300_000).toISOString() }],
+    transferFailure: { action, message: "This transfer request is already cancelled. Start a new one." },
+  });
+  renderWithLocalAuth(server);
+  await user.click(await screen.findByRole("button", { name: /account/i }));
+  await user.click(await screen.findByRole("button", { name: /review request/i }));
+  if (action !== "open") {
+    await screen.findByTestId("approval-code");
+    await user.click(screen.getByRole("button", { name: action === "approve" ? /codes match/i : /^deny$/i }));
+  }
+  expect(await screen.findByRole("alert")).toHaveTextContent(/already cancelled/i);
+  expect(screen.queryByTestId("approval-code")).not.toBeInTheDocument();
+});
+
+test("older hosted runtimes explain local work and offer Terminal sign-out without a broken button", async () => {
+  const server = localAuthServer({ status: SIGNED_IN });
+  const base = new SameOriginTraceSource();
+  const source: TraceDataSource = {
+    key: "older-hosted-runtime",
+    protocolVersion: base.protocolVersion,
+    connectAutomatically: false,
+    capabilities: {
+      ...base.capabilities,
+      requiresConnection: true,
+      accountSignOut: false,
+    },
+    request: base.request.bind(base),
+    connect: base.connect.bind(base),
+  };
+  renderWithLocalAuth(server, source);
+  await userEvent.click(
+    await screen.findByRole("button", { name: /account/i }),
+  );
+  expect(await screen.findByText("eqnx logout")).toBeVisible();
+  expect(screen.getByText("Local connection")).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: /sign out/i }),
+  ).not.toBeInTheDocument();
+  expect(server.calls).not.toContain("POST /api/local-auth/logout");
 });

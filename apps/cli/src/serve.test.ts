@@ -5,10 +5,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import {
-  createPairingLinks,
-  type PairingLinks,
-} from "./bridge-pairing.ts";
+import { createPairingLinks, type PairingLinks } from "./bridge-pairing.ts";
 import {
   openConnectionCredentials,
   type ConnectionCredentials,
@@ -18,6 +15,7 @@ import {
   resolveTaskDocsDir,
   unzipExportBundle,
   updateConfigFile,
+  writeSyncStatusFile,
 } from "@trace/core";
 import {
   createServeRequestListener,
@@ -168,7 +166,9 @@ test("eqnx serve exposes a read-only connection handshake", () => {
       "docEdits",
       "taskExports",
       "account",
+      "accountSignOut",
       "sync",
+      "keyTransfer",
     ],
   });
 });
@@ -195,7 +195,14 @@ test("eqnx serve advertises only the hosted allowlist to the hosted board", () =
     service: "trace",
     protocolVersion: 1,
     runtimeVersion: "9.8.7",
-    capabilities: ["taskDetails", "taskMutations", "account", "sync"],
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "account",
+      "accountSignOut",
+      "sync",
+      "keyTransfer",
+    ],
   });
 });
 
@@ -712,9 +719,11 @@ test("what the hosted handshake advertises is exactly what the bridge allows", (
     docEdits: () => hosted("POST", `/api/tasks/${taskId}/docs/checkbox`),
     taskExports: () => hosted("GET", `/api/tasks/${taskId}/export`),
     account: () => hosted("POST", "/api/local-auth/login"),
+    accountSignOut: () => hosted("POST", "/api/local-auth/logout"),
     // The granted slice of `sync` is the status read; commanding a sync run
     // stays local-only, which the restore-routes test pins separately.
     sync: () => hosted("GET", "/api/sync/status"),
+    keyTransfer: () => hosted("GET", "/api/local-auth/transfers"),
   };
 
   const advertised = new Set(
@@ -1273,24 +1282,30 @@ test("the hosted board may drive the restore routes it needs and nothing more", 
     );
 
   const granted = [
+    ["POST", "/api/local-auth/logout"],
     ["GET", "/api/sync/status"],
     ["GET", "/api/local-auth/login/current"],
     ["GET", "/api/local-auth/login/an-attempt"],
     ["POST", "/api/local-auth/login"],
     ["POST", "/api/local-auth/login/an-attempt/existing-key"],
     ["POST", "/api/local-auth/login/an-attempt/cancel"],
+    // Being let in by another machine, and letting one in.
+    ["POST", "/api/local-auth/login/an-attempt/transfer"],
+    ["POST", "/api/local-auth/login/an-attempt/transfer/cancel"],
+    ["GET", "/api/local-auth/transfers"],
+    ["POST", "/api/local-auth/transfers/a-request/open"],
+    ["POST", "/api/local-auth/transfers/a-request/approve"],
+    ["POST", "/api/local-auth/transfers/a-request/deny"],
   ] as const;
   for (const [method, path] of granted) {
     expect([path, hosted(method, path).statusCode]).not.toEqual([path, 403]);
   }
 
   // Replacing a key destroys readable documents, acknowledging one would carry
-  // a plaintext key to a remote origin, logout and pushes are the machine's own
-  // business: none of them belong to recovering existing work.
+  // a plaintext key to a remote origin; explicit sync pushes stay local-only.
   const refused = [
     ["POST", "/api/local-auth/login/an-attempt/replacement-key"],
     ["POST", "/api/local-auth/login/an-attempt/acknowledge-key"],
-    ["POST", "/api/local-auth/logout"],
     ["POST", "/api/sync"],
   ] as const;
   for (const [method, path] of refused) {
@@ -1337,4 +1352,59 @@ test("a hosted restore POST may preflight a JSON body, and nothing else may", ()
     preflight(`/api/tasks/${taskId}/pin`, "POST", "authorization, content-type")
       .statusCode,
   ).toBe(403);
+});
+
+test("hosted sign-out preflights POST but still requires a paired browser", () => {
+  const origin = "https://board.test";
+  const { connection } = pairedConnection();
+  const preflight = dispatch(
+    "OPTIONS",
+    "/api/local-auth/logout",
+    undefined,
+    undefined,
+    {
+      origin,
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization",
+    },
+    origin,
+    connection,
+  );
+  expect(preflight.statusCode).toBe(204);
+  expect(preflight.headers["access-control-allow-origin"]).toBe(origin);
+  expect(
+    dispatch(
+      "POST",
+      "/api/local-auth/logout",
+      undefined,
+      undefined,
+      { origin },
+      origin,
+      connection,
+    ).statusCode,
+  ).toBe(401);
+  expect(
+    dispatch(
+      "POST",
+      "/api/local-auth/logout",
+      undefined,
+      undefined,
+      { origin: "https://untrusted.test" },
+      origin,
+      connection,
+    ).statusCode,
+  ).toBe(403);
+});
+
+
+test("a stale signed-in status cannot sign in a machine without credentials", () => {
+  writeSyncStatusFile(databasePath, { loggedIn: true, identity: "Previous account" });
+  const server = createTraceServeServer({ HOME: dir, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://sync.test" });
+  let body = "";
+  server.emit("request", {
+    method: "GET", url: "/api/sync/status", headers: { host: "127.0.0.1:4317" },
+  } as IncomingMessage, {
+    setHeader: () => {}, end: (chunk: string) => { body = chunk; },
+  } as unknown as ServerResponse);
+  expect(JSON.parse(body)).toEqual({ state: "logged-out", serverConfigured: true, autoSync: true });
 });

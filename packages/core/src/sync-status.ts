@@ -10,7 +10,14 @@ import { dirname, join, resolve } from "node:path";
  * offline. `@trace/core` already touches the filesystem in `api-handler.ts`, so
  * this stays in core beside the code that consumes it.
  */
+export interface RestoreProgress {
+  phase: "metadata" | "documents" | "partial" | "ready";
+  /** Local tasks after a completed row pull; never an estimated total. */
+  taskCount?: number;
+}
+
 export interface SyncStatusFile {
+  restore?: RestoreProgress;
   /** Whether a bearer token is currently stored (set on login, cleared on logout). */
   loggedIn: boolean;
   /** The resolved GitHub identity (`name <email>` / name / email / id), recorded at login. */
@@ -44,7 +51,7 @@ export interface SyncStatusFile {
  * hides the sync badge entirely on a machine with no server configured, so
  * merged-but-unused cloud sync leaves no UI trace.
  */
-export type SyncStatus =
+export type SyncStatus = (
   | { state: "logged-out"; serverConfigured?: boolean }
   | { state: "never-synced"; identity?: string }
   | {
@@ -59,7 +66,7 @@ export type SyncStatus =
       identity?: string;
       lastError: string;
       lastSyncedAt?: string;
-    };
+    }) & { restore?: RestoreProgress };
 
 /**
  * What `GET /api/sync/status` actually returns: the derived status plus the
@@ -142,7 +149,7 @@ export function beginSyncRun(
 export function finalizeSyncRun(
   databasePath: string,
   runId: string,
-  outcome: Pick<SyncStatusFile, "lastSyncedAt" | "lastError">,
+  outcome: Pick<SyncStatusFile, "lastSyncedAt" | "lastError" | "restore">,
 ): boolean {
   const current = readSyncStatusFile(databasePath);
   if (current?.activeRun?.id !== runId) return false;
@@ -162,7 +169,10 @@ export function deriveSyncStatus(
   if (!file || !file.loggedIn) {
     return { state: "logged-out" };
   }
-  const identity = file.identity ? { identity: file.identity } : {};
+  const identity = {
+    ...(file.identity ? { identity: file.identity } : {}),
+    ...(file.restore ? { restore: file.restore } : {}),
+  };
   if (isRunningNow(file.activeRun, now)) {
     return {
       state: "syncing",
@@ -170,6 +180,9 @@ export function deriveSyncStatus(
       startedAt: file.activeRun.startedAt,
       ...(file.lastSyncedAt ? { lastSyncedAt: file.lastSyncedAt } : {}),
     };
+  }
+  if (file.activeRun && file.restore) {
+    return { state: "failed", ...identity, lastError: "The sync run was interrupted. Run eqnx sync on this machine to retry.", ...(file.lastSyncedAt ? { lastSyncedAt: file.lastSyncedAt } : {}) };
   }
   if (file.lastError) {
     return {

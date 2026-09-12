@@ -354,3 +354,30 @@ test("a legacy store cannot push its history into an unproven empty account", as
   expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
   expect(readSyncIdentity(resolveDatabasePath(env))).toBeNull();
 });
+
+
+test("login recovery bypasses the automatic sync floor but respects AutoSync off", () => {
+  const home = loggedInHome("trace-sync-login-");
+  const spawn = vi.fn(() => ({ on: vi.fn(), unref: vi.fn() }));
+  const deps = { spawn, executable: "/trace/cli.js" };
+  requestAutomaticSync({ HOME: home }, deps);
+  expect(spawn).toHaveBeenCalledOnce();
+  requestAutomaticSync({ HOME: home }, { ...deps, reason: "login" });
+  expect(spawn).toHaveBeenCalledTimes(2);
+  disableAutoSync(home);
+  requestAutomaticSync({ HOME: home }, { ...deps, reason: "login" });
+  expect(spawn).toHaveBeenCalledTimes(2);
+});
+
+
+test("a rejected sync session returns the board to sign-in", async () => {
+  const home = loggedInHome("trace-sync-rejected-");
+  const databasePath = join(home, "trace.db");
+  openTraceStore(databasePath).close();
+  const result = await runSyncCommand(
+    { HOME: home, TRACE_DB: databasePath, TRACE_SERVER_URL: "https://sync.test" },
+    { fetch: async () => Response.json(null, { status: 401 }) },
+  );
+  expect(result.exitCode).toBe(1);
+  expect(readSyncStatus(databasePath).state).toBe("logged-out");
+});
