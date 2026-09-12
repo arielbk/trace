@@ -174,7 +174,7 @@ test("the reviewed plan covers only the submitted selection", async () => {
   }
 });
 
-test("confirming installs the reviewed selection and leaves the rest untouched", async () => {
+test.each(["darwin", "linux"] as const)("confirming installs the reviewed selection and leaves the rest untouched on %s", async (platform) => {
   const { dir, cleanup } = tempHome("trace-picker-apply-");
   try {
     const claudeRoot = join(dir, ".claude");
@@ -189,14 +189,20 @@ test("confirming installs the reviewed selection and leaves the rest untouched",
       confirm: { cancelled: false, value: true },
     });
 
-    const result = await interactiveSetupOperation(context(dir), prompt);
+    const result = await interactiveSetupOperation(
+      { ...context(dir), service: { platform } },
+      prompt,
+    );
 
     expect(result.exitCode).toBe(0);
     expect(existsSync(join(claudeRoot, "skills", "board", "SKILL.md"))).toBe(true);
     expect(existsSync(join(codexRoot, "skills"))).toBe(false);
     expect(registeredIdentities(dir)).toEqual([`claude=${claudeRoot}`]);
     // The plan was already reviewed in the terminal; the result is the outcome.
-    expect(result.stdout).toBe(`Installed EQNX into ${claudeRoot}.\n`);
+    const connectionNotice = platform === "linux"
+      ? "\nLocal connection: A managed background connection needs launchd, which linux does not have.\n  Run `eqnx serve` to connect a board on this machine.\n"
+      : "";
+    expect(result.stdout).toBe(`Installed EQNX into ${claudeRoot}.\n${connectionNotice}`);
   } finally {
     cleanup();
   }

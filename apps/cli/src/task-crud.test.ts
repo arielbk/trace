@@ -1206,6 +1206,7 @@ test("skill work-on-task with a blank session id fails without creating the task
   }
 });
 
+// Nine real CLI processes exercise the full journey; allow for CI startup costs.
 test("skill re-enter prints a progressively disclosed manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-manifest-"));
   const databasePath = join(dir, ".trace", "trace.sqlite");
@@ -1336,7 +1337,7 @@ test("skill re-enter prints a progressively disclosed manifest", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test("skill re-enter surfaces the task description in the manifest", () => {
   const dir = mkdtempSync(join(tmpdir(), "trace-cli-skill-desc-"));
