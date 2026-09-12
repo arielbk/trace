@@ -828,7 +828,8 @@ function stubExportDownload() {
 
 describe("downloadTaskExport", () => {
   test("fetches the export route without transcripts by default and downloads the zip", async () => {
-    const zip = new Blob(["PK zip bytes"], { type: "application/zip" });
+    // Supply wire bytes; jsdom Blob is incompatible with Node 22 Response.
+    const zip = new TextEncoder().encode("PK zip bytes");
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(zip, {
         status: 200,
@@ -855,7 +856,7 @@ describe("downloadTaskExport", () => {
 
   test("opts into transcripts with the transcripts query parameter", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Blob(["PK"]), {
+      new Response(new Uint8Array([0x50, 0x4b]), {
         status: 200,
         headers: {
           "content-disposition":

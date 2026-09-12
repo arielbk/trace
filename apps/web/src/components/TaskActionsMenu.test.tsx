@@ -98,7 +98,7 @@ test("opening the menu shows concise, distinct export choices and Archive", asyn
 test("Export calls the export route with transcripts off", async () => {
   const user = userEvent.setup();
   const fetchMock = vi.fn().mockResolvedValue(
-    new Response(new Blob(["PK"]), {
+    new Response(new Uint8Array([0x50, 0x4b]), {
       status: 200,
       headers: {
         "content-disposition": 'attachment; filename="checkout-2026-08-19.zip"',
@@ -121,7 +121,7 @@ test("Export calls the export route with transcripts off", async () => {
 test("Export with transcripts confirms the sensitive choice before downloading", async () => {
   const user = userEvent.setup();
   const fetchMock = vi.fn().mockResolvedValue(
-    new Response(new Blob(["PK"]), {
+    new Response(new Uint8Array([0x50, 0x4b]), {
       status: 200,
       headers: {
         "content-disposition": 'attachment; filename="checkout-2026-08-19.zip"',
@@ -173,7 +173,7 @@ test("export reports progress while the task bundle is being prepared", async ()
   expect(await screen.findByText("Preparing task export…")).toBeInTheDocument();
 
   resolveFetch(
-    new Response(new Blob(["PK"]), {
+    new Response(new Uint8Array([0x50, 0x4b]), {
       status: 200,
       headers: {
         "content-disposition": 'attachment; filename="checkout.zip"',
@@ -189,7 +189,7 @@ test("a failed export offers a working retry", async () => {
     .fn()
     .mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValueOnce(
-      new Response(new Blob(["PK"]), {
+      new Response(new Uint8Array([0x50, 0x4b]), {
         status: 200,
         headers: {
           "content-disposition": 'attachment; filename="checkout.zip"',
