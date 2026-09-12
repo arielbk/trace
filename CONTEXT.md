@@ -1,6 +1,6 @@
-# Trace — Domain Context
+# EQNX — Domain Context
 
-Shared vocabulary for the Trace codebase. Use these terms exactly in code,
+Shared vocabulary for the EQNX codebase. Use these terms exactly in code,
 docs, and architecture reviews so names stay consistent.
 
 ## Core domain
@@ -64,7 +64,7 @@ docs, and architecture reviews so names stay consistent.
   read-time refresh (Codex spawn records ride the parse for free; Cursor costs
   one readdir of the mirror dir) so children appear the moment anyone looks —
   plus, as redundant belts, during `session scan --codex`, the task re-entry
-  sweep, and on demand via `trace session discover-subagents <id>`. Distinct
+  sweep, and on demand via `eqnx session discover-subagents <id>`. Distinct
   from a Spawned child — a subagent is *inside* another run, not its own
   top-level session.
 - **Attribution** — establishing a child session's `parentSessionId`/`origin`.
@@ -76,11 +76,11 @@ docs, and architecture reviews so names stay consistent.
 ## Tool integration seams
 
 - **Integration Target** — one supported agent tool paired with one user-level
-  config root; this `(tool, root)` pair is the identity Trace registers,
+  config root; this `(tool, root)` pair is the identity EQNX registers,
   reconciles, and removes.
 - **Integration Registry** — the machine-local record of the package manager
   owning the installed CLI and every registered Integration Target.
-- **Reconciliation** — making every Trace-owned artifact for selected
+- **Reconciliation** — making every EQNX-owned artifact for selected
   Integration Targets match the currently installed CLI package, after the
   complete target set passes guardrails.
 

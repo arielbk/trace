@@ -39,7 +39,7 @@ First release under the EQNX npm organization, continuing the Trace codebase.
 The entries below describe the earlier `@arielbk/trace` releases.
 
 Notable changes to `@arielbk/trace`. Older releases are documented in the
-[GitHub releases](https://github.com/arielbk/trace/releases).
+[GitHub releases](https://github.com/arielbk/eqnx/releases).
 
 ## 0.21.0
 
