@@ -1,3 +1,5 @@
+import { resolveConfiguredServerUrl } from "@trace/core";
+import { configSetOperation, validateServerUrl } from "./config-operations.ts";
 import type { ConnectionServiceDependencies } from "../connection-service.ts";
 import { IntegrationRegistry } from "./integration-registry.ts";
 import {
@@ -71,7 +73,20 @@ export async function interactiveSetupOperation(
     service: ctx.service,
   });
   if (preview.exitCode !== 0) return preview;
-  prompt.note(preview.stdout.trimEnd(), "Setup plan");
+  let serverUrl = "";
+  if (!resolveConfiguredServerUrl(ctx.env)) {
+    const answer = await prompt.serverUrl();
+    if (answer.cancelled) return success(CANCELLED);
+    serverUrl = answer.value.trim();
+    if (serverUrl) {
+      const invalid = validateServerUrl(serverUrl);
+      if (invalid) return invalid;
+    }
+  }
+  prompt.note(
+    preview.stdout.trimEnd() + (serverUrl ? `\nSync server: ${serverUrl}` : ""),
+    "Setup plan",
+  );
   if (preview.skippedTargets && preview.skippedTargets.length > 0) {
     const labels = preview.skippedTargets.map(({ label }) => label);
     const skipped =
@@ -88,6 +103,15 @@ export async function interactiveSetupOperation(
     message: "Install EQNX into these targets?",
   });
   if (confirmed.cancelled || !confirmed.value) return success(CANCELLED);
+
+  if (serverUrl) {
+    try {
+      const configured = configSetOperation(["server-url", serverUrl], ctx);
+      if (configured.exitCode !== 0) return configured;
+    } catch (error) {
+      return failure(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return reconcileSelectedTargets(selected, {
     apply: true,

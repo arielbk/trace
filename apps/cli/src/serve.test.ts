@@ -195,7 +195,7 @@ test("eqnx serve advertises only the hosted allowlist to the hosted board", () =
     service: "trace",
     protocolVersion: 1,
     runtimeVersion: "9.8.7",
-    capabilities: ["taskDetails", "taskMutations"],
+    capabilities: ["taskDetails", "taskMutations", "account", "sync"],
   });
 });
 
@@ -673,7 +673,7 @@ test("eqnx serve rejects reads outside the hosted spike allowlist", () => {
   const outside = [
     `/api/tasks/${taskId}/export`,
     `/api/tasks/${taskId}/docs/checkbox`,
-    "/api/sync/status",
+    "/api/sync/docs",
   ];
 
   for (const path of outside) {
@@ -712,7 +712,9 @@ test("what the hosted handshake advertises is exactly what the bridge allows", (
     docEdits: () => hosted("POST", `/api/tasks/${taskId}/docs/checkbox`),
     taskExports: () => hosted("GET", `/api/tasks/${taskId}/export`),
     account: () => hosted("POST", "/api/local-auth/login"),
-    sync: () => hosted("POST", "/api/sync"),
+    // The granted slice of `sync` is the status read; commanding a sync run
+    // stays local-only, which the restore-routes test pins separately.
+    sync: () => hosted("GET", "/api/sync/status"),
   };
 
   const advertised = new Set(
@@ -1252,4 +1254,87 @@ test("management revocation and reset take effect immediately", () => {
   expect(connection.verifyBrowserToken(token)).toBeNull();
   // Reset revokes browsers; local management authority survives it.
   expect(manage("GET", "/api/management/browsers").statusCode).toBe(200);
+});
+
+test("the hosted board may drive the restore routes it needs and nothing more", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const { connection, token } = pairedConnection();
+  const hosted = (method: string, path: string, body?: string) =>
+    dispatch(
+      method,
+      path,
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
+      allowedOrigin,
+      connection,
+      undefined,
+      body,
+    );
+
+  const granted = [
+    ["GET", "/api/sync/status"],
+    ["GET", "/api/local-auth/login/current"],
+    ["GET", "/api/local-auth/login/an-attempt"],
+    ["POST", "/api/local-auth/login"],
+    ["POST", "/api/local-auth/login/an-attempt/existing-key"],
+    ["POST", "/api/local-auth/login/an-attempt/cancel"],
+  ] as const;
+  for (const [method, path] of granted) {
+    expect([path, hosted(method, path).statusCode]).not.toEqual([path, 403]);
+  }
+
+  // Replacing a key destroys readable documents, acknowledging one would carry
+  // a plaintext key to a remote origin, logout and pushes are the machine's own
+  // business: none of them belong to recovering existing work.
+  const refused = [
+    ["POST", "/api/local-auth/login/an-attempt/replacement-key"],
+    ["POST", "/api/local-auth/login/an-attempt/acknowledge-key"],
+    ["POST", "/api/local-auth/logout"],
+    ["POST", "/api/sync"],
+  ] as const;
+  for (const [method, path] of refused) {
+    expect([path, hosted(method, path).statusCode]).toEqual([path, 403]);
+  }
+});
+
+test("a hosted restore POST may preflight a JSON body, and nothing else may", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const preflight = (path: string, method: string, headers: string) =>
+    dispatch(
+      "OPTIONS",
+      path,
+      undefined,
+      undefined,
+      {
+        origin: allowedOrigin,
+        "access-control-request-method": method,
+        "access-control-request-headers": headers,
+      },
+      allowedOrigin,
+    );
+
+  const key = preflight(
+    "/api/local-auth/login/an-attempt/existing-key",
+    "POST",
+    "authorization, content-type",
+  );
+  expect(key.statusCode).toBe(204);
+  expect(key.headers["access-control-allow-headers"]).toBe(
+    "authorization, content-type",
+  );
+  expect(key.headers["access-control-allow-methods"]).toBe("POST, OPTIONS");
+
+  // A bodyless action need not announce a content type, and is not forced to.
+  expect(
+    preflight("/api/local-auth/login/an-attempt/cancel", "POST", "authorization")
+      .statusCode,
+  ).toBe(204);
+
+  // Widening the account routes must not widen the task surface: a JSON body on
+  // a task action is still not something this bridge accepts.
+  expect(
+    preflight(`/api/tasks/${taskId}/pin`, "POST", "authorization, content-type")
+      .statusCode,
+  ).toBe(403);
 });

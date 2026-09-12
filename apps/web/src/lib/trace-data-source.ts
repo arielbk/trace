@@ -1,5 +1,5 @@
 import {
-  HOSTED_CAPABILITIES,
+  LEGACY_HOSTED_CAPABILITIES,
   TRACE_PROTOCOL_VERSION,
   type TraceCapability,
   type TraceConnection,
@@ -80,10 +80,13 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
  * A protocol-1 runtime predating capability advertisement answers a fixed
  * cross-origin allowlist: reads plus archive/unarchive/pin/unpin. Assuming that
  * and no more keeps a legacy runtime working without inventing authority a
- * newer runtime might have declined to grant.
+ * newer runtime might have declined to grant — and, just as importantly,
+ * without offering the user an account or sync control that such a runtime
+ * would answer with a flat refusal.
  */
-const LEGACY_LOCAL_CAPABILITIES: TraceDataSourceCapabilities =
-  localCapabilities(HOSTED_CAPABILITIES);
+const LEGACY_LOCAL_CAPABILITIES: TraceDataSourceCapabilities = localCapabilities(
+  LEGACY_HOSTED_CAPABILITIES,
+);
 
 /** Widen the handshake's capability names into the board's capability flags. */
 function localCapabilities(

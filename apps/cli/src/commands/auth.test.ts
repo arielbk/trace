@@ -10,6 +10,7 @@ import {
   readSyncStatus,
 } from "@trace/core";
 import { runTraceCli } from "../trace.ts";
+import { readAuthToken } from "../auth-service.ts";
 import { runAuthCommand } from "./auth.ts";
 import { writeStoredDocCryptoKey } from "./key.ts";
 
@@ -85,9 +86,10 @@ test("login polls the device flow and persists its bearer token privately", asyn
               interval: 0,
             });
           }
+          if (String(url).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
           if (String(url).endsWith("/get-session")) {
             return Response.json({
-              user: { name: "The Octocat", email: "octocat@github.com" },
+              user: { id: "octocat", name: "The Octocat", email: "octocat@github.com" },
             });
           }
           polls += 1;
@@ -96,6 +98,8 @@ test("login polls the device flow and persists its bearer token privately", asyn
                 { error: "authorization_pending" },
                 { status: 400 },
               )
+            : String(url).endsWith("/get-session") ? Response.json({ user: { id: "octocat" } })
+            : String(url).endsWith("/docs/manifests") ? Response.json({ manifests: [], wrappedKeys: [] })
             : Response.json({ access_token: "bearer-token" });
         },
         openBrowser: (url) => openedUrls.push(url),
@@ -137,6 +141,7 @@ test("login polls the device flow and persists its bearer token privately", asyn
         url: "http://auth.test/api/auth/get-session",
         body: undefined,
       },
+      { url: "http://auth.test/api/sync/docs/manifests", body: undefined },
     ]);
     expect(JSON.parse(readFileSync(join(home, ".trace", "auth.json"), "utf8"))).toEqual({
       accessToken: "bearer-token",
@@ -168,6 +173,7 @@ test("login generates and displays a document key for an empty account", async (
           if (String(url).endsWith("/docs/manifests")) {
             return Response.json({ manifests: [], wrappedKeys: [] });
           }
+          if (String(url).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
           if (String(url).endsWith("/get-session")) {
             return Response.json({ user: { id: "user" } });
           }
@@ -359,6 +365,8 @@ test("whoami reads the stored bearer token and logout clears it", async () => {
                 verification_uri: "https://auth.test/device",
                 interval: 0,
               })
+            : String(url).endsWith("/get-session") ? Response.json({ user: { id: "octocat" } })
+            : String(url).endsWith("/docs/manifests") ? Response.json({ manifests: [], wrappedKeys: [] })
             : Response.json({ access_token: "bearer-token" }),
         openBrowser: () => {},
         sleep: async () => undefined,
@@ -376,7 +384,7 @@ test("whoami reads the stored bearer token and logout clears it", async () => {
             authorization: "Bearer bearer-token",
           });
           return Response.json({
-            user: { name: "The Octocat", email: "octocat@github.com" },
+            user: { id: "octocat", name: "The Octocat", email: "octocat@github.com" },
           });
         },
         sleep: async () => undefined,
@@ -457,9 +465,10 @@ test("login records the signed-in identity and logout clears it for the board", 
               interval: 0,
             });
           }
+          if (String(url).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
           if (String(url).endsWith("/get-session")) {
             return Response.json({
-              user: { name: "The Octocat", email: "octocat@github.com" },
+              user: { id: "octocat", name: "The Octocat", email: "octocat@github.com" },
             });
           }
           return Response.json({ access_token: "bearer-token" });
@@ -506,8 +515,9 @@ test("a fresh login does not inherit an abandoned sync run", async () => {
               interval: 0,
             });
           }
+          if (String(url).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
           if (String(url).endsWith("/get-session")) {
-            return Response.json({ user: { name: "The Octocat" } });
+            return Response.json({ user: { id: "octocat", name: "The Octocat" } });
           }
           return Response.json({ access_token: "bearer-token" });
         },
@@ -573,6 +583,8 @@ test("login resolves the server from config.json when the env var is absent", as
                 verification_uri: "https://auth.test/device",
                 interval: 0,
               })
+            : String(url).endsWith("/get-session") ? Response.json({ user: { id: "octocat" } })
+            : String(url).endsWith("/docs/manifests") ? Response.json({ manifests: [], wrappedKeys: [] })
             : Response.json({ access_token: "bearer-token" });
         },
         openBrowser: () => {},
@@ -585,4 +597,18 @@ test("login resolves the server from config.json when the env var is absent", as
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("terminal login cannot replace the account bound to the local store", async () => {
+  const home = tmp("trace-auth-account-conflict-");
+  const env = { HOME: home, TRACE_SERVER_URL: "http://auth.test" };
+  try {
+    const { resolveDatabasePath, writeSyncIdentity } = await import("@trace/core");
+    writeSyncIdentity(resolveDatabasePath(env), { serverUrl: env.TRACE_SERVER_URL, accountId: "original" });
+    writeStoredDocCryptoKey(env, "aa".repeat(32));
+    const result = await runAuthCommand("login", env, { fetch: loginFetch({ manifests: [], wrappedKeys: [] }), sleep: async () => {}, openBrowser: () => {}, prompt: async () => "" });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("original");
+    expect(readAuthToken(env)).toBeNull();
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });

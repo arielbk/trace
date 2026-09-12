@@ -167,6 +167,7 @@ async function startRecordingSyncServer(
     // rows the response did not carry.
     const cursor = emitsCursors ? { cursor: String(seq) } : {};
 
+    if (path === "/api/auth/get-session") return json({ user: { id: "fixture-user" } });
     if (path === "/api/sync/push") {
       const payload = JSON.parse(String(init?.body ?? "{}")) as Partial<SyncPayload>;
       let accepted = 0;

@@ -469,6 +469,9 @@ test("a machine with no sync server says Cloud Sync is unavailable rather than o
   expect(menu).toHaveTextContent(
     "Cloud Sync is not configured on this machine.",
   );
+  // A second machine is where this state is met most: the fix belongs on
+  // screen, not in the docs the user would have to go and find.
+  expect(menu).toHaveTextContent("eqnx config set server-url");
   expect(menu).not.toHaveTextContent("eqnx login");
 });
 

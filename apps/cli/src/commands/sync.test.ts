@@ -122,6 +122,7 @@ test("sync sends local rows with the bearer token and prints a summary", async (
   store.close();
   const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
     expect(init?.headers).toMatchObject({ authorization: "Bearer secret" });
+    if (String(input).endsWith("/get-session")) return Response.json({ user: { id: "fixture-user" } });
     if (String(input).endsWith("/blobs/missing")) return Response.json([]);
     if (String(input).endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
     if (String(input).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
@@ -139,7 +140,7 @@ test("sync sends local rows with the bearer token and prints a summary", async (
     stdout: "Sync complete: 1 pushed, 0 pulled.\n",
     stderr: "",
   });
-  expect(fetch).toHaveBeenCalledTimes(5);
+  expect(fetch).toHaveBeenCalledTimes(7);
 
   // The board can read the last-sync outcome from beside the database.
   const status = readSyncStatus(databasePath);
@@ -157,6 +158,7 @@ test("a second sync asks the server only for what it has not already seen", asyn
   const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
     const url = new URL(String(input));
     switch (url.pathname) {
+      case "/api/auth/get-session": return Response.json({ user: { id: "fixture-user" } });
       case "/api/sync/blobs/missing":
         return Response.json([]);
       case "/api/sync/docs/push":
@@ -183,7 +185,7 @@ test("a second sync asks the server only for what it has not already seen", asyn
   // The watermark survives the process exiting: it lives in the database, not
   // in the transport, so the second `eqnx sync` picks up where the first left
   // off rather than asking for full state again.
-  expect(pulls).toEqual(["rows:", "docs:", "rows:42", "docs:9"]);
+  expect(pulls).toEqual(["docs:", "rows:", "docs:", "rows:42", "docs:9"]);
 });
 
 test("a failed sync records the error for the board without throwing", async () => {
@@ -211,7 +213,7 @@ test("a failed sync records the error for the board without throwing", async () 
   const status = readSyncStatus(databasePath);
   expect(status.state).toBe("failed");
   if (status.state === "failed") {
-    expect(status.lastError).toContain("server returned 500");
+    expect(status.lastError).toContain("Could not confirm which account");
   }
 });
 
@@ -250,6 +252,7 @@ test("explicit sync still synchronizes while auto-sync is disabled", async () =>
   disableAutoSync(home);
 
   const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+    if (String(input).endsWith("/get-session")) return Response.json({ user: { id: "fixture-user" } });
     if (String(input).endsWith("/blobs/missing")) return Response.json([]);
     if (String(input).endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
     if (String(input).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
@@ -276,6 +279,7 @@ test("a sync in flight is visible to the board and cleared by its own outcome", 
   const statesDuringSync: string[] = [];
   const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
     statesDuringSync.push(readSyncStatus(databasePath).state);
+    if (String(input).endsWith("/get-session")) return Response.json({ user: { id: "fixture-user" } });
     if (String(input).endsWith("/blobs/missing")) return Response.json([]);
     if (String(input).endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
     if (String(input).endsWith("/docs/manifests")) return Response.json({ manifests: [], wrappedKeys: [] });
@@ -307,4 +311,46 @@ test("a failed sync clears its run so the board never spins forever", async () =
   await runSyncCommand({ HOME: home, TRACE_SERVER_URL: "https://sync.test" }, { fetch });
 
   expect(readSyncStatus(databasePath)).toMatchObject({ state: "failed" });
+});
+
+test("changing the server URL never sends a bound store's token to the new server", async () => {
+  const home = loggedInHome();
+  const env = { HOME: home, TRACE_SERVER_URL: "https://different.test" };
+  const { resolveDatabasePath, writeSyncIdentity } = await import("@trace/core");
+  writeSyncIdentity(resolveDatabasePath(env), { serverUrl: "https://sync.test", accountId: "original" });
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  const result = await runSyncCommand(env, { fetch });
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toMatch(/different.*server|server.*different/i);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("sync refuses a token for a different account before pushing rows", async () => {
+  const home = loggedInHome();
+  const env = { HOME: home, TRACE_SERVER_URL: "https://sync.test" };
+  const { resolveDatabasePath, writeSyncIdentity } = await import("@trace/core");
+  writeSyncIdentity(resolveDatabasePath(env), { serverUrl: env.TRACE_SERVER_URL, accountId: "original" });
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => Response.json({ user: { id: "different" } }));
+  const result = await runSyncCommand(env, { fetch });
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("original");
+  expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["https://sync.test/api/auth/get-session"]);
+});
+
+test("a legacy store cannot push its history into an unproven empty account", async () => {
+  const home = loggedInHome();
+  const env = { HOME: home, TRACE_SERVER_URL: "https://sync.test" };
+  const { resolveDatabasePath, readSyncIdentity } = await import("@trace/core");
+  const store = openTraceStore(resolveDatabasePath(env));
+  store.createTask("Previously synced work");
+  store.setSyncCursor("rows", "42");
+  store.close();
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input) => String(input).endsWith("/get-session")
+    ? Response.json({ user: { id: "unknown-account" } })
+    : Response.json({ manifests: [], wrappedKeys: [] }));
+  const result = await runSyncCommand(env, { fetch });
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("could not be proven");
+  expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  expect(readSyncIdentity(resolveDatabasePath(env))).toBeNull();
 });

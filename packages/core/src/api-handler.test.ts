@@ -100,7 +100,7 @@ test("GET /api/connection narrows the capabilities it advertises to a hosted cli
     service: "trace",
     protocolVersion: 1,
     runtimeVersion: "1.2.3",
-    capabilities: ["taskDetails", "taskMutations"],
+    capabilities: ["taskDetails", "taskMutations", "account", "sync"],
   });
 });
 

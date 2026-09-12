@@ -144,6 +144,43 @@ describe("TasksPage", () => {
   });
 
 
+  test("a hosted board whose runtime grants the account offers signing in", async () => {
+    const origin = "http://127.0.0.1:4317";
+    localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));
+    const task = summary({ id: "task-1", slug: "cli-work", title: "CLI work" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/api/connection")) {
+          return Response.json({
+            service: "trace",
+            protocolVersion: 1,
+            capabilities: ["taskDetails", "taskMutations", "account", "sync"],
+          });
+        }
+        if (url.includes("/api/sync/status")) {
+          return Response.json({ state: "logged-out", serverConfigured: true });
+        }
+        return Response.json(url.includes("/api/tasks/") ? task : [task]);
+      }),
+    );
+
+    const source = new LocalTraceSource(origin);
+    await source.connect();
+
+    render(
+      <TraceDataSourceProvider source={source}>
+        <TasksPage />
+      </TraceDataSourceProvider>,
+      { wrapper: makeQueryWrapper() },
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Account" }),
+    ).toBeVisible();
+  });
+
   test("a hosted pin refreshes the cached task list on success and leaves it intact on failure", async () => {
     const origin = "http://127.0.0.1:4317";
     localStorage.setItem(`trace.bridgeCredential:${origin}`, "a".repeat(43));

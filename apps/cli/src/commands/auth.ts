@@ -1,6 +1,14 @@
+import {
+  assertLegacyStoreAccount,
+  assertStoreAccount,
+  commitAccountCredentials,
+  resolveSyncAccount,
+} from "../account-binding.ts";
 import { createInterface } from "node:readline/promises";
 import {
   generateTaskKey,
+  resolveDatabasePath,
+  updateSyncStatusFile,
   REPLACEMENT_KEY_CONFIRMATION,
   REPLACEMENT_KEY_WARNING,
 } from "@trace/core";
@@ -11,18 +19,13 @@ import {
   identityFromSession,
   pollForAccessToken,
   readAuthToken,
-  recordSignedIn,
   requestDeviceAuthorization,
   requireServerUrl,
   validateDocumentKey,
-  writeAuthToken,
   type AuthFetch,
 } from "../auth-service.ts";
 import { openBrowser } from "../open-browser.ts";
-import {
-  readStoredDocCryptoKey,
-  writeStoredDocCryptoKey,
-} from "./key.ts";
+import { readStoredDocCryptoKey } from "./key.ts";
 import type { CommandResult, Env } from "./seam.ts";
 
 export { readAuthToken } from "../auth-service.ts";
@@ -94,10 +97,21 @@ async function login(
   openBrowser(device.verificationUrl);
 
   const accessToken = await pollForAccessToken(serverUrl, fetch, sleep, device);
-  const keyOutput = await ensureDocCryptoKey(env, serverUrl, fetch, accessToken, ask);
-  writeAuthToken(env, { accessToken });
-  await recordSignedIn(env, serverUrl, fetch, accessToken);
-  return success(`${onOutput ? "" : prompt}Signed in.\n${keyOutput}`);
+  const account = await resolveSyncAccount(serverUrl, fetch, accessToken);
+  assertStoreAccount(env, serverUrl, account);
+  const key = await ensureDocCryptoKey(env, serverUrl, fetch, accessToken, ask);
+  commitAccountCredentials(env, serverUrl, account, accessToken, key.masterKey);
+  try {
+    updateSyncStatusFile(resolveDatabasePath(env), {
+      loggedIn: true,
+      identity: account.identity,
+      lastError: undefined,
+      activeRun: undefined,
+    });
+  } catch {
+    /* The header is best-effort after credentials commit. */
+  }
+  return success(`${onOutput ? "" : prompt}Signed in.\n${key.output}`);
 }
 
 async function ensureDocCryptoKey(
@@ -106,22 +120,27 @@ async function ensureDocCryptoKey(
   fetch: AuthFetch,
   accessToken: string,
   ask: AuthDependencies["prompt"],
-): Promise<string> {
-  if (readStoredDocCryptoKey(env)) return "";
-
+): Promise<{ masterKey?: string; output: string }> {
+  const stored = readStoredDocCryptoKey(env);
   const { manifests, wrappedKeys } = await fetchDocManifests(
     serverUrl,
     fetch,
     accessToken,
   );
 
+  assertLegacyStoreAccount(env, wrappedKeys);
+  if (stored) {
+    if (wrappedKeys.length > 0) validateDocumentKey(stored, wrappedKeys);
+    return { output: "" };
+  }
   if (manifests.length === 0) {
     const masterKey = generateTaskKey();
-    writeStoredDocCryptoKey(env, masterKey);
-    return (
-      "Save this document encryption key somewhere safe. It will only be shown once during setup:\n" +
-      `${masterKey}\n`
-    );
+    return {
+      masterKey,
+      output:
+        "Save this document encryption key somewhere safe. It will only be shown once during setup:\n" +
+        `${masterKey}\n`,
+    };
   }
 
   const entered = (
@@ -130,19 +149,20 @@ async function ensureDocCryptoKey(
     )
   ).trim();
   if (entered.toUpperCase() === "NEW") {
-    return generateFreshKeyForExistingAccount(env, ask);
+    return generateFreshKeyForExistingAccount(ask);
   }
 
   // Validated against the account's own wrapped key, by the same helper the
   // board's login uses, so neither surface can be the lenient one.
-  writeStoredDocCryptoKey(env, validateDocumentKey(entered, wrappedKeys));
-  return "Document encryption key saved.\n";
+  return {
+    masterKey: validateDocumentKey(entered, wrappedKeys),
+    output: "Document encryption key saved.\n",
+  };
 }
 
 async function generateFreshKeyForExistingAccount(
-  env: Env,
   ask: AuthDependencies["prompt"],
-): Promise<string> {
+): Promise<{ masterKey: string; output: string }> {
   const confirmation = await ask(
     `Warning: ${REPLACEMENT_KEY_WARNING} Type ${REPLACEMENT_KEY_CONFIRMATION} to continue: `,
   );
@@ -150,11 +170,12 @@ async function generateFreshKeyForExistingAccount(
     throw new Error("Fresh document encryption key generation cancelled");
   }
   const masterKey = generateTaskKey();
-  writeStoredDocCryptoKey(env, masterKey);
-  return (
-    "Save this new document encryption key somewhere safe. Existing synced documents require the old key:\n" +
-    `${masterKey}\n`
-  );
+  return {
+    masterKey,
+    output:
+      "Save this new document encryption key somewhere safe. Existing synced documents require the old key:\n" +
+      `${masterKey}\n`,
+  };
 }
 
 function logout(env: Env): CommandResult {

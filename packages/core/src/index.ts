@@ -23,6 +23,7 @@ export { handleTraceApiRequest, writeTraceApiResponse } from "./api-handler.ts";
 export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
 export {
   HOSTED_CAPABILITIES,
+  LEGACY_HOSTED_CAPABILITIES,
   SAME_ORIGIN_CAPABILITIES,
   DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
@@ -69,6 +70,13 @@ export {
   writeConfigFile,
 } from "./config.ts";
 export type { TraceConfigFile } from "./config.ts";
+export {
+  isSameSyncAccount,
+  readSyncIdentity,
+  resolveSyncIdentityPath,
+  writeSyncIdentity,
+} from "./sync-identity.ts";
+export type { SyncIdentityFile } from "./sync-identity.ts";
 export { resolveProjectRoot, resolveProjectRootArg } from "./project-root.ts";
 export { readProjectFingerprints } from "./project-fingerprint.ts";
 export type { ProjectFingerprints } from "./project-fingerprint.ts";

@@ -233,6 +233,7 @@ test("a temporary HOME has no login session to install into", () => {
 /** A prompt that selects everything offered and answers the confirmation. */
 function fakePrompt(confirm: boolean): SetupPrompt {
   return {
+    async serverUrl() { return { cancelled: false, value: "" } as const; },
     async selectTargets(request: TargetSelectionRequest) {
       return { cancelled: false, value: request.initialValues } as PromptResult<
         string[]

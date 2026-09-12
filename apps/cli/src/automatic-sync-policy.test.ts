@@ -232,6 +232,7 @@ async function withSyncedMachine(
 function stubSyncServer(): typeof globalThis.fetch {
   return vi.fn<typeof globalThis.fetch>(async (input) => {
     const url = String(input);
+    if (url.endsWith("/get-session")) return Response.json({ user: { id: "fixture-user" } });
     if (url.endsWith("/blobs/missing")) return Response.json([]);
     if (url.endsWith("/docs/push")) return Response.json({ accepted: 0, uploaded: 0 });
     if (url.endsWith("/docs/manifests"))

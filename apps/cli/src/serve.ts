@@ -368,7 +368,7 @@ function applyHostedApiCors(
   if (method !== "OPTIONS") return false;
 
   const allowedMethod = hostedMethod;
-  const allowedHeaders = isPairing ? ["content-type"] : ["authorization"];
+  const allowedHeaders = hostedAllowedHeaders(path, isPairing);
   if (req.headers["access-control-request-method"] !== allowedMethod) {
     res.statusCode = 403;
     res.end("Cross-origin API access denied");
@@ -383,10 +383,11 @@ function applyHostedApiCors(
           .map((header) => header.trim().toLowerCase())
           .filter(Boolean)
       : [];
-  if (
-    normalizedHeaders.length !== allowedHeaders.length ||
-    normalizedHeaders.some((header, index) => header !== allowedHeaders[index])
-  ) {
+  // A subset rather than an exact match: a bodyless action need not announce a
+  // content type. Anything outside the path's own list is still refused, so
+  // this widens which requests preflight cleanly, never which headers are
+  // allowed through.
+  if (normalizedHeaders.some((header) => !allowedHeaders.includes(header))) {
     res.statusCode = 403;
     res.end("Cross-origin API access denied");
     return true;
@@ -401,6 +402,21 @@ function applyHostedApiCors(
   res.statusCode = 204;
   res.end();
   return true;
+}
+
+/**
+ * The request headers a hosted preflight may announce for this path. Pairing
+ * predates browser credentials and carries only a JSON body; everything else
+ * carries the browser credential. The restore login routes carry both, because
+ * a provider choice and a document key are JSON request bodies — and they are
+ * the only paths that get `content-type` alongside `authorization`, so
+ * widening the account surface leaves the task surface exactly as narrow.
+ */
+function hostedAllowedHeaders(path: string, isPairing: boolean): string[] {
+  if (isPairing) return ["content-type"];
+  return isRestoreLoginActionPath(normalizePath(path))
+    ? ["authorization", "content-type"]
+    : ["authorization"];
 }
 
 function rejectUnauthorizedHostedRequest(
@@ -442,32 +458,68 @@ function rejectUnauthorizedHostedRequest(
 
 /**
  * The read-only surface the hosted board may reach cross-origin: the connection
- * handshake, the task list, and one task's timeline and docs. Everything else —
- * exports, mutations, sync, machine authentication — stays local-only, so the
- * hosted spike can render a task without widening the bridge.
+ * handshake, the task list, one task's timeline and docs, and the two reads the
+ * restore journey needs — how this machine's sync is doing, and where a login
+ * it started has got to. Exports and doc contents-by-hash stay local-only.
  */
 function isHostedReadPath(path: string): boolean {
-  const normalized =
-    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  const normalized = normalizePath(path);
   return (
     normalized === "/api/connection" ||
     normalized === "/api/tasks" ||
-    /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized)
+    /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized) ||
+    normalized === "/api/sync/status" ||
+    isRestoreLoginReadPath(normalized)
   );
 }
 
 /**
  * The mutations the hosted board may perform cross-origin: archiving and
- * pinning a task. Each is reversible, carries no request body, and touches only
- * the task's own board metadata. Doc-checkbox writes, exports, sync, and
- * machine authentication stay local-only.
+ * pinning a task, plus the three login steps that recover existing work. Each
+ * task action is reversible, carries no request body, and touches only the
+ * task's own board metadata. Doc-checkbox writes, exports, and explicit sync
+ * runs stay local-only.
  */
 function isHostedActionPath(path: string): boolean {
-  const normalized =
-    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
-  return /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(
-    normalized,
+  const normalized = normalizePath(path);
+  return (
+    /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(normalized) ||
+    isRestoreLoginActionPath(normalized)
   );
+}
+
+/**
+ * Reading a login attempt: the one the board just started, or the one this
+ * machine is still standing in the middle of. Neither view can carry the bearer
+ * token by construction (see `LoginAttemptView`), which is what makes them safe
+ * to answer to a remote origin at all.
+ */
+function isRestoreLoginReadPath(normalized: string): boolean {
+  return (
+    normalized === "/api/local-auth/login/current" ||
+    /^\/api\/local-auth\/login\/[^/]+$/.test(normalized)
+  );
+}
+
+/**
+ * The three writes that recover existing work: start a login, offer the
+ * account's existing document key, give up on the attempt.
+ *
+ * The rest of `/api/local-auth` is deliberately absent, and the prefix is never
+ * allowed wholesale. `replacement-key` makes an account's synced documents
+ * permanently unreadable; `acknowledge-key` is the one response that carries a
+ * plaintext document key, which must not cross to a remote origin; `logout`
+ * unpicks this machine's own credentials rather than recovering anything.
+ */
+function isRestoreLoginActionPath(normalized: string): boolean {
+  return (
+    normalized === "/api/local-auth/login" ||
+    /^\/api\/local-auth\/login\/[^/]+\/(existing-key|cancel)$/.test(normalized)
+  );
+}
+
+function normalizePath(path: string): string {
+  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
 }
 
 /** Local management lives under one prefix so the browser gates below can stay
