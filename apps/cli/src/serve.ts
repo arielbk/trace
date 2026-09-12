@@ -7,6 +7,7 @@ import {
 } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual } from "node:crypto";
 import {
   handleLocalAuthRequest,
   handleTraceApiRequest,
@@ -18,12 +19,19 @@ import {
 } from "@trace/core";
 import { requestAutomaticSync } from "./commands/sync.ts";
 import { createLocalAuthService } from "./local-auth.ts";
+import { readOrCreateBridgeCredential } from "./bridge-credential.ts";
+import {
+  createBridgePairing,
+  createBridgePairingUrl,
+  type BridgePairing,
+} from "./bridge-pairing.ts";
 
 /** Default port `trace serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
 
 export type TraceServer = {
   url: string;
+  pairingUrl?: string;
   port: number;
   close: () => Promise<void>;
 };
@@ -37,6 +45,9 @@ export type StartTraceServeOptions = {
    * spawn. Overridden by tests. */
   triggerSync?: (env: Record<string, string | undefined>) => void;
 };
+
+/** Exact hosted origin allowed to pair with and read this loopback API. */
+export const TRACE_WEB_ORIGIN_ENV_VAR = "TRACE_WEB_ORIGIN";
 
 /** How many consecutive ports to try when the preferred one is taken. */
 const PORT_FALLBACK_ATTEMPTS = 10;
@@ -163,12 +174,42 @@ export function createServeRequestListener(
   /** Runs board-initiated login/logout. Absent means this host serves no
    * `/api/local-auth` routes. */
   localAuth?: LocalAuthService,
+  /** Exact HTTPS origin allowed to call the local API cross-origin. */
+  allowedWebOrigin?: string,
+  /** Installation-scoped bearer token required by the hosted origin. */
+  bridgeCredential?: string,
+  /** Process-local, one-use exchange for the installation credential. */
+  bridgePairing?: BridgePairing,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
 
+    if (!isLoopbackHostHeader(req.headers?.host)) {
+      res.statusCode = 421;
+      res.end("Loopback Host required");
+      return;
+    }
+
+    if (applyHostedApiCors(req, res, url, method, allowedWebOrigin)) return;
+    if (
+      rejectUnauthorizedHostedRequest(
+        req,
+        res,
+        url,
+        method,
+        allowedWebOrigin,
+        bridgeCredential,
+      )
+    ) {
+      return;
+    }
+
     const dispatch = (body?: string): void => {
+      if (handleBridgePairingRequest(res, url, method, body, bridgePairing)) {
+        return;
+      }
+
       // Auth routes are asynchronous (they reach the hosted server), so they
       // are routed ahead of the synchronous database API rather than through it.
       const authResponse = localAuth
@@ -204,6 +245,247 @@ export function createServeRequestListener(
       dispatch();
     }
   };
+}
+
+/**
+ * Grant browser access only to the configured hosted board. CORS is a browser
+ * permission rather than authentication; bearer authorization and the one-time
+ * pairing exchange remain separate checks below.
+ */
+function applyHostedApiCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  allowedWebOrigin?: string,
+): boolean {
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  if (!path.startsWith("/api/")) return false;
+
+  const requestOrigin = req.headers?.origin;
+  if (!requestOrigin || isSameOriginRequest(req, requestOrigin)) return false;
+
+  const isPairing = isPairingPath(path);
+  // The one method each hosted path answers; anything unlisted has none, and
+  // a hosted request using the other method is refused as if the path were.
+  const hostedMethod = isPairing
+    ? "POST"
+    : isHostedReadPath(path)
+      ? "GET"
+      : isHostedActionPath(path)
+        ? "POST"
+        : undefined;
+
+  // CORS alone does not prevent a cross-origin request from reaching the
+  // server. Reject every non-local browser origin outside this deliberately
+  // tiny method-and-path allowlist so the bridge cannot become a CSRF path.
+  if (
+    requestOrigin !== allowedWebOrigin ||
+    !hostedMethod ||
+    (method !== hostedMethod && method !== "OPTIONS")
+  ) {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
+  res.setHeader("access-control-allow-origin", requestOrigin);
+  res.setHeader("vary", "Origin");
+  if (method !== "OPTIONS") return false;
+
+  const allowedMethod = hostedMethod;
+  const allowedHeaders = isPairing ? ["content-type"] : ["authorization"];
+  if (req.headers["access-control-request-method"] !== allowedMethod) {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
+  const requestedHeaders = req.headers["access-control-request-headers"];
+  const normalizedHeaders =
+    typeof requestedHeaders === "string"
+      ? requestedHeaders
+          .split(",")
+          .map((header) => header.trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+  if (
+    normalizedHeaders.length !== allowedHeaders.length ||
+    normalizedHeaders.some((header, index) => header !== allowedHeaders[index])
+  ) {
+    res.statusCode = 403;
+    res.end("Cross-origin API access denied");
+    return true;
+  }
+
+  res.setHeader("access-control-allow-methods", `${allowedMethod}, OPTIONS`);
+  res.setHeader("access-control-allow-headers", allowedHeaders.join(", "));
+  res.setHeader("access-control-max-age", "600");
+  if (req.headers["access-control-request-private-network"] === "true") {
+    res.setHeader("access-control-allow-private-network", "true");
+  }
+  res.statusCode = 204;
+  res.end();
+  return true;
+}
+
+function rejectUnauthorizedHostedRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  allowedWebOrigin?: string,
+  bridgeCredential?: string,
+): boolean {
+  if (!bridgeCredential || method === "OPTIONS") return false;
+
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  const requestOrigin = req.headers?.origin;
+  if (
+    !path.startsWith("/api/") ||
+    (method === "POST" && isPairingPath(path)) ||
+    !requestOrigin ||
+    requestOrigin !== allowedWebOrigin ||
+    isSameOriginRequest(req, requestOrigin)
+  ) {
+    return false;
+  }
+
+  const authorization = req.headers?.authorization;
+  const supplied =
+    typeof authorization === "string" && authorization.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length)
+      : "";
+  if (credentialsMatch(supplied, bridgeCredential)) return false;
+
+  res.statusCode = 401;
+  res.setHeader("www-authenticate", "Bearer");
+  res.end("Authorization required");
+  return true;
+}
+
+/**
+ * The read-only surface the hosted board may reach cross-origin: the connection
+ * handshake, the task list, and one task's timeline and docs. Everything else —
+ * exports, mutations, sync, machine authentication — stays local-only, so the
+ * hosted spike can render a task without widening the bridge.
+ */
+function isHostedReadPath(path: string): boolean {
+  const normalized =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return (
+    normalized === "/api/connection" ||
+    normalized === "/api/tasks" ||
+    /^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(normalized)
+  );
+}
+
+/**
+ * The mutations the hosted board may perform cross-origin: archiving and
+ * pinning a task. Each is reversible, carries no request body, and touches only
+ * the task's own board metadata. Doc-checkbox writes, exports, sync, and
+ * machine authentication stay local-only.
+ */
+function isHostedActionPath(path: string): boolean {
+  const normalized =
+    path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  return /^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(
+    normalized,
+  );
+}
+
+function isPairingPath(path: string): boolean {
+  return path === "/api/pairing" || path === "/api/pairing/";
+}
+
+function handleBridgePairingRequest(
+  res: ServerResponse,
+  rawUrl: string,
+  method: string,
+  body: string | undefined,
+  pairing?: BridgePairing,
+): boolean {
+  const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+  if (!isPairingPath(path) || method !== "POST") return false;
+
+  let secret = "";
+  try {
+    const payload = JSON.parse(body ?? "") as { secret?: unknown };
+    if (typeof payload.secret === "string") secret = payload.secret;
+  } catch {
+    // Malformed and missing secrets share the same non-oracular response.
+  }
+  const credential = pairing?.exchange(secret);
+  res.setHeader("cache-control", "no-store");
+  if (!credential) {
+    res.statusCode = 401;
+    res.end("Pairing secret invalid or already used");
+    return true;
+  }
+
+  res.statusCode = 200;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify({ token: credential }));
+  return true;
+}
+
+function credentialsMatch(supplied: string, expected: string): boolean {
+  const suppliedBytes = Buffer.from(supplied);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    suppliedBytes.length === expectedBytes.length &&
+    timingSafeEqual(suppliedBytes, expectedBytes)
+  );
+}
+
+function isSameOriginRequest(
+  req: IncomingMessage,
+  requestOrigin: string,
+): boolean {
+  const host = req.headers?.host;
+  return Boolean(
+    host &&
+    (requestOrigin === `http://${host}` || requestOrigin === `https://${host}`),
+  );
+}
+
+function isLoopbackHostHeader(host: string | undefined): boolean {
+  if (!host) return false;
+  const match = /^(localhost|127\.0\.0\.1|\[::1\])(?::([0-9]{1,5}))?$/i.exec(
+    host,
+  );
+  if (!match) return false;
+  if (!match[2]) return true;
+  const port = Number(match[2]);
+  return port > 0 && port <= 65_535;
+}
+
+function isLoopbackBindHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+/** Return one canonical origin, or undefined when hosted access is disabled. */
+export function resolveAllowedWebOrigin(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  const configured = env[TRACE_WEB_ORIGIN_ENV_VAR]?.trim();
+  if (!configured) return undefined;
+  try {
+    const url = new URL(configured);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    ) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }
 
 /** HTTP methods whose request body the API may need to read. */
@@ -269,7 +551,14 @@ export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
   syncHooks?: ServeSyncHooks,
+  bridgeAccess?: { credential: string; pairing: BridgePairing },
 ): Server {
+  const allowedWebOrigin = resolveAllowedWebOrigin(env);
+  const access =
+    bridgeAccess ??
+    (allowedWebOrigin
+      ? createBridgeAccess(readOrCreateBridgeCredential(env))
+      : undefined);
   return createServer(
     createServeRequestListener(
       resolveDatabasePath(env),
@@ -279,7 +568,12 @@ export function createTraceServeServer(
       () => resolveAutoSyncEnabled(env),
       // Signing in is a mutation of what this machine can see, so it belongs on
       // the same sync trigger the board's mutations already use.
-      createLocalAuthService(env, { onLoginComplete: syncHooks?.onLoginComplete }),
+      createLocalAuthService(env, {
+        onLoginComplete: syncHooks?.onLoginComplete,
+      }),
+      allowedWebOrigin,
+      access?.credential,
+      access?.pairing,
     ),
   );
 }
@@ -294,11 +588,29 @@ export function startTraceServe(
   options: StartTraceServeOptions = {},
 ): Promise<TraceServer> {
   const host = options.host ?? "127.0.0.1";
+  if (!isLoopbackBindHost(host)) {
+    return Promise.reject(
+      new Error("trace serve must bind to a loopback host"),
+    );
+  }
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;
   const triggerSync = options.triggerSync ?? requestAutomaticSync;
+  const allowedWebOrigin = resolveAllowedWebOrigin(env);
+  const bridgeAccess = allowedWebOrigin
+    ? createBridgeAccess(readOrCreateBridgeCredential(env))
+    : undefined;
+  const pairingUrl =
+    allowedWebOrigin && bridgeAccess
+      ? createBridgePairingUrl(allowedWebOrigin, bridgeAccess.pairing.secret)
+      : undefined;
   const server =
     options.server ??
-    createTraceServeServer(env, undefined, createSyncHooks(() => triggerSync(env)));
+    createTraceServeServer(
+      env,
+      undefined,
+      createSyncHooks(() => triggerSync(env)),
+      bridgeAccess,
+    );
 
   // Fire-and-forget a sync as the board starts, so a freshly opened board
   // reflects other machines. No-ops instantly when logged out or offline.
@@ -328,7 +640,8 @@ export function startTraceServe(
         const boundPort =
           typeof address === "object" && address ? address.port : port;
         resolve({
-          url: `http://${host}:${boundPort}/`,
+          url: `http://${host === "::1" ? `[${host}]` : host}:${boundPort}/`,
+          pairingUrl,
           port: boundPort,
           close: () =>
             new Promise<void>((resolveClose, rejectClose) => {
@@ -343,4 +656,11 @@ export function startTraceServe(
 
     listenOn(preferredPort, PORT_FALLBACK_ATTEMPTS);
   });
+}
+
+function createBridgeAccess(credential: string): {
+  credential: string;
+  pairing: BridgePairing;
+} {
+  return { credential, pairing: createBridgePairing(credential) };
 }

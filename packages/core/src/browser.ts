@@ -43,6 +43,8 @@ export type {
   TokenTotals,
 } from "./types.ts";
 export type { SyncStatus, SyncStatusResponse } from "./sync-status.ts";
+export type { TraceConnection } from "./connection.ts";
+export { TRACE_PROTOCOL_VERSION } from "./connection.ts";
 export type {
   LoginAttemptState,
   LoginAttemptView,

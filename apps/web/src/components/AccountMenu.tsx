@@ -16,10 +16,12 @@ import {
   postLogout,
   startLogin,
   submitExistingKey,
+  traceQueryKey,
   useCurrentLogin,
   useLoginAttempt,
   useSyncStatus,
 } from "../lib/api.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import { cn } from "../lib/utils.ts";
 import { SuccessCheckIcon } from "./icons.tsx";
 import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
@@ -121,32 +123,37 @@ const QUIET_ACTION =
  */
 function AccountBody({ account }: { account: AccountDescription }) {
   const queryClient = useQueryClient();
+  const source = useTraceDataSource();
   const [attemptId, setAttemptId] = useState<string | null>(null);
   // Whether this popover has settled on which attempt it watches. It is a
   // one-way latch: once the popover has adopted an attempt, or deliberately let
   // one go, the outstanding-login answer must not pull it back.
   const [claimed, setClaimed] = useState(false);
-  const { data: outstanding, isPending: findingOutstanding } = useCurrentLogin();
+  const { data: outstanding, isPending: findingOutstanding } =
+    useCurrentLogin();
   const { data: attempt } = useLoginAttempt(attemptId);
   const unlocked = useUnlockBeat();
 
   /** Take up an attempt, wherever it came from, and watch it from here. */
   const watchAttempt = useCallback(
     (view: LoginAttemptView) => {
-      queryClient.setQueryData(["login-attempt", view.attemptId], view);
-      queryClient.setQueryData(["current-login"], view);
+      queryClient.setQueryData(
+        traceQueryKey(source, "login-attempt", view.attemptId),
+        view,
+      );
+      queryClient.setQueryData(traceQueryKey(source, "current-login"), view);
       setAttemptId(view.attemptId);
       setClaimed(true);
     },
-    [queryClient],
+    [queryClient, source],
   );
 
   /** Let go of an attempt that is over — nothing is outstanding after this. */
   const forgetAttempt = useCallback(() => {
-    queryClient.setQueryData(["current-login"], null);
+    queryClient.setQueryData(traceQueryKey(source, "current-login"), null);
     setAttemptId(null);
     setClaimed(true);
-  }, [queryClient]);
+  }, [queryClient, source]);
 
   // A popover opens knowing nothing, so it asks. Adopting the attempt at
   // whatever state it has reached is what makes closing the popover mid-login
@@ -158,7 +165,7 @@ function AccountBody({ account }: { account: AccountDescription }) {
   }, [claimed, outstanding, watchAttempt]);
 
   const beginLogin = useMutation({
-    mutationFn: startLogin,
+    mutationFn: (provider: LoginProvider) => startLogin(provider, source),
     onSuccess: (started) => {
       // Opened from the user's click so the popup is not blocked, and with
       // `noopener` so the hosted page gets no handle on the board.
@@ -167,15 +174,19 @@ function AccountBody({ account }: { account: AccountDescription }) {
     },
   });
   const recordAttempt = (settled: LoginAttemptView) => {
-    queryClient.setQueryData(["login-attempt", settled.attemptId], settled);
+    queryClient.setQueryData(
+      traceQueryKey(source, "login-attempt", settled.attemptId),
+      settled,
+    );
   };
   const acknowledge = useMutation({
-    mutationFn: acknowledgeGeneratedKey,
+    mutationFn: (attemptId: string) =>
+      acknowledgeGeneratedKey(attemptId, source),
     onSuccess: recordAttempt,
   });
   const submitKey = useMutation({
     mutationFn: ({ attemptId, key }: { attemptId: string; key: string }) =>
-      submitExistingKey(attemptId, key),
+      submitExistingKey(attemptId, key, source),
     onSuccess: (settled) => {
       recordAttempt(settled);
       // Only this path unlocks anything: a key the service accepted is a key
@@ -191,17 +202,19 @@ function AccountBody({ account }: { account: AccountDescription }) {
     }: {
       attemptId: string;
       confirmation: string;
-    }) => generateReplacementKey(attemptId, confirmation),
+    }) => generateReplacementKey(attemptId, confirmation, source),
     onSuccess: recordAttempt,
   });
   const cancel = useMutation({
-    mutationFn: cancelLogin,
+    mutationFn: (attemptId: string) => cancelLogin(attemptId, source),
     onSuccess: recordAttempt,
   });
   const signOut = useMutation({
-    mutationFn: postLogout,
+    mutationFn: () => postLogout(source),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
+      void queryClient.invalidateQueries({
+        queryKey: traceQueryKey(source, "sync-status"),
+      });
     },
   });
 
@@ -210,8 +223,10 @@ function AccountBody({ account }: { account: AccountDescription }) {
   useEffect(() => {
     if (attempt?.state !== "complete") return;
     forgetAttempt();
-    void queryClient.invalidateQueries({ queryKey: ["sync-status"] });
-  }, [attempt?.state, forgetAttempt, queryClient]);
+    void queryClient.invalidateQueries({
+      queryKey: traceQueryKey(source, "sync-status"),
+    });
+  }, [attempt?.state, forgetAttempt, queryClient, source]);
 
   if (attempt && attempt.state !== "complete") {
     return (

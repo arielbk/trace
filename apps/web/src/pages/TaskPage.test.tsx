@@ -16,6 +16,10 @@ import type { TaskTimeline } from "@trace/core";
 import type { ParsedStateMd } from "@trace/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LeftOffPanel, TaskPage, TaskTimelineView } from "./TaskPage.tsx";
+import {
+  LocalTraceSource,
+  TraceDataSourceProvider,
+} from "../lib/trace-data-source.ts";
 
 // The board mounts everything under one query client — the shared header's
 // account menu reads local sync status — so these renders provide one too.
@@ -2406,7 +2410,58 @@ function makeTimeline(
   };
 }
 
+function renderHostedTaskPage(slug: string) {
+  const source = new LocalTraceSource("http://127.0.0.1:4317");
+  render(
+    <TraceDataSourceProvider source={source}>
+      <MemoryRouter initialEntries={[`/task/${slug}`]}>
+        <Routes>
+          <Route path="/task/:id" element={<TaskPage />} />
+          <Route path="/task/:id/docs/*" element={<TaskPage />} />
+        </Routes>
+      </MemoryRouter>
+    </TraceDataSourceProvider>,
+  );
+}
+
 describe("TaskPage", () => {
+  test("the hosted board reads a task over the local bridge and offers only the allowlisted actions", async () => {
+    const timeline = makeTimeline("my-task");
+    const fetchMock = routedFetch([
+      [
+        (url) => url.endsWith("/timeline"),
+        () =>
+          new Response(JSON.stringify(timeline), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ],
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHostedTaskPage("my-task");
+
+    expect(
+      await screen.findByRole("heading", { name: "My task" }),
+    ).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:4317/api/tasks/my-task/timeline",
+      expect.anything(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Archive task" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Export task")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Export with transcripts"),
+    ).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes("/api/sync")),
+    ).toBe(false);
+  });
+
   test("renders a pulsing skeleton once a slow task query outlasts the delay, not a bare Loading string", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
 

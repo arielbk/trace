@@ -6,6 +6,11 @@ import React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { TaskSummary, TaskTimeline, TokenTotals } from "@trace/core";
 import {
+  LocalTraceSource,
+  TraceDataSourceProvider,
+  type TraceDataSource,
+} from "./trace-data-source.ts";
+import {
   downloadTaskExport,
   fetchDocContents,
   fetchTaskTimeline,
@@ -35,6 +40,16 @@ function makeFreshClient() {
 function wrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return React.createElement(QueryClientProvider, { client }, children);
+  };
+}
+
+function wrapperWithSource(client: QueryClient, source: TraceDataSource) {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client },
+      React.createElement(TraceDataSourceProvider, { source }, children),
+    );
   };
 }
 
@@ -193,6 +208,27 @@ describe("useTasks", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(HttpError);
     expect((result.current.error as HttpError).status).toBe(500);
+  });
+
+  test("loads through the source selected by the application", async () => {
+    const tasks = [makeTask("local")];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(tasks), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeFreshClient();
+    const source = new LocalTraceSource("http://127.0.0.1:4317");
+
+    const { result } = renderHook(() => useTasks(), {
+      wrapper: wrapperWithSource(client, source),
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual(tasks));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:4317/api/tasks",
+      expect.objectContaining({ targetAddressSpace: "loopback" }),
+    );
+    expect(client.getQueryData([source.key, "tasks"])).toEqual(tasks);
   });
 });
 
@@ -570,13 +606,11 @@ describe("useArchiveTask", () => {
 
 describe("useUnarchiveTask", () => {
   test("POSTs to the unarchive endpoint", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ id: "t1", archivedAt: null }), {
-          status: 200,
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "t1", archivedAt: null }), {
+        status: 200,
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => useUnarchiveTask(), {
@@ -686,13 +720,11 @@ describe("usePinTask", () => {
 
 describe("useUnpinTask", () => {
   test("POSTs to the unpin endpoint", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ id: "t1", pinnedAt: null }), {
-          status: 200,
-        }),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: "t1", pinnedAt: null }), {
+        status: 200,
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const client = makeFreshClient();
     const { result } = renderHook(() => useUnpinTask(), {
@@ -742,6 +774,16 @@ describe("useUnpinTask", () => {
 // ─── useServerSyncOnFocus ────────────────────────────────────────────────────
 
 describe("useServerSyncOnFocus", () => {
+  test("does not request sync when the hosted read-only bridge disables it", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() => useServerSyncOnFocus(false));
+    window.dispatchEvent(new Event("focus"));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("posts /api/sync on mount and again when the window regains focus", () => {
     const fetchMock = vi
       .fn()
@@ -816,7 +858,8 @@ describe("downloadTaskExport", () => {
       new Response(new Blob(["PK"]), {
         status: 200,
         headers: {
-          "content-disposition": 'attachment; filename="checkout-2026-08-19.zip"',
+          "content-disposition":
+            'attachment; filename="checkout-2026-08-19.zip"',
         },
       }),
     );

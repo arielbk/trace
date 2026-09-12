@@ -1,6 +1,7 @@
 import { FileWarning, Loader2, RotateCcw, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { downloadTaskExport } from "../lib/api.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import { cn } from "../lib/utils.ts";
 import {
   ArchiveIcon,
@@ -50,6 +51,7 @@ export function TaskActionsMenu({
   onUnarchive?: () => void | Promise<void>;
   className?: string;
 }) {
+  const source = useTraceDataSource();
   const exportLabelId = useId();
   const exportDescriptionId = useId();
   const transcriptLabelId = useId();
@@ -61,6 +63,7 @@ export function TaskActionsMenu({
     phase: "idle",
   });
   const archiveAction = isArchived ? onUnarchive : onArchive;
+  const canExport = source.capabilities.taskExports;
   const exportPending = exportStatus.phase === "preparing";
 
   useEffect(() => {
@@ -84,6 +87,7 @@ export function TaskActionsMenu({
       await downloadTaskExport(
         taskRef,
         kind === "transcripts" ? { includeTranscripts: true } : undefined,
+        source,
       );
       setExportStatus({ phase: "success", kind });
       successTimer.current = window.setTimeout(() => {
@@ -117,67 +121,76 @@ export function TaskActionsMenu({
         >
           {({ close }) => (
             <div className="flex flex-col">
-              <button
-                type="button"
-                className={MENU_ITEM}
-                aria-labelledby={exportLabelId}
-                aria-describedby={exportDescriptionId}
-                disabled={exportPending}
-                onClick={() => {
-                  close();
-                  void runExport("task");
-                }}
-              >
-                <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center text-text-muted">
-                  <DownloadIcon />
-                </span>
-                <span className="min-w-0 flex flex-col gap-0.5">
-                  <span id={exportLabelId} className="text-sm font-semibold">
-                    Export task
-                  </span>
-                  <span
-                    id={exportDescriptionId}
-                    className="text-crumb font-normal leading-snug text-text-muted"
+              {canExport ? (
+                <>
+                  <button
+                    type="button"
+                    className={MENU_ITEM}
+                    aria-labelledby={exportLabelId}
+                    aria-describedby={exportDescriptionId}
+                    disabled={exportPending}
+                    onClick={() => {
+                      close();
+                      void runExport("task");
+                    }}
                   >
-                    Docs, metadata, and session summaries
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={MENU_ITEM}
-                aria-labelledby={transcriptLabelId}
-                aria-describedby={transcriptDescriptionId}
-                disabled={exportPending}
-                onClick={() => {
-                  close();
-                  setTranscriptDialogOpen(true);
-                }}
-              >
-                <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center text-warning">
-                  <TranscriptIcon />
-                </span>
-                <span className="min-w-0 flex flex-col gap-0.5">
-                  <span
-                    id={transcriptLabelId}
-                    className="text-sm font-semibold"
+                    <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center text-text-muted">
+                      <DownloadIcon />
+                    </span>
+                    <span className="min-w-0 flex flex-col gap-0.5">
+                      <span
+                        id={exportLabelId}
+                        className="text-sm font-semibold"
+                      >
+                        Export task
+                      </span>
+                      <span
+                        id={exportDescriptionId}
+                        className="text-crumb font-normal leading-snug text-text-muted"
+                      >
+                        Docs, metadata, and session summaries
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={MENU_ITEM}
+                    aria-labelledby={transcriptLabelId}
+                    aria-describedby={transcriptDescriptionId}
+                    disabled={exportPending}
+                    onClick={() => {
+                      close();
+                      setTranscriptDialogOpen(true);
+                    }}
                   >
-                    Export with transcripts
-                  </span>
-                  <span
-                    id={transcriptDescriptionId}
-                    className="text-crumb font-normal leading-snug text-text-muted"
-                  >
-                    Includes unredacted session logs
-                  </span>
-                </span>
-              </button>
+                    <span className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center text-warning">
+                      <TranscriptIcon />
+                    </span>
+                    <span className="min-w-0 flex flex-col gap-0.5">
+                      <span
+                        id={transcriptLabelId}
+                        className="text-sm font-semibold"
+                      >
+                        Export with transcripts
+                      </span>
+                      <span
+                        id={transcriptDescriptionId}
+                        className="text-crumb font-normal leading-snug text-text-muted"
+                      >
+                        Includes unredacted session logs
+                      </span>
+                    </span>
+                  </button>
+                </>
+              ) : null}
               {archiveAction ? (
                 <>
-                  <div
-                    className="my-1.5 h-px bg-border-subtle"
-                    role="separator"
-                  />
+                  {canExport ? (
+                    <div
+                      className="my-1.5 h-px bg-border-subtle"
+                      role="separator"
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className={cn(MENU_ITEM, "items-center py-1.5")}

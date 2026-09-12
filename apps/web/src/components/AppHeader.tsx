@@ -9,6 +9,7 @@ export function AppHeader({
   context,
   bordered = true,
   aside,
+  showAccount = true,
 }: {
   project?: string;
   projectHref?: string;
@@ -16,6 +17,8 @@ export function AppHeader({
   bordered?: boolean;
   /** Optional content pinned to the right of the header, before the theme toggle. */
   aside?: ReactNode;
+  /** Hosted read-only views have no machine-account actions. */
+  showAccount?: boolean;
 }) {
   return (
     <header
@@ -67,7 +70,7 @@ export function AppHeader({
         {aside}
         {/* Account and sync state are machine-global, so they live in the
             shared header rather than being passed in per page. */}
-        <AccountMenu />
+        {showAccount ? <AccountMenu /> : null}
         <ThemeToggle />
       </div>
     </header>

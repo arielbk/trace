@@ -5,6 +5,7 @@ import { buildTaskExportZip } from "./export-input.ts";
 import { renderMarkdown, toggleTaskListCheckbox } from "./markdown.ts";
 import { openTraceStore, resolveTaskDocsDir } from "./store.ts";
 import { readSyncStatus } from "./sync-status.ts";
+import { traceConnection } from "./connection.ts";
 
 export type TraceApiResponse = {
   status: number;
@@ -66,6 +67,11 @@ export function handleTraceApiRequest(
   options?: TraceApiRequestOptions,
 ): TraceApiResponse | null {
   const path = rawUrl.split("?", 1)[0] ?? rawUrl;
+
+  if (path === "/api/connection" || path === "/api/connection/") {
+    if (method !== "GET") return methodNotAllowed();
+    return json(traceConnection());
+  }
 
   if (path === "/api/config") {
     if (method !== "GET") return methodNotAllowed();
@@ -212,10 +218,7 @@ export function handleTraceApiRequest(
 
     return notFound();
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.startsWith("Task not found:")
-    ) {
+    if (error instanceof Error && error.message.startsWith("Task not found:")) {
       return { status: 404, body: error.message };
     }
     return {
@@ -314,7 +317,11 @@ function readTaskDocContents(
 
   const extension = extname(resolved).toLowerCase();
   if (extension === ".md") {
-    return { status: 200, body: renderMarkdown(content), contentType: "text/html" };
+    return {
+      status: 200,
+      body: renderMarkdown(content),
+      contentType: "text/html",
+    };
   }
 
   return {

@@ -6,27 +6,43 @@ import type {
   SyncStatusResponse,
   TaskSummary,
   TaskTimeline,
+  TraceConnection,
 } from "@trace/core/browser";
+import {
+  defaultTraceDataSource,
+  HttpError,
+  useTraceDataSource,
+  type TraceDataSource,
+} from "./trace-data-source.ts";
 
-export class HttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "HttpError";
-  }
+export { HttpError } from "./trace-data-source.ts";
+
+export function traceQueryKey(
+  source: TraceDataSource,
+  ...parts: readonly unknown[]
+): readonly unknown[] {
+  return source.key === "same-origin" ? parts : [source.key, ...parts];
 }
 
-export async function fetchTasks(): Promise<TaskSummary[]> {
-  const res = await fetch("/api/tasks");
-  if (!res.ok) throw new HttpError(res.status, `GET /api/tasks failed: ${res.status}`);
+export async function fetchTasks(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<TaskSummary[]> {
+  const res = await source.request("/api/tasks");
+  if (!res.ok)
+    throw new HttpError(res.status, `GET /api/tasks failed: ${res.status}`);
   return res.json() as Promise<TaskSummary[]>;
 }
 
-export async function fetchTaskTimeline(id: string): Promise<TaskTimeline> {
-  const res = await fetch(`/api/tasks/${id}/timeline`);
-  if (!res.ok) throw new HttpError(res.status, `GET /api/tasks/${id}/timeline failed: ${res.status}`);
+export async function fetchTaskTimeline(
+  id: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<TaskTimeline> {
+  const res = await source.request(`/api/tasks/${id}/timeline`);
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `GET /api/tasks/${id}/timeline failed: ${res.status}`,
+    );
   return res.json() as Promise<TaskTimeline>;
 }
 
@@ -35,29 +51,50 @@ export type DocContents = {
   body: string;
 };
 
-export async function fetchDocContents(ref: string, docPath: string): Promise<DocContents> {
-  const res = await fetch(
+export async function fetchDocContents(
+  ref: string,
+  docPath: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<DocContents> {
+  const res = await source.request(
     `/api/tasks/${encodeURIComponent(ref)}/docs?path=${encodeURIComponent(docPath)}`,
   );
   const contentType = res.headers.get("content-type") ?? "text/plain";
   const body = await res.text();
   if (!res.ok) {
-    throw new HttpError(res.status, body || `GET docs for ${docPath} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      body || `GET docs for ${docPath} failed: ${res.status}`,
+    );
   }
   return { contentType, body };
 }
 
-export async function fetchSyncStatus(): Promise<SyncStatusResponse> {
-  const res = await fetch("/api/sync/status");
-  if (!res.ok) throw new HttpError(res.status, `GET /api/sync/status failed: ${res.status}`);
+export async function fetchSyncStatus(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<SyncStatusResponse> {
+  const res = await source.request("/api/sync/status");
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `GET /api/sync/status failed: ${res.status}`,
+    );
   return res.json() as Promise<SyncStatusResponse>;
 }
 
 /** Ask the serving process to run a background sync now (fire-and-forget).
  * The server throttles repeat requests, so callers can fire freely; failures
  * (a dev server with no sync trigger, a network hiccup) never surface. */
-export function requestServerSync(): void {
-  void fetch("/api/sync", { method: "POST" }).catch(() => {});
+export function requestServerSync(
+  source: TraceDataSource = defaultTraceDataSource,
+): void {
+  void source.request("/api/sync", { method: "POST" }).catch(() => {});
+}
+
+export function fetchTraceConnection(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<TraceConnection> {
+  return source.connect();
 }
 
 /**
@@ -67,12 +104,15 @@ export function requestServerSync(): void {
  * just-focused board (pin, archive) starts from fresh rows instead of stale
  * ones — shrinking the cross-machine last-write-wins clobber window.
  */
-export function useServerSyncOnFocus(): void {
+export function useServerSyncOnFocus(enabled = true): void {
+  const source = useTraceDataSource();
   useEffect(() => {
-    requestServerSync();
-    window.addEventListener("focus", requestServerSync);
-    return () => window.removeEventListener("focus", requestServerSync);
-  }, []);
+    if (!enabled) return;
+    const requestSync = () => requestServerSync(source);
+    requestSync();
+    window.addEventListener("focus", requestSync);
+    return () => window.removeEventListener("focus", requestSync);
+  }, [enabled, source]);
 }
 
 /**
@@ -83,25 +123,43 @@ export function useServerSyncOnFocus(): void {
 async function localAuth<T>(
   path: string,
   init?: RequestInit,
+  source: TraceDataSource = defaultTraceDataSource,
 ): Promise<T> {
-  const res = await fetch(`/api/local-auth${path}`, init);
+  const res = await source.request(`/api/local-auth${path}`, init);
   if (!res.ok) {
     const detail = await res.text();
-    throw new HttpError(res.status, detail || `local-auth ${path} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      detail || `local-auth ${path} failed: ${res.status}`,
+    );
   }
   return res.json() as Promise<T>;
 }
 
-export function startLogin(provider: LoginProvider): Promise<LoginAttemptView> {
-  return localAuth<LoginAttemptView>("/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ provider }),
-  });
+export function startLogin(
+  provider: LoginProvider,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    "/login",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider }),
+    },
+    source,
+  );
 }
 
-export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> {
-  return localAuth<LoginAttemptView>(`/login/${encodeURIComponent(attemptId)}`);
+export function fetchLoginAttempt(
+  attemptId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
+  return localAuth<LoginAttemptView>(
+    `/login/${encodeURIComponent(attemptId)}`,
+    undefined,
+    source,
+  );
 }
 
 /**
@@ -111,14 +169,24 @@ export function fetchLoginAttempt(attemptId: string): Promise<LoginAttemptView> 
  * someone walked away from — an approved attempt stopped at the key prompt
  * above all, which the serving process cannot finish on its own.
  */
-export function fetchCurrentLogin(): Promise<LoginAttemptView | null> {
-  return localAuth<LoginAttemptView | null>("/login/current");
+export function fetchCurrentLogin(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView | null> {
+  return localAuth<LoginAttemptView | null>(
+    "/login/current",
+    undefined,
+    source,
+  );
 }
 
-export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttemptView> {
+export function acknowledgeGeneratedKey(
+  attemptId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/acknowledge-key`,
     { method: "POST" },
+    source,
   );
 }
 
@@ -131,6 +199,7 @@ export function acknowledgeGeneratedKey(attemptId: string): Promise<LoginAttempt
 export function submitExistingKey(
   attemptId: string,
   key: string,
+  source: TraceDataSource = defaultTraceDataSource,
 ): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/existing-key`,
@@ -139,6 +208,7 @@ export function submitExistingKey(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key }),
     },
+    source,
   );
 }
 
@@ -146,6 +216,7 @@ export function submitExistingKey(
 export function generateReplacementKey(
   attemptId: string,
   confirmation: string,
+  source: TraceDataSource = defaultTraceDataSource,
 ): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/replacement-key`,
@@ -154,18 +225,25 @@ export function generateReplacementKey(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ confirmation }),
     },
+    source,
   );
 }
 
-export function cancelLogin(attemptId: string): Promise<LoginAttemptView> {
+export function cancelLogin(
+  attemptId: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<LoginAttemptView> {
   return localAuth<LoginAttemptView>(
     `/login/${encodeURIComponent(attemptId)}/cancel`,
     { method: "POST" },
+    source,
   );
 }
 
-export function postLogout(): Promise<{ ok: true }> {
-  return localAuth<{ ok: true }>("/logout", { method: "POST" });
+export function postLogout(
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<{ ok: true }> {
+  return localAuth<{ ok: true }>("/logout", { method: "POST" }, source);
 }
 
 /** Login attempt states the board stops polling on. */
@@ -189,16 +267,18 @@ const LOGIN_POLL_MS = 2000;
  * only changes through this board's own actions, which update it in place.
  */
 export function useCurrentLogin() {
+  const source = useTraceDataSource();
   return useQuery({
-    queryKey: ["current-login"],
-    queryFn: fetchCurrentLogin,
+    queryKey: traceQueryKey(source, "current-login"),
+    queryFn: () => fetchCurrentLogin(source),
   });
 }
 
 export function useLoginAttempt(attemptId: string | null) {
+  const source = useTraceDataSource();
   return useQuery({
-    queryKey: ["login-attempt", attemptId],
-    queryFn: () => fetchLoginAttempt(attemptId as string),
+    queryKey: traceQueryKey(source, "login-attempt", attemptId),
+    queryFn: () => fetchLoginAttempt(attemptId as string, source),
     enabled: attemptId !== null,
     refetchInterval: (query) =>
       query.state.data && SETTLED_LOGIN_STATES.has(query.state.data.state)
@@ -210,10 +290,12 @@ export function useLoginAttempt(attemptId: string | null) {
 export async function downloadTaskExport(
   ref: string,
   options: { includeTranscripts?: boolean } = {},
+  source: TraceDataSource = defaultTraceDataSource,
 ): Promise<void> {
   const query = options.includeTranscripts === true ? "?transcripts=1" : "";
-  const url = `/api/tasks/${encodeURIComponent(ref)}/export${query}`;
-  const res = await fetch(url);
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/export${query}`,
+  );
   if (!res.ok) {
     throw new HttpError(res.status, `GET export ${ref} failed: ${res.status}`);
   }
@@ -242,27 +324,63 @@ function filenameFromContentDisposition(header: string | null): string | null {
   return unquoted?.[1]?.trim() ?? null;
 }
 
-export async function postArchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/archive`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST archive ${ref} failed: ${res.status}`);
+export async function postArchive(
+  ref: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/archive`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `POST archive ${ref} failed: ${res.status}`,
+    );
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
-export async function postUnarchive(ref: string): Promise<{ id: string; archivedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/unarchive`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST unarchive ${ref} failed: ${res.status}`);
+export async function postUnarchive(
+  ref: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<{ id: string; archivedAt: string | null }> {
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/unarchive`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(
+      res.status,
+      `POST unarchive ${ref} failed: ${res.status}`,
+    );
   return res.json() as Promise<{ id: string; archivedAt: string | null }>;
 }
 
-export async function postPin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/pin`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST pin ${ref} failed: ${res.status}`);
+export async function postPin(
+  ref: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/pin`,
+    {
+      method: "POST",
+    },
+  );
+  if (!res.ok)
+    throw new HttpError(res.status, `POST pin ${ref} failed: ${res.status}`);
   return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
 }
 
-export async function postUnpin(ref: string): Promise<{ id: string; pinnedAt: string | null }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/unpin`, { method: "POST" });
-  if (!res.ok) throw new HttpError(res.status, `POST unpin ${ref} failed: ${res.status}`);
+export async function postUnpin(
+  ref: string,
+  source: TraceDataSource = defaultTraceDataSource,
+): Promise<{ id: string; pinnedAt: string | null }> {
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/unpin`,
+    { method: "POST" },
+  );
+  if (!res.ok)
+    throw new HttpError(res.status, `POST unpin ${ref} failed: ${res.status}`);
   return res.json() as Promise<{ id: string; pinnedAt: string | null }>;
 }
 
@@ -271,14 +389,21 @@ export async function postToggleCheckbox(
   path: string,
   index: number,
   checked: boolean,
+  source: TraceDataSource = defaultTraceDataSource,
 ): Promise<{ ok: true }> {
-  const res = await fetch(`/api/tasks/${encodeURIComponent(ref)}/docs/checkbox`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, index, checked }),
-  });
+  const res = await source.request(
+    `/api/tasks/${encodeURIComponent(ref)}/docs/checkbox`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, index, checked }),
+    },
+  );
   if (!res.ok) {
-    throw new HttpError(res.status, `POST checkbox ${ref} failed: ${res.status}`);
+    throw new HttpError(
+      res.status,
+      `POST checkbox ${ref} failed: ${res.status}`,
+    );
   }
   return res.json() as Promise<{ ok: true }>;
 }
@@ -292,45 +417,57 @@ const LIVE_REFRESH = {
 } as const;
 
 export function useTasks() {
-  return useQuery({ queryKey: ["tasks"], queryFn: fetchTasks, ...LIVE_REFRESH });
+  const source = useTraceDataSource();
+  return useQuery({
+    queryKey: traceQueryKey(source, "tasks"),
+    queryFn: () => fetchTasks(source),
+    ...LIVE_REFRESH,
+  });
 }
 
 export function useSyncStatus() {
+  const source = useTraceDataSource();
   return useQuery({
-    queryKey: ["sync-status"],
-    queryFn: fetchSyncStatus,
+    queryKey: traceQueryKey(source, "sync-status"),
+    queryFn: () => fetchSyncStatus(source),
     ...LIVE_REFRESH,
   });
 }
 
 export function useTaskTimeline(id: string) {
+  const source = useTraceDataSource();
   return useQuery({
-    queryKey: ["task-timeline", id],
-    queryFn: () => fetchTaskTimeline(id),
+    queryKey: traceQueryKey(source, "task-timeline", id),
+    queryFn: () => fetchTaskTimeline(id, source),
     ...LIVE_REFRESH,
   });
 }
 
 export function useDocContents(ref: string, docPath: string) {
+  const source = useTraceDataSource();
   return useQuery({
-    queryKey: ["doc-contents", ref, docPath],
-    queryFn: () => fetchDocContents(ref, docPath),
+    queryKey: traceQueryKey(source, "doc-contents", ref, docPath),
+    queryFn: () => fetchDocContents(ref, docPath, source),
   });
 }
 
 export function useArchiveTask() {
   const qc = useQueryClient();
+  const source = useTraceDataSource();
   return useMutation({
-    mutationFn: postArchive,
+    mutationFn: (ref: string) => postArchive(ref, source),
     onSuccess: (_data, ref) => {
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
-      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+      void qc.invalidateQueries({ queryKey: traceQueryKey(source, "tasks") });
+      void qc.invalidateQueries({
+        queryKey: traceQueryKey(source, "task-timeline", ref),
+      });
     },
   });
 }
 
 export function useToggleCheckbox() {
   const qc = useQueryClient();
+  const source = useTraceDataSource();
   return useMutation({
     mutationFn: ({
       ref,
@@ -342,45 +479,56 @@ export function useToggleCheckbox() {
       path: string;
       index: number;
       checked: boolean;
-    }) => postToggleCheckbox(ref, path, index, checked),
+    }) => postToggleCheckbox(ref, path, index, checked, source),
     // Reconcile the rendered doc with disk on both success and error. On error
     // the optimistic DOM flip is reverted by the click handler; refetching the
     // doc-contents also restores the authoritative render.
     onSettled: (_data, _err, { ref, path }) => {
-      void qc.invalidateQueries({ queryKey: ["doc-contents", ref, path] });
+      void qc.invalidateQueries({
+        queryKey: traceQueryKey(source, "doc-contents", ref, path),
+      });
     },
   });
 }
 
 export function useUnarchiveTask() {
   const qc = useQueryClient();
+  const source = useTraceDataSource();
   return useMutation({
-    mutationFn: postUnarchive,
+    mutationFn: (ref: string) => postUnarchive(ref, source),
     onSuccess: (_data, ref) => {
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
-      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+      void qc.invalidateQueries({ queryKey: traceQueryKey(source, "tasks") });
+      void qc.invalidateQueries({
+        queryKey: traceQueryKey(source, "task-timeline", ref),
+      });
     },
   });
 }
 
 export function usePinTask() {
   const qc = useQueryClient();
+  const source = useTraceDataSource();
   return useMutation({
-    mutationFn: postPin,
+    mutationFn: (ref: string) => postPin(ref, source),
     onSuccess: (_data, ref) => {
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
-      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+      void qc.invalidateQueries({ queryKey: traceQueryKey(source, "tasks") });
+      void qc.invalidateQueries({
+        queryKey: traceQueryKey(source, "task-timeline", ref),
+      });
     },
   });
 }
 
 export function useUnpinTask() {
   const qc = useQueryClient();
+  const source = useTraceDataSource();
   return useMutation({
-    mutationFn: postUnpin,
+    mutationFn: (ref: string) => postUnpin(ref, source),
     onSuccess: (_data, ref) => {
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
-      void qc.invalidateQueries({ queryKey: ["task-timeline", ref] });
+      void qc.invalidateQueries({ queryKey: traceQueryKey(source, "tasks") });
+      void qc.invalidateQueries({
+        queryKey: traceQueryKey(source, "task-timeline", ref),
+      });
     },
   });
 }

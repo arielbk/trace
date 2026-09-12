@@ -18,6 +18,7 @@ import {
 import { AppHeader } from "../components/AppHeader.tsx";
 import { TaskRow } from "../components/TaskRow.tsx";
 import { CheckIcon } from "../components/icons.tsx";
+import { LocalConnectionBadge } from "../components/LocalTraceConnection.tsx";
 import {
   SkeletonReveal,
   useSkeletonReveal,
@@ -29,6 +30,7 @@ import {
 } from "../components/ui/Dropdown.tsx";
 import { Switch } from "../components/ui/Switch.tsx";
 import { cn } from "../lib/utils.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import {
   buildSubtitle,
   filterByProjectSlug,
@@ -39,6 +41,9 @@ import {
 } from "../lib/task-list.ts";
 
 export function TasksPage() {
+  const source = useTraceDataSource();
+  const readOnly = !source.capabilities.taskMutations;
+  const showAccount = source.capabilities.account;
   const tasksQuery = useTasks();
   const archiveMutation = useArchiveTask();
   const unarchiveMutation = useUnarchiveTask();
@@ -95,7 +100,12 @@ export function TasksPage() {
 
   return (
     <main className="max-w-app mx-auto px-5 pb-16">
-      <AppHeader project={crumb} bordered={false} />
+      <AppHeader
+        project={crumb}
+        bordered={false}
+        aside={showAccount ? undefined : <LocalConnectionBadge />}
+        showAccount={showAccount}
+      />
       <div className="pt-7 pb-header-y">
         <h1 className="m-0 text-page-title font-extrabold">Tasks</h1>
         {reveal.showContent ? (
@@ -130,10 +140,12 @@ export function TasksPage() {
       <SkeletonReveal state={reveal} skeleton={<TaskListSkeleton />}>
         <TaskList
           tasks={displayedTasks}
-          onArchive={handleArchive}
-          onUnarchive={handleUnarchive}
-          onPin={handlePin}
-          onUnpin={handleUnpin}
+          onArchive={readOnly ? undefined : handleArchive}
+          onUnarchive={readOnly ? undefined : handleUnarchive}
+          onPin={readOnly ? undefined : handlePin}
+          onUnpin={readOnly ? undefined : handleUnpin}
+          readOnly={readOnly}
+          linkToDetail={source.capabilities.taskDetails}
           hiddenArchivedCount={archivedHidden}
         />
       </SkeletonReveal>
@@ -169,6 +181,8 @@ export function TaskList({
   onUnarchive,
   onPin,
   onUnpin,
+  readOnly = false,
+  linkToDetail = true,
   hiddenArchivedCount = 0,
 }: {
   tasks: TaskSummary[];
@@ -176,6 +190,8 @@ export function TaskList({
   onUnarchive?: (task: TaskSummary) => void | Promise<void>;
   onPin?: (task: TaskSummary) => void | Promise<void>;
   onUnpin?: (task: TaskSummary) => void | Promise<void>;
+  readOnly?: boolean;
+  linkToDetail?: boolean;
   hiddenArchivedCount?: number;
 }) {
   const { pinned, rest } = partitionPinned(tasks);
@@ -197,10 +213,11 @@ export function TaskList({
       <TaskRow
         key={task.id}
         task={task}
-        onArchive={onArchive}
-        onUnarchive={onUnarchive}
-        onPin={onPin}
-        onUnpin={onUnpin}
+        onArchive={readOnly ? undefined : onArchive}
+        onUnarchive={readOnly ? undefined : onUnarchive}
+        onPin={readOnly ? undefined : onPin}
+        onUnpin={readOnly ? undefined : onUnpin}
+        linkToDetail={linkToDetail}
       />
     ));
   }

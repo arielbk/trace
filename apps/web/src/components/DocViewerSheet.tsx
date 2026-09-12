@@ -8,6 +8,7 @@ import {
   useToggleCheckbox,
 } from "../lib/api.ts";
 import { resolveTaskDocLink } from "../lib/doc-link-resolver.ts";
+import { useTraceDataSource } from "../lib/trace-data-source.ts";
 import { CopyChip } from "./CopyChip.tsx";
 import { Sheet } from "./ui/Sheet.tsx";
 
@@ -33,6 +34,7 @@ export function DocViewerSheet({
 }) {
   const query = useDocContents(taskRef, docPath);
   const toggleCheckbox = useToggleCheckbox();
+  const canEditDoc = useTraceDataSource().capabilities.docEdits;
 
   return (
     <Sheet
@@ -47,6 +49,14 @@ export function DocViewerSheet({
           const checkbox = checkboxToggleFromClick(event);
           if (checkbox) {
             const { input, index, checked } = checkbox;
+            if (!canEditDoc) {
+              // A read-only source has nowhere to persist the flip, so undo
+              // it rather than show a phantom edit. Assigning `checked` back
+              // outlasts the click's own toggle, so no preventDefault is
+              // needed — and calling it would re-toggle instead of settle.
+              input.checked = !checked;
+              return;
+            }
             // The native click already flipped the input optimistically;
             // persist that state and revert the input if the write fails.
             toggleCheckbox.mutate(
