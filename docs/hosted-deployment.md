@@ -3,8 +3,10 @@
 The board is a static Cloudflare Pages application at `https://app.eqnx.ai`.
 Deploy it in the app owner's Cloudflare account. The `eqnx.ai` DNS zone can
 remain in a separate account; no zone or registrar transfer is needed.
-Only the built UI is uploaded. Task data and the EQNX API stay on each user's
-computer at `http://127.0.0.1:4317`.
+Only the built UI is uploaded. The board accesses the EQNX API on each user's
+computer at `http://127.0.0.1:4317`. That local service stores tasks and can sync
+them to the separately deployed EQNX Cloud service. Browser-only cloud access
+is planned; the current hosted board still requires a local connection.
 
 ## First deployment
 

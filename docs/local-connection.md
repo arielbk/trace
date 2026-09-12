@@ -205,6 +205,9 @@ it, run `eqnx connection install` again — and pair your browsers afresh.
   `127.0.0.1` is a local network request, and recent browsers prompt for it the
   first time. Denying the prompt looks exactly like a connection that is down;
   allow it, or open `eqnx board --local` instead.
-- **The hosted board can read, and can archive and pin.** Writing documents,
-  exporting, signing in, and syncing stay on this machine, whatever the local
-  API supports.
+- **The hosted board uses the connected runtime's capabilities.** Current
+  runtimes support task reads, archive/pin actions, account sign-in/sign-out,
+  sync and trusted-machine key transfer. The local service holds cloud
+  credentials and document keys. Hosted document editing and task exports
+  remain unavailable; the bundled board can expose those local operations.
+  An older runtime may advertise fewer capabilities.

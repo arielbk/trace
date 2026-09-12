@@ -290,3 +290,13 @@ days.)
 Working on EQNX itself, or wiring it into your own tooling? See
 [CONTRIBUTING.md](./CONTRIBUTING.md) for what's underneath, registering spawned
 children, development, and releasing.
+
+## Repository identity and development
+
+The client repository is [arielbk/eqnx](https://github.com/arielbk/eqnx).
+The published package is `@eqnx/cli` and the command is `eqnx`. Internal
+`@trace/*` packages, `~/.trace`, `TRACE_*` overrides, integration identifiers
+and cryptographic protocol labels remain compatible with existing installs.
+The local checkout directory does not need to be renamed.
+
+See [the release checklist](docs/releasing.md) for validation and publication.
