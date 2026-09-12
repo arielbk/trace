@@ -45,13 +45,30 @@ test("hosted production build emits a strict CSP for the local Trace bridge", as
     .update(inlineScripts[0] ?? "")
     .digest("base64")}`;
 
+  const styleNonce = policy?.match(
+    /style-src-elem 'self' 'nonce-([^']+)'/,
+  )?.[1];
+  expect(styleNonce).toMatch(/^[A-Za-z0-9+/]{22}==$/);
   expect(policy).toBe(
     "default-src 'none'; base-uri 'none'; form-action 'none'; " +
       `script-src 'self' '${themeScriptHash}'; ` +
-      "style-src-elem 'self'; style-src-attr 'unsafe-inline'; " +
+      `style-src-elem 'self' 'nonce-${styleNonce}'; ` +
+      "style-src-attr 'unsafe-inline'; " +
       "img-src 'self'; font-src 'self'; " +
       "connect-src 'self' http://127.0.0.1:4317",
   );
+  // The nonce only helps if the bundle stamps it onto the style element it
+  // injects, so the built asset has to carry that same value.
+  const assets = await readdir(path.join(outputDirectory, "assets"));
+  const bundle = await readFile(
+    path.join(
+      outputDirectory,
+      "assets",
+      assets.find((name) => name.endsWith(".js")) ?? "",
+    ),
+    "utf8",
+  );
+  expect(bundle).toContain(styleNonce);
   expect(inlineScripts).toHaveLength(1);
   expect(html).not.toContain("fonts.googleapis.com");
   expect(html).not.toContain("fonts.gstatic.com");

@@ -4,6 +4,7 @@ import { TasksPage } from "./pages/TasksPage.tsx";
 import { TaskPage } from "./pages/TaskPage.tsx";
 import { queryClient } from "./lib/query-client.ts";
 import { useServerSyncOnFocus } from "./lib/api.ts";
+import { ConnectionRecovery } from "./components/ConnectionRecovery.tsx";
 import { LocalTraceConnection } from "./components/LocalTraceConnection.tsx";
 import {
   defaultTraceDataSource,
@@ -28,8 +29,12 @@ function AppRoutes() {
     </Routes>
   );
 
+  // A local connection is the one that can go away mid-visit — the same-origin
+  // board is served by the process it reads — so only that one is watched.
   return source.capabilities.requiresConnection ? (
-    <LocalTraceConnection>{routes}</LocalTraceConnection>
+    <LocalTraceConnection>
+      <ConnectionRecovery>{routes}</ConnectionRecovery>
+    </LocalTraceConnection>
   ) : (
     routes
   );

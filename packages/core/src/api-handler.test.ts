@@ -65,6 +65,8 @@ test("GET /api/connection identifies the local Trace API without opening the dat
     "/path/that/does/not/exist.sqlite",
     "GET",
     "/api/connection",
+    undefined,
+    { runtimeVersion: "1.2.3" },
   );
 
   expect(response).not.toBeNull();
@@ -73,6 +75,32 @@ test("GET /api/connection identifies the local Trace API without opening the dat
   expect(jsonBody(response)).toEqual({
     service: "trace",
     protocolVersion: 1,
+    runtimeVersion: "1.2.3",
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "docEdits",
+      "taskExports",
+      "account",
+      "sync",
+    ],
+  });
+});
+
+test("GET /api/connection narrows the capabilities it advertises to a hosted client", () => {
+  const response = handleTraceApiRequest(
+    "/path/that/does/not/exist.sqlite",
+    "GET",
+    "/api/connection",
+    undefined,
+    { runtimeVersion: "1.2.3", clientScope: "hosted" },
+  );
+
+  expect(jsonBody(response)).toEqual({
+    service: "trace",
+    protocolVersion: 1,
+    runtimeVersion: "1.2.3",
+    capabilities: ["taskDetails", "taskMutations"],
   });
 });
 

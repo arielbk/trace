@@ -5,7 +5,11 @@ import {
   mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import {
+  MANAGED_CONNECTION_LABEL,
+  renderLaunchAgentPlist,
+} from "../connection-service.ts";
 import { expect, test } from "vitest";
 import {
   createDefaultDeps,
@@ -36,6 +40,7 @@ function makeDeps(overrides: Partial<UpdateDeps> = {}): UpdateDeps {
     fetchLatestVersion: async () => "1.2.3",
     spawnInstall: () => ({ status: 0, stderr: "" }),
     spawnReconcile: () => ({ status: 0, stderr: "" }),
+    restartConnection: () => ({ kind: "ok", message: "" }),
     ...overrides,
   };
 }
@@ -438,4 +443,137 @@ test("on POSIX spawning does not go through a shell", () => {
     { command: "pnpm", args: ["add", "-g", "@arielbk/trace@0.19.0"], shell: false },
     { command: "/opt/global/bin/trace", args: ["setup", "--registered", "--yes"], shell: false },
   ]);
+});
+
+// ─── the managed connection ──────────────────────────────────────────────────
+
+/** Writes the LaunchAgent exactly as an install would, so this test and the
+ * installer agree on the format they read and write. */
+function makeLoginService(home: string, cliPath: string): string {
+  const path = join(
+    home,
+    "Library",
+    "LaunchAgents",
+    `${MANAGED_CONNECTION_LABEL}.plist`,
+  );
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    renderLaunchAgentPlist({ env: { HOME: home }, cliPath, nodePath: "/usr/bin/node" }),
+  );
+  return path;
+}
+
+test("restarts the managed connection onto the newly installed executable", async () => {
+  const { dir, cleanup } = tempDir("trace-update-");
+  try {
+    makeRegistry(join(dir, ".trace"), {
+      targets: [
+        {
+          tool: "claude",
+          root: dir,
+          cliPath: "/opt/global/bin/trace",
+          version: "1.0.0",
+          skills: [],
+          hooks: [],
+        },
+      ],
+    });
+    makeLoginService(dir, "/opt/global/bin/trace");
+    const restarts: string[] = [];
+
+    const result = await updateOperation(
+      ["--yes"],
+      { env: { HOME: dir, TRACE_CURRENT_VERSION: "1.0.0" }, cwd: dir, stdin: "" },
+      makeDeps({
+        restartConnection: () => {
+          restarts.push("restarted");
+          return { kind: "ok", message: "" };
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    // A same-path upgrade leaves the old process running, so the restart is
+    // what actually moves the connection onto the new version.
+    expect(restarts).toEqual(["restarted"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("updates a machine that carries only the connection, with no integrations", async () => {
+  const { dir, cleanup } = tempDir("trace-update-");
+  try {
+    makeLoginService(dir, "/opt/global/bin/trace");
+    const reconciled: string[] = [];
+    const restarts: string[] = [];
+
+    const result = await updateOperation(
+      ["--yes"],
+      { env: { HOME: dir, TRACE_CURRENT_VERSION: "1.0.0" }, cwd: dir, stdin: "" },
+      makeDeps({
+        spawnReconcile: (cliPath) => {
+          reconciled.push(cliPath);
+          return { status: 0, stderr: "" };
+        },
+        restartConnection: () => {
+          restarts.push("restarted");
+          return { kind: "ok", message: "" };
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    // The plist is the only record of the executable, so it is what the new
+    // CLI is reconciled and restarted through.
+    expect(reconciled).toEqual(["/opt/global/bin/trace"]);
+    expect(restarts).toEqual(["restarted"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("tells a failed install apart from a connection that would not restart", async () => {
+  const { dir, cleanup } = tempDir("trace-update-");
+  try {
+    makeLoginService(dir, "/opt/global/bin/trace");
+    const ctx = {
+      env: { HOME: dir, TRACE_CURRENT_VERSION: "1.0.0" },
+      cwd: dir,
+      stdin: "",
+    };
+
+    const installFailed = await updateOperation(
+      ["--yes"],
+      ctx,
+      makeDeps({
+        spawnInstall: () => ({ status: 1, stderr: "EACCES\n" }),
+        restartConnection: () => {
+          throw new Error("must not restart onto a version that never landed");
+        },
+      }),
+    );
+    const restartFailed = await updateOperation(
+      ["--yes"],
+      ctx,
+      makeDeps({
+        restartConnection: () => ({
+          kind: "failed",
+          reason: "launchd would not restart it",
+        }),
+      }),
+    );
+
+    expect(installFailed.stderr).toContain("Install failed");
+    expect(installFailed.stderr).not.toMatch(/upgraded to/i);
+
+    // The upgrade landed; only the running connection is behind.
+    expect(restartFailed.exitCode).not.toBe(0);
+    expect(restartFailed.stderr).toContain("upgraded to v1.2.3");
+    expect(restartFailed.stderr).toContain("launchd would not restart it");
+    expect(restartFailed.stderr).toContain("trace connection restart");
+  } finally {
+    cleanup();
+  }
 });

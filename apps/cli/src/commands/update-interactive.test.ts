@@ -53,6 +53,9 @@ function makeDeps(spawns: Spawns): UpdateDeps {
       spawns.reconciles.push(cliPath);
       return { status: 0, stderr: "" };
     },
+    // No login service is installed in these fixtures, so this is never
+    // reached; it is here to satisfy the dependency surface.
+    restartConnection: () => ({ kind: "ok", message: "" }),
   };
 }
 

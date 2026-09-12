@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { defineConfig, loadEnv, type Plugin, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
@@ -7,13 +7,26 @@ import { traceApiPlugin } from "./src/server/api-plugin.ts";
 
 export default defineConfig(({ command, mode }) => {
   const plugins: PluginOption[] = [tailwindcss(), react(), traceApiPlugin()];
-  if (command === "build" && mode === "hosted") {
+  // Radix's scroll lock injects one <style> element at runtime whose text
+  // carries the viewer's scrollbar width, so its hash differs per machine and
+  // the policy cannot pin it. A nonce minted per build lets that single
+  // element through while `style-src-elem` stays shut to everything else.
+  const styleNonce =
+    command === "build" && mode === "hosted"
+      ? randomBytes(16).toString("base64")
+      : "";
+  if (styleNonce) {
     const env = loadEnv(mode, import.meta.dirname, "");
-    plugins.push(hostedContentSecurityPolicy(env.VITE_TRACE_API_ORIGIN));
+    plugins.push(
+      hostedContentSecurityPolicy(env.VITE_TRACE_API_ORIGIN, styleNonce),
+    );
   }
 
   return {
     plugins,
+    define: {
+      "import.meta.env.VITE_STYLE_NONCE": JSON.stringify(styleNonce),
+    },
     build: {
       outDir: mode === "hosted" ? "dist-hosted" : "dist",
     },
@@ -30,6 +43,7 @@ export default defineConfig(({ command, mode }) => {
 
 function hostedContentSecurityPolicy(
   apiOriginValue: string | undefined,
+  styleNonce: string,
 ): Plugin {
   const apiOrigin = resolveHostedApiOrigin(apiOriginValue);
 
@@ -52,7 +66,7 @@ function hostedContentSecurityPolicy(
           "base-uri 'none'",
           "form-action 'none'",
           ["script-src 'self'", ...scriptHashes].join(" "),
-          "style-src-elem 'self'",
+          `style-src-elem 'self' 'nonce-${styleNonce}'`,
           "style-src-attr 'unsafe-inline'",
           "img-src 'self'",
           "font-src 'self'",

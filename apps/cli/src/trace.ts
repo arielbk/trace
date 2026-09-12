@@ -5,6 +5,8 @@ import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runAuthCommand } from "./commands/auth.ts";
 import { runSyncCommand } from "./commands/sync.ts";
+import { boardOperation } from "./commands/board-operations.ts";
+import { connectionOperation } from "./commands/connection-operations.ts";
 import { createClackPrompt } from "./commands/setup-clack-prompt.ts";
 import { interactiveSetupOperation } from "./commands/setup-interactive.ts";
 import type { SetupPrompt } from "./commands/setup-prompt.ts";
@@ -123,6 +125,16 @@ export async function runTraceCliAsync(
   if (command === "sync" && argv.length === 1) {
     return runSyncCommand(env);
   }
+  if (command === "board") {
+    // Opening the board asks the running connection for a pairing link, so it
+    // is asynchronous for the same reason `trace connection` is.
+    return boardOperation(argv.slice(1), { env });
+  }
+  if (command === "connection") {
+    // Every subcommand talks to the running service over loopback, so this
+    // dispatch is asynchronous and never goes through the citty tree.
+    return connectionOperation(argv.slice(1), { env });
+  }
   if (
     (command === "login" || command === "logout" || command === "whoami") &&
     argv.length === 1
@@ -161,7 +173,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 const COMPACT_USAGE =
-  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace serve | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
+  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace board [--local] | trace serve | trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
 
 function usage(): CommandResult {
   return failure(COMPACT_USAGE);
@@ -193,12 +205,17 @@ function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
       `Usage: ${style.command("trace <command> [options]")}\n\n` +
       `${style.heading("Get started")}\n` +
       row("trace setup", "Configure Trace for your agent tools") +
-      row("trace serve", "Open the local task board") +
+      row("trace board", "Open the task board") +
+      row("trace serve", "Run the board in the foreground") +
       row("trace task list", "See your tasks") +
       row('trace task create "Title"', "Create a task") +
       `\n${style.heading("Keep Trace current")}\n` +
       row("trace update", "Update Trace and refresh integrations") +
       row("trace update --yes", "Update without asking first") +
+      `\n${style.heading("The local connection")}\n` +
+      row("trace connection status", "Check the connection behind the board") +
+      row("trace connection pair <code>", "Approve the browser waiting for Trace") +
+      row("trace connection restart", "Restart it after a failure") +
       `\n${style.heading("Cloud")}\n` +
       row("trace login", "Connect your Trace account") +
       row("trace sync", "Sync local work") +

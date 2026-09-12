@@ -3,7 +3,6 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -26,6 +25,12 @@ import {
   resolveCursorConfigRoot,
   TOOL_LABELS,
 } from "./setup-candidates.ts";
+import { checkManagedCliPath, resolveTraceCliPath } from "../cli-path.ts";
+import {
+  describeConnectionServiceOutcome,
+  installConnectionService,
+  type ConnectionServiceDependencies,
+} from "../connection-service.ts";
 import { failure, success, type CommandResult, type Env } from "./seam.ts";
 
 /** The `<claude|codex|...>` fragment used in usage strings and flag errors. */
@@ -453,49 +458,6 @@ function checkClaudeConfig(options: AgentSetupOptions): GuardrailsResult {
   return { ok: true };
 }
 
-/** Shim extensions npm, pnpm and bun generate on Windows, in preference order. */
-const WINDOWS_SHIM_EXTENSIONS = [".cmd", ".exe", ".bat"];
-
-/**
- * Finds the `trace` shim on `PATH`.
- *
- * On Windows `argv[1]` is the raw script — the `.cmd` shim invoked `node` with
- * it and dropped out of the picture. The shim is the durable identity: it is
- * what the user types, and it resolves Node itself, so it survives a Node
- * version switch that a recorded `execPath` would not.
- */
-function findWindowsShim(env: Env): string | undefined {
-  const pathValue = env.PATH ?? env.Path ?? env.path;
-  if (!pathValue) return undefined;
-
-  for (const dir of pathValue.split(";")) {
-    if (!dir) continue;
-    for (const extension of WINDOWS_SHIM_EXTENSIONS) {
-      const candidate = join(dir, `trace${extension}`);
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
-}
-
-/** Absolute path to the persistent Trace CLI, used for hook commands. */
-function resolveTraceCliPath(env: Env, platform: NodeJS.Platform): string {
-  if (env.TRACE_CLI_PATH) return env.TRACE_CLI_PATH;
-  if (platform === "win32") {
-    const shim = findWindowsShim(env);
-    if (shim) return shim;
-  }
-  const invoked = process.argv[1];
-  if (invoked) {
-    try {
-      return realpathSync(invoked);
-    } catch {
-      return invoked;
-    }
-  }
-  return "trace";
-}
-
 /** Reads the installed CLI version from the packaged manifest. */
 export function resolvePackagedVersion(): string {
   for (const candidate of [
@@ -517,7 +479,7 @@ export function resolvePackagedVersion(): string {
  * later reinstall through the same tool. Prefers the running invocation's
  * `npm_config_user_agent`, then falls back to path-based heuristics.
  */
-function detectPackageManager(env: Env, cliPath: string): PackageManager {
+export function detectPackageManager(env: Env, cliPath: string): PackageManager {
   const agent = env.npm_config_user_agent;
   if (agent) {
     const name = agent.split("/", 1)[0];
@@ -526,27 +488,6 @@ function detectPackageManager(env: Env, cliPath: string): PackageManager {
   if (/[\\/](\.)?pnpm[\\/]/.test(cliPath)) return "pnpm";
   if (/[\\/]\.bun[\\/]/.test(cliPath)) return "bun";
   return "npm";
-}
-
-function checkManagedCliPath(cliPath: string): GuardrailsResult {
-  const normalized = cliPath.replaceAll("\\", "/");
-  if (/(?:^|\/)_npx(?:\/|$)/.test(normalized)) {
-    return {
-      ok: false,
-      error:
-        `Trace setup cannot register the ephemeral npx executable at ${cliPath}.\n` +
-        "  Install @arielbk/trace as a persistent global CLI, then run trace setup again.",
-    };
-  }
-  if (/(?:^|\/)apps\/cli\/(?:src|dist)\/trace\.(?:ts|js)$/.test(normalized)) {
-    return {
-      ok: false,
-      error:
-        `Trace setup cannot register the source checkout executable at ${cliPath}.\n` +
-        "  Install @arielbk/trace as a persistent global CLI, then run trace setup again.",
-    };
-  }
-  return { ok: true };
 }
 
 /**
@@ -677,6 +618,32 @@ type ReconcileFormat = {
   planInSummary?: boolean;
 };
 
+/** Everything a reconciliation needs beyond its targets and the registry. */
+type ReconcileOptions = {
+  format?: ReconcileFormat;
+  /** The host platform whose conventions the install must satisfy. */
+  platform?: NodeJS.Platform;
+  /** launchd boundary for the managed connection, injected by tests. */
+  service?: ConnectionServiceDependencies;
+};
+
+/**
+ * Reconciles the managed local connection once per applied setup, independent
+ * of which agent integrations were selected. Never fails the run: the
+ * integrations already landed, so a launchd problem is reported with its own
+ * recovery rather than rolled into the setup's exit code.
+ */
+function connectionNote(
+  env: Env,
+  platform: NodeJS.Platform,
+  service: ConnectionServiceDependencies | undefined,
+): string {
+  const described = describeConnectionServiceOutcome(
+    installConnectionService(env, { platform, ...service }),
+  );
+  return described ? `\n${described}` : "";
+}
+
 function sharedSetupOptions(
   env: Env,
   registry: IntegrationRegistry,
@@ -710,11 +677,18 @@ function reconcileInstalledTargets(
   env: Env,
   registry: IntegrationRegistry,
   onGuardrailFailure: "abort" | "skip",
-  format: ReconcileFormat = {},
-  platform: NodeJS.Platform = process.platform,
+  options: ReconcileOptions = {},
 ): ReconcileResult {
+  const format = options.format ?? {};
+  const platform = options.platform ?? process.platform;
   const previewFooter = format.previewFooter ?? "\nRe-run with --yes to apply.\n";
-  if (targets.length === 0) return success("Nothing to reconcile.\n");
+  // Reconciling no integration at all is still a request to have Trace working
+  // on this machine, so an applied run installs the connection either way.
+  if (targets.length === 0) {
+    return success(
+      `Nothing to reconcile.\n${apply ? connectionNote(env, platform, options.service) : ""}`,
+    );
+  }
 
   const shared = sharedSetupOptions(env, registry, platform);
   const cliCheck = checkManagedCliPath(shared.cliPath);
@@ -814,15 +788,20 @@ function reconcileInstalledTargets(
   }
 
   const roots = installable.map(({ options }) => options.configRoot).join(", ");
+  // The connection is reconciled after every gate the integrations passed, and
+  // its note sits above the action-required block so that block stays last.
+  const connection = connectionNote(env, platform, options.service);
   if (format.planInSummary === false) {
     // The caller already displayed this plan for review; only report the outcome.
     return {
-      ...success(`Installed Trace into ${roots}.\n${skippedBlock}`),
+      ...success(`Installed Trace into ${roots}.\n${connection}${skippedBlock}`),
       skippedTargets: skipped,
     };
   }
   return {
-    ...success(`${plan}\nInstalled Trace into ${roots}.\n${skippedBlock}`),
+    ...success(
+      `${plan}\nInstalled Trace into ${roots}.\n${connection}${skippedBlock}`,
+    ),
     skippedTargets: skipped,
   };
 }
@@ -840,6 +819,7 @@ export function reconcileSelectedTargets(
     env: Env;
     registry: IntegrationRegistry;
     format?: ReconcileFormat;
+    service?: ConnectionServiceDependencies;
   },
 ): ReconcileResult {
   return reconcileInstalledTargets(
@@ -848,7 +828,7 @@ export function reconcileSelectedTargets(
     options.env,
     options.registry,
     "skip",
-    options.format,
+    { format: options.format, service: options.service },
   );
 }
 
@@ -866,7 +846,14 @@ function targetsForTool(
 
 export function setupOperation(
   rawArgs: string[],
-  ctx: { env: Env; cwd: string; stdin: string; platform?: NodeJS.Platform },
+  ctx: {
+    env: Env;
+    cwd: string;
+    stdin: string;
+    platform?: NodeJS.Platform;
+    /** launchd boundary for the managed connection, injected by tests. */
+    service?: ConnectionServiceDependencies;
+  },
 ): CommandResult {
   const platform = ctx.platform ?? process.platform;
   if (rawArgs.includes("--remove")) {
@@ -897,15 +884,10 @@ export function setupOperation(
       adapter: SETUP_ADAPTERS[target.tool],
       root: target.root,
     }));
-    return reconcileInstalledTargets(
-      targets,
-      apply,
-      ctx.env,
-      registry,
-      "skip",
-      {},
+    return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip", {
       platform,
-    );
+      service: ctx.service,
+    });
   }
 
   // When a tool is explicitly specified, route to that tool's setup.
@@ -921,8 +903,7 @@ export function setupOperation(
       ctx.env,
       registry,
       "abort",
-      {},
-      platform,
+      { platform, service: ctx.service },
     );
   }
 
@@ -938,15 +919,10 @@ export function setupOperation(
     adapter: SETUP_ADAPTERS[tool],
     root,
   }));
-  return reconcileInstalledTargets(
-    targets,
-    apply,
-    ctx.env,
-    registry,
-    "skip",
-    {},
+  return reconcileInstalledTargets(targets, apply, ctx.env, registry, "skip", {
     platform,
-  );
+    service: ctx.service,
+  });
 }
 
 function flagValue(args: string[], flag: string): string | undefined {

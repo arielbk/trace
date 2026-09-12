@@ -6,10 +6,13 @@ import { EventEmitter } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
-  createBridgePairing,
-  createBridgePairingUrl,
-  type BridgePairing,
+  createPairingLinks,
+  type PairingLinks,
 } from "./bridge-pairing.ts";
+import {
+  openConnectionCredentials,
+  type ConnectionCredentials,
+} from "./connection-credentials.ts";
 import {
   openTraceStore,
   resolveTaskDocsDir,
@@ -77,9 +80,10 @@ function dispatch(
   syncHooks?: ServeSyncHooks,
   requestHeaders: Record<string, string> = {},
   allowedWebOrigin?: string,
-  bridgeCredential?: string,
-  bridgePairing?: BridgePairing,
+  connection?: ConnectionCredentials,
+  pairing?: PairingLinks,
   requestBody?: string,
+  runtimeVersion?: string,
 ): CapturedResponse {
   const captured: CapturedResponse = {
     statusCode: 200,
@@ -119,8 +123,9 @@ function dispatch(
     undefined,
     undefined,
     allowedWebOrigin,
-    bridgeCredential,
-    bridgePairing,
+    connection,
+    pairing,
+    runtimeVersion,
   )(request, res);
   if (requestBody !== undefined) request.emit("data", Buffer.from(requestBody));
   if (method === "POST" || method === "PUT" || method === "PATCH") {
@@ -129,13 +134,68 @@ function dispatch(
   return captured;
 }
 
+/** A real credential store in this test's temp HOME, with one paired browser. */
+function pairedConnection(): {
+  connection: ConnectionCredentials;
+  token: string;
+} {
+  const connection = openConnectionCredentials({ HOME: dir });
+  return { connection, token: connection.issueBrowserToken("Test").token };
+}
+
 test("trace serve exposes a read-only connection handshake", () => {
-  const response = dispatch("GET", "/api/connection");
+  const response = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "9.8.7",
+  );
 
   expect(response.statusCode).toBe(200);
   expect(JSON.parse(response.body)).toEqual({
     service: "trace",
     protocolVersion: 1,
+    runtimeVersion: "9.8.7",
+    capabilities: [
+      "taskDetails",
+      "taskMutations",
+      "docEdits",
+      "taskExports",
+      "account",
+      "sync",
+    ],
+  });
+});
+
+test("trace serve advertises only the hosted allowlist to the hosted board", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const { connection, token } = pairedConnection();
+
+  const response = dispatch(
+    "GET",
+    "/api/connection",
+    undefined,
+    undefined,
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
+    allowedOrigin,
+    connection,
+    undefined,
+    undefined,
+    "9.8.7",
+  );
+
+  expect(response.statusCode).toBe(200);
+  expect(JSON.parse(response.body)).toEqual({
+    service: "trace",
+    protocolVersion: 1,
+    runtimeVersion: "9.8.7",
+    capabilities: ["taskDetails", "taskMutations"],
   });
 });
 
@@ -164,9 +224,9 @@ test("trace serve grants API reads only to the configured hosted origin", () => 
   expect(other.headers["access-control-allow-origin"]).toBeUndefined();
 });
 
-test("trace serve requires the installation credential for hosted API reads", () => {
+test("trace serve requires a paired browser credential for hosted API reads", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const missing = dispatch(
     "GET",
     "/api/connection",
@@ -174,7 +234,7 @@ test("trace serve requires the installation credential for hosted API reads", ()
     undefined,
     { origin: allowedOrigin },
     allowedOrigin,
-    credential,
+    connection,
   );
   const wrong = dispatch(
     "GET",
@@ -183,16 +243,16 @@ test("trace serve requires the installation credential for hosted API reads", ()
     undefined,
     { origin: allowedOrigin, authorization: "Bearer wrong-secret" },
     allowedOrigin,
-    credential,
+    connection,
   );
   const authenticated = dispatch(
     "GET",
     "/api/connection",
     undefined,
     undefined,
-    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(missing.statusCode).toBe(401);
@@ -202,32 +262,34 @@ test("trace serve requires the installation credential for hosted API reads", ()
   expect(JSON.parse(authenticated.body)).toMatchObject({ service: "trace" });
 });
 
-test("a browser pairing secret exchanges the installation credential only once", () => {
-  const credential = "installation-secret";
-  const pairing = createBridgePairing(credential);
-
-  expect(pairing.secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  expect(pairing.exchange("wrong-secret")).toBeNull();
-  expect(pairing.exchange(pairing.secret)).toBe(credential);
-  expect(pairing.exchange(pairing.secret)).toBeNull();
-});
-
-test("the pairing URL keeps its one-time secret in the fragment", () => {
-  const url = createBridgePairingUrl(
-    "https://trace-hosted.example",
-    "one-time-secret",
-  );
-
-  expect(url).toBe("https://trace-hosted.example/#trace-pair=one-time-secret");
-  expect(new URL(url).search).toBe("");
-});
-
-test("trace serve exchanges a pairing secret once without bearer authorization", () => {
+test("a revoked browser loses hosted access on its very next request", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
-  const pairing = createBridgePairing(credential);
+  const { connection, token } = pairedConnection();
+  const read = () =>
+    dispatch(
+      "GET",
+      "/api/connection",
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
+      allowedOrigin,
+      connection,
+    ).statusCode;
+
+  expect(read()).toBe(200);
+  const paired = connection.listBrowsers();
+  connection.revokeBrowser(paired[paired.length - 1]!.id);
+
+  expect(read()).toBe(401);
+});
+
+test("trace serve exchanges a pairing link for that browser's own credential", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const connection = openConnectionCredentials({ HOME: dir });
+  const pairing = createPairingLinks(connection.issueBrowserToken);
+  const link = pairing.create();
   const headers = { origin: allowedOrigin, "content-type": "application/json" };
-  const body = JSON.stringify({ secret: pairing.secret });
+  const body = JSON.stringify({ secret: link.secret });
 
   const paired = dispatch(
     "POST",
@@ -236,7 +298,7 @@ test("trace serve exchanges a pairing secret once without bearer authorization",
     undefined,
     headers,
     allowedOrigin,
-    credential,
+    connection,
     pairing,
     body,
   );
@@ -247,7 +309,7 @@ test("trace serve exchanges a pairing secret once without bearer authorization",
     undefined,
     headers,
     allowedOrigin,
-    credential,
+    connection,
     pairing,
     body,
   );
@@ -255,8 +317,22 @@ test("trace serve exchanges a pairing secret once without bearer authorization",
   expect(paired.statusCode).toBe(200);
   expect(paired.headers["access-control-allow-origin"]).toBe(allowedOrigin);
   expect(paired.headers["cache-control"]).toBe("no-store");
-  expect(JSON.parse(paired.body)).toEqual({ token: credential });
   expect(replay.statusCode).toBe(401);
+
+  // The minted token is this browser's own, and it authorizes hosted reads.
+  const { token } = JSON.parse(paired.body) as { token: string };
+  expect(connection.verifyBrowserToken(token)).not.toBeNull();
+  expect(
+    dispatch(
+      "GET",
+      "/api/connection",
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
+      allowedOrigin,
+      connection,
+    ).statusCode,
+  ).toBe(200);
 });
 
 test("trace serve grants pairing preflight only to the configured origin", () => {
@@ -283,8 +359,9 @@ test("trace serve grants pairing preflight only to the configured origin", () =>
 
 test("trace serve does not expose pairing to any other browser origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
-  const pairing = createBridgePairing(credential);
+  const connection = openConnectionCredentials({ HOME: dir });
+  const pairing = createPairingLinks(connection.issueBrowserToken);
+  const link = pairing.create();
   const response = dispatch(
     "POST",
     "/api/pairing",
@@ -292,13 +369,13 @@ test("trace serve does not expose pairing to any other browser origin", () => {
     undefined,
     { origin: "https://attacker.example", "content-type": "application/json" },
     allowedOrigin,
-    credential,
+    connection,
     pairing,
-    JSON.stringify({ secret: pairing.secret }),
+    JSON.stringify({ secret: link.secret }),
   );
 
   expect(response.statusCode).toBe(403);
-  expect(pairing.exchange(pairing.secret)).toBe(credential);
+  expect(pairing.exchange(link.secret)).not.toBeNull();
 });
 
 test("trace serve rejects requests with a non-loopback Host header", () => {
@@ -356,7 +433,7 @@ test("trace serve rejects hosted preflights that request other headers", () => {
 
 test("trace serve rejects hosted-origin mutations outside the action allowlist", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const outside = [
     "/api/tasks/checkout/docs/checkbox",
     "/api/sync",
@@ -369,9 +446,9 @@ test("trace serve rejects hosted-origin mutations outside the action allowlist",
       path,
       undefined,
       undefined,
-      { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
       allowedOrigin,
-      credential,
+      connection,
     );
 
     expect(response.statusCode).toBe(403);
@@ -381,15 +458,15 @@ test("trace serve rejects hosted-origin mutations outside the action allowlist",
 
 test("trace serve accepts authorized hosted task actions", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const response = dispatch(
     "POST",
     `/api/tasks/${taskId}/archive`,
     undefined,
     undefined,
-    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(response.statusCode).toBe(200);
@@ -399,16 +476,16 @@ test("trace serve accepts authorized hosted task actions", () => {
 
 test("trace serve applies every enabled hosted task action to the store", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const act = (action: string) =>
     dispatch(
       "POST",
       `/api/tasks/${taskId}/${action}`,
       undefined,
       undefined,
-      { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
       allowedOrigin,
-      credential,
+      connection,
     );
 
   expect(JSON.parse(act("archive").body).archivedAt).not.toBeNull();
@@ -419,7 +496,7 @@ test("trace serve applies every enabled hosted task action to the store", () => 
 
 test("trace serve guards hosted task actions by origin, credential, and method", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const hostile = dispatch(
     "POST",
     `/api/tasks/${taskId}/archive`,
@@ -427,10 +504,10 @@ test("trace serve guards hosted task actions by origin, credential, and method",
     undefined,
     {
       origin: "https://trace-hosted.example.attacker.example",
-      authorization: `Bearer ${credential}`,
+      authorization: `Bearer ${token}`,
     },
     allowedOrigin,
-    credential,
+    connection,
   );
   const unauthenticated = dispatch(
     "POST",
@@ -439,16 +516,16 @@ test("trace serve guards hosted task actions by origin, credential, and method",
     undefined,
     { origin: allowedOrigin },
     allowedOrigin,
-    credential,
+    connection,
   );
   const wrongMethod = dispatch(
     "GET",
     `/api/tasks/${taskId}/archive`,
     undefined,
     undefined,
-    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
     allowedOrigin,
-    credential,
+    connection,
   );
   const readPathPreflight = dispatch(
     "OPTIONS",
@@ -461,7 +538,7 @@ test("trace serve guards hosted task actions by origin, credential, and method",
       "access-control-request-headers": "authorization",
     },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(hostile.statusCode).toBe(403);
@@ -480,7 +557,7 @@ test("trace serve guards hosted task actions by origin, credential, and method",
 
 test("trace serve answers a hosted task-action preflight with POST only", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection } = pairedConnection();
   const response = dispatch(
     "OPTIONS",
     `/api/tasks/${taskId}/pin`,
@@ -492,7 +569,7 @@ test("trace serve answers a hosted task-action preflight with POST only", () => 
       "access-control-request-headers": "authorization",
     },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(response.statusCode).toBe(204);
@@ -507,15 +584,15 @@ test("trace serve answers a hosted task-action preflight with POST only", () => 
 
 test("trace serve serves task timeline reads to the authenticated hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const response = dispatch(
     "GET",
     `/api/tasks/${taskId}/timeline`,
     undefined,
     undefined,
-    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(response.statusCode).toBe(200);
@@ -525,7 +602,7 @@ test("trace serve serves task timeline reads to the authenticated hosted origin"
 
 test("trace serve serves task doc reads to the authenticated hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const docsDir = resolveTaskDocsDir(databasePath, "checkout");
   mkdirSync(docsDir, { recursive: true });
   writeFileSync(join(docsDir, "notes.md"), "# Notes\n\nSome content.");
@@ -535,9 +612,9 @@ test("trace serve serves task doc reads to the authenticated hosted origin", () 
     `/api/tasks/checkout/docs?path=${encodeURIComponent("notes.md")}`,
     undefined,
     undefined,
-    { origin: allowedOrigin, authorization: `Bearer ${credential}` },
+    { origin: allowedOrigin, authorization: `Bearer ${token}` },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(response.statusCode).toBe(200);
@@ -547,7 +624,7 @@ test("trace serve serves task doc reads to the authenticated hosted origin", () 
 
 test("trace serve guards task detail reads by origin and credential", () => {
   const allowedOrigin = "https://trace-hosted.example";
-  const credential = "installation-secret";
+  const { connection, token } = pairedConnection();
   const hostile = dispatch(
     "GET",
     `/api/tasks/${taskId}/timeline`,
@@ -555,10 +632,10 @@ test("trace serve guards task detail reads by origin and credential", () => {
     undefined,
     {
       origin: "https://trace-hosted.example.attacker.example",
-      authorization: `Bearer ${credential}`,
+      authorization: `Bearer ${token}`,
     },
     allowedOrigin,
-    credential,
+    connection,
   );
   const unauthenticated = dispatch(
     "GET",
@@ -567,7 +644,7 @@ test("trace serve guards task detail reads by origin and credential", () => {
     undefined,
     { origin: allowedOrigin },
     allowedOrigin,
-    credential,
+    connection,
   );
   const preflight = dispatch(
     "OPTIONS",
@@ -580,7 +657,7 @@ test("trace serve guards task detail reads by origin and credential", () => {
       "access-control-request-headers": "authorization",
     },
     allowedOrigin,
-    credential,
+    connection,
   );
 
   expect(hostile.statusCode).toBe(403);
@@ -612,6 +689,52 @@ test("trace serve rejects reads outside the hosted spike allowlist", () => {
     expect(response.statusCode).toBe(403);
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   }
+});
+
+test("what the hosted handshake advertises is exactly what the bridge allows", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const { connection, token } = pairedConnection();
+  const hosted = (method: string, path: string) =>
+    dispatch(
+      method,
+      path,
+      undefined,
+      undefined,
+      { origin: allowedOrigin, authorization: `Bearer ${token}` },
+      allowedOrigin,
+      connection,
+    );
+
+  // One representative request per capability the handshake can name.
+  const probes: Record<string, () => CapturedResponse> = {
+    taskDetails: () => hosted("GET", `/api/tasks/${taskId}/timeline`),
+    taskMutations: () => hosted("POST", `/api/tasks/${taskId}/pin`),
+    docEdits: () => hosted("POST", `/api/tasks/${taskId}/docs/checkbox`),
+    taskExports: () => hosted("GET", `/api/tasks/${taskId}/export`),
+    account: () => hosted("POST", "/api/local-auth/login"),
+    sync: () => hosted("POST", "/api/sync"),
+  };
+
+  const advertised = new Set(
+    (
+      JSON.parse(hosted("GET", "/api/connection").body) as {
+        capabilities: string[];
+      }
+    ).capabilities,
+  );
+
+  for (const [capability, probe] of Object.entries(probes)) {
+    // A capability the runtime advertises but refuses is a broken affordance;
+    // one it grants without advertising is authority nobody reviewed.
+    expect([capability, probe().statusCode === 403]).toEqual([
+      capability,
+      !advertised.has(capability),
+    ]);
+  }
+
+  // The same-origin board still does every one of them; the narrowing is the
+  // hosted client's authority, not a missing feature.
+  expect(dispatch("GET", `/api/tasks/${taskId}/export`).statusCode).toBe(200);
 });
 
 test("trace serve keeps same-origin board mutations working", () => {
@@ -745,6 +868,38 @@ test("trace serve falls back to the next port when the default is taken", async 
   expect(running.port).toBe(DEFAULT_SERVE_PORT + 1);
   expect(running.url).toBe(`http://127.0.0.1:${DEFAULT_SERVE_PORT + 1}/`);
   await running.close();
+});
+
+test("the managed connection reports a taken port rather than moving to another", async () => {
+  const server = fakeServerWithTakenPorts(new Set([DEFAULT_SERVE_PORT]));
+
+  await expect(
+    startTraceServe(
+      {},
+      { server, triggerSync: () => {}, allowPortFallback: false },
+    ),
+  ).rejects.toThrow("EADDRINUSE");
+});
+
+test("a serve that does not own periodic sync schedules none", async () => {
+  vi.useFakeTimers();
+  try {
+    const server = fakeServerWithTakenPorts(new Set());
+    const triggerSync = vi.fn();
+
+    const running = await startTraceServe(
+      {},
+      { server, triggerSync, periodicSync: false },
+    );
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(PERIODIC_SYNC_INTERVAL_MS * 3);
+    expect(triggerSync).toHaveBeenCalledTimes(1);
+
+    await running.close();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("trace serve returns a hosted pairing URL with no query secret", async () => {
@@ -932,6 +1087,35 @@ test("openBrowser launches the platform opener with the url", () => {
   ]);
 });
 
+test("the serve process reports the Trace version it is actually running", () => {
+  const env = {
+    HOME: dir,
+    TRACE_DB: databasePath,
+    TRACE_CURRENT_VERSION: "4.5.6",
+  };
+  const server = createTraceServeServer(env, undefined);
+  const captured: { body: string } = { body: "" };
+
+  server.emit(
+    "request",
+    {
+      method: "GET",
+      url: "/api/connection",
+      headers: { host: "127.0.0.1:4317" },
+    } as IncomingMessage,
+    {
+      statusCode: 200,
+      setHeader: () => {},
+      end: (chunk?: string) => (captured.body = chunk ?? ""),
+    } as unknown as ServerResponse,
+  );
+
+  expect(JSON.parse(captured.body)).toMatchObject({
+    service: "trace",
+    runtimeVersion: "4.5.6",
+  });
+});
+
 test("the board's sync status reports the machine's AutoSync mode as it changes", () => {
   const env = { HOME: dir, TRACE_DB: databasePath };
   const server = createTraceServeServer(env, undefined);
@@ -959,4 +1143,113 @@ test("the board's sync status reports the machine's AutoSync mode as it changes"
   // only after a restart.
   updateConfigFile(databasePath, { autoSync: false });
   expect(readAutoSync()).toBe(false);
+});
+
+test("management routes require the local admin credential, not a browser one", () => {
+  const { connection, token } = pairedConnection();
+  const list = (headers: Record<string, string>) =>
+    dispatch(
+      "GET",
+      "/api/management/browsers",
+      undefined,
+      undefined,
+      headers,
+      "https://trace-hosted.example",
+      connection,
+    );
+
+  expect(list({}).statusCode).toBe(401);
+  expect(list({ authorization: `Bearer ${token}` }).statusCode).toBe(401);
+
+  const listed = list({
+    authorization: `Bearer ${connection.managementToken}`,
+  });
+  expect(listed.statusCode).toBe(200);
+  expect(JSON.parse(listed.body)).toEqual({
+    browsers: connection.listBrowsers(),
+  });
+  expect(listed.body).not.toContain("digest");
+});
+
+test("management routes refuse every browser-originated request", () => {
+  const { connection } = pairedConnection();
+  const asBrowser = (origin: string) =>
+    dispatch(
+      "GET",
+      "/api/management/browsers",
+      undefined,
+      undefined,
+      {
+        origin,
+        authorization: `Bearer ${connection.managementToken}`,
+      },
+      "https://trace-hosted.example",
+      connection,
+    );
+
+  // Even the hosted origin holding the management credential is a browser, and
+  // no browser administers this installation.
+  expect(asBrowser("https://trace-hosted.example").statusCode).toBe(403);
+  expect(asBrowser("http://127.0.0.1:4317").statusCode).toBe(403);
+});
+
+test("the running service issues a pairing link without restarting", () => {
+  const allowedOrigin = "https://trace-hosted.example";
+  const connection = openConnectionCredentials({ HOME: dir });
+  const pairing = createPairingLinks(connection.issueBrowserToken);
+
+  const issued = dispatch(
+    "POST",
+    "/api/management/pairings",
+    undefined,
+    undefined,
+    { authorization: `Bearer ${connection.managementToken}` },
+    allowedOrigin,
+    connection,
+    pairing,
+    "",
+  );
+
+  expect(issued.statusCode).toBe(200);
+  expect(issued.headers["cache-control"]).toBe("no-store");
+  const link = JSON.parse(issued.body) as { url: string; expiresAt: number };
+  expect(link.url).toMatch(
+    /^https:\/\/trace-hosted\.example\/#trace-pair=[A-Za-z0-9_-]{43}$/,
+  );
+  expect(link.expiresAt).toBeGreaterThan(Date.now());
+
+  const secret = new URL(link.url).hash.replace("#trace-pair=", "");
+  expect(pairing.exchange(secret)).not.toBeNull();
+});
+
+test("management revocation and reset take effect immediately", () => {
+  const { connection, token } = pairedConnection();
+  const second = connection.issueBrowserToken("Second");
+  const manage = (method: string, path: string) =>
+    dispatch(
+      method,
+      path,
+      undefined,
+      undefined,
+      { authorization: `Bearer ${connection.managementToken}` },
+      "https://trace-hosted.example",
+      connection,
+      undefined,
+      "",
+    );
+
+  const revoked = manage("POST", `/api/management/browsers/${second.id}/revoke`);
+  expect(revoked.statusCode).toBe(200);
+  expect(connection.verifyBrowserToken(second.token)).toBeNull();
+  expect(connection.verifyBrowserToken(token)).not.toBeNull();
+  expect(
+    manage("POST", "/api/management/browsers/never-paired/revoke").statusCode,
+  ).toBe(404);
+
+  const reset = manage("POST", "/api/management/reset");
+  expect(reset.statusCode).toBe(200);
+  expect(connection.listBrowsers()).toEqual([]);
+  expect(connection.verifyBrowserToken(token)).toBeNull();
+  // Reset revokes browsers; local management authority survives it.
+  expect(manage("GET", "/api/management/browsers").statusCode).toBe(200);
 });

@@ -1,5 +1,7 @@
 import {
+  HOSTED_CAPABILITIES,
   TRACE_PROTOCOL_VERSION,
+  type TraceCapability,
   type TraceConnection,
 } from "@trace/core/browser";
 import {
@@ -24,6 +26,19 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Thrown when the board asks a local connection for something the connected
+ * runtime never granted. It is not an HTTP failure: the request is refused
+ * before it leaves the browser, so a withheld capability cannot be reached by
+ * calling past a hidden control.
+ */
+export class UnsupportedOperationError extends Error {
+  constructor(public readonly capability: TraceCapability) {
+    super(`Trace on this device did not grant "${capability}"`);
+    this.name = "UnsupportedOperationError";
+  }
+}
+
 export type TraceDataSourceCapabilities = Readonly<{
   requiresConnection: boolean;
   taskDetails: boolean;
@@ -44,6 +59,10 @@ export interface TraceDataSource {
   readonly connectAutomatically: boolean;
   request(path: string, init?: RequestInit): Promise<Response>;
   connect(): Promise<TraceConnection>;
+  beginPairing?(
+    signal: AbortSignal,
+  ): Promise<{ code: string; secret: string; expiresAt: number }>;
+  pollPairing?(secret: string, signal: AbortSignal): Promise<boolean>;
 }
 
 const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
@@ -56,18 +75,84 @@ const SAME_ORIGIN_CAPABILITIES: TraceDataSourceCapabilities = {
   sync: true,
 };
 
-// The bridge's cross-origin allowlist is narrower than the bundled board's:
-// tasks can be archived and pinned, but doc edits and exports stay local-only,
-// so the hosted UI must not offer affordances the loopback API would refuse.
-const LOCAL_CAPABILITIES: TraceDataSourceCapabilities = {
-  requiresConnection: true,
-  taskDetails: true,
-  taskMutations: true,
-  docEdits: false,
-  taskExports: false,
-  account: false,
-  sync: false,
-};
+/**
+ * What a local connection may do before — or absent — a capability handshake.
+ * A protocol-1 runtime predating capability advertisement answers a fixed
+ * cross-origin allowlist: reads plus archive/unarchive/pin/unpin. Assuming that
+ * and no more keeps a legacy runtime working without inventing authority a
+ * newer runtime might have declined to grant.
+ */
+const LEGACY_LOCAL_CAPABILITIES: TraceDataSourceCapabilities =
+  localCapabilities(HOSTED_CAPABILITIES);
+
+/** Widen the handshake's capability names into the board's capability flags. */
+function localCapabilities(
+  advertised: readonly TraceCapability[],
+): TraceDataSourceCapabilities {
+  const granted = new Set(advertised);
+  return {
+    requiresConnection: true,
+    taskDetails: granted.has("taskDetails"),
+    taskMutations: granted.has("taskMutations"),
+    docEdits: granted.has("docEdits"),
+    taskExports: granted.has("taskExports"),
+    account: granted.has("account"),
+    sync: granted.has("sync"),
+  };
+}
+
+/**
+ * The capability list a runtime advertised, or null when it advertised none in
+ * a form this board can trust. Unknown names are dropped rather than rejected:
+ * a newer runtime naming a capability this board has never heard of is not a
+ * broken handshake, it is simply an affordance this board cannot offer.
+ */
+function readAdvertisedCapabilities(
+  connection: TraceConnection,
+): readonly TraceCapability[] | null {
+  // Capability names are this protocol version's vocabulary. A runtime that
+  // answers a different protocol may mean something else by them, so its list
+  // is not read at all — the caller reports the mismatch instead.
+  if (connection?.protocolVersion !== TRACE_PROTOCOL_VERSION) return null;
+  const advertised: unknown = connection.capabilities;
+  if (!Array.isArray(advertised)) return null;
+  return advertised.filter(
+    (capability): capability is TraceCapability =>
+      typeof capability === "string" && KNOWN_CAPABILITIES.has(capability),
+  );
+}
+
+/**
+ * The capability each API path needs, so a call is gated by the same handshake
+ * that gates the affordance. The task list and the handshake itself are the
+ * base of every connection and need none. Order matters: a doc checkbox write
+ * lives under the docs path but is an edit, not a read.
+ */
+function requiredCapability(path: string): TraceCapability | null {
+  const route = path.split("?", 1)[0] ?? path;
+  if (/^\/api\/tasks\/[^/]+\/docs\/checkbox$/.test(route)) return "docEdits";
+  if (/^\/api\/tasks\/[^/]+\/export$/.test(route)) return "taskExports";
+  if (/^\/api\/tasks\/[^/]+\/(archive|unarchive|pin|unpin)$/.test(route)) {
+    return "taskMutations";
+  }
+  if (/^\/api\/tasks\/[^/]+\/(timeline|docs)$/.test(route)) {
+    return "taskDetails";
+  }
+  if (route === "/api/sync" || route.startsWith("/api/sync/")) return "sync";
+  if (route === "/api/config" || route.startsWith("/api/local-auth")) {
+    return "account";
+  }
+  return null;
+}
+
+const KNOWN_CAPABILITIES: ReadonlySet<string> = new Set([
+  "taskDetails",
+  "taskMutations",
+  "docEdits",
+  "taskExports",
+  "account",
+  "sync",
+]);
 
 abstract class HttpTraceDataSource implements TraceDataSource {
   readonly protocolVersion = TRACE_PROTOCOL_VERSION;
@@ -101,10 +186,10 @@ export class SameOriginTraceSource extends HttpTraceDataSource {
 
 export class LocalTraceSource extends HttpTraceDataSource {
   readonly key: string;
-  readonly capabilities = LOCAL_CAPABILITIES;
   readonly origin: string;
   readonly credentialStorageKey: string;
   #credential: string | null;
+  #capabilities: TraceDataSourceCapabilities = LEGACY_LOCAL_CAPABILITIES;
 
   constructor(origin: string) {
     super();
@@ -118,6 +203,10 @@ export class LocalTraceSource extends HttpTraceDataSource {
   }
 
   request(path: string, init?: RequestInit): Promise<Response> {
+    const capability = requiredCapability(path);
+    if (capability && !this.#capabilities[capability]) {
+      return Promise.reject(new UnsupportedOperationError(capability));
+    }
     if (!this.#credential) return traceApiFetch(path, init, this.origin);
 
     const headers = new Headers(init?.headers);
@@ -126,10 +215,23 @@ export class LocalTraceSource extends HttpTraceDataSource {
   }
 
   get connectAutomatically(): boolean {
-    return Boolean(this.#credential || readPairingSecret());
+    return Boolean(
+      this.#credential ||
+      readStoredCredential(this.credentialStorageKey) ||
+      readPairingSecret(),
+    );
+  }
+
+  /** What the connected runtime granted; the conservative legacy set until a
+   * handshake says otherwise. */
+  get capabilities(): TraceDataSourceCapabilities {
+    return this.#capabilities;
   }
 
   override async connect(): Promise<TraceConnection> {
+    // Another tab may have completed pairing while this source stayed mounted.
+    this.#credential =
+      readStoredCredential(this.credentialStorageKey) ?? this.#credential;
     const pairingSecret = readPairingSecret();
     if (pairingSecret) {
       try {
@@ -138,7 +240,61 @@ export class LocalTraceSource extends HttpTraceDataSource {
         removePairingSecret();
       }
     }
-    return super.connect();
+    const connection = await super.connect();
+    const advertised = readAdvertisedCapabilities(connection);
+    this.#capabilities = advertised
+      ? localCapabilities(advertised)
+      : LEGACY_LOCAL_CAPABILITIES;
+    return connection;
+  }
+
+  async beginPairing(signal: AbortSignal) {
+    const response = await traceApiFetch(
+      "/api/pairing/requests",
+      { method: "POST", signal },
+      this.origin,
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Could not prepare pairing");
+    const payload = await response.json();
+    if (
+      !/^[A-F0-9]{4}-[A-F0-9]{4}$/.test(payload.code) ||
+      typeof payload.secret !== "string" ||
+      !TOKEN_PATTERN.test(payload.secret) ||
+      typeof payload.expiresAt !== "number" ||
+      !Number.isFinite(payload.expiresAt)
+    ) {
+      throw new Error("Trace returned an invalid pairing request");
+    }
+    return payload as { code: string; secret: string; expiresAt: number };
+  }
+
+  async pollPairing(secret: string, signal: AbortSignal): Promise<boolean> {
+    const response = await traceApiFetch(
+      "/api/pairing/requests/poll",
+      {
+        method: "POST",
+        signal,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ secret }),
+      },
+      this.origin,
+    );
+    if (!response.ok)
+      throw new HttpError(response.status, "Could not complete pairing");
+    const payload = await response.json();
+    if (response.status === 202 && payload.status === "pending") return false;
+    if (
+      payload.status !== "approved" ||
+      typeof payload.token !== "string" ||
+      !TOKEN_PATTERN.test(payload.token)
+    ) {
+      throw new Error("Trace returned an invalid bridge credential");
+    }
+    if (signal.aborted) return false;
+    this.#credential = payload.token;
+    writeStoredCredential(this.credentialStorageKey, payload.token);
+    return true;
   }
 
   async #pair(secret: string): Promise<void> {
