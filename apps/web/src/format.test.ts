@@ -153,13 +153,13 @@ describe("truncatePath", () => {
 describe("buildReEnterPrompt", () => {
   test("produces the canonical re-enter prompt string", () => {
     expect(buildReEnterPrompt("Break stop and stale expiry", "break-stop-and-stale-expiry")).toBe(
-      'Re-enter the trace task "Break stop and stale expiry" (break-stop-and-stale-expiry)',
+      'Re-enter the eqnx task "Break stop and stale expiry" (break-stop-and-stale-expiry)',
     );
   });
 
   test("preserves special characters in title and slug", () => {
     expect(buildReEnterPrompt("Task: edge-case #1", "task-edge-case-1")).toBe(
-      'Re-enter the trace task "Task: edge-case #1" (task-edge-case-1)',
+      'Re-enter the eqnx task "Task: edge-case #1" (task-edge-case-1)',
     );
   });
 });

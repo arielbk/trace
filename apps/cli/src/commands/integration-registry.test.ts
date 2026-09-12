@@ -77,7 +77,7 @@ test("the registry path defaults beneath the available home directory", () => {
 
 test("registry path resolution fails explicitly without a home directory", () => {
   expect(() => IntegrationRegistry.fromEnv({})).toThrow(
-    "HOME/USERPROFILE must be set to resolve the Trace registry path",
+    "HOME/USERPROFILE must be set to resolve the EQNX registry path",
   );
 });
 

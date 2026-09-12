@@ -25,7 +25,7 @@ describe("CLI bundle", () => {
   it("build emits a tsup-generated self-contained CLI bundle", () => {
     rmSync(join(appRoot, "dist"), { recursive: true, force: true });
 
-    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+    execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
@@ -50,7 +50,7 @@ describe("CLI bundle", () => {
   });
 
   it("build copies web assets next to the CLI bundle", () => {
-    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+    execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
@@ -64,7 +64,7 @@ describe("CLI bundle", () => {
   });
 
   it("build copies all six canonical skills into dist/skills/ for tarball distribution", () => {
-    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+    execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
@@ -87,7 +87,7 @@ describe("CLI bundle", () => {
   });
 
   it("build inlines the interactive prompt dependency into the bundle", () => {
-    execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+    execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
       cwd: repoRoot,
       encoding: "utf8",
     });
@@ -210,7 +210,7 @@ describe("CLI bundle", () => {
       );
 
       assert.equal(
-        output.includes("Trace: no task is bound to this session"),
+        output.includes("EQNX: no task is bound to this session"),
         true,
       );
     } finally {

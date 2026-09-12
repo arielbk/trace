@@ -208,7 +208,7 @@ test("session set-parent requires --parent", () => {
     );
 
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Usage: trace session set-parent");
+    expect(result.stderr).toContain("Usage: eqnx session set-parent");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });
@@ -566,7 +566,7 @@ test("skill work-on-task --help prints usage and creates no task", () => {
     for (const flag of ["--help", "-h"]) {
       const result = runTraceCli(["skill", "work-on-task", flag], env, sandbox);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Usage: trace skill work-on-task");
+      expect(result.stdout).toContain("Usage: eqnx skill work-on-task");
     }
 
     // The help flag must never be persisted as a task title.
@@ -592,7 +592,7 @@ test("skill re-enter --help prints usage and exits 0", () => {
     for (const flag of ["--help", "-h"]) {
       const result = runTraceCli(["skill", "re-enter", flag], env, sandbox);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Usage: trace skill re-enter");
+      expect(result.stdout).toContain("Usage: eqnx skill re-enter");
     }
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -608,7 +608,7 @@ test("skill re-enter with a flag ref exits non-zero with usage", () => {
   try {
     const result = runTraceCli(["skill", "re-enter", "--bogus"], env, sandbox);
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Usage: trace skill re-enter");
+    expect(result.stderr).toContain("Usage: eqnx skill re-enter");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });
@@ -687,7 +687,7 @@ test("task create with a flag title still rejects with its original usage", () =
   try {
     const result = runTraceCli(["task", "create", "--bogus"], env, sandbox);
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Usage: trace task create <title>");
+    expect(result.stderr).toContain("Usage: eqnx task create <title>");
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(sandbox, { recursive: true, force: true });
@@ -706,7 +706,7 @@ test("skill work-on-task with a flag first arg exits non-zero and creates no tas
       sandbox,
     );
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("Usage: trace skill work-on-task");
+    expect(result.stderr).toContain("Usage: eqnx skill work-on-task");
 
     const candidates = runTraceCli(
       ["skill", "recall-candidates"],
@@ -1144,6 +1144,6 @@ test("the compact usage names the connection lifecycle subcommands", () => {
   const result = runTraceCli(["frobnicate"], { HOME: "/tmp" });
 
   expect(result.stderr).toContain(
-    "trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>",
+    "eqnx connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset>",
   );
 });

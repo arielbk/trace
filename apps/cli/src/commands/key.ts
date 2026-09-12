@@ -43,7 +43,7 @@ export function keyShowOperation(env: Env): CommandResult {
   const masterKey = readStoredDocCryptoKey(env);
   if (!masterKey) {
     return failure(
-      "No document encryption key found. Run trace login to set one up.",
+      "No document encryption key found. Run eqnx login to set one up.",
       1,
     );
   }

@@ -25,11 +25,11 @@ import type { Env } from "./commands/seam.ts";
 
 /**
  * The board adapter over the machine-local auth service: it runs the same
- * device authorization sequence as `trace login`, but instead of prompting a
+ * device authorization sequence as `eqnx login`, but instead of prompting a
  * terminal it parks the attempt in memory as a {@link LoginAttemptView} the
- * board can poll through `trace serve`.
+ * board can poll through `eqnx serve`.
  *
- * Attempts live only in the serving process's memory. Restarting `trace serve`
+ * Attempts live only in the serving process's memory. Restarting `eqnx serve`
  * abandons any in-flight login, which is the right trade: an attempt is a
  * short-lived foreground interaction, and nothing about it is worth persisting
  * beside the credentials it may produce.

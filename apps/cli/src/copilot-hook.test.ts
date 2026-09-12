@@ -71,7 +71,7 @@ test("Copilot agentStop payload performs the same state freshness check as Claud
     expect(result.stdout).not.toBe("");
     expect(JSON.parse(result.stdout)).toMatchObject({
       decision: "block",
-      reason: expect.stringContaining(`trace state reflect ${slug}`),
+      reason: expect.stringContaining(`eqnx state reflect ${slug}`),
     });
   } finally {
     rmSync(home, { recursive: true, force: true });

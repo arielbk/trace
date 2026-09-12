@@ -1,6 +1,6 @@
 /**
  * The board remains same-origin by default. A hosted build points the exact
- * same client at local Trace through VITE_TRACE_API_ORIGIN.
+ * same client at local EQNX through VITE_TRACE_API_ORIGIN.
  */
 export function resolveTraceApiOrigin(value: string | undefined): string {
   const configured = value?.trim();
@@ -33,7 +33,7 @@ export function traceApiUrl(
   origin: string = traceApiOrigin,
 ): string {
   if (!path.startsWith("/")) {
-    throw new Error("Trace API paths must start with /");
+    throw new Error("EQNX API paths must start with /");
   }
   return `${origin}${path}`;
 }
@@ -44,7 +44,7 @@ type LocalNetworkRequestInit = RequestInit & {
 };
 
 /**
- * Fetch from Trace's API. Hosted builds explicitly identify the destination as
+ * Fetch from EQNX's API. Hosted builds explicitly identify the destination as
  * loopback so supporting browsers can ask for Local Network Access permission
  * and safely relax mixed-content blocking for this request.
  */

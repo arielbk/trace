@@ -38,7 +38,7 @@ type BackgroundSpawn = (
 ) => BackgroundChild;
 
 /**
- * Marks a `trace sync` process as one Trace started on the user's behalf rather
+ * Marks a `eqnx sync` process as one EQNX started on the user's behalf rather
  * than one the user typed. Set on the spawned child by
  * {@link requestAutomaticSync}, read back by {@link runSyncCommand} as the
  * execution half of the AutoSync policy: a job queued before the user turned
@@ -116,12 +116,12 @@ export async function runSyncCommand(
   const serverUrl = resolveConfiguredServerUrl(env);
   if (!serverUrl) {
     // Cloud sync is flagged off without a configured server — soft no-op so a
-    // stray `trace sync` (foreground or background) never invents a server.
+    // stray `eqnx sync` (foreground or background) never invents a server.
     return { exitCode: 0, stdout: `${NO_SERVER_CONFIGURED_MESSAGE}\n`, stderr: "" };
   }
   const token = readAuthToken(env);
   if (!token) {
-    return { exitCode: 0, stdout: "Not logged in. Run trace login.\n", stderr: "" };
+    return { exitCode: 0, stdout: "Not logged in. Run eqnx login.\n", stderr: "" };
   }
   const masterKey = readStoredDocCryptoKey(env);
   if (!masterKey) {
@@ -129,7 +129,7 @@ export async function runSyncCommand(
       exitCode: 1,
       stdout: "",
       stderr:
-        "No document encryption key found. Run trace login to set one up.\n",
+        "No document encryption key found. Run eqnx login to set one up.\n",
     };
   }
   const databasePath = resolveDatabasePath(env);

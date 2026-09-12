@@ -27,7 +27,7 @@ function registeredIdentities(home: string): string[] {
     .sort();
 }
 
-/** The Trace version the Integration Registry recorded for its targets. */
+/** The EQNX version the Integration Registry recorded for its targets. */
 function registeredVersion(home: string): string {
   const path = join(home, ".trace", "integrations.json");
   return JSON.parse(readFileSync(path, "utf8")).targets[0].version;
@@ -195,7 +195,7 @@ test("confirming installs the reviewed selection and leaves the rest untouched",
     expect(existsSync(join(codexRoot, "skills"))).toBe(false);
     expect(registeredIdentities(dir)).toEqual([`claude=${claudeRoot}`]);
     // The plan was already reviewed in the terminal; the result is the outcome.
-    expect(result.stdout).toBe(`Installed Trace into ${claudeRoot}.\n`);
+    expect(result.stdout).toBe(`Installed EQNX into ${claudeRoot}.\n`);
   } finally {
     cleanup();
   }

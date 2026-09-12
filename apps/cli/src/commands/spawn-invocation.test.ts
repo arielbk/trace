@@ -4,17 +4,17 @@ import { spawnInvocation } from "./spawn-invocation.ts";
 test("on Windows the command carries its arguments and the args array is empty", () => {
   // Node emits DEP0190 for any non-empty args array spawned with `shell: true`,
   // so on Windows the arguments have to be folded into the command string.
-  expect(spawnInvocation("win32", "npm", ["install", "-g", "@arielbk/trace@1.2.3"])).toEqual({
-    command: "npm install -g @arielbk/trace@1.2.3",
+  expect(spawnInvocation("win32", "npm", ["install", "-g", "@eqnx/cli@1.2.3"])).toEqual({
+    command: "npm install -g @eqnx/cli@1.2.3",
     args: [],
     shell: true,
   });
 });
 
 test("on POSIX the command keeps its argument array and no shell", () => {
-  expect(spawnInvocation("darwin", "pnpm", ["add", "-g", "@arielbk/trace@1.2.3"])).toEqual({
+  expect(spawnInvocation("darwin", "pnpm", ["add", "-g", "@eqnx/cli@1.2.3"])).toEqual({
     command: "pnpm",
-    args: ["add", "-g", "@arielbk/trace@1.2.3"],
+    args: ["add", "-g", "@eqnx/cli@1.2.3"],
     shell: false,
   });
 });

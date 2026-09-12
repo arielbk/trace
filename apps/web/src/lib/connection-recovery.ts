@@ -12,7 +12,7 @@ export const HEARTBEAT_INTERVAL_MS = 30_000;
 /**
  * The bounded backoff behind a connection that stopped answering. It is short
  * and finite on purpose: a laptop that slept, a service restarting under
- * `trace update`, or a board left open overnight should all recover on their
+ * `eqnx update`, or a board left open overnight should all recover on their
  * own, and anything longer-lived should say so rather than retry forever.
  */
 export const RECONNECT_DELAYS_MS = [1_000, 4_000, 15_000] as const;
@@ -25,10 +25,10 @@ export const RECONNECT_DELAYS_MS = [1_000, 4_000, 15_000] as const;
  * confident wrong advice in front of the viewer.
  */
 export type ConnectionLoss =
-  /** Trace answered and refused: the credential was revoked, or this origin is
+  /** EQNX answered and refused: the credential was revoked, or this origin is
    * no longer the one it allows. */
   | { kind: "revoked"; status: number }
-  /** Trace answered a handshake this board does not speak — it was upgraded
+  /** EQNX answered a handshake this board does not speak — it was upgraded
    * (or downgraded) underneath an open tab. */
   | { kind: "outdated"; protocolVersion: number }
   /** Ambiguous: stopped, asleep, blocked, or offline. */
@@ -53,7 +53,7 @@ export function useConnectionHealth() {
 }
 
 /**
- * Classify a failed handshake. Only an answer from Trace itself is treated as
+ * Classify a failed handshake. Only an answer from EQNX itself is treated as
  * a settled refusal; everything else stays in the one honest bucket.
  */
 export function classifyConnectionLoss(error: unknown): ConnectionLoss {

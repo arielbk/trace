@@ -18,7 +18,7 @@ import { failure, success, type CommandResult, type Env } from "./seam.ts";
 const CANCELLED = "Setup cancelled; no changes made.\n";
 
 /**
- * The interactive half of `trace setup`: show every known Integration Target in
+ * The interactive half of `eqnx setup`: show every known Integration Target in
  * one picker, review the submitted selection's plan, and reconcile it after an
  * explicit confirmation. The synchronous setup operation remains the
  * deterministic path for flags and non-interactive callers.
@@ -80,12 +80,12 @@ export async function interactiveSetupOperation(
         : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)} were`;
     prompt.warn(
       `Setup incomplete: ${skipped} skipped.\n` +
-        "Fix the guardrail issue shown above, then run `trace setup` again.",
+        "Fix the guardrail issue shown above, then run `eqnx setup` again.",
     );
   }
 
   const confirmed = await prompt.confirm({
-    message: "Install Trace into these targets?",
+    message: "Install EQNX into these targets?",
   });
   if (confirmed.cancelled || !confirmed.value) return success(CANCELLED);
 

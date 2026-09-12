@@ -155,7 +155,7 @@ test("state check seeds: needsProsePass with mode=seed when bound and no prose b
 
     expect(verdict.needsProsePass).toBe(true);
     expect(verdict.mode).toBe("seed");
-    expect(verdict.reason).toContain("trace state reflect");
+    expect(verdict.reason).toContain("eqnx state reflect");
     expect(verdict.changedDocs).toContain("spec.md");
   });
 });
@@ -181,7 +181,7 @@ test("state check drifts: mode=refresh when bound, prose present, but marker abs
     // Refresh is advisory — the agent judges whether the drift warrants a
     // pass — but still names the reflect command that stamps the marker.
     expect(verdict.reason).toContain("Use your judgment");
-    expect(verdict.reason).toContain(`trace state reflect ${slug}`);
+    expect(verdict.reason).toContain(`eqnx state reflect ${slug}`);
   });
 });
 

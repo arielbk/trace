@@ -97,7 +97,7 @@ test("skill work-on-task materializes the state.md footer on bind for a task wit
       ctx,
     );
 
-    // The footer materialized at the bind seam — no `trace state check` ran.
+    // The footer materialized at the bind seam — no `eqnx state check` ran.
     expect(existsSync(statePath)).toBe(true);
     const written = readFileSync(statePath, "utf8");
     expect(written).toContain("# Checkout flow");
@@ -256,7 +256,7 @@ test("skill re-enter materializes the state.md footer and reports seed drift for
     expect(reentered.stdout).toContain("needsProsePass: true");
     expect(reentered.stdout).toContain("mode: seed");
     expect(reentered.stdout).toContain("`trace-state` skill");
-    expect(reentered.stdout).toContain(`trace state reflect ${slug}`);
+    expect(reentered.stdout).toContain(`eqnx state reflect ${slug}`);
   });
 });
 
@@ -322,7 +322,7 @@ test("skill re-enter omits the freshness directive when no session binds", () =>
     });
 
     expect(reentered.exitCode).toBe(0);
-    // The footer still materializes (the manifest read is a Trace touchpoint)…
+    // The footer still materializes (the manifest read is a EQNX touchpoint)…
     expect(existsSync(statePath)).toBe(true);
     // …but the prose-pass directive is withheld without a bound session.
     expect(reentered.stdout).not.toContain("stateFreshness:");
@@ -410,7 +410,7 @@ test("skill docs-dir reports an unbound session with re-enter guidance", () => {
       exitCode: 1,
       stdout: "",
       stderr:
-        "Session is not bound to a task. Re-enter the most recent task with: trace skill re-enter recent-task\n",
+        "Session is not bound to a task. Re-enter the most recent task with: eqnx skill re-enter recent-task\n",
     });
   });
 });

@@ -15,6 +15,7 @@ import {
   resolveConfiguredServerUrl,
   resolveDatabasePath,
   writeTraceApiResponse,
+  DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
   type LocalAuthService,
   type TraceClientScope,
@@ -59,11 +60,11 @@ export type StartTraceServeOptions = {
    * a foreground serve so there is only ever one periodic sync owner. */
   periodicSync?: boolean;
   /**
-   * Whether this process answers `/api/management/*` — how `trace connection
+   * Whether this process answers `/api/management/*` — how `eqnx connection
    * …` administers it, and how a probe recognises it as this installation's
    * own. The managed connection always sets it, because being administrable
-   * must not depend on a hosted board being configured. Off by default, so a
-   * bare `trace serve` creates no credential it will never use.
+   * must not depend on a hosted board being configured. Off by default, so
+   * `eqnx serve` with hosted access disabled creates no unused credential.
    */
   localManagement?: boolean;
 };
@@ -180,7 +181,7 @@ function serveFile(res: ServerResponse, filePath: string): void {
 }
 
 /**
- * The `trace serve` request handler. API routing goes through the shared
+ * The `eqnx serve` request handler. API routing goes through the shared
  * `@trace/core` router, so the served endpoints match the Vite dev middleware
  * exactly. Non-API requests are served from `assetsDir` (the built web SPA);
  * without an assets directory they get a 404.
@@ -191,7 +192,7 @@ export function createServeRequestListener(
   syncServerConfigured?: boolean,
   syncHooks?: ServeSyncHooks,
   /** Reads the effective AutoSync mode; called per request because the user may
-   * run `trace config set auto-sync` while the board is open. */
+   * run `eqnx config set auto-sync` while the board is open. */
   resolveAutoSync?: () => boolean,
   /** Runs board-initiated login/logout. Absent means this host serves no
    * `/api/local-auth` routes. */
@@ -203,7 +204,7 @@ export function createServeRequestListener(
   connection?: ConnectionCredentials,
   /** Process-local, single-use exchanges that mint browser credentials. */
   pairing?: PairingLinks,
-  /** The Trace version this process is running, reported by the handshake. */
+  /** The EQNX version this process is running, reported by the handshake. */
   runtimeVersion?: string,
 ): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
@@ -518,7 +519,7 @@ function handleManagementRequest(
   const route = path.slice(MANAGEMENT_PREFIX.length);
   // Answering this at all is the proof of ownership: only the holder of this
   // installation's management credential gets here, so a reply means the
-  // process on the endpoint is *ours*, not merely some Trace.
+  // process on the endpoint is *ours*, not merely some EQNX.
   if (route === "status" && method === "GET") {
     return endManagementJson(res, 200, {
       service: "trace",
@@ -702,7 +703,9 @@ function isLoopbackBindHost(host: string): boolean {
 export function resolveAllowedWebOrigin(
   env: Record<string, string | undefined>,
 ): string | undefined {
-  const configured = env[TRACE_WEB_ORIGIN_ENV_VAR]?.trim();
+  const configured = (
+    env[TRACE_WEB_ORIGIN_ENV_VAR] ?? DEFAULT_HOSTED_WEB_ORIGIN
+  ).trim();
   if (!configured) return undefined;
   try {
     const url = new URL(configured);
@@ -762,7 +765,7 @@ function serveOrFallback(
 /**
  * Locate the built web SPA relative to this module: `apps/web/dist` when
  * running from the repo (`src/` or `dist/`). Returns undefined when no build
- * exists — `trace serve` then runs API-only.
+ * exists — `eqnx serve` then runs API-only.
  */
 export function resolveWebAssetsDir(
   moduleDir: string = dirname(fileURLToPath(import.meta.url)),
@@ -780,7 +783,7 @@ export function resolveWebAssetsDir(
   return existsSync(join(candidate, "index.html")) ? candidate : undefined;
 }
 
-/** Build the `trace serve` HTTP server bound to the resolved trace database. */
+/** Build the `eqnx serve` HTTP server bound to the resolved trace database. */
 export function createTraceServeServer(
   env: Record<string, string | undefined>,
   assetsDir: string | undefined = resolveWebAssetsDir(),
@@ -822,7 +825,7 @@ export function startTraceServe(
   const host = options.host ?? "127.0.0.1";
   if (!isLoopbackBindHost(host)) {
     return Promise.reject(
-      new Error("trace serve must bind to a loopback host"),
+      new Error("eqnx serve must bind to a loopback host"),
     );
   }
   const preferredPort = options.port ?? DEFAULT_SERVE_PORT;

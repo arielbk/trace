@@ -131,7 +131,7 @@ export function writeStateDocument(
 /**
  * Re-render the docs-manifest fence from `entries`, leaving the prose and the
  * prose stamp exactly as they were. This is the bookkeeping write every bind
- * seam and `trace state check` makes.
+ * seam and `eqnx state check` makes.
  */
 export function reconcileStateDocumentManifest(
   docsDir: string,
@@ -151,7 +151,7 @@ export function reconcileStateDocumentManifest(
 
 /**
  * Stamp the State Document: record that the prose on disk now reflects
- * `stamp.fingerprint`, written at `stamp.writtenAt`. Only `trace state reflect`
+ * `stamp.fingerprint`, written at `stamp.writtenAt`. Only `eqnx state reflect`
  * calls this — it is the one seam that means "the prose was just written",
  * which is exactly why the timestamp is trustworthy where the file's mtime is
  * not.

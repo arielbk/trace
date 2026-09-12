@@ -52,7 +52,7 @@ test("source capabilities select the explicit local connection flow", () => {
   render(<App source={new LocalTraceSource("http://127.0.0.1:4317")} />);
 
   expect(
-    screen.getByRole("heading", { name: "Connect to Trace on this device" }),
+    screen.getByRole("heading", { name: "Connect to EQNX on this device" }),
   ).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledWith(
     "http://127.0.0.1:4317/api/pairing/requests",
@@ -135,7 +135,7 @@ test("a connected board reports a connection that stops answering", async () => 
   render(<App source={new LocalTraceSource(origin)} />);
   expect(await screen.findByRole("heading", { name: "Tasks" })).toBeVisible();
 
-  // Trace goes away underneath the open board.
+  // EQNX goes away underneath the open board.
   connected.mockRejectedValue(new TypeError("Failed to fetch"));
   fireEvent(window, new Event("focus"));
 

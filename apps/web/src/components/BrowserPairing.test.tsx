@@ -37,7 +37,7 @@ test("shows only the short code and connects this tab after terminal approval", 
     />,
   );
   await act(async () => {});
-  expect(screen.getByText("trace connection pair ABCD-1234")).toBeVisible();
+  expect(screen.getByText("eqnx pair ABCD-1234")).toBeVisible();
   expect(document.body.textContent).not.toContain(secret);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1_000);
@@ -81,7 +81,7 @@ test("expires the command and cancels polling when leaving the page", async () =
   });
   expect(screen.getByText(/This command has expired/)).toBeVisible();
   expect(
-    screen.queryByText("trace connection pair ABCD-1234"),
+    screen.queryByText("eqnx pair ABCD-1234"),
   ).not.toBeInTheDocument();
   view.unmount();
   await act(async () => {

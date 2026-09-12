@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { describe, it } from "vitest";
 import { runRelease } from "./release.ts";
 
-describe("Trace release script", () => {
+describe("EQNX release script", () => {
   it("leaves the package version stamped after a real publish", () => {
     const repoRoot = mkdtempSync(join(tmpdir(), "trace-release-"));
     const cliPackageJson = join(repoRoot, "apps/cli/package.json");
@@ -21,7 +21,7 @@ describe("Trace release script", () => {
       mkdirSync(join(repoRoot, "apps/cli"), { recursive: true });
       writeFileSync(
         cliPackageJson,
-        JSON.stringify({ name: "@arielbk/trace", version: "0.1.0" }, null, 2),
+        JSON.stringify({ name: "@eqnx/cli", version: "0.1.0" }, null, 2),
       );
 
       runRelease({
@@ -56,7 +56,7 @@ describe("Trace release script", () => {
       mkdirSync(join(repoRoot, "apps/cli"), { recursive: true });
       writeFileSync(
         cliPackageJson,
-        JSON.stringify({ name: "@arielbk/trace", version: "0.1.0" }, null, 2),
+        JSON.stringify({ name: "@eqnx/cli", version: "0.1.0" }, null, 2),
       );
 
       assert.throws(

@@ -394,7 +394,7 @@ describe("TasksPage", () => {
     expect(screen.getByText("Worktree task")).toBeInTheDocument();
     expect(screen.queryByText("Other project task")).not.toBeInTheDocument();
     const breadcrumb = screen.getByRole("navigation", { name: "Primary" });
-    expect(breadcrumb).toHaveTextContent(/Trace\s*\/\s*alpha-app/);
+    expect(breadcrumb).toHaveTextContent(/EQNX\s*\/\s*alpha-app/);
     expect(breadcrumb).not.toHaveTextContent("project-alpha");
   });
 
@@ -910,7 +910,7 @@ describe("TaskList rendering — flat recency-first", () => {
 
     expect(html).toContain('aria-label="Copy re-enter prompt"');
     expect(html).toContain(
-      "Re-enter the trace task &quot;CLI work&quot; (cli-work)",
+      "Re-enter the eqnx task &quot;CLI work&quot; (cli-work)",
     );
   });
 

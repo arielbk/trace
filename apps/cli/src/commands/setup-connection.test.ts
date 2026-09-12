@@ -213,7 +213,7 @@ test("a platform without launchd says so and still installs integrations", () =>
   );
 
   expect(result.exitCode).toBe(0);
-  expect(result.stdout).toContain("trace serve");
+  expect(result.stdout).toContain("eqnx serve");
   expect(calls).toEqual([]);
   expect(existsSync(plistPath())).toBe(false);
 });

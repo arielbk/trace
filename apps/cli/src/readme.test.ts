@@ -15,17 +15,17 @@ test("README documents the interactive target picker", () => {
 });
 
 test("README documents --yes as the non-interactive apply", () => {
-  expect(readme).toContain("trace setup --yes");
+  expect(readme).toContain("eqnx setup --yes");
   expect(readme).toMatch(/--yes[\s\S]{0,400}?without prompting/i);
 });
 
 test("README says explicit targets and removal skip the picker", () => {
-  expect(readme).toContain("trace setup --tool codex");
-  expect(readme).toContain("trace setup --remove");
+  expect(readme).toContain("eqnx setup --tool codex");
+  expect(readme).toContain("eqnx setup --remove");
   expect(readme).toMatch(/skip[a-z]* the picker/i);
 });
 
 test("README says update reconciles every registered target, not a selection", () => {
-  expect(readme).toContain("trace update");
+  expect(readme).toContain("eqnx update");
   expect(readme).toMatch(/update[\s\S]{0,400}?never opens the picker/i);
 });

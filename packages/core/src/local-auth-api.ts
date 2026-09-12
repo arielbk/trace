@@ -6,7 +6,7 @@ import type { TraceApiResponse } from "./api-handler.ts";
  *
  * Authentication is machine-local: the *process serving the board* owns the
  * bearer token, not the browser. So these routes are a thin shell over a
- * host-supplied {@link LocalAuthService} — the host (`trace serve`) runs the
+ * host-supplied {@link LocalAuthService} — the host (`eqnx serve`) runs the
  * device authorization sequence and writes the credential files, and the board
  * only ever sees a {@link LoginAttemptView}. That view has no field for the
  * bearer token by construction, which is what keeps the token out of the
@@ -20,7 +20,7 @@ import type { TraceApiResponse } from "./api-handler.ts";
  * Replacing the document encryption key of an account that already holds synced
  * documents makes those documents permanently unreadable, so both surfaces
  * demand the same deliberate act: this warning, then this phrase typed exactly.
- * Shared so the board and `trace login` cannot drift apart on how hard it is.
+ * Shared so the board and `eqnx login` cannot drift apart on how hard it is.
  */
 export const REPLACEMENT_KEY_WARNING =
   "A fresh key cannot decrypt your existing synced documents.";
@@ -75,7 +75,7 @@ export interface LoginAttemptView {
 
 /**
  * The host-side login machinery the routes drive. Implemented by the CLI
- * (`local-auth.ts` behind `trace serve`); a host that cannot authenticate — the
+ * (`local-auth.ts` behind `eqnx serve`); a host that cannot authenticate — the
  * Vite dev middleware, say — simply passes no service and serves no
  * `/api/local-auth` routes.
  */

@@ -1,13 +1,13 @@
 ---
 name: trace-doc-placement
-description: Place a document (spec, PRD, plan, handoff, note) in the correct docs directory for the current Trace task. Use when the user is creating any task-level document and wants it saved in the right place, or when another planning or spec-driven workflow (writing a spec, PRD, brainstorm, design doc, or task breakdown) is about to write a planning artifact and needs to know where to put it.
+description: Place a document (spec, PRD, plan, handoff, note) in the correct docs directory for the current EQNX task. Use when the user is creating any task-level document and wants it saved in the right place, or when another planning or spec-driven workflow (writing a spec, PRD, brainstorm, design doc, or task breakdown) is about to write a planning artifact and needs to know where to put it.
 ---
 
-# Trace doc placement
+# EQNX doc placement
 
 Use this skill when the user is creating a task document — a spec, PRD, plan,
 handoff, decision note, or any other artifact that belongs in the current
-Trace task's docs directory — and you need to know where to put it, or when
+EQNX task's docs directory — and you need to know where to put it, or when
 you are about to write such a file and want to land it in the right place
 without guessing from conversation scrollback.
 
@@ -16,7 +16,7 @@ without guessing from conversation scrollback.
 ### 1. Resolve the docs directory
 
 ```sh
-trace skill docs-dir
+eqnx skill docs-dir
 ```
 
 Two outcomes:
@@ -56,7 +56,7 @@ resolved `taskDocsDir` is `~/.trace/tasks/<slug>/docs/`, so the task `<slug>` is
 the directory name two levels above `docs/` — use it as the `add-doc` ref:
 
 ```sh
-trace task add-doc <slug> <path> --description "<one-line description>"
+eqnx task add-doc <slug> <path> --description "<one-line description>"
 ```
 
 - `<slug>` — the task slug extracted from `taskDocsDir` (the segment before
@@ -78,7 +78,7 @@ on filesystem-discovered native docs like state.md, tasks.md, and log.md that
 were never explicitly registered — use `update-doc`, which upserts the row:
 
 ```sh
-trace task update-doc <slug> <path> --description "<one-line description>"
+eqnx task update-doc <slug> <path> --description "<one-line description>"
 ```
 
 Pass `--title`/`--description` to set a field, `--title ""`/`--description ""`

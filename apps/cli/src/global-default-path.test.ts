@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 import { runTraceCli } from "./trace.ts";
 
-test("trace task list uses ~/.trace/trace.sqlite when TRACE_DB is unset", () => {
+test("eqnx task list uses ~/.trace/trace.sqlite when TRACE_DB is unset", () => {
   const fakeHome = mkdtempSync(join(tmpdir(), "trace-home-"));
 
   try {

@@ -71,7 +71,7 @@ test("Claude setup previews without writing until --yes", () => {
   }
 });
 
-test("trace setup dispatches through the CLI", () => {
+test("eqnx setup dispatches through the CLI", () => {
   const { dir, cleanup } = tempDir("trace-setup-claude-cli-");
   try {
     const result = runTraceCli(
@@ -152,7 +152,7 @@ test("setup refuses to register a source-checkout executable", () => {
 test("Claude hooks quote an absolute CLI path containing spaces", () => {
   const { dir, cleanup } = tempDir("trace-setup-spaced-cli-");
   try {
-    const cliPath = "/opt/Trace CLI/bin/trace";
+    const cliPath = "/opt/EQNX CLI/bin/trace";
 
     const result = setupOperation(["--tool", "claude", "--yes"], {
       env: { HOME: dir, TRACE_CLI_PATH: cliPath },

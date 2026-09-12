@@ -7,7 +7,7 @@ export type PromptResult<T> = { cancelled: true } | { cancelled: false; value: T
 
 /**
  * The smallest interactive seam: ask a yes/no question and narrate around it.
- * A command that only needs a confirmation — `trace update` — depends on this
+ * A command that only needs a confirmation — `eqnx update` — depends on this
  * rather than on the whole setup picker, so its tests can be driven by a fake
  * that knows nothing about Integration Targets.
  */

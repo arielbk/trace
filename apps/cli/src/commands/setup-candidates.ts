@@ -97,7 +97,7 @@ const DETECTORS: Record<ToolName, Detector> = {
 
 /**
  * Resolves the active root for `tool` and reports it only when the directory
- * exists, preserving the host-detection rule that Trace never invents a root
+ * exists, preserving the host-detection rule that EQNX never invents a root
  * for a tool the user has not installed.
  */
 function detect(
@@ -123,7 +123,7 @@ function detect(
 }
 
 /**
- * The complete set of Integration Targets bare `trace setup` knows about: every
+ * The complete set of Integration Targets bare `eqnx setup` knows about: every
  * detected active/default root plus every registered target, deduplicated by
  * `(tool, root)`. A root that is both detected and registered appears once,
  * carrying both pieces of provenance.

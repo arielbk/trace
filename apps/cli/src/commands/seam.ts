@@ -61,7 +61,7 @@ export function rejectFlagTitle(
   noun = "title",
 ): CommandResult | null {
   if (!looksLikeFlag(token)) return null;
-  return failure(`Usage: trace ${command} <${noun}>`);
+  return failure(`Usage: eqnx ${command} <${noun}>`);
 }
 
 export function withStore(

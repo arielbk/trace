@@ -20,7 +20,7 @@ function quote(token: string): string {
  * platform need in order to launch it?
  *
  * On Windows both spawn targets are batch shims — the package managers
- * (`npm.cmd`, `pnpm.cmd`) and the installed Trace CLI at its registry-recorded
+ * (`npm.cmd`, `pnpm.cmd`) and the installed EQNX CLI at its registry-recorded
  * path — and Node has refused to launch `.cmd`/`.bat` without a shell since the
  * CVE-2024-27980 fix, throwing EINVAL. The shell therefore has to stay. But a
  * non-empty args array alongside `shell: true` is exactly what raises Node's

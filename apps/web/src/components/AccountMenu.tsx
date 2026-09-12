@@ -39,7 +39,7 @@ import { Dropdown, DropdownContent, DropdownTrigger } from "./ui/Dropdown.tsx";
  *
  * The menu stays read-only about synchronization: there is no AutoSync toggle
  * and no "Sync now", because AutoSync is a machine-local CLI setting and an
- * on-demand sync belongs to `trace sync`. Signing in and out are the
+ * on-demand sync belongs to `eqnx sync`. Signing in and out are the
  * exceptions, because a terminal was previously the only way to do either.
  */
 export function AccountMenu({ now }: { now?: Date }) {
@@ -471,7 +471,7 @@ function LoginProgress({
         <>
           <p className="m-0 text-text-muted">
             Save this document encryption key somewhere safe. It is shown only
-            once, and Trace cannot recover it for you.
+            once, and EQNX cannot recover it for you.
           </p>
           <code
             className="block rounded-sm bg-chip-bg px-2 py-1.5 font-mono text-meta break-all text-text"
@@ -535,7 +535,7 @@ function LoginProgress({
  * their next try one field away.
  *
  * Replacing the key instead is deliberately the harder path — the same warning
- * and the same typed phrase `trace login` demands — because a fresh key makes
+ * and the same typed phrase `eqnx login` demands — because a fresh key makes
  * every already-synced document unreadable, permanently. It stays a quiet text
  * action until it is chosen, so the loud control in this block is always the
  * one that keeps those documents readable.
@@ -825,7 +825,7 @@ function splitIdentity(identity: string | undefined): {
  * Map a sync-status payload to everything the menu renders. Exported for direct
  * unit testing, and to keep the wording of each state in one place.
  *
- * The language never claims the machine is "up to date": Trace cannot know
+ * The language never claims the machine is "up to date": EQNX cannot know
  * whether another machine has changes it has not published yet, so the menu
  * reports when it last synced and nothing stronger.
  */

@@ -851,7 +851,7 @@ class NodeSqliteTaskStore implements TaskStore {
    * honest.
    *
    * Two deliberate silences. An empty context (the cwd left the repository)
-   * never erases a branch Trace already knows — a stale-but-real branch beats
+   * never erases a branch EQNX already knows — a stale-but-real branch beats
    * none. An unchanged context writes nothing at all, so a per-turn hook does
    * not churn `updated_at` and drag the row through every sync.
    *
@@ -1125,12 +1125,12 @@ class NodeSqliteTaskStore implements TaskStore {
     const freshness = computeStateFreshness(docsDir, docs);
     // When the prose carries a stamp, that is when it was written. Otherwise
     // fall back to the file's mtime — the best a pre-stamp State Document can
-    // offer, even though Trace's own footer bookkeeping moves it.
+    // offer, even though EQNX's own footer bookkeeping moves it.
     const stateUpdatedAt =
       state && stateDoc
         ? (freshness.stamp?.writtenAt ?? stateDoc.createdAt)
         : undefined;
-    // state.md's mtime is deliberately excluded: it moves whenever Trace
+    // state.md's mtime is deliberately excluded: it moves whenever EQNX
     // reconciles the docs footer, which is bookkeeping, not task activity. The
     // prose-write time counts, because writing prose is real work.
     const lastActivityAt = [
@@ -1179,7 +1179,7 @@ class NodeSqliteTaskStore implements TaskStore {
       .slice()
       .sort(compareSessionsNewestFirst);
     // Progressive disclosure: only the latest session ships by default. Older
-    // transcripts stay reachable through `trace session` on demand.
+    // transcripts stay reachable through `eqnx session` on demand.
     const latestSession = orderedSessions[0];
     const lastWorkedOn = lastWorkedOnFromSessions(
       orderedSessions.map((session) => ({

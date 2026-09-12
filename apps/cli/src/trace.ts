@@ -36,7 +36,7 @@ export type TraceCliOptions = {
 };
 
 /**
- * Bare `trace setup` is the only interactive invocation. Any selector or action
+ * Bare `eqnx setup` is the only interactive invocation. Any selector or action
  * flag (`--yes`, `--tool`, `--target`, `--registered`, `--remove`) — indeed any
  * argument at all — keeps setup on the deterministic path.
  */
@@ -45,7 +45,7 @@ function isBareSetup(argv: string[]): boolean {
 }
 
 /**
- * Bare `trace update` confirms inline instead of demanding a second run with
+ * Bare `eqnx update` confirms inline instead of demanding a second run with
  * `--yes`. As with setup, "bare" means the argument vector is exactly the
  * command — any flag at all keeps update on the deterministic path.
  */
@@ -94,7 +94,7 @@ export function runTraceCli(
   stdin = "",
 ): CommandResult {
   if (isVersionInvocation(argv)) {
-    return { exitCode: 0, stdout: `trace ${currentVersion(env)}\n`, stderr: "" };
+    return { exitCode: 0, stdout: `eqnx ${currentVersion(env)}\n`, stderr: "" };
   }
   if (isHelpInvocation(argv)) return compactHelp();
   const cittyRoot = buildTraceCittyRoot(env, cwd, stdin);
@@ -112,7 +112,7 @@ export async function runTraceCliAsync(
 ): Promise<CommandResult> {
   const { onOutput, interactive, humanReadable, createPrompt } = options;
   if (isVersionInvocation(argv)) {
-    return { exitCode: 0, stdout: `trace ${currentVersion(env)}\n`, stderr: "" };
+    return { exitCode: 0, stdout: `eqnx ${currentVersion(env)}\n`, stderr: "" };
   }
   if (
     humanReadable === true &&
@@ -127,8 +127,14 @@ export async function runTraceCliAsync(
   }
   if (command === "board") {
     // Opening the board asks the running connection for a pairing link, so it
-    // is asynchronous for the same reason `trace connection` is.
+    // is asynchronous for the same reason `eqnx connection` is.
     return boardOperation(argv.slice(1), { env });
+  }
+  if (command === "pair") {
+    if (argv.length === 2 && ["--help", "-h"].includes(argv[1]!)) {
+      return { exitCode: 0, stdout: "Usage: eqnx pair [<code>|--open]\n", stderr: "" };
+    }
+    return connectionOperation(["pair", ...argv.slice(1)], { env });
   }
   if (command === "connection") {
     // Every subcommand talks to the running service over loopback, so this
@@ -173,7 +179,7 @@ function failure(stderr: string, exitCode = 2): CommandResult {
 }
 
 const COMPACT_USAGE =
-  "Usage: trace init | trace setup --tool claude [--yes] | trace update [--yes] | trace board [--local] | trace serve | trace connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | trace export [task] [--include-transcripts] [--out <path>] | trace login | trace logout | trace whoami | trace sync | trace key show | trace config <get|set|unset> <server-url|auto-sync> ... | trace hook <session-start|subagent-stop> | trace task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | trace project merge <duplicate-slug> <canonical-slug> | trace session <register|assign|active-task|list|scan> ... | trace skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
+  "Usage: eqnx init | eqnx setup --tool claude [--yes] | eqnx update [--yes] | eqnx board [--local] | eqnx serve | eqnx pair [<code>|--open] | eqnx connection <install|status|restart|uninstall|run|pair [<code>|--open]|browsers|revoke <id>|reset> | eqnx export [task] [--include-transcripts] [--out <path>] | eqnx login | eqnx logout | eqnx whoami | eqnx sync | eqnx key show | eqnx config <get|set|unset> <server-url|auto-sync> ... | eqnx hook <session-start|subagent-stop> | eqnx task <create|update|capture|show|list|add-doc|update-doc|timeline> ... | eqnx project merge <duplicate-slug> <canonical-slug> | eqnx session <register|assign|active-task|list|scan> ... | eqnx skill <work-on-task|re-enter|recall-candidates|docs-dir> ...";
 
 function usage(): CommandResult {
   return failure(COMPACT_USAGE);
@@ -200,31 +206,31 @@ function humanHelp(version: string, colorsEnabled: boolean): CommandResult {
   return {
     exitCode: 0,
     stdout:
-      `${style.title(`Trace v${version}`)}` +
+      `${style.title(`EQNX v${version}`)}` +
       `${style.dim(" — keep agent work organized across sessions")}\n\n` +
-      `Usage: ${style.command("trace <command> [options]")}\n\n` +
+      `Usage: ${style.command("eqnx <command> [options]")}\n\n` +
       `${style.heading("Get started")}\n` +
-      row("trace setup", "Configure Trace for your agent tools") +
-      row("trace board", "Open the task board") +
-      row("trace serve", "Run the board in the foreground") +
-      row("trace task list", "See your tasks") +
-      row('trace task create "Title"', "Create a task") +
-      `\n${style.heading("Keep Trace current")}\n` +
-      row("trace update", "Update Trace and refresh integrations") +
-      row("trace update --yes", "Update without asking first") +
+      row("eqnx setup", "Configure EQNX for your agent tools") +
+      row("eqnx board", "Open the task board") +
+      row("eqnx serve", "Run the board in the foreground") +
+      row("eqnx task list", "See your tasks") +
+      row('eqnx task create "Title"', "Create a task") +
+      `\n${style.heading("Keep EQNX current")}\n` +
+      row("eqnx update", "Update EQNX and refresh integrations") +
+      row("eqnx update --yes", "Update without asking first") +
       `\n${style.heading("The local connection")}\n` +
-      row("trace connection status", "Check the connection behind the board") +
-      row("trace connection pair <code>", "Approve the browser waiting for Trace") +
-      row("trace connection restart", "Restart it after a failure") +
+      row("eqnx connection status", "Check the connection behind the board") +
+      row("eqnx pair <code>", "Approve the browser waiting for EQNX") +
+      row("eqnx connection restart", "Restart it after a failure") +
       `\n${style.heading("Cloud")}\n` +
-      row("trace login", "Connect your Trace account") +
-      row("trace sync", "Sync local work") +
-      row("trace whoami", "Show the signed-in account") +
+      row("eqnx login", "Connect your EQNX account") +
+      row("eqnx sync", "Sync local work") +
+      row("eqnx whoami", "Show the signed-in account") +
       `\n${style.heading("More")}\n` +
       row("task, session, state", "Work and session history") +
       row("config, key, project", "Local configuration") +
       row("skill, hook", "Agent integration commands") +
-      `\nRun ${style.command("trace <command> --help")} for command details.\n\n` +
+      `\nRun ${style.command("eqnx <command> --help")} for command details.\n\n` +
       `${style.heading("Options")}\n` +
       row("-h, --help", "Show help") +
       row("-v, --version", "Show the installed version"),

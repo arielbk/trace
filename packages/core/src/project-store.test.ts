@@ -14,7 +14,7 @@ function createRepository(root: string): void {
   mkdirSync(root, { recursive: true });
   git(root, "init", "--quiet");
   git(root, "config", "user.email", "trace@example.com");
-  git(root, "config", "user.name", "Trace Tests");
+  git(root, "config", "user.name", "EQNX Tests");
   writeFileSync(join(root, "README.md"), "trace\n");
   git(root, "add", "README.md");
   git(root, "commit", "--quiet", "-m", "initial");
@@ -383,7 +383,7 @@ test("project merge moves tasks and roots, unions fingerprints, and deletes the 
 
   try {
     createRepository(duplicateRoot);
-    git(duplicateRoot, "remote", "add", "origin", "git@github.com:Trace/Checkout.git");
+    git(duplicateRoot, "remote", "add", "origin", "git@github.com:EQNX/Checkout.git");
 
     const store = openTraceStore(databasePath);
     const canonicalTask = store.createTask("Canonical task", canonicalRoot);

@@ -50,7 +50,7 @@ function ensurePackedDist(): void {
         if (existsSync(skillMarker)) return;
       }
 
-      execFileSync("pnpm", ["--filter", "@arielbk/trace", "build"], {
+      execFileSync("pnpm", ["--filter", "@eqnx/cli", "build"], {
         cwd: repoRoot,
         encoding: "utf8",
       });
@@ -140,7 +140,7 @@ describe("CLI distribution", () => {
       assert.equal(
         setupResult.status,
         0,
-        `trace setup exited with ${setupResult.status}: ${setupResult.stderr}\n${setupResult.stdout}`,
+        `eqnx setup exited with ${setupResult.status}: ${setupResult.stderr}\n${setupResult.stdout}`,
       );
 
       const claudeSkillsDir = join(fakeHome, ".claude", "skills");
@@ -170,7 +170,7 @@ describe("CLI distribution", () => {
       assert.equal(
         removeResult.status,
         0,
-        `trace setup --remove exited with ${removeResult.status}: ${removeResult.stderr}\n${removeResult.stdout}`,
+        `eqnx setup --remove exited with ${removeResult.status}: ${removeResult.stderr}\n${removeResult.stdout}`,
       );
 
       for (const skill of CANONICAL_SKILLS) {

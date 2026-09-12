@@ -1,4 +1,4 @@
-# Trace in Cursor
+# EQNX in Cursor
 
 This is the Cursor binding flow for the `trace` skill. The shared verbs
 (`work-on-task`, re-entry) live in `../SKILL.md`; this file covers what is

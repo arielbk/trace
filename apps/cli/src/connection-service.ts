@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { checkManagedCliPath, resolveTraceCliPath } from "./cli-path.ts";
 import { openConnectionCredentials } from "./connection-credentials.ts";
@@ -18,7 +18,7 @@ import { resolveAllowedWebOrigin } from "./serve.ts";
 
 type Env = Record<string, string | undefined>;
 
-/** The one launchd job Trace owns. Everything about the managed connection —
+/** The one launchd job EQNX owns. Everything about the managed connection —
  * install, status, restart, uninstall — is addressed through this label. */
 export const MANAGED_CONNECTION_LABEL = "com.arielbk.trace.connection";
 
@@ -44,6 +44,9 @@ export type ConnectionServiceDependencies = {
   uid?: number;
   /** The Node binary the job execs. Absolute, because there is no PATH yet. */
   nodePath?: string;
+  /** The login account's home, for the foreign-home guard. Injectable so a
+   * test can pose as a different account without moving the real one. */
+  accountHome?: string;
 };
 
 /** What installing the managed connection did, or why it did nothing. */
@@ -118,7 +121,7 @@ export function rotateConnectionLogs(
 /**
  * Install — or reconcile — the per-user login service that runs the managed
  * connection. Idempotent: an unchanged plist against a loaded job is left
- * alone, so running `trace setup` twice does not restart a healthy connection.
+ * alone, so running `eqnx setup` twice does not restart a healthy connection.
  * It never installs a root or system daemon, and never touches a job that is
  * not {@link MANAGED_CONNECTION_LABEL}.
  */
@@ -131,12 +134,14 @@ export function installConnectionService(
     return { kind: "unsupported", reason: unsupportedReason(platform) };
   }
 
-  // launchd's `gui/<uid>` domain belongs to the logged-in user, whose home is
-  // `homedir()`. A run pointed at some other HOME — a test fixture, a sandbox —
-  // has no login session to install into, and must never reach the real
-  // launchd on its behalf. Only an injected boundary crosses that line.
-  if (!dependencies.launchctl && userHome(env) !== homedir()) {
-    return { kind: "skipped", reason: foreignHomeReason(env) };
+  // launchd's `gui/<uid>` domain belongs to the logged-in account, whose home
+  // comes from the passwd database. A run pointed at some other HOME — a test
+  // fixture, a sandbox, an installer — has no login session to install into,
+  // and must never reach the real launchd on its behalf. Only an injected
+  // boundary crosses that line.
+  const account = accountHome(dependencies);
+  if (!dependencies.launchctl && userHome(env) !== account) {
+    return { kind: "skipped", reason: foreignHomeReason(env, account) };
   }
 
   const cliPath = resolveTraceCliPath(env, platform);
@@ -228,8 +233,8 @@ export function restartConnectionService(
     return {
       kind: "failed",
       reason:
-        "No Trace login service is installed, so there is nothing to restart.\n" +
-        "  Install it with: trace connection install",
+        "No EQNX login service is installed, so there is nothing to restart.\n" +
+        "  Install it with: eqnx connection install",
     };
   }
 
@@ -322,7 +327,7 @@ export function uninstallConnectionService(
       state.kind === "installed"
         ? `Local connection uninstalled: login service removed, ${removedBrowsers}.\n` +
           `Your tasks, documents and agent integrations are unchanged.\n`
-        : `No Trace login service is installed; ${removedBrowsers}.\n`,
+        : `No EQNX login service is installed; ${removedBrowsers}.\n`,
   };
 }
 
@@ -339,8 +344,9 @@ function guardLifecycle(
   if (platform !== "darwin") {
     return { kind: "unsupported", reason: unsupportedReason(platform) };
   }
-  if (!dependencies.launchctl && userHome(env) !== homedir()) {
-    return { kind: "skipped", reason: foreignHomeReason(env) };
+  const account = accountHome(dependencies);
+  if (!dependencies.launchctl && userHome(env) !== account) {
+    return { kind: "skipped", reason: foreignHomeReason(env, account) };
   }
   return undefined;
 }
@@ -408,7 +414,7 @@ export function readInstalledConnectionCli(env: Env): string | undefined {
 }
 
 /**
- * The Trace executable a rendered plist runs. The job's arguments are
+ * The EQNX executable a rendered plist runs. The job's arguments are
  * `<node> <cli> connection run`, so the CLI is the argument before
  * `connection`.
  */
@@ -467,7 +473,8 @@ export function renderLaunchAgentPlist(options: {
   // Only an origin the API would actually honor is worth persisting; anything
   // else would bake a value into the job that the running server rejects.
   const hostedOrigin = resolveAllowedWebOrigin(env);
-  if (hostedOrigin) environment.TRACE_WEB_ORIGIN = hostedOrigin;
+  // Preserve explicit opt-out and invalid overrides across service restarts.
+  environment.TRACE_WEB_ORIGIN = hostedOrigin ?? "";
 
   const lines = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
@@ -498,7 +505,9 @@ export function renderLaunchAgentPlist(options: {
     `  <key>ThrottleInterval</key>`,
     `  <integer>${RESTART_THROTTLE_SECONDS}</integer>`,
     `  <key>ProcessType</key>`,
-    `  <string>Background</string>`,
+    // The browser waits on this service. Background scheduling can starve Node
+    // startup at login for minutes, even before application code executes.
+    `  <string>Standard</string>`,
     `  <key>StandardOutPath</key>`,
     `  <string>${escapeXml(logs.out)}</string>`,
     `  <key>StandardErrorPath</key>`,
@@ -509,23 +518,39 @@ export function renderLaunchAgentPlist(options: {
   return `${lines.join("\n")}\n`;
 }
 
-function foreignHomeReason(env: Env): string {
+function foreignHomeReason(env: Env, account: string): string {
   return (
     `A managed background connection lives in this login session's home ` +
-    `(${homedir()}), but HOME points at ${userHome(env)}.\n` +
-    `  Run \`trace serve\` to connect a board from here.`
+    `(${account}), but HOME points at ${userHome(env)}.\n` +
+    `  Run \`eqnx serve\` to connect a board from here.`
   );
 }
 
 function unsupportedReason(platform: NodeJS.Platform): string {
   return (
     `A managed background connection needs launchd, which ${platform} does not have.\n` +
-    `  Run \`trace serve\` to connect a board on this machine.`
+    `  Run \`eqnx serve\` to connect a board on this machine.`
   );
 }
 
 function userHome(env: Env): string {
   return env.HOME ?? homedir();
+}
+
+/**
+ * The login account's own home, read from the passwd database rather than the
+ * environment. `homedir()` follows $HOME on POSIX, so it agrees with any run
+ * that was pointed elsewhere — which is precisely the case the guard exists to
+ * catch. Falls back to `homedir()` only if the account cannot be looked up at
+ * all, where refusing to install would be worse than trusting the environment.
+ */
+function accountHome(dependencies: ConnectionServiceDependencies): string {
+  if (dependencies.accountHome) return dependencies.accountHome;
+  try {
+    return userInfo().homedir;
+  } catch {
+    return homedir();
+  }
 }
 
 /** Writes the job atomically, so launchd never reads a half-written plist. */

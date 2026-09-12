@@ -8,7 +8,7 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-// Drive the main-agent Stop hook through the same `trace hook stop` seam the
+// Drive the main-agent Stop hook through the same `eqnx hook stop` seam the
 // plugin's hooks.json uses. Returns the parsed JSON verdict (when stdout is
 // JSON) plus the raw result so tests can assert on either.
 function runStopHook(
@@ -84,7 +84,7 @@ test("Stop hook blocks with a reflect reason when a bound task's prose has drift
     // The reason routes the warm agent at the skill that owns the state.md
     // template, and still names the reflect command that stamps it.
     expect(result.reason).toContain("trace-state");
-    expect(result.reason).toContain(`trace state reflect ${slug}`);
+    expect(result.reason).toContain(`eqnx state reflect ${slug}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(repoParent, { recursive: true, force: true });
@@ -213,7 +213,7 @@ test("Stop hook resolves the binding live, seeing a task bound after the session
     // and the drift blocks.
     expect(result.exitCode).toBe(0);
     expect(result.decision).toBe("block");
-    expect(result.reason).toContain(`trace state reflect ${slug}`);
+    expect(result.reason).toContain(`eqnx state reflect ${slug}`);
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(repoParent, { recursive: true, force: true });

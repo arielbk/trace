@@ -11,7 +11,8 @@
     "preview:hosted": "vite preview --mode hosted",
     "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "deploy:hosted": "pnpm build:hosted && npx --yes wrangler@4.110.0 pages deploy dist-hosted"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

@@ -29,19 +29,19 @@ function describeLoss(loss: ConnectionLoss): LossNotice {
       return {
         title: "This browser’s access was revoked",
         description:
-          "Trace is running on this device but no longer accepts this browser. Run `trace board` on that device to open it through a new pairing link.",
+          "EQNX is running on this device but no longer accepts this browser. Run `eqnx board` on that device to open it through a new pairing link.",
       };
     case "outdated":
       return {
-        title: "Trace on this device changed version",
+        title: "EQNX on this device changed version",
         description:
-          "The Trace running here now speaks a connection protocol this site does not. Reload this page to pick up the change.",
+          "The EQNX running here now speaks a connection protocol this site does not. Reload this page to pick up the change.",
       };
     case "unreachable":
       return {
-        title: "Trace isn’t responding",
+        title: "EQNX isn’t responding",
         description:
-          "The connection to Trace on this device stopped answering. Check that Trace is still running, and allow local-network access if your browser asks for it.",
+          "The connection to EQNX on this device stopped answering. Check that EQNX is still running, and allow local-network access if your browser asks for it.",
         action: "reconnect",
       };
   }
@@ -86,7 +86,7 @@ export function ConnectionRecovery({
                 aria-hidden="true"
               />
               <span className="min-w-0 text-text-muted">
-                Reconnecting to Trace on this device…
+                Reconnecting to EQNX on this device…
               </span>
             </>
           ) : (

@@ -46,6 +46,7 @@ function hostedContentSecurityPolicy(
   styleNonce: string,
 ): Plugin {
   const apiOrigin = resolveHostedApiOrigin(apiOriginValue);
+  let contentSecurityPolicy: string | undefined;
 
   return {
     name: "trace-hosted-content-security-policy",
@@ -72,6 +73,7 @@ function hostedContentSecurityPolicy(
           "font-src 'self'",
           `connect-src 'self' ${apiOrigin}`,
         ].join("; ");
+        contentSecurityPolicy = policy;
 
         return [
           {
@@ -83,6 +85,26 @@ function hostedContentSecurityPolicy(
             injectTo: "head-prepend",
           },
         ];
+      },
+    },
+    generateBundle: {
+      order: "post",
+      handler() {
+        if (!contentSecurityPolicy) {
+          throw new Error("Hosted HTML must generate its CSP before deployment headers");
+        }
+        this.emitFile({
+          type: "asset",
+          fileName: "_headers",
+          source: [
+            "/*",
+            `  Content-Security-Policy: ${contentSecurityPolicy}; frame-ancestors 'none'`,
+            "  X-Content-Type-Options: nosniff",
+            "  X-Frame-Options: DENY",
+            "  Referrer-Policy: no-referrer",
+            "",
+          ].join("\n"),
+        });
       },
     },
   };

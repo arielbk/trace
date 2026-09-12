@@ -56,7 +56,7 @@ test("fails when no integrations registry exists", async () => {
       makeDeps(),
     );
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toMatch(/no trace integrations/i);
+    expect(result.stderr).toMatch(/no eqnx integrations/i);
   } finally {
     cleanup();
   }
@@ -362,7 +362,7 @@ test("surfaces reconcile error when new CLI setup fails", async () => {
     // The install already succeeded — the message must not read as a failed
     // upgrade, and must name the command that finishes the job.
     expect(result.stderr).toMatch(/upgraded to v1\.2\.3/i);
-    expect(result.stderr).toMatch(/trace setup --yes/);
+    expect(result.stderr).toMatch(/eqnx setup --yes/);
   } finally {
     cleanup();
   }
@@ -397,7 +397,7 @@ test("uses cliPath from registry for reconciliation, not process.argv[1]", async
 test("on Windows the package manager and the CLI are spawned through a shell", () => {
   // `npm.cmd` and `trace.cmd` are batch shims, and Node refuses to spawn
   // `.cmd`/`.bat` without a shell since the CVE-2024-27980 fix — it throws
-  // EINVAL. Without this, `trace update` cannot run on Windows at all.
+  // EINVAL. Without this, `eqnx update` cannot run on Windows at all.
   // The arguments ride in the command string because a non-empty args array
   // alongside `shell: true` is what trips DEP0190.
   const calls: { command: string; args: string[]; shell: boolean | undefined }[] = [];
@@ -414,7 +414,7 @@ test("on Windows the package manager and the CLI are spawned through a shell", (
 
   expect(calls).toEqual([
     {
-      command: "npm install -g @arielbk/trace@0.19.0",
+      command: "npm install -g @eqnx/cli@0.19.0",
       args: [],
       shell: true,
     },
@@ -440,7 +440,7 @@ test("on POSIX spawning does not go through a shell", () => {
   deps.spawnReconcile("/opt/global/bin/trace");
 
   expect(calls).toEqual([
-    { command: "pnpm", args: ["add", "-g", "@arielbk/trace@0.19.0"], shell: false },
+    { command: "pnpm", args: ["add", "-g", "@eqnx/cli@0.19.0"], shell: false },
     { command: "/opt/global/bin/trace", args: ["setup", "--registered", "--yes"], shell: false },
   ]);
 });
@@ -572,7 +572,7 @@ test("tells a failed install apart from a connection that would not restart", as
     expect(restartFailed.exitCode).not.toBe(0);
     expect(restartFailed.stderr).toContain("upgraded to v1.2.3");
     expect(restartFailed.stderr).toContain("launchd would not restart it");
-    expect(restartFailed.stderr).toContain("trace connection restart");
+    expect(restartFailed.stderr).toContain("eqnx connection restart");
   } finally {
     cleanup();
   }

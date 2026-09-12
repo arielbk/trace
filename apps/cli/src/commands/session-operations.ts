@@ -99,7 +99,7 @@ export function sessionListOperation(
   ctx: CommandContext,
 ): CommandResult {
   if (rawArgs[0] !== "--unassigned") {
-    return failure("Usage: trace session list --unassigned");
+    return failure("Usage: eqnx session list --unassigned");
   }
 
   return withStore(ctx.env, (store) => {
@@ -143,7 +143,7 @@ export function sessionDiscoverSubagentsOperation(
     const value = rawArgs[index + 1];
     if (flag !== "--codex-home" || !value) {
       return failure(
-        "Usage: trace session discover-subagents <session-id> [--codex-home <dir>]",
+        "Usage: eqnx session discover-subagents <session-id> [--codex-home <dir>]",
       );
     }
     codexHome = value;
@@ -233,7 +233,7 @@ export function sessionScanOperation(
     });
   }
 
-  return failure("Usage: trace session scan --codex | --claude");
+  return failure("Usage: eqnx session scan --codex | --claude");
 }
 
 export function sessionRefreshTokensOperation(

@@ -12,7 +12,7 @@ export function traceApiPlugin(): Plugin {
     name: "trace-api",
     configureServer(server) {
       // Mount unscoped so the shared handler sees the full `/api/...` path and
-      // routes identically to the standalone `trace serve` server.
+      // routes identically to the standalone `eqnx serve` server.
       server.middlewares.use((req, res, next) => {
         const method = req.method ?? "GET";
 

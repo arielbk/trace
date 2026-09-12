@@ -24,12 +24,12 @@ const NODE_PATH = "/opt/homebrew/bin/node";
 const CLI_PATH = "/opt/global/bin/trace";
 
 /**
- * The whole connection lifecycle, composed: `trace setup` installs the login
+ * The whole connection lifecycle, composed: `eqnx setup` installs the login
  * service, launchd runs it, a browser pairs against the process that service
  * started, and every later command talks to that same process over a real
- * socket. Nothing here stubs a Trace module — the commands, the credential
+ * socket. Nothing here stubs a EQNX module — the commands, the credential
  * store, the plist and the HTTP server are the production ones. Only the two
- * boundaries Trace does not own are modelled: launchd, and the fixed endpoint
+ * boundaries EQNX does not own are modelled: launchd, and the fixed endpoint
  * (the connection binds an ephemeral port so the suite never fights whatever
  * holds 4317 on the machine running it).
  */
@@ -49,7 +49,7 @@ afterEach(async () => {
 
 /**
  * A machine with launchd modelled and no connection running yet. Without
- * `hosted`, nothing has configured a hosted board — the bundled-board machine.
+ * `hosted`, hosted access is explicitly disabled — the bundled-board machine.
  */
 function machine(options: { hosted?: boolean } = {}): Machine {
   current = new Machine(
@@ -63,7 +63,7 @@ class Machine {
   readonly calls: string[][] = [];
   private loaded = false;
   private running: Promise<TraceServer> | undefined;
-  /** The version of Trace currently on disk at {@link CLI_PATH}. */
+  /** The version of EQNX currently on disk at {@link CLI_PATH}. */
   installedVersion = "1.0.0";
 
   constructor(
@@ -77,7 +77,7 @@ class Machine {
       HOME: this.home,
       TRACE_CLI_PATH: CLI_PATH,
       TRACE_CURRENT_VERSION: this.installedVersion,
-      ...(this.hostedOrigin ? { TRACE_WEB_ORIGIN: this.hostedOrigin } : {}),
+      TRACE_WEB_ORIGIN: this.hostedOrigin ?? "",
     };
   }
 
@@ -252,7 +252,7 @@ test("an applied setup leaves a login service that is already serving the board"
   expect(existsSync(box.plistPath)).toBe(true);
   expect(box.jobLoaded).toBe(true);
   // The job launchd started is answering, which is the whole point of
-  // installing it: nobody has to run `trace serve` for the board to work.
+  // installing it: nobody has to run `eqnx serve` for the board to work.
   expect(box.connected).toBe(true);
 });
 
@@ -280,7 +280,7 @@ function hostedRead(box: Machine, token: string): Promise<Response> {
   });
 }
 
-/** The pairing link `trace connection pair` printed. */
+/** The pairing link `eqnx connection pair` printed. */
 function printedLink(stdout: string): string {
   const link = stdout.match(
     new RegExp(`${HOSTED_ORIGIN}/#trace-pair=[A-Za-z0-9_-]+`),
@@ -362,7 +362,7 @@ test("a reboot brings the connection back with its browsers, but not its links",
   expect(stale.status).toBe(401);
 });
 
-/** The browser ids `trace connection browsers` printed, in listed order. */
+/** The browser ids `eqnx connection browsers` printed, in listed order. */
 async function browserIds(box: Machine): Promise<string[]> {
   const listed = await connectionOperation(
     ["browsers"],
@@ -376,7 +376,7 @@ async function browserIds(box: Machine): Promise<string[]> {
     .filter((id) => id.length > 0 && !id.includes(":"));
 }
 
-test("trace board lets a second browser in, and revoke shuts only that one out", async () => {
+test("eqnx board lets a second browser in, and revoke shuts only that one out", async () => {
   const box = machine();
   setupOperation(["--target", `codex=${join(home, "codex")}`, "--yes"], {
     env: box.env,
@@ -547,7 +547,7 @@ test("uninstalling twice is a no-op, not a failure", async () => {
   expect(again.exitCode).toBe(0);
 });
 
-test("with no hosted board configured, trace board reuses the connection it has", async () => {
+test("with hosted access disabled, eqnx board reuses the connection it has", async () => {
   const box = machine({ hosted: false });
   setupOperation(["--target", `codex=${join(home, "codex")}`, "--yes"], {
     env: box.env,
@@ -557,7 +557,7 @@ test("with no hosted board configured, trace board reuses the connection it has"
   });
 
   // Nothing hosted was configured, so nothing hosted was baked into the job.
-  expect(readFileSync(box.plistPath, "utf8")).not.toContain("TRACE_WEB_ORIGIN");
+  expect(readFileSync(box.plistPath, "utf8")).toContain("<key>TRACE_WEB_ORIGIN</key>\n    <string></string>");
 
   const opened: string[] = [];
   const started: string[] = [];

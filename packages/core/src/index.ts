@@ -24,6 +24,7 @@ export type { TraceApiResponse, TraceApiResponseSink } from "./api-handler.ts";
 export {
   HOSTED_CAPABILITIES,
   SAME_ORIGIN_CAPABILITIES,
+  DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
   traceConnection,
 } from "./connection.ts";

@@ -45,14 +45,14 @@ afterEach(() => {
 });
 
 describe("AppHeader", () => {
-  test("renders the Trace wordmark", () => {
+  test("renders the EQNX wordmark", () => {
     renderHeader();
-    expect(screen.getByText("Trace")).toBeInTheDocument();
+    expect(screen.getByText("EQNX")).toBeInTheDocument();
   });
 
   test("wordmark is a link back to /", () => {
     renderHeader();
-    const link = screen.getByRole("link", { name: "Trace" });
+    const link = screen.getByRole("link", { name: "EQNX" });
     expect(link).toHaveAttribute("href", "/");
   });
 

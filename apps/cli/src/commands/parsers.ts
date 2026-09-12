@@ -12,7 +12,7 @@ import { inferCliSessionIdentity } from "./identity.ts";
 import { looksLikeFlag, type Env } from "./seam.ts";
 
 export function taskCreateUsage(): string {
-  return "Usage: trace task create <title> [--description <text>] [--project <slug|dir>]";
+  return "Usage: eqnx task create <title> [--description <text>] [--project <slug|dir>]";
 }
 
 export function parseTaskCreateArgs(args: string[]): {
@@ -52,7 +52,7 @@ export function parseTaskCreateArgs(args: string[]): {
 }
 
 export function taskUpdateUsage(): string {
-  return "Usage: trace task update <ref> [--title <text>] [--description <text>]";
+  return "Usage: eqnx task update <ref> [--title <text>] [--description <text>]";
 }
 
 export function parseTaskUpdateArgs(args: string[]): {
@@ -95,7 +95,7 @@ export function parseTaskUpdateArgs(args: string[]): {
 }
 
 export function taskCaptureUsage(): string {
-  return "Usage: trace task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <slug|dir>]";
+  return "Usage: eqnx task capture <title> [--doc <path>] [--title <doc-title>] [--description <text>] [--link] [--project <slug|dir>]";
 }
 
 export function parseTaskCaptureArgs(args: string[]): {
@@ -154,7 +154,7 @@ export function parseTaskCaptureArgs(args: string[]): {
 }
 
 export function addDocUsage(): string {
-  return "Usage: trace task add-doc <ref> <path> [--title <text>] [--description <text>]";
+  return "Usage: eqnx task add-doc <ref> <path> [--title <text>] [--description <text>]";
 }
 
 export function parseAddDocOptions(flags: string[]): {
@@ -184,7 +184,7 @@ export function parseAddDocOptions(flags: string[]): {
 }
 
 export function updateDocUsage(): string {
-  return "Usage: trace task update-doc <ref> <path> [--title <text>] [--description <text>]";
+  return "Usage: eqnx task update-doc <ref> <path> [--title <text>] [--description <text>]";
 }
 
 export function parseUpdateDocOptions(flags: string[]): {
@@ -278,7 +278,7 @@ export function parseSessionRegisterArgs(args: string[]): {
 }
 
 export function sessionSetParentUsage(): string {
-  return "Usage: trace session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>] [--tool <tool>] [--transcript <path>]";
+  return "Usage: eqnx session set-parent <child-session-id> --parent <parent-session-id> [--origin <origin>] [--tool <tool>] [--transcript <path>]";
 }
 
 export function parseSessionSetParentArgs(args: string[]): SetSessionParentInput {
@@ -335,7 +335,7 @@ export function isSessionOrigin(value: string): value is SessionOrigin {
 }
 
 export function sessionActiveTaskUsage(): string {
-  return "Usage: trace session active-task --id <session-id> [--project <slug|dir>]";
+  return "Usage: eqnx session active-task --id <session-id> [--project <slug|dir>]";
 }
 
 export function parseSessionActiveTaskArgs(args: string[]): { id: string; project?: string } {
@@ -371,7 +371,7 @@ export function parseSessionTailLimit(args: string[]): number | undefined {
 }
 
 export function sessionRefreshTokensUsage(): string {
-  return `Usage: trace session refresh-tokens [--tool <${SESSION_TOOL_CHOICES}>] [--dry-run]`;
+  return `Usage: eqnx session refresh-tokens [--tool <${SESSION_TOOL_CHOICES}>] [--dry-run]`;
 }
 
 export function parseSessionRefreshTokensArgs(args: string[]): {
@@ -453,19 +453,19 @@ export function parseClaudeScanArgs(args: string[], env: Env): string {
 }
 
 export function skillWorkOnTaskUsage(): string {
-  return `Usage: trace skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <${SESSION_TOOL_CHOICES}>] [--model <name>] [--description <text>] [--project <slug|dir>]`;
+  return `Usage: eqnx skill work-on-task <title> [--id <id>] [--transcript <path>] [--tool <${SESSION_TOOL_CHOICES}>] [--model <name>] [--description <text>] [--project <slug|dir>]`;
 }
 
 export function skillReEnterUsage(): string {
-  return "Usage: trace skill re-enter <ref>";
+  return "Usage: eqnx skill re-enter <ref>";
 }
 
 export function skillDocsDirUsage(): string {
-  return "Usage: trace skill docs-dir [--id <session>] [--project <slug|dir>]";
+  return "Usage: eqnx skill docs-dir [--id <session>] [--project <slug|dir>]";
 }
 
 export function exportUsage(): string {
-  return "Usage: trace export [task] [--include-transcripts] [--out <path>]";
+  return "Usage: eqnx export [task] [--include-transcripts] [--out <path>]";
 }
 
 export function parseExportArgs(args: string[]): {
@@ -502,7 +502,7 @@ export function parseExportArgs(args: string[]): {
 }
 
 export function recallCandidatesUsage(): string {
-  return "Usage: trace skill recall-candidates [--project <slug|dir>]";
+  return "Usage: eqnx skill recall-candidates [--project <slug|dir>]";
 }
 
 export function parseSkillWorkOnTaskArgs(

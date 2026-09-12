@@ -16,7 +16,7 @@ import { runSyncCommand } from "./commands/sync.ts";
 // last-write-wins task/session rows and per-task doc manifests, and
 // content-addressed blobs — the same contract `apps/server` implements and
 // tests in isolation. It is bearer-gated so the exercised path also proves the
-// CLI sends its token. Routed into the real `trace sync` command through an
+// CLI sends its token. Routed into the real `eqnx sync` command through an
 // injected fetch, so both "machines" drive the genuine sync engine, transport,
 // and document materialisation end to end.
 class FakeSyncServer {
@@ -128,7 +128,7 @@ class FakeSyncServer {
   }
 }
 
-// A simulated machine: its own HOME (so its own ~/.trace/auth.json), Trace
+// A simulated machine: its own HOME (so its own ~/.trace/auth.json), EQNX
 // database, and docs tree, all under a shared temp root. Both machines carry
 // the same bearer token — single-user cloud sync — so they share server state.
 function setupMachine(root: string, name: string, token: string) {
@@ -178,7 +178,7 @@ test("a handoff on machine A re-enters on machine B with state.md, docs, and A's
       "# Plan\n\n1. sync up\n2. re-enter on the laptop\n",
     );
 
-    // --- trace sync on both machines, one user, one server ---
+    // --- eqnx sync on both machines, one user, one server ---
     const pushed = await runSyncCommand(machineA.env, { fetch: server.fetch });
     expect(pushed.exitCode).toBe(0);
     const pulled = await runSyncCommand(machineB.env, { fetch: server.fetch });

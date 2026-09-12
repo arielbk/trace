@@ -59,7 +59,7 @@ type CapturedResponse = {
   rawBody: Buffer | string | undefined;
 };
 
-// `trace serve` listens on a real socket, which the unit environment forbids
+// `eqnx serve` listens on a real socket, which the unit environment forbids
 // (EPERM on bind). We drive the request listener directly with a fake req/res
 // so the routing + 404 fallback behaviour is exercised without binding.
 function makeAssetsDir(): string {
@@ -67,7 +67,7 @@ function makeAssetsDir(): string {
   mkdirSync(join(assetsDir, "assets"), { recursive: true });
   writeFileSync(
     join(assetsDir, "index.html"),
-    "<!doctype html><title>Trace</title>",
+    "<!doctype html><title>EQNX</title>",
   );
   writeFileSync(join(assetsDir, "assets", "app.js"), "console.log('trace');");
   return assetsDir;
@@ -143,7 +143,7 @@ function pairedConnection(): {
   return { connection, token: connection.issueBrowserToken("Test").token };
 }
 
-test("trace serve exposes a read-only connection handshake", () => {
+test("eqnx serve exposes a read-only connection handshake", () => {
   const response = dispatch(
     "GET",
     "/api/connection",
@@ -173,7 +173,7 @@ test("trace serve exposes a read-only connection handshake", () => {
   });
 });
 
-test("trace serve advertises only the hosted allowlist to the hosted board", () => {
+test("eqnx serve advertises only the hosted allowlist to the hosted board", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
 
@@ -199,7 +199,7 @@ test("trace serve advertises only the hosted allowlist to the hosted board", () 
   });
 });
 
-test("trace serve grants API reads only to the configured hosted origin", () => {
+test("eqnx serve grants API reads only to the configured hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const allowed = dispatch(
     "GET",
@@ -224,7 +224,7 @@ test("trace serve grants API reads only to the configured hosted origin", () => 
   expect(other.headers["access-control-allow-origin"]).toBeUndefined();
 });
 
-test("trace serve requires a paired browser credential for hosted API reads", () => {
+test("eqnx serve requires a paired browser credential for hosted API reads", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const missing = dispatch(
@@ -283,7 +283,7 @@ test("a revoked browser loses hosted access on its very next request", () => {
   expect(read()).toBe(401);
 });
 
-test("trace serve exchanges a pairing link for that browser's own credential", () => {
+test("eqnx serve exchanges a pairing link for that browser's own credential", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const connection = openConnectionCredentials({ HOME: dir });
   const pairing = createPairingLinks(connection.issueBrowserToken);
@@ -335,7 +335,7 @@ test("trace serve exchanges a pairing link for that browser's own credential", (
   ).toBe(200);
 });
 
-test("trace serve grants pairing preflight only to the configured origin", () => {
+test("eqnx serve grants pairing preflight only to the configured origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const response = dispatch(
     "OPTIONS",
@@ -357,7 +357,7 @@ test("trace serve grants pairing preflight only to the configured origin", () =>
   expect(response.headers["access-control-allow-headers"]).toBe("content-type");
 });
 
-test("trace serve does not expose pairing to any other browser origin", () => {
+test("eqnx serve does not expose pairing to any other browser origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const connection = openConnectionCredentials({ HOME: dir });
   const pairing = createPairingLinks(connection.issueBrowserToken);
@@ -378,7 +378,7 @@ test("trace serve does not expose pairing to any other browser origin", () => {
   expect(pairing.exchange(link.secret)).not.toBeNull();
 });
 
-test("trace serve rejects requests with a non-loopback Host header", () => {
+test("eqnx serve rejects requests with a non-loopback Host header", () => {
   const response = dispatch("GET", "/api/connection", undefined, undefined, {
     host: "attacker.example",
   });
@@ -387,7 +387,7 @@ test("trace serve rejects requests with a non-loopback Host header", () => {
   expect(response.body).toBe("Loopback Host required");
 });
 
-test("trace serve answers a hosted-origin API preflight", () => {
+test("eqnx serve answers a hosted-origin API preflight", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const response = dispatch(
     "OPTIONS",
@@ -412,7 +412,7 @@ test("trace serve answers a hosted-origin API preflight", () => {
   expect(response.headers["access-control-allow-private-network"]).toBe("true");
 });
 
-test("trace serve rejects hosted preflights that request other headers", () => {
+test("eqnx serve rejects hosted preflights that request other headers", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const response = dispatch(
     "OPTIONS",
@@ -431,7 +431,7 @@ test("trace serve rejects hosted preflights that request other headers", () => {
   expect(response.body).toBe("Cross-origin API access denied");
 });
 
-test("trace serve rejects hosted-origin mutations outside the action allowlist", () => {
+test("eqnx serve rejects hosted-origin mutations outside the action allowlist", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const outside = [
@@ -456,7 +456,7 @@ test("trace serve rejects hosted-origin mutations outside the action allowlist",
   }
 });
 
-test("trace serve accepts authorized hosted task actions", () => {
+test("eqnx serve accepts authorized hosted task actions", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const response = dispatch(
@@ -474,7 +474,7 @@ test("trace serve accepts authorized hosted task actions", () => {
   expect(JSON.parse(response.body).archivedAt).not.toBeNull();
 });
 
-test("trace serve applies every enabled hosted task action to the store", () => {
+test("eqnx serve applies every enabled hosted task action to the store", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const act = (action: string) =>
@@ -494,7 +494,7 @@ test("trace serve applies every enabled hosted task action to the store", () => 
   expect(JSON.parse(act("unpin").body).pinnedAt).toBeNull();
 });
 
-test("trace serve guards hosted task actions by origin, credential, and method", () => {
+test("eqnx serve guards hosted task actions by origin, credential, and method", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const hostile = dispatch(
@@ -555,7 +555,7 @@ test("trace serve guards hosted task actions by origin, credential, and method",
   }
 });
 
-test("trace serve answers a hosted task-action preflight with POST only", () => {
+test("eqnx serve answers a hosted task-action preflight with POST only", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection } = pairedConnection();
   const response = dispatch(
@@ -582,7 +582,7 @@ test("trace serve answers a hosted task-action preflight with POST only", () => 
   );
 });
 
-test("trace serve serves task timeline reads to the authenticated hosted origin", () => {
+test("eqnx serve serves task timeline reads to the authenticated hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const response = dispatch(
@@ -600,7 +600,7 @@ test("trace serve serves task timeline reads to the authenticated hosted origin"
   expect(JSON.parse(response.body).task.slug).toBe("checkout");
 });
 
-test("trace serve serves task doc reads to the authenticated hosted origin", () => {
+test("eqnx serve serves task doc reads to the authenticated hosted origin", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const docsDir = resolveTaskDocsDir(databasePath, "checkout");
@@ -622,7 +622,7 @@ test("trace serve serves task doc reads to the authenticated hosted origin", () 
   expect(response.body).toContain("<h1>Notes</h1>");
 });
 
-test("trace serve guards task detail reads by origin and credential", () => {
+test("eqnx serve guards task detail reads by origin and credential", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const { connection, token } = pairedConnection();
   const hostile = dispatch(
@@ -668,7 +668,7 @@ test("trace serve guards task detail reads by origin and credential", () => {
   expect(preflight.headers["access-control-allow-methods"]).toBe("GET, OPTIONS");
 });
 
-test("trace serve rejects reads outside the hosted spike allowlist", () => {
+test("eqnx serve rejects reads outside the hosted spike allowlist", () => {
   const allowedOrigin = "https://trace-hosted.example";
   const outside = [
     `/api/tasks/${taskId}/export`,
@@ -737,7 +737,7 @@ test("what the hosted handshake advertises is exactly what the bridge allows", (
   expect(dispatch("GET", `/api/tasks/${taskId}/export`).statusCode).toBe(200);
 });
 
-test("trace serve keeps same-origin board mutations working", () => {
+test("eqnx serve keeps same-origin board mutations working", () => {
   const response = dispatch(
     "POST",
     `/api/tasks/${taskId}/archive`,
@@ -750,7 +750,7 @@ test("trace serve keeps same-origin board mutations working", () => {
   expect(response.statusCode).toBe(200);
 });
 
-test("trace serve responds to GET /api/tasks with live summaries", () => {
+test("eqnx serve responds to GET /api/tasks with live summaries", () => {
   const response = dispatch("GET", "/api/tasks");
 
   expect(response.statusCode).toBe(200);
@@ -759,7 +759,7 @@ test("trace serve responds to GET /api/tasks with live summaries", () => {
   expect(summaries.map((s) => s.title)).toEqual(["checkout"]);
 });
 
-test("trace serve responds to GET /api/tasks/:id/timeline with the live timeline", () => {
+test("eqnx serve responds to GET /api/tasks/:id/timeline with the live timeline", () => {
   const response = dispatch("GET", `/api/tasks/${taskId}/timeline`);
 
   expect(response.statusCode).toBe(200);
@@ -767,7 +767,7 @@ test("trace serve responds to GET /api/tasks/:id/timeline with the live timeline
   expect(timeline.task.id).toBe(taskId);
 });
 
-test("trace serve returns zip bytes from GET /api/tasks/:ref/export", () => {
+test("eqnx serve returns zip bytes from GET /api/tasks/:ref/export", () => {
   const response = dispatch("GET", `/api/tasks/${taskId}/export`);
   const date = new Date().toISOString().slice(0, 10);
 
@@ -784,7 +784,7 @@ test("trace serve returns zip bytes from GET /api/tasks/:ref/export", () => {
   ).toBe(true);
 });
 
-test("trace serve serves a known asset from the web assets directory", () => {
+test("eqnx serve serves a known asset from the web assets directory", () => {
   const response = dispatch("GET", "/assets/app.js", makeAssetsDir());
 
   expect(response.statusCode).toBe(200);
@@ -792,7 +792,7 @@ test("trace serve serves a known asset from the web assets directory", () => {
   expect(response.body).toBe("console.log('trace');");
 });
 
-test("trace serve serves binary assets byte-for-byte", () => {
+test("eqnx serve serves binary assets byte-for-byte", () => {
   const assetsDir = makeAssetsDir();
   // A minimal PNG header: bytes outside valid UTF-8, which a text read mangles
   // into replacement characters.
@@ -809,15 +809,15 @@ test("trace serve serves binary assets byte-for-byte", () => {
   expect(response.rawBody).toEqual(pngBytes);
 });
 
-test("trace serve falls back to index.html for unknown non-API paths", () => {
+test("eqnx serve falls back to index.html for unknown non-API paths", () => {
   const response = dispatch("GET", "/tasks/some-task-slug", makeAssetsDir());
 
   expect(response.statusCode).toBe(200);
   expect(response.headers["content-type"]).toBe("text/html");
-  expect(response.body).toContain("<title>Trace</title>");
+  expect(response.body).toContain("<title>EQNX</title>");
 });
 
-test("trace serve never serves files outside the assets directory", () => {
+test("eqnx serve never serves files outside the assets directory", () => {
   const assetsDir = makeAssetsDir();
   writeFileSync(join(dir, "secret.txt"), "do not serve");
 
@@ -826,7 +826,7 @@ test("trace serve never serves files outside the assets directory", () => {
   expect(response.body).not.toContain("do not serve");
 });
 
-test("trace serve returns 404 for non-API paths when no assets directory is configured", () => {
+test("eqnx serve returns 404 for non-API paths when no assets directory is configured", () => {
   const response = dispatch("GET", "/some/spa/route");
 
   expect(response.statusCode).toBe(404);
@@ -860,7 +860,7 @@ function fakeServerWithTakenPorts(takenPorts: Set<number>): Server {
   return emitter;
 }
 
-test("trace serve falls back to the next port when the default is taken", async () => {
+test("eqnx serve falls back to the next port when the default is taken", async () => {
   const server = fakeServerWithTakenPorts(new Set([DEFAULT_SERVE_PORT]));
 
   const running = await startTraceServe({}, { server, triggerSync: () => {} });
@@ -902,7 +902,7 @@ test("a serve that does not own periodic sync schedules none", async () => {
   }
 });
 
-test("trace serve returns a hosted pairing URL with no query secret", async () => {
+test("eqnx serve returns a hosted pairing URL with no query secret", async () => {
   const server = fakeServerWithTakenPorts(new Set());
   const running = await startTraceServe(
     { HOME: dir, TRACE_WEB_ORIGIN: "https://trace-hosted.example" },
@@ -916,7 +916,7 @@ test("trace serve returns a hosted pairing URL with no query secret", async () =
   await running.close();
 });
 
-test("trace serve refuses to bind beyond the loopback interface", async () => {
+test("eqnx serve refuses to bind beyond the loopback interface", async () => {
   const server = fakeServerWithTakenPorts(new Set());
 
   await expect(
@@ -924,7 +924,7 @@ test("trace serve refuses to bind beyond the loopback interface", async () => {
   ).rejects.toThrow("loopback");
 });
 
-test("trace serve fires a background sync on start", async () => {
+test("eqnx serve fires a background sync on start", async () => {
   const server = fakeServerWithTakenPorts(new Set());
   const triggerSync = vi.fn();
 
@@ -1009,7 +1009,7 @@ test("createSyncHooks syncs on a completed login immediately, without throttling
   expect(trigger).toHaveBeenCalledTimes(2);
 });
 
-test("trace serve syncs periodically while running, and stops on close", async () => {
+test("eqnx serve syncs periodically while running, and stops on close", async () => {
   vi.useFakeTimers();
   try {
     const server = fakeServerWithTakenPorts(new Set());
@@ -1087,7 +1087,7 @@ test("openBrowser launches the platform opener with the url", () => {
   ]);
 });
 
-test("the serve process reports the Trace version it is actually running", () => {
+test("the serve process reports the EQNX version it is actually running", () => {
   const env = {
     HOME: dir,
     TRACE_DB: databasePath,

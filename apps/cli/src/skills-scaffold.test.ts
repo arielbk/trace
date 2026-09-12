@@ -54,14 +54,14 @@ describe("skills scaffold", () => {
       assert.equal(
         /npx @arielbk\/trace@[0-9]/.test(skillSource),
         false,
-        `${skill} must not contain a pinned npx @arielbk/trace command`,
+        `${skill} must not contain a pinned npx @eqnx/cli command`,
       );
     }
 
     assert.equal(existsSync(pluginBinDir), false);
   });
 
-  it("contains no versioned npx @arielbk/trace pins in the skills tree", () => {
+  it("contains no versioned npx @eqnx/cli pins in the skills tree", () => {
     const markdownFiles = readdirSync(skillsRoot, {
       recursive: true,
       withFileTypes: true,
@@ -77,9 +77,9 @@ describe("skills scaffold", () => {
     }
   });
 
-  it("ships no plugin-install manifests, which trace setup replaced", () => {
+  it("ships no plugin-install manifests, which eqnx setup replaced", () => {
     // The marketplace/plugin install channel was retired in favour of a global
-    // CLI install plus `trace setup`, which copies this same tree into each
+    // CLI install plus `eqnx setup`, which copies this same tree into each
     // agent's config root. The manifests outlived their channel by four
     // releases, drifting to a version string nothing bumped. If one comes back
     // it needs a story for how it stays in sync — hence this guard.
@@ -94,7 +94,7 @@ describe("skills scaffold", () => {
     }
   });
 
-  it("ships a host-neutral trace skill that dispatches to per-host resources", () => {
+  it("ships a host-neutral eqnx skill that dispatches to per-host resources", () => {
     const source = readFileSync(traceSkill, "utf8");
     const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
     const meta = frontmatter?.[1];
@@ -152,7 +152,7 @@ describe("skills scaffold", () => {
   it("documents Copilot CLI installation and its output-only token total", () => {
     const source = readFileSync(join(repoRoot, "README.md"), "utf8");
     assert.match(source, /### Copilot CLI/);
-    assert.match(source, /trace setup --tool copilot/);
+    assert.match(source, /eqnx setup --tool copilot/);
     assert.match(source, /output-only token/i);
   });
 
@@ -182,7 +182,7 @@ describe("skills scaffold", () => {
 
     // The manifest-consumption protocol is not restated here — it lives in
     // trace-reenter. Recall must not carry its own copy.
-    assert.equal(source.includes("trace session tail"), false);
+    assert.equal(source.includes("eqnx session tail"), false);
 
     // Ambiguity/no-match asks with near-misses; failed recall never auto-creates.
     assert.match(source, /never\s+(auto-?create|create)/i);
@@ -211,7 +211,7 @@ describe("skills scaffold", () => {
 
     // It owns the manifest-consumption protocol: state file first as
     // authoritative, then the decision docs, then the transcript tail as
-    // fallback — the prose that used to live in the trace skill.
+    // fallback — the prose that used to live in the eqnx skill.
     assert.match(source, /state:/);
     assert.match(source, /authoritative/i);
     assert.match(source, /read the decision docs first/i);
@@ -233,11 +233,11 @@ describe("skills scaffold", () => {
 
     // It consumes the manifest's stateFreshness block — the portable prose
     // trigger for hosts without a live Stop hook: orient first, then invoke
-    // the trace-state skill (which stamps via `trace state reflect`).
+    // the trace-state skill (which stamps via `eqnx state reflect`).
     assert.match(source, /stateFreshness/);
     assert.match(source, /orient first/i);
     assert.match(source, /trace-state/);
-    assert.match(source, /trace state reflect/);
+    assert.match(source, /eqnx state reflect/);
   });
 
   it("ships a board skill that fires only on open-the-board intent and opens the board itself", () => {
@@ -257,8 +257,8 @@ describe("skills scaffold", () => {
     // It opens the web UI via the persistent CLI's board verb, which reuses a
     // running connection rather than starting a second one.
     assert.equal(source.includes(bareTraceCommand()), true);
-    assert.match(source, /^trace board$/m);
-    assert.match(source, /trace board --local/);
+    assert.match(source, /^eqnx board$/m);
+    assert.match(source, /eqnx board --local/);
 
     // The agent opens the board itself rather than instructing the user.
     assert.match(source, /open the board for the user yourself/i);
@@ -267,9 +267,9 @@ describe("skills scaffold", () => {
     // It reads the URL the command printed and reports it to the user.
     assert.match(source, /tell the user the URL/i);
 
-    // `trace serve` stays the foreground development runtime, not the way to
+    // `eqnx serve` stays the foreground development runtime, not the way to
     // open a board.
-    assert.match(source, /trace serve/);
+    assert.match(source, /eqnx serve/);
     assert.match(source, /foreground/i);
   });
 

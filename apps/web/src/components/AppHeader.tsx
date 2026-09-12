@@ -34,7 +34,7 @@ export function AppHeader({
           to="/"
           className="font-mono font-extrabold text-base no-underline text-text hover:text-accent"
         >
-          Trace
+          EQNX
         </Link>
         {project ? (
           <>

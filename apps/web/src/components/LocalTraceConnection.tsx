@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_HOSTED_WEB_ORIGIN,
   TRACE_PROTOCOL_VERSION,
   type TraceConnection,
 } from "@trace/core/browser";
@@ -48,9 +49,9 @@ export function validateTraceConnection(
     return {
       kind: "incompatible",
       eyebrow: "Incompatible",
-      title: "This Trace connection isn’t compatible",
+      title: "This EQNX connection isn’t compatible",
       description:
-        "The service on this device did not return a valid Trace handshake. Update Trace, then try again.",
+        "The service on this device did not return a valid EQNX handshake. Update EQNX, then try again.",
     };
   }
 
@@ -58,11 +59,11 @@ export function validateTraceConnection(
     return {
       kind: "incompatible",
       eyebrow: "Incompatible",
-      title: "Trace needs an update",
+      title: "EQNX needs an update",
       description:
         connection.protocolVersion < TRACE_PROTOCOL_VERSION
-          ? "The Trace version on this device is too old for this site. Update Trace, restart it, then try again."
-          : "The Trace version on this device uses a newer connection protocol than this site supports. Reload this site and try again.",
+          ? "The EQNX version on this device is too old for this site. Update EQNX, restart it, then try again."
+          : "The EQNX version on this device uses a newer connection protocol than this site supports. Reload this site and try again.",
     };
   }
 
@@ -70,16 +71,16 @@ export function validateTraceConnection(
 }
 
 export function connectionFailure(error: unknown): ConnectionFailure {
-  // A 401 is Trace answering, so it is the one failure the viewer cannot fix by
-  // starting Trace or granting network access — this browser simply holds no
+  // A 401 is EQNX answering, so it is the one failure the viewer cannot fix by
+  // starting EQNX or granting network access — this browser simply holds no
   // bridge credential, and only a fresh pairing link mints one.
   if (error instanceof HttpError && error.status === 401) {
     return {
       kind: "unpaired",
       eyebrow: "Not paired",
-      title: "This browser isn’t paired with Trace",
+      title: "This browser isn’t paired with EQNX",
       description:
-        "Trace is running on this device but has not given this browser access. Run `trace connection pair` on this device and open the pairing link it prints to connect.",
+        "EQNX is running on this device but has not given this browser access. Run `eqnx pair` on this device and open the pairing link it prints to connect.",
     };
   }
 
@@ -87,18 +88,18 @@ export function connectionFailure(error: unknown): ConnectionFailure {
     return {
       kind: "blocked",
       eyebrow: "Blocked",
-      title: "Trace blocked this site",
+      title: "EQNX blocked this site",
       description:
-        "This hosted address is not allowed to read Trace on this device. Update or restart Trace, then try again.",
+        "This hosted address is not allowed to read EQNX on this device. Update or restart EQNX, then try again.",
     };
   }
 
   return {
     kind: "unavailable",
     eyebrow: "Not reachable",
-    title: "Trace isn’t reachable",
+    title: "EQNX isn’t reachable",
     description:
-      "Make sure Trace is running on this device. If your browser asks for local-network access, allow it, then try again.",
+      "Make sure EQNX is running on this device. If your browser asks for local-network access, allow it, then try again.",
   };
 }
 
@@ -135,6 +136,10 @@ export function LocalTraceConnection({
   const supported = supportsLocalTraceBridge(userAgent);
   const [state, setState] = useState<ConnectionState>({ phase: "idle" });
   const origin = bridgeOrigin(source);
+  const setupCommand =
+    window.location.origin === DEFAULT_HOSTED_WEB_ORIGIN
+      ? "eqnx setup"
+      : `TRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' eqnx setup`;
 
   const attemptedAutomaticConnection = useRef(false);
   const handleConnect = useCallback(async () => {
@@ -196,7 +201,7 @@ export function LocalTraceConnection({
           eyebrow: "Unsupported browser",
           title: "This browser isn’t supported yet",
           description:
-            "Use a current desktop version of Chrome or Firefox to connect to Trace on this device.",
+            "Use a current desktop version of Chrome or Firefox to connect to EQNX on this device.",
         }
       : state.phase === "failed" && state.failure.kind !== "unpaired"
         ? state.failure
@@ -220,7 +225,7 @@ export function LocalTraceConnection({
         </h2>
         <div aria-live="polite" aria-atomic="true">
           <h1 className="mt-3 mb-0 max-w-[34ch] text-page-title font-extrabold text-balance">
-            {failure?.title ?? "Connect to Trace on this device"}
+            {failure?.title ?? "Connect to EQNX on this device"}
           </h1>
           <p className="mt-subtitle-top mb-0 max-w-row-description text-caption leading-relaxed text-text-muted">
             {failure?.description ??
@@ -237,7 +242,7 @@ export function LocalTraceConnection({
               className="m-0 inline-flex items-center gap-2 text-caption text-text-muted"
             >
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-              Connecting to Trace…
+              Connecting to EQNX…
             </p>
           ) : failure ? (
             <>
@@ -267,14 +272,14 @@ export function LocalTraceConnection({
               </p>
               <details className="max-w-row-description text-meta text-text-muted">
                 <summary className="cursor-pointer">
-                  Need to set up Trace?
+                  Need to set up EQNX?
                 </summary>
                 <p>
-                  On macOS, install Trace and start the connection once, then
-                  run the command above.
+                  On macOS, install EQNX and run setup once. After setup,
+                  return here to get your pairing command.
                 </p>
                 <pre className="overflow-x-auto rounded-control border border-border bg-surface p-3 text-crumb">
-                  <code>{`npm install -g @arielbk/trace\nTRACE_WEB_ORIGIN='${window.location.origin.replaceAll("'", "'\\''")}' trace connection install`}</code>
+                  <code>{`npm install -g @eqnx/cli\n${setupCommand}`}</code>
                 </pre>
               </details>
             </>
@@ -398,7 +403,7 @@ export function LocalConnectionBadge() {
     <Dropdown>
       <DropdownTrigger
         className="relative inline-flex items-center justify-center size-8 rounded-full border border-border bg-surface text-text hover:text-accent hover:border-border-strong transition-colors cursor-pointer"
-        aria-label={`Connection — ${connected ? "connected to Trace on this device" : statusLabel.toLowerCase()}`}
+        aria-label={`Connection — ${connected ? "connected to EQNX on this device" : statusLabel.toLowerCase()}`}
         data-connection-state={connected ? "connected" : status}
       >
         <Cable size={16} aria-hidden="true" />

@@ -9,7 +9,7 @@
  * whichever door the process comes in through.
  */
 
-/** Default port `trace serve` listens on. */
+/** Default port `eqnx serve` listens on. */
 export const DEFAULT_SERVE_PORT = 4317;
 
 /**

@@ -23,8 +23,8 @@ import type { Env } from "./commands/seam.ts";
  * The machine-local auth service: the device authorization sequence, document
  * manifest lookup, and credential persistence, with no presentation attached.
  *
- * Two adapters drive it — the terminal (`trace login`, in `commands/auth.ts`)
- * and the board (`local-auth.ts`, behind `trace serve`'s `/api/local-auth`
+ * Two adapters drive it — the terminal (`eqnx login`, in `commands/auth.ts`)
+ * and the board (`local-auth.ts`, behind `eqnx serve`'s `/api/local-auth`
  * endpoints). Both must reach the same hosted endpoints and write the same
  * files, so the sequence lives here once rather than being reimplemented per
  * surface.
@@ -38,11 +38,11 @@ export const DEVICE_CODE_LIFETIME_FALLBACK_SECONDS = 30 * 60;
 
 /**
  * Cloud features are flagged off until a server URL is configured
- * (`TRACE_SERVER_URL` or `trace config set server-url`); auth entry points fail
+ * (`TRACE_SERVER_URL` or `eqnx config set server-url`); auth entry points fail
  * with this message rather than guessing at a server.
  */
 export const NO_SERVER_CONFIGURED_MESSAGE =
-  "No sync server configured. Run trace config set server-url <url>.";
+  "No sync server configured. Run eqnx config set server-url <url>.";
 
 export function requireServerUrl(env: Env): string {
   const serverUrl = resolveConfiguredServerUrl(env);
@@ -94,11 +94,11 @@ export async function requestDeviceAuthorization(
 }
 
 export const DEVICE_CODE_EXPIRED_MESSAGE =
-  "Device code expired before the login was approved. Run trace login to try again.";
+  "Device code expired before the login was approved. Run eqnx login to try again.";
 
 /** Thrown when the device code's lifetime runs out unapproved. Distinguished
  * from any other failure so an adapter can word the outcome for its own surface
- * (the board has no terminal to run `trace login` in). */
+ * (the board has no terminal to run `eqnx login` in). */
 export class DeviceCodeExpiredError extends Error {
   constructor() {
     super(DEVICE_CODE_EXPIRED_MESSAGE);

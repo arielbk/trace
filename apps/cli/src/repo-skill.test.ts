@@ -12,7 +12,7 @@ const projectSlug = basename(repoRoot).toLowerCase();
 const traceBin = fileURLToPath(new URL("./trace.ts", import.meta.url));
 const skillReadme = join(repoRoot, "skills", "trace", "SKILL.md");
 
-test("trace skill resolves or creates a task by title, binds a simulated session, and re-enters context", () => {
+test("eqnx skill resolves or creates a task by title, binds a simulated session, and re-enters context", () => {
   expect(existsSync(skillReadme)).toBe(true);
 
   const dir = mkdtempSync(join(tmpdir(), "trace-repo-skill-"));
@@ -313,6 +313,6 @@ test("repo skill prose is pruned to the bind verb and dispatches the host nudge"
   expect(prose).toContain("trace-reenter");
   expect(prose.toLowerCase()).not.toContain("never paste raw transcripts");
   expect(prose).not.toContain("skill re-enter");
-  expect(prose).not.toContain("trace serve listening on http://");
+  expect(prose).not.toContain("eqnx serve listening on http://");
   expect(prose).not.toContain("Open the task board");
 });

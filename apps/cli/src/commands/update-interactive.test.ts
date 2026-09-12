@@ -142,7 +142,7 @@ test("confirming a bare update in a terminal applies it in one command", async (
 
     // The plan is shown before the question, so the answer is informed.
     expect(prompt.notes).toEqual([
-      { message: "Trace v1.0.0 → v1.2.3 (via npm)", title: "Update plan" },
+      { message: "EQNX v1.0.0 → v1.2.3 (via npm)", title: "Update plan" },
     ]);
     expect(prompt.confirmRequests).toEqual([{ message: "Update to v1.2.3?" }]);
     expect(spawns.installs).toEqual(["1.2.3"]);
@@ -192,7 +192,7 @@ test("an already-current install never asks, even in a terminal", async () => {
     expect(prompt.notes).toEqual([]);
     expect(prompt.confirmRequests).toEqual([]);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("Trace is already at v1.2.3. Nothing to update.\n");
+    expect(result.stdout).toBe("EQNX is already at v1.2.3. Nothing to update.\n");
     expect(spawns).toEqual({ installs: [], reconciles: [] });
   } finally {
     cleanup();
@@ -212,7 +212,7 @@ test("`--yes` keeps its meaning of skipping the question", async () => {
     expect(spawns.installs).toEqual(["1.2.3"]);
     // Unattended output keeps the plan line it has always printed.
     expect(result.stdout).toBe(
-      "Trace v1.0.0 → v1.2.3 (via npm)\n\nUpdated to v1.2.3 and reconciled registered targets.\n",
+      "EQNX v1.0.0 → v1.2.3 (via npm)\n\nUpdated to v1.2.3 and reconciled registered targets.\n",
     );
   } finally {
     cleanup();
@@ -233,7 +233,7 @@ function stubRegistryFetch(version: string): () => void {
   };
 }
 
-test("bare `trace update` in a terminal is handed the prompt", async () => {
+test("bare `eqnx update` in a terminal is handed the prompt", async () => {
   const { dir, cleanup } = tempDir("trace-update-dispatch-bare-");
   const restoreFetch = stubRegistryFetch("1.2.3");
   try {
@@ -287,7 +287,7 @@ for (const args of [["update", "--yes"], ["update", "--help"]]) {
   });
 }
 
-test("bare `trace update` without a terminal keeps the preview-then-exit path", async () => {
+test("bare `eqnx update` without a terminal keeps the preview-then-exit path", async () => {
   const { dir, cleanup } = tempDir("trace-update-dispatch-non-tty-");
   const restoreFetch = stubRegistryFetch("1.2.3");
   try {
@@ -316,7 +316,7 @@ test("bare `trace update` without a terminal keeps the preview-then-exit path", 
     expect(constructed).toBe(0);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      "Trace v1.0.0 → v1.2.3 (via npm)\n\nRe-run with --yes to apply.\n",
+      "EQNX v1.0.0 → v1.2.3 (via npm)\n\nRe-run with --yes to apply.\n",
     );
   } finally {
     restoreFetch();

@@ -184,7 +184,7 @@ export type TaskTimeline = {
   /**
    * When the state.md prose was written: the time stamped by `state reflect`,
    * falling back to the file's mtime for State Documents written before stamps
-   * carried one. Never the mtime alone — Trace's own footer bookkeeping moves
+   * carried one. Never the mtime alone — EQNX's own footer bookkeeping moves
    * that without the prose changing.
    */
   stateUpdatedAt?: string;

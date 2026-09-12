@@ -9,11 +9,11 @@ export function runInit(
   void cwd;
 
   const lines = [
-    "Trace is now installed as a persistent global CLI.",
-    "Install: npm install -g @arielbk/trace  (or pnpm add -g / bun install -g)",
-    "Setup:   trace setup",
-    "Update:  trace update",
-    "Remove:  trace setup --remove",
+    "EQNX is now installed as a persistent global CLI.",
+    "Install: npm install -g @eqnx/cli  (or pnpm add -g / bun install -g)",
+    "Setup:   eqnx setup",
+    "Update:  eqnx update",
+    "Remove:  eqnx setup --remove",
   ];
 
   return `${lines.join("\n")}\n`;

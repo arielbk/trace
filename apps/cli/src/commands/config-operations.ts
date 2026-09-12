@@ -25,7 +25,7 @@ function knownKeys(): string {
 
 function configUsage(verb: "get" | "set" | "unset"): string {
   const value = verb === "set" ? " <value>" : "";
-  return `Usage: trace config ${verb} <${knownKeys()}>${value}`;
+  return `Usage: eqnx config ${verb} <${knownKeys()}>${value}`;
 }
 
 function parseKey(

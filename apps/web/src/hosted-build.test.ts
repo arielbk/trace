@@ -15,7 +15,7 @@ afterEach(async () => {
   );
 });
 
-test("hosted production build emits a strict CSP for the local Trace bridge", async () => {
+test("hosted production build emits a strict CSP for the local EQNX bridge", async () => {
   const outputDirectory = await mkdtemp(
     path.join(tmpdir(), "trace-hosted-build-"),
   );
@@ -57,6 +57,12 @@ test("hosted production build emits a strict CSP for the local Trace bridge", as
       "img-src 'self'; font-src 'self'; " +
       "connect-src 'self' http://127.0.0.1:4317",
   );
+  const headers = await readFile(path.join(outputDirectory, "_headers"), "utf8");
+  expect(headers).toContain(`Content-Security-Policy: ${policy}; frame-ancestors 'none'`);
+  expect(headers).toContain("X-Content-Type-Options: nosniff");
+  expect(headers).toContain("Referrer-Policy: no-referrer");
+  // Pages' automatic SPA fallback needs index.html without a root 404.html.
+  expect(await readdir(outputDirectory)).not.toContain("404.html");
   // The nonce only helps if the bundle stamps it onto the style element it
   // injects, so the built asset has to carry that same value.
   const assets = await readdir(path.join(outputDirectory, "assets"));

@@ -34,7 +34,7 @@ import type { Env } from "./commands/seam.ts";
  */
 
 /**
- * Stands in for the spawned `trace sync` process: same command shape, same
+ * Stands in for the spawned `eqnx sync` process: same command shape, same
  * environment handoff, but executed in-process so the test can await it. The
  * env is what carries `TRACE_AUTOMATIC_SYNC`, so the execution-boundary half of
  * the AutoSync policy is exercised exactly as in production.
@@ -328,7 +328,7 @@ describe("a manual-mode machine synchronizes only when asked", () => {
     }
   });
 
-  test("one explicit trace sync then transfers the accumulated work", async () => {
+  test("one explicit eqnx sync then transfers the accumulated work", async () => {
     const server = await startRecordingSyncServer();
     try {
       await withMachine(server.url, false, async (ctx) => {
@@ -551,7 +551,7 @@ async function withMachine(
   }
 }
 
-/** A `node:http` Server stand-in: `trace serve` need not bind a real socket. */
+/** A `node:http` Server stand-in: `eqnx serve` need not bind a real socket. */
 function fakeServer(): Parameters<typeof startTraceServe>[1] extends {
   server?: infer S;
 }

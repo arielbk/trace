@@ -11,7 +11,7 @@ import type { Env } from "./seam.ts";
 
 export type PackageManager = "npm" | "pnpm" | "bun";
 
-/** Every host Trace can install into, in the order flags and plans list them. */
+/** Every host EQNX can install into, in the order flags and plans list them. */
 export const TOOL_NAMES = ["claude", "codex", "cursor", "copilot"] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -45,7 +45,7 @@ export type UpdateRegistryMetadata = {
 
 export class CorruptIntegrationRegistryError extends Error {
   constructor(path: string, reason: string, options?: ErrorOptions) {
-    super(`Trace integration registry at ${path} is corrupt: ${reason}`, options);
+    super(`EQNX integration registry at ${path} is corrupt: ${reason}`, options);
     this.name = "CorruptIntegrationRegistryError";
   }
 }
@@ -173,7 +173,7 @@ function parseUpdateRegistryMetadata(
   };
 }
 
-/** Owns persistence and queries for registered Trace integration targets. */
+/** Owns persistence and queries for registered EQNX integration targets. */
 export class IntegrationRegistry {
   readonly path: string;
 
@@ -184,7 +184,7 @@ export class IntegrationRegistry {
     const home = env.HOME ?? env.USERPROFILE;
     if (!home) {
       throw new Error(
-        "HOME/USERPROFILE must be set to resolve the Trace registry path",
+        "HOME/USERPROFILE must be set to resolve the EQNX registry path",
       );
     }
     return new IntegrationRegistry(join(home, ".trace", "integrations.json"));
